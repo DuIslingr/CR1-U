@@ -673,7 +673,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         if (e.actors[0] < 0 || e.done) continue;
         out = BattleTurn();
         notices_.clear();
-        note_ = 0;
+        note_ = 0, noteValue_ = 0;
         out.kind = e.kind;
         out.action = e.action;
         out.actors[0] = e.actors[0];
@@ -1048,7 +1048,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         catchUpBreak();
         firstTarget_ = -1;
         out.notices = notices_;
-        if (!out.message) out.message = note_;
+        if (!out.message) out.message = note_, out.messageValue = noteValue_;
         return true;
     }
     return false;
@@ -1120,6 +1120,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
                 if (lv >= kFrom[k] && g > 0 && !knows(g) &&
                     std::find(learned.begin(), learned.end(), g) == learned.end()) {
                     learned.push_back(g), learnedNew = true;
+                    note_ = isSkill(g) ? 57050 : 57049, noteValue_ = g; // (btlcalc_0506's line, at once)
                     break;
                 }
             }

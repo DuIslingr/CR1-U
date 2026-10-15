@@ -315,6 +315,7 @@ private:
     size_t next_ = 0;
     std::vector<BattleNotice> notices_; // this action's, handed to BattleTurn::notices
     int note_ = 0;                      // a message the calcs show at once (an immunity), 0 none
+    int noteValue_ = 0;                 // ... the item it names (a gene learned)
     bool cancelTried_ = false;          // G+0xaa: Trompe-L'oeil's cancel came up (once a battle)
     bool cancelBreak_ = false;          // G+0xa9: its Break event, the once it isn't held
     int firstTarget_ = -1;              // G+0x7a: the action's first target (btlcalc_critical)

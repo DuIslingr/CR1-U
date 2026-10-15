@@ -472,7 +472,20 @@ struct App {
         float breakPop = 0;
         std::vector<int> levelled;
         bool settled = false;              // the save has the battle's results
-        int exit = 0;                      // 1 back to the field (fled), 2 to the title (lost)
+        int exit = 0;                      // 1 back to the field (fled), 2 to the title (lost), 4 won
+        struct Result {                    // __menuu_MbResult*: the results' stages (_gstMbResult)
+            int stage = 0;                 // 0 counting (3), 1 a level-up's line (5 / 6), 2 an item's (7 / 8), 3 going (10..)
+            int count = 0, frames = 0;     // DAT_000e50e0: counting frames left ((most levels + 1) x 60); frames in
+            int message = 57007;           // the board's one line: Victory!, then 57008 / 57034, 57010 / 57035
+            std::string name;
+            int value = 0;
+            int character[2] = {-1, -1}, level[2] = {}, levelTo[2] = {}, levels[2] = {}, hp0[2] = {};
+            float exp[2] = {}, expTo[2] = {}, expStep[2] = {};
+            float shownExp = 0, shownOz = 0, shownPurse = 0;
+            int expTotal = 0, ozTotal = 0, purseTo = 0;
+            std::vector<std::pair<int, int>> ups, items; // (member, levels), (item, how many)
+            size_t upNext = 0, itemNext = 0;
+        } result;
         cr::Mat4 vp;                       // the last frame's camera (the damage numbers)
         int cam = -1, camActor = 0, camFrame = 0; // btlcamera_set: the camera, its actor, frames since
         std::vector<Effect> effects;       // eff3d: playing effects (32 at most)
@@ -711,6 +724,7 @@ struct App {
 
 // The menus' sounds: __effgo ids (sndeff.bin entries) as the original's *Prc functions use them
 namespace se {
+constexpr uint32_t kMenuBase = 0; // (Omega's menu sounds sit 0x91 later)
 constexpr uint32_t kChoose = 2;  // a plate, button, toggle, Yes or No (ComUty_YesNoChoiceProc's own is 2 too)
 constexpr uint32_t kBack = 3;    // the Back bar (ComUty_BackButtonProc); Options' < > page arrows on it as well
 constexpr uint32_t kBuzzer = 4;  // refused: nothing to sell (BuySell_CommandProc), a count past its end
@@ -9209,7 +9223,37 @@ void settleBattle(App& app) {
     App::Battle& b = app.battle;
     if (b.settled || !b.active) return;
     b.settled = true;
+    // MbResultSet: the boards from where the members were, the takings, the items grouped
+    App::Battle::Result& rs = b.result;
+    rs = App::Battle::Result();
+    for (int k = 0; k < 2; ++k) {
+        const cr::Fighter& x = b.rules.f[size_t(k)];
+        if (!x.present || x.guest) continue;
+        const cr::PartyMember& pm = app.game.party[size_t(x.character)];
+        rs.character[k] = x.character, rs.level[k] = pm.level, rs.exp[k] = float(pm.exp), rs.hp0[k] = x.hp;
+    }
     b.levelled = b.rules.applyRewards(app.game);
+    int most = 0;
+    for (int k = 0; k < 2; ++k) {
+        if (rs.character[k] < 0) continue;
+        const cr::PartyMember& pm = app.game.party[size_t(rs.character[k])];
+        rs.levelTo[k] = pm.level, rs.expTo[k] = float(pm.exp), rs.levels[k] = pm.level - rs.level[k];
+        rs.expStep[k] = (rs.expTo[k] - rs.exp[k]) / float((rs.levels[k] + 1) * 60);
+        most = std::max(most, rs.levels[k]);
+        if (rs.levels[k] > 0) rs.ups.push_back({k, rs.levels[k]});
+    }
+    rs.count = (most + 1) * 60;
+    rs.expTotal = b.rules.expGained * (b.rules.doubleExp ? 2 : 1);
+    rs.ozTotal = b.rules.ozGained * (b.rules.doubleOz ? 2 : 1);
+    rs.purseTo = app.game.oz;
+    rs.shownPurse = float(std::max(0, rs.purseTo - (b.rules.outcome() == 2 ? rs.ozTotal : 0)));
+    auto addItem = [&](int item) {
+        for (auto& [it, n] : rs.items)
+            if (it == item) { ++n; return; }
+        rs.items.push_back({item, 1});
+    };
+    for (int item : b.rules.drops) addItem(item);
+    for (int item : b.rules.stolen) addItem(item);
 }
 
 // Back to the field: its music again, the encounter count restarted (fldencount_init), and the
@@ -10044,7 +10088,9 @@ void showHits(App& app) {
     b.hitsShown = true;
     if (b.turn.message > 0) { // stolen Oz, a monster running, Analyze, the barrier, the Apples
         std::string name = b.turn.message == 57032 ? sysText(app, b.turn.messageValue)
-                           : b.turn.message == 57005 ? itemName(app, b.turn.messageValue) : std::string();
+                           : b.turn.message == 57005 || b.turn.message == 57049 || b.turn.message == 57050
+                               ? itemName(app, b.turn.messageValue)
+                               : std::string();
         if (b.turn.message == 57000 || b.turn.message == 57001)
             if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) name = u->name;
         std::vector<std::vector<std::string>> pages;
@@ -10289,6 +10335,9 @@ void endRound(App& app) {
 }
 
 // One 30 Hz battle frame: the actors' motions and moves, the round, the HUD's counters
+void stepResults(App& app);
+void resultsTap(App& app);
+
 void stepBattle(App& app) {
     App::Battle& b = app.battle;
     ++b.frames;
@@ -10425,8 +10474,10 @@ void stepBattle(App& app) {
         if (b.phaseFrames >= 50) {
             b.phase = App::Battle::Results;
             b.phaseFrames = 0;
+            b.result.stage = 0, b.result.frames = 0, b.result.message = 57007;
         }
         break;
+    case App::Battle::Results: stepResults(app); break;
     case App::Battle::Lost: // 0x513, then (9000) btl_lose: a story battle starts over from the title,
         // any other goes back to the pair's Ark (drawFrame does either, between frames)
         if (b.phaseFrames >= 120) b.exit = b.eventBattle ? 2 : 3;
@@ -10580,47 +10631,127 @@ void drawBattleRow(App& app, cr::MenuPainter& m, int k, bool dimmed, float a) {
     drawBattleStatus(m, f, 152 + dx, 364 + dy, a);
 }
 
-// The results (MbResultPut): "Results", the pair's boards (ComUty_FaceBoardDraw, 88 apart),
-// EXP Gained and OZ Earned (ComUty_ExpAndOzDraw at (288, 76)), the play time and the purse
+// The results (__menuu_MbResultSet / Prc / Put). Prc 3: for (most levels + 1) x 60 frames the
+// boards' EXP climbs (each member's gain over its own (levels + 1) x 60, the chime 0xa2 at a level)
+// and HP fills over 60 frames, EXP Gained, OZ Earned and the purse count up a sixtieth a frame,
+// a tick (0xa4) every second frame while anything came; a tap (0x93) puts everything at its end.
+// Then a tap at a time: each member's level-up line (0xa2: 57008, or 57034 for several), each
+// item's (0xa0: 57010, or 57035 with how many), and 0x93 as the windows go (4 frames)
+void resultsNext(App& app) {
+    App::Battle::Result& rs = app.battle.result;
+    rs.frames = 0;
+    if (rs.upNext < rs.ups.size()) {
+        const auto [k, n] = rs.ups[rs.upNext++];
+        menuSound(app, se::kMenuBase + 0x11);
+        rs.stage = 1, rs.message = n == 1 ? 57008 : 57034, rs.value = n;
+        const App::Battle::Actor* u = battleActor(app, k);
+        rs.name = u ? u->name : std::string();
+        rs.level[k] = rs.levelTo[k], rs.exp[k] = rs.expTo[k]; // (pcparam_change_lv)
+        return;
+    }
+    if (rs.itemNext < rs.items.size()) {
+        const auto [item, n] = rs.items[rs.itemNext++];
+        menuSound(app, se::kMenuBase + 0xf);
+        rs.stage = 2, rs.message = n == 1 ? 57010 : 57035, rs.value = n, rs.name = itemName(app, item);
+        return;
+    }
+    menuSound(app, se::kChoose);
+    rs.stage = 3, rs.count = 4;
+}
+
+void resultsSettle(App::Battle::Result& rs) { // __RestoreParam
+    for (int k = 0; k < 2; ++k) rs.level[k] = rs.levelTo[k], rs.exp[k] = rs.expTo[k];
+    rs.shownExp = float(rs.expTotal), rs.shownOz = float(rs.ozTotal), rs.shownPurse = float(rs.purseTo);
+    rs.count = 0;
+}
+
+void resultsTap(App& app) {
+    App::Battle::Result& rs = app.battle.result;
+    if (rs.frames < 4 || rs.stage == 3) return; // (the windows coming in, or going)
+    if (rs.stage == 0 && rs.count > 0) {
+        menuSound(app, se::kChoose);
+        resultsSettle(rs);
+        return;
+    }
+    resultsNext(app);
+}
+
+void stepResults(App& app) {
+    App::Battle& b = app.battle;
+    App::Battle::Result& rs = b.result;
+    ++rs.frames;
+    if (rs.stage == 3) {
+        if (--rs.count < 0) b.exit = 4;
+        return;
+    }
+    if (rs.stage != 0 || rs.frames < 4 || rs.count <= 0) return;
+    for (int k = 0; k < 2; ++k) {
+        if (rs.character[k] < 0 || rs.exp[k] >= rs.expTo[k]) continue;
+        rs.exp[k] = std::min(rs.expTo[k], rs.exp[k] + rs.expStep[k]);
+        if (rs.level[k] < rs.levelTo[k] && rs.exp[k] >= float(cr::expForLevel(rs.level[k] + 1)))
+            ++rs.level[k], menuSound(app, se::kMenuBase + 0x11);
+    }
+    auto climb = [](float& v, float to, float step) { if (v < to) v = std::min(to, v + step); };
+    climb(rs.shownExp, float(rs.expTotal), float(rs.expTotal / 60));
+    climb(rs.shownOz, float(rs.ozTotal), float(rs.ozTotal / 60));
+    climb(rs.shownPurse, float(rs.purseTo), float(rs.ozTotal / 60));
+    --rs.count;
+    if ((rs.count & 1) == 0 && (rs.expTotal > 0 || rs.ozTotal > 0)) app.sound.play(se::kMenuBase + 0x13);
+    if (rs.count < 1) resultsSettle(rs);
+}
+
+// MbResultPut: "Results", the pair's boards (ComUty_FaceBoardDraw, 88 apart), EXP Gained and OZ
+// Earned (ComUty_ExpAndOzDraw at (288, 76)), the play time and the purse, the message board at
+// (0, 220) with its one line; windows 1 / 2 come from the left / right, 3 / 4 up from below
 void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
-    const App::Battle& b = app.battle;
+    App::Battle& b = app.battle;
+    const App::Battle::Result& rs = b.result;
     const PhoneMenu phoneMenu(app, m); // MbResultPut: the iPhone screen's menu coordinates
     cr::Renderer& r = app.renderer;
+    const float in = rs.stage == 3 ? std::max(0.0f, float(rs.count) / 4) : std::min(1.0f, float(rs.frames) / 4);
+    const float away = 1 - in;
     r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.45f * a);
+    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.45f * a * in);
     r.setOrigin(wideLeft(app)); // (widescreen: the heading and boards left, the takings right)
-    m.picture(19, 8, 4, a); // "Results"
+    m.picture(19, 8, 4, a * in); // "Results"
     for (int k = 0; k < 2; ++k) {
         const cr::Fighter& f = b.rules.f[size_t(k)];
         if (!f.present) continue;
         const float y = 24 + 88.0f * float(k);
-        drawFaceBoard(app, m, 0, y, f.character, f.hp, f.hpMax, f.mp, f.mpMax, a);
-        if (std::find(b.levelled.begin(), b.levelled.end(), f.character) != b.levelled.end())
-            m.text("Level up!", 180, y + 86, false, a, 13);
+        // the board as it counts: its level and EXP, HP filling over 60 frames
+        cr::PartyMember& pm = app.game.party[size_t(f.character)];
+        const int keepLevel = pm.level, keepExp = pm.exp;
+        if (rs.character[k] >= 0) pm.level = rs.level[k], pm.exp = int(rs.exp[k]);
+        const float fill = rs.stage == 0 && rs.count > 0 ? std::min(1.0f, float(rs.frames) / 60) : 1;
+        const int hp = rs.character[k] >= 0 ? rs.hp0[k] + int(float(f.hpMax - rs.hp0[k]) * fill) : f.hp;
+        drawFaceBoard(app, m, -320 * away, y, f.character, hp, f.hpMax, f.mp, f.mpMax, a);
+        pm.level = keepLevel, pm.exp = keepExp;
     }
     r.setOrigin(wideRight(app));
-    m.picture(67, 304, 48, a);
-    m.picture(68, 288, 76, a); // EXP Gained
-    m.picture(70, 340, 96, a);
-    drawShopNumber(m, b.rules.expGained * (b.rules.doubleExp ? 2 : 1), 358, 98, 6, 12, a);
-    m.picture(69, 288, 132, a); // OZ Earned
-    m.picture(70, 340, 152, a);
-    drawShopNumber(m, b.rules.ozGained * (b.rules.doubleOz ? 2 : 1), 358, 154, 6, 12, a);
-    drawClockAndOz(app, m, a);
-    // The message board (MbResultPut's, at (0, 220)): what was won and learned
-    std::vector<std::string> lines;
-    for (int item : b.rules.drops) lines.push_back(sysText(app, 57010, itemName(app, item)));
-    for (int g : b.rules.learned) lines.push_back(sysText(app, cr::isSkill(g) ? 57050 : 57049, itemName(app, g)));
-    for (int item : b.rules.stolen) lines.push_back(sysText(app, 57010, itemName(app, item)));
+    const float rx = 320 * away;
+    m.picture(67, 304 + rx, 48, a);
+    m.picture(68, 288 + rx, 76, a); // EXP Gained
+    m.picture(70, 340 + rx, 96, a);
+    drawShopNumber(m, int(rs.shownExp), 358 + rx, 98, 6, 12, a);
+    m.picture(69, 288 + rx, 132, a); // OZ Earned
+    m.picture(70, 340 + rx, 152, a);
+    drawShopNumber(m, int(rs.shownOz), 358 + rx, 154, 6, 12, a);
+    const int keepOz = app.game.oz;
+    app.game.oz = int(rs.shownPurse); // (ComUty_BattryAndRealTimeAndOzDraw: the purse as it counts)
+    drawClockAndOz(app, m, a * in);
+    app.game.oz = keepOz;
     r.setOrigin(r.uiX());
-    if (!lines.empty()) {
-        m.picture(12, 0, 220, a);
-        const size_t first = lines.size() > 4 ? lines.size() - 4 : 0;
-        for (size_t i = first; i < lines.size(); ++i) m.text(lines[i], 24, 234 + 16.0f * float(i - first), false, a, 14);
-    }
+    const float by = 160 * away;
+    m.picture(12, 0, 220 + by, a);
+    std::vector<std::vector<std::string>> pages;
+    const int value = rs.value;
+    if (app.systemText.message(rs.message, app.language, [&](int) { return value; }, pages, nullptr,
+                               [&](int) { return rs.name; }) &&
+        !pages.empty())
+        for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 234 + by + 16.0f * float(i), false, a, 14);
     r.setOrigin(wideLeft(app));
     if (keyHints(app)) // (our key hints)
-        m.text("Enter: continue", 20, 372, false, a * 0.8f, 9);
+        m.text("Enter: continue", 20, 372, false, a * 0.8f * in, 9);
     r.setOrigin(r.uiX());
 }
 
@@ -10832,7 +10963,7 @@ void battleKey(App& app, SDL_Keycode key) {
     const bool up = key == SDLK_UP || key == SDLK_W, down = key == SDLK_DOWN || key == SDLK_S;
     const bool left = key == SDLK_LEFT || key == SDLK_A, right = key == SDLK_RIGHT || key == SDLK_D;
     if (b.phase == App::Battle::Results) {
-        if (enter || back) endBattle(app, true);
+        if (enter || back) resultsTap(app);
         return;
     }
     if (b.phase != App::Battle::Command) return;
@@ -10885,8 +11016,8 @@ void battleClick(App& app, float px, float py) {
         else app.tapPending = true;
         return;
     }
-    if (b.phase == App::Battle::Results) {
-        endBattle(app, true);
+    if (b.phase == App::Battle::Results) { // __MbResult_IsTouchChack: (0, 0, 480, 320)
+        resultsTap(app);
         return;
     }
     if (b.phase != App::Battle::Command) return;
@@ -11014,6 +11145,7 @@ void drawFrame(App& app, bool present = true) {
         const int e = app.battle.exit;
         app.battle.exit = 0;
         if (e == 1) endBattle(app, false);
+        else if (e == 4) endBattle(app, true);
         else if (e == 3) loseToArk(app);
         else bootTitle(app);
     }
@@ -12200,7 +12332,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
         // escaping - every one ends (won, lost or fled) and draws without render API errors
         {
             app.rng.seed(5);
-            int won = 0, lost = 0, fled = 0, stuck = 0, rerrs = 0, n = 0, levelled = 0;
+            int won = 0, lost = 0, fled = 0, stuck = 0, rerrs = 0, n = 0, levelled = 0, resultsBad = 0;
             const cr::GameState saved = app.game;
             std::vector<std::pair<int, int>> list(starts.begin(), starts.end());
             for (size_t i = 0; i < list.size() && n < 24; i += std::max<size_t>(1, list.size() / 24), ++n) {
@@ -12230,7 +12362,23 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                             }
                         }
                     }
-                    if (b.phase == App::Battle::Results) { ++won; levelled += int(b.levelled.size()); ended = 1; endBattle(app, true); break; }
+                    if (b.phase == App::Battle::Results) { // MbResultPrc: a tap ends the counting, then a line a tap, then away
+                        ++won;
+                        levelled += int(b.levelled.size());
+                        const size_t lines = b.result.ups.size() + b.result.items.size();
+                        int taps = 0;
+                        for (int g = 0; g < 3000 && b.exit != 4; ++g) {
+                            stepBattle(app);
+                            if (b.result.frames >= 30 && b.result.stage != 3) resultsTap(app), ++taps, b.result.frames = 4;
+                        }
+                        const bool through = b.exit == 4 && b.result.shownExp == float(b.result.expTotal) && size_t(taps) >= lines + 1;
+                        if (!through) std::printf("  results: exit %d, %d taps for %zu lines, exp %.0f of %d\n", b.exit, taps, lines,
+                                                  b.result.shownExp, b.result.expTotal), ++resultsBad;
+                        b.exit = 0;
+                        ended = 1;
+                        endBattle(app, true);
+                        break;
+                    }
                     if (b.phase == App::Battle::Lost && b.phaseFrames > 5) { ++lost; ended = 1; endBattle(app, false); break; }
                     if (b.exit == 1) {
                         ++fled;
@@ -12256,9 +12404,9 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 app.runner.stop();
             }
             app.game = saved;
-            std::printf("battle scenes: %d played - %d won (%d level-ups), %d lost, %d fled, %d didn't end; %d render API errors\n",
-                        n, won, levelled, lost, fled, stuck, rerrs);
-            problems += stuck + rerrs + (won == 0) + (fled == 0);
+            std::printf("battle scenes: %d played - %d won (%d level-ups), %d lost, %d fled, %d didn't end, %d results stuck; %d render "
+                        "API errors\n", n, won, levelled, lost, fled, stuck, resultsBad, rerrs);
+            problems += stuck + rerrs + resultsBad + (won == 0) + (fled == 0);
             glErrors += rerrs;
         }
         return problems;
@@ -15635,7 +15783,14 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         const int hitWanted = v.rfind("hit", 0) == 0 ? std::max(1, SDL_atoi(v.c_str() + 3)) : 0;
         int hitsSeen = 0;
         bool wasShown = false;
-        if (hitWanted || v == "results") {
+        // results[@frames][:taps]: the results that many frames in, after that many taps
+        const bool results = v.rfind("results", 0) == 0;
+        int resultFrames = 10, resultTaps = 0;
+        if (results) {
+            if (const size_t at = v.find('@'); at != std::string::npos) resultFrames = SDL_atoi(v.c_str() + at + 1);
+            if (const size_t c = v.find(':'); c != std::string::npos) resultTaps = SDL_atoi(v.c_str() + c + 1);
+        }
+        if (hitWanted || results) {
             // pair attacks on the first enemy standing until the first hit lands (or the battle's won)
             for (int f = 0; f < 6000 && b.active; ++f) {
                 if (b.phase == App::Battle::Command && b.menu == App::Battle::Top) {
@@ -15644,8 +15799,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     if (b.menu == App::Battle::Targets) battleChooseTarget(app, b.picks[0]);
                     if (b.menu == App::Battle::Commands) { battleChooseCommand(app, 0); battleChooseTarget(app, b.picks[0]); }
                 }
-                if (v == "results") {
-                    if (b.phase == App::Battle::Results && b.phaseFrames > 10) break;
+                if (results) {
+                    if (b.phase == App::Battle::Results && b.result.frames >= resultFrames) break;
                     if (b.phase == App::Battle::Lost) break;
                 } else {
                     if (b.turnOn && b.hitsShown && !wasShown) ++hitsSeen;
@@ -15655,6 +15810,14 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                 }
                 stepBattle(app);
             }
+            for (int t = 0; t < resultTaps && b.phase == App::Battle::Results; ++t) {
+                resultsTap(app);
+                for (int f = 0; f < 6; ++f) stepBattle(app);
+            }
+            if (results)
+                std::printf("results: stage %d, line %d, exp shown %.0f of %d, oz %.0f of %d, %zu level-ups, %zu items\n",
+                            b.result.stage, b.result.message, b.result.shownExp, b.result.expTotal, b.result.shownOz,
+                            b.result.ozTotal, b.result.ups.size(), b.result.items.size());
             std::printf("battle view %s: phase %d, round %d, break %d, hp", v.c_str(), int(b.phase), b.rules.round,
                         b.rules.breakGauge);
             for (int i = 0; i < 5; ++i) std::printf(" %d/%d", b.rules.f[size_t(i)].hp, b.rules.f[size_t(i)].hpMax);
