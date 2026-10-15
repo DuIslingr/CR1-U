@@ -409,7 +409,8 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       rows, the command buttons, the action banner and the damage numbers with their labels;
       the cameras are the original's per menu, target and attack. Attackers run up to their
       target and back; the fallen fade out. `--capture … --battle <group> <stage> --battle-view
-      top|commands|targets|items|escape|hit<n>|results` renders a screen of it.
+      top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
+      (the results that many frames in, after that many taps).
 - [x] Every action calc (`btlcalcTbl`, 0..36): fixed and split damage, % of HP, down to 1 HP,
       MP damage, Sacrifice, drains (Steal HP / Humor Siphon), Oz theft (won back with the thief),
       monsters running, MP / % heals, full restores, revives, poison (10% a round) and its cure,
