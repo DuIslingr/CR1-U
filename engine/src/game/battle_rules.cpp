@@ -602,6 +602,17 @@ void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable
                 if (e.kind != kCmdNone) queue_.push_back(e);
             }
     }
+    // btlord_enemy_rand: skill 153 - standing at a quarter of the HP or less, 20% holding the
+    // Break (else 10) of guarding this round (in pair mode the pair both), as well as when hit
+    for (int i = 0; i < 5; ++i) {
+        Fighter& x = f[size_t(i)];
+        if (!x.alive() || x.hp > x.hpMax / 4 || !has(i, 153)) continue;
+        if (random(100) < (holdsBreak(i) ? 20 : 10)) {
+            x.guarding = true;
+            if (i < 2 && pair) f[size_t(1 - i)].guarding = true;
+            if (enemyPair && (i == 2 || i == 3)) f[size_t(5 - i)].guarding = true;
+        }
+    }
     // btlord_calc_spd: the actors' average speed (+19998 acting first) and the action's
     for (Entry& e : queue_) {
         int sum = 0, n = 0;
