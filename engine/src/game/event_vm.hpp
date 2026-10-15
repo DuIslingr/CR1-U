@@ -30,6 +30,12 @@ struct GameState {
     // +0xc1b + route) and the EXP banked by walking (skill 174, +0xac0 + 4 route, paid at a win)
     std::array<bool, 4> noEncounters{};
     std::array<int, 4> walkExp{};
+    // Per route: the World Select's level band (+0xc10 + route) and TreasureBoxManager's draw for
+    // the dungeon in play (fifteen {box id, item}; item -1 once taken), drawn again each time the
+    // World Select leads into one. `route` is the pair in play (set by the field; not saved)
+    std::array<int, 4> bands{};
+    std::array<std::vector<std::array<int, 2>>, 4> treasure;
+    int route = 0;
 
     // Cutscene frame data selected by FrmSet / FrmJmp (+0x1dfc / +0x22cc in the original):
     // global, so a scene set up by one script is used by the next. Not part of the save.

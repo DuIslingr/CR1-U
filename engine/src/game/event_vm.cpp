@@ -1,7 +1,8 @@
-#include <cstdlib>
 #include "game/event_vm.hpp"
 
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace cr {
@@ -361,7 +362,11 @@ bool EventRunner::step(EventHost* host) {
                 state.vars[a0] = n;
                 vm.result = n > 0;
             }
-            else if (id == 2032) state.openedBoxes.push_back(currentArea * 1000 + a0);      // SetOpenedTresureBox
+            else if (id == 2032) { // SetOpenedTresureBox (setOpened: the draw marks it taken)
+                state.openedBoxes.push_back(currentArea * 1000 + a0);
+                for (auto& e : state.treasure[size_t(std::clamp(state.route, 0, 3))])
+                    if (e[0] == a0) e[1] = -1;
+            }
             else if (id == 2022 && host && (vm.var(1) == 2 || vm.var(1) == 3)) // LoadPrty: a new game's pair (var 1:
                 host->loadParty(vm.var(0), vm.var(1) == 3);                       // 3 with the clear data) - else nothing
             // ScnEffect_Init: GetXmpStkData 0 (the last pushed: on / off) and 1 (the effect)

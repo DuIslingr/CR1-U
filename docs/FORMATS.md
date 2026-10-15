@@ -539,13 +539,21 @@ How `npc_setup` places a model:
 In the shipped data, 1,526 NPCs are drawn on 358 (area, map) pairs.
 
 Treasure boxes (`TreasureBoxManager`):
+- **When:** `__menuu_WldChoiceClr` stores the chosen band (+0xc10 + route) and sets G+0x2c0 bit
+  0x40000000; the next event file loaded (`fldread_prc`) clears it and, for any area but 0, 1, the
+  Arks (7, 13, 19, 25) and 26, calls `_InitDungeon` -> `randomSelect`. So a dungeon's boxes are
+  drawn again each time the World Select leads into it; the draw (15 `{id, item}`) is in the save.
 - **`randomSelect`** (seeded with `time()`) builds the candidates with `PickUpNpcTbl`: every
   second NPC id in [100, 140) and [140, 180) whose table `+18` bit 0 is set. It drops random ones
   until 7 and 8 remain, then gives them items. Box ids are even; id + 1 is the box's marker
   model (`c109`, sitting 8.5 above the box).
 - **`setup`** (on each map) clears flags 3100–3259. For each box NPC on the map that is in the
-  saved list `{id, item}`, it sets the box's show flag. If `item == 0xFFFF` (taken), it also sets
-  the marker's hide flag. Ids 180–799 are not boxes.
+  saved list `{id, item}`, it sets the box's show flag. If `item == 0xFFFF` (taken: `setOpened`),
+  it also sets the marker's hide flag. Ids 180–799 are not boxes.
+- **Gold boxes** (table +18 bit 1; `f0000gbx00`, ids 60–98 and 800 on): with the band at 2 or more
+  (clamped 0–19), an item dealt from pool slot 9–14 goes into the box's gold counterpart - box
+  100–139 + 700, 140–179 − 80 - when the area has one (id within the table, bit 1 set). Its lid
+  script asks for a key (`Uty_ChkItem` of item 2; the shop sells them from level 3) and takes it.
 
 All 310 boxes shown in the shipped data carry their marker on top.
 
@@ -572,12 +580,12 @@ The NPC table's `kind` (+14) bits:
   the town hall, key 3 → the next room).
 
 Item pools (`randomSelect`, second half):
-- **Table:** one of `_TBOX_TABLE_A/B/C` (`rand() % 3`), each 10 levels × 13 items. The level is a
-  per-route progress byte in the save data (+0xc10 + route, clamped 0–9). The engine uses the
-  dungeon number instead.
+- **Table:** one of `_TBOX_TABLE_A/B/C` (`rand() % 3`), each 10 levels × 13 items. The level is
+  the route's World Select band (+0xc10 + route, clamped 0–9).
 - **Specials:** two more from `_TBOX_PAIR_TABLE_A/B/C` [level][route].
-- **Dealing:** the 15 are shuffled and given to the selected boxes in order; `getItemNo` returns
-  1 when a box isn't found.
+- **Dealing:** the 15 are reordered - each in turn taken out and put back before a random one of
+  the rest (`rand() % 14`) - and given to the selected boxes in order (the 7, then the 8);
+  `getItemNo` returns 1 when a box isn't found or is taken.
 - **Names:** item n's name is system message 51000 + n - 1 (`sys.evt` block 0; item 1 is
   message 51000), its help text 52000 + n - 1 (block 1). The shop's prices fix the offset: item
   201 costs 450 and the reference playthrough sells "Trusty Longsword" (51200) for that.

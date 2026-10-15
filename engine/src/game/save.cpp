@@ -46,6 +46,12 @@ bool writeSave(const std::string& path, const SaveData& s) {
     for (int e : s.game.walkExp) o << ' ' << e;
     o << "\nboxes";
     for (int b : s.game.openedBoxes) o << ' ' << b;
+    o << "\nbands";
+    for (int b : s.game.bands) o << ' ' << b;
+    for (int r = 0; r < 4; ++r) {
+        o << "\ntreasure " << r;
+        for (const auto& e : s.game.treasure[size_t(r)]) o << ' ' << e[0] << ' ' << e[1];
+    }
     o << '\n';
     const std::string text = o.str();
     // Written beside, then moved over: a crash mid-write never leaves a broken save
@@ -124,6 +130,13 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
         } else if (key == "boxes") {
             int b;
             while (l >> b) out.game.openedBoxes.push_back(b);
+        } else if (key == "bands") {
+            for (int& b : out.game.bands)
+                if (l >> b) b = std::clamp(b, 0, 19);
+        } else if (key == "treasure") {
+            int r = -1, id, item;
+            if (l >> r && r >= 0 && r < 4)
+                while (l >> id >> item) out.game.treasure[size_t(r)].push_back({id, item});
         }
     }
     if (out.area < 0 || out.map < 0) return fail("incomplete save");

@@ -636,6 +636,7 @@ struct App {
     } puzzleBanner;
     std::map<std::string, struct LoadedModel> npcModels; // NPC model cache by file
     std::map<int, std::vector<cr::TreasureBox>> treasureBoxes; // per area: selected boxes and items
+    bool treasureReroll = false;           // G+0x2c0 bit 0x40000000: set by the World Select's choice
     bool showPlayer = true;                // P: the party leader walking on the field
     int playerChar = 0;                    // O: which field model, f001..f008
     LoadedModel player;
@@ -1367,16 +1368,26 @@ void enterMap(App& app) {
         else if (ev.compare(5, 3, "d91") == 0) track = 4;
         if (track >= 0) playBgm(app, uint32_t(track));
     }
-    // Treasure boxes: chosen once per area (randomSelect), flags set per map (setup)
-    if (!app.treasureBoxes.count(app.area)) {
-        // route from the event file (j001/j003/j005/j007), level from the dungeon number (d01 = 0;
-        // the original keeps a per-route progress byte in the save data)
-        const std::string ev = cr::kAreaEventFile[app.area];
-        const int route = (ev[3] - '1') / 2;
-        const int level = ev[5] == 'd' && ev[6] == '0' ? ev[7] - '1' : 0;
-        app.treasureBoxes[app.area] = cr::selectTreasureBoxes(app.events, uint32_t(app.area) + 1, level, route);
+    // Treasure boxes (TreasureBoxManager): a dungeon's (any area but the boot area, the puzzle
+    // rooms, the four Arks and t91) are drawn again each time the World Select leads into one
+    // (fldread_prc -> _InitDungeon -> randomSelect), at the route's band, the draw kept in the save
+    // and its boxes taken there; flags set per map (setup)
+    const bool dungeonBoxes = app.area > 1 && app.area != 7 && app.area != 13 && app.area != 19 && app.area != 25 && app.area != 26;
+    const int route = std::clamp(app.playerChar / 2, 0, 3);
+    app.game.route = route;
+    auto& pick = app.game.treasure[size_t(route)];
+    if (dungeonBoxes && (app.treasureReroll || pick.empty())) {
+        pick.clear();
+        for (const cr::TreasureBox& b : cr::drawTreasureBoxes(app.events, [&app](int n) { return n > 0 ? app.rng.below(n) : 0; },
+                                                             app.game.bands[size_t(route)], route))
+            pick.push_back({b.id, b.item});
     }
-    cr::applyTreasureFlags(app.events, app.npcs, app.treasureBoxes[app.area], app.game);
+    app.treasureReroll = false; // (cleared by any area's events loading)
+    std::vector<cr::TreasureBox>& boxes = app.treasureBoxes[app.area];
+    boxes.clear();
+    if (dungeonBoxes)
+        for (const auto& e : pick) boxes.push_back({e[0], e[1]});
+    cr::applyTreasureFlags(app.events, app.npcs, boxes, app.game, true);
     puzzle::enter(app); // PuzzleScene::init in a puzzle room (stage -1 elsewhere)
     app.puzzleStartPending = app.puzzle.stage >= 0;
     buildNpcDraws(app);
@@ -5312,6 +5323,8 @@ void closeWorldSelect(App& app) { // __menuu_WldChoiceClr
     app.game.vars[1] = ws.world == 5 ? 0 : ws.level;
     app.game.vars[2] = ws.pair;
     app.game.setFlag(1, ws.skip && ws.world != 4 && ws.world != 5);
+    app.game.bands[size_t(std::clamp(ws.pair, 0, 3))] = ws.level; // (AppCtl +0xc10 + route)
+    app.treasureReroll = true; // MuCom_BitSet(0x40000000): the next area loaded draws its boxes again
 }
 
 void worldSelectChoose(App& app, int pos) { // state 1: a gate, or Back (-1)
@@ -12471,20 +12484,25 @@ int runSelfTest(App& app) {
     for (const auto& [m, c] : offFloor) std::printf(" %s x%d", m.c_str(), c);
     std::printf("\n");
     mapErrors += exitFailures;
-    { // a gold box (j001_d01's boxes 60..98, lid scripts 61..99 - unused in every release): Uty_ChkItem
-      // counts key 2 into var 0 - none, a message; with one, a Yes opens it and DelItem takes the key
-        int gotWithout = -1, gotWith = -1, keysLeft = -1, boxId = -1, boxMap = -1, item = -1;
-        for (int m = 0; m < cr::kNumMaps && boxId < 0; ++m) {
+    { // a gold box (j001_d01's boxes 60..98, lid scripts 61..99): at band 2 on the draw puts pool
+      // slots 9..14's items into them (randomSelect's gold step); Uty_ChkItem counts key 2 into var
+      // 0 - none, a message; with one, a Yes opens it and DelItem takes the key
+        int gotWithout = -1, gotWith = -1, keysLeft = -1, boxId = -1, boxMap = -1, item = -1, draws = 0;
+        for (int attempt = 0; attempt < 40 && boxId < 0; ++attempt)
+        for (int m = 0, first = 1; m < cr::kNumMaps && boxId < 0; ++m) {
             if (cr::areaForMap(m, 2) != 2) continue;
             const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[m]));
             if (at == app.maps.end()) continue;
-            app.game = cr::GameState();
+            if (first) { // a new draw at band 4 for the first pair, as the World Select would make
+                app.game = cr::GameState();
+                app.game.bands[0] = 4;
+                app.playerChar = 0;
+                app.treasureReroll = true;
+                first = 0, ++draws;
+            }
             showMap(app, int(at - app.maps.begin()), m, 2);
             app.pendingEntry = App::Entry::None;
             app.runner.stop();
-            // (no release shows them: TreasureBoxManager::setup clears their flags, 3180.., and picks
-            // only from 100..179 - shown here by hand)
-            for (int f = 3180; f < 3200; ++f) app.game.setFlag(f, true);
             for (const cr::FieldNpc& n : app.npcs)
                 if ((n.treasure & 3) && n.id >= 60 && n.id <= 98 && n.id % 2 == 0 && npcActive(app, n) && app.havePlayer) {
                     boxId = n.id, boxMap = m;
@@ -12511,8 +12529,8 @@ int runSelfTest(App& app) {
                 }
         }
         const bool ok = boxId >= 0 && gotWithout == 0 && gotWith >= 1 && keysLeft == 0;
-        std::printf("gold box %d (map %d): item %d - without a key %d, with one %d (keys left %d) %s\n", boxId, boxMap, item,
-                    gotWithout, gotWith, keysLeft, ok ? "ok" : "WRONG");
+        std::printf("gold box %d (map %d, draw %d at band 4): item %d - without a key %d, with one %d (keys left %d) %s\n", boxId,
+                    boxMap, draws, item, gotWithout, gotWith, keysLeft, ok ? "ok" : "WRONG");
         mapErrors += !ok;
     }
     // Stepped scripts: open a chest frame by frame, then walk into an exit
