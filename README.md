@@ -44,7 +44,8 @@ Linux); `CR_SAVE_DIR` moves the settings.
 
 A controller plays as the Vita does (its manual). The face buttons are by position, so on an Xbox
 pad ○ is B, × is A, △ is Y and □ is X. ○ confirms and × cancels, as in the Japanese release;
-Options, Game, "Swap ○ and ×" turns that round.
+Options, Game, "Swap ○ and ×" turns that round. Tested with a
+Steam Controller (through Steam Input).
 
 | Button | On the field | In menus and dialogue | In puzzle rooms |
 |---|---|---|---|
