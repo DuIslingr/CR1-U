@@ -461,6 +461,7 @@ struct App {
         bool turnOn = false;               // an action is playing
         cr::BattleTurn turn;
         int turnFrame = 0, hitFrame = 0;
+        int bounceAt = -1;                 // a reflected gene's turn: when it comes back (-1 not yet met)
         bool hitsShown = false;
         struct Popup { cr::Vec3 at; int amount = 0, type = 0, timer = 0; bool mp = false; };
         std::vector<Popup> popups;         // __dmg_set's five numbers
@@ -1575,9 +1576,11 @@ void resetTyping(App& app) {
     app.dialogueClosing = false;
 }
 
-void advanceDialogue(App& app) {
+// `tapped`: the reader's tap turned it (PrcMsg's 0x12 / its last page's wait); a page the window
+// clears or closes by itself (0x1a then 0x10 / 0x14) sets no flag
+void advanceDialogue(App& app, bool tapped = true) {
     if (app.dialogue.empty()) return;
-    app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
+    if (tapped) app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
     resetTyping(app);
     if (++app.dialoguePage < app.dialogue.size()) return;
     app.lastPage = app.dialogue.back();
@@ -1634,7 +1637,7 @@ void stepTyping(App& app) {
             app.dialogueHold = info->closeAfter;
             if (app.dialogueHold > 0) return;
         }
-        advanceDialogue(app);
+        advanceDialogue(app, false);
         return;
     }
     if (info && app.dialoguePause < int(info->pauses.size()) && info->pauses[size_t(app.dialoguePause)].at <= app.dialogueTyped) {
@@ -8770,6 +8773,8 @@ void cameraForTarget(App& app, int target, bool group) {
     }
 }
 
+void castCamera(App& app, int kind, int user, bool userPair);
+
 void cameraForTurn(App& app, const cr::BattleTurn& t) {
     App::Battle& b = app.battle;
     const int user = t.actors[0], target = t.hits.empty() ? -1 : t.hits[0].target;
@@ -8780,12 +8785,15 @@ void cameraForTurn(App& app, const cr::BattleTurn& t) {
         else setBattleCamera(app, b.rules.random(3) + enemyCameraSlot(app, user) * 4 + 0x148);
         return;
     }
-    if (t.kind == cr::kCmdGene || t.kind == cr::kCmdItem || t.kind == cr::kCmdAttack) {
-        const int first = t.kind == cr::kCmdItem ? 0x53 : 0x49;
-        if (user < 2) setBattleCamera(app, userPair ? first + 2 : first + user, userPair ? 0 : user);
-        else if (monsterSize(app, user) == 1) setBattleCamera(app, userPair ? first + 5 : user + first + 1, user);
-        else setBattleCamera(app, monsterSize(app, user) + first + 4, user);
-    }
+    if (t.kind == cr::kCmdGene || t.kind == cr::kCmdItem || t.kind == cr::kCmdAttack) castCamera(app, t.kind, user, userPair);
+}
+
+// The camera on a gene's or item's user (or the pair) as it casts
+void castCamera(App& app, int kind, int user, bool userPair) {
+    const int first = kind == cr::kCmdItem ? 0x53 : 0x49;
+    if (user < 2) setBattleCamera(app, userPair ? first + 2 : first + user, userPair ? 0 : user);
+    else if (monsterSize(app, user) == 1) setBattleCamera(app, userPair ? first + 5 : user + first + 1, user);
+    else setBattleCamera(app, monsterSize(app, user) + first + 4, user);
 }
 
 // ---- Battle effects (eff3d_*) ----
@@ -10033,6 +10041,7 @@ void startTurn(App& app) {
     b.turnFrame = 0;
     b.hitsShown = false;
     b.hitFrame = 20;
+    b.bounceAt = -1;
     if (t.kind == cr::kCmdEscape) {
         setBanner(app, sysText(app, t.escaped ? 57000 : 57001));
         b.hitFrame = 0; // btlact_escape: away - 30 frames (2.2.0; 1.0.1 10, no line to wait for)
@@ -10055,7 +10064,7 @@ void startTurn(App& app) {
         auto it = app.game.items.find(t.item);
         if (it != app.game.items.end() && --it->second <= 0) app.game.items.erase(it);
     }
-    const int target = t.hits.empty() ? -1 : t.hits[0].target;
+    const int target = !t.barriers.empty() ? t.barriers[0] : t.hits.empty() ? -1 : t.hits[0].target; // (reflected: at the barrier)
     const bool melee = a && a->motion == 1 && target >= 0 && (target < 2) != (t.actors[0] < 2);
     for (int k = 0; k < 2; ++k) {
         App::Battle::Actor* u = t.actors[k] >= 0 ? battleActor(app, t.actors[k]) : nullptr;
@@ -10138,9 +10147,6 @@ void showHits(App& app) {
         else if (h.type == cr::kHitGuard)
             playSlot(app, *a, btlui::kSlotEvade, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
     }
-    // btlact_gene / btlact_item's 0x1004: the barriers that sent it back light up
-    for (int t : b.turn.barriers) spawnEffect(app, effects::kBuff, t);
-    if (!b.turn.barriers.empty()) app.sound.play(0x78);
     // The calcs' effects (eff3d_set_btl in btlcalc_*)
     if (const cr::BattleActionDef* act = app.battleActions.get(b.turn.action)) {
         const int user = b.turn.actors[0];
@@ -10440,9 +10446,24 @@ void stepBattle(App& app) {
             stepStagedCameras(app);
             if (!b.hitsShown) stepStaged(app);
         }
+        if (!b.turn.barriers.empty() && b.bounceAt >= 0 && b.turnFrame == b.bounceAt) // 0x100e: back from the barrier
+            for (int k : b.turn.barriers) spawnEffect(app, effects::kCast, k);
         if (!b.hitsShown && b.turnFrame >= b.hitFrame) {
-            showHits(app);
-            if (b.stageAction) stagedHit(app);
+            if (!b.turn.barriers.empty() && b.bounceAt < 0) {
+                // btlact_gene / btlact_item 0x1004: the barriers light up, the users stop; 40 frames
+                // on (0x100e) the barrier's side sends it back, and it lands on them
+                for (int k : b.turn.barriers) spawnEffect(app, effects::kBuff, k);
+                app.sound.play(0x78);
+                for (int k : b.turn.actors)
+                    if (App::Battle::Actor* u = k >= 0 ? battleActor(app, k) : nullptr) playSlot(app, *u, btlui::kSlotIdle, btlui::kSlotIdle);
+                b.bounceAt = b.turnFrame + 40;
+                b.hitFrame = b.bounceAt + 30;
+                castCamera(app, b.turn.kind, b.turn.barriers[0], b.turn.barriers.size() > 1 && b.turn.barriers[0] < 2); // (the barrier's side)
+            } else {
+                if (!b.turn.barriers.empty()) castCamera(app, b.turn.kind, b.turn.actors[0], b.turn.actors[1] >= 0); // (back on the users)
+                showHits(app);
+                if (b.stageAction) stagedHit(app);
+            }
         }
         if (b.hitsShown) {
             bool busy = false;
@@ -15718,7 +15739,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     }
     if (app.captureBattle[0] > 0) { // --battle group stage: that battle, a second in
         cr::ensureStartingGenes(app.game);
-        if (app.captureBattleView == "genes" || app.captureBattleView == "genehit") { // a plate with known genes
+        if (app.captureBattleView == "genes" || app.captureBattleView == "genehit" || app.captureBattleView.rfind("reflect", 0) == 0) { // a plate with known genes
             app.game.items[481] = 1, app.game.items[108] = 1, app.game.items[94] = 1;
             app.game.party[0].genes[1] = 481;
         }
@@ -15773,7 +15794,26 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     std::printf("\n");
                 }
         }
-        if (v == "genes" || v == "genehit") battleChooseTop(app, 0), battleChooseCommand(app, 1);
+        // reflect@n: genehit against a barrier on every enemy, n frames into the gene's turn
+        const bool reflect = v.rfind("reflect", 0) == 0;
+        const int reflectAt = reflect && v.find('@') != std::string::npos ? SDL_atoi(v.c_str() + v.find('@') + 1) : 60;
+        if (reflect)
+            for (int i = 2; i < 5; ++i) b.rules.f[size_t(i)].status[cr::kStatusBarrier] = 5;
+        if (v == "genes" || v == "genehit" || reflect) battleChooseTop(app, 0), battleChooseCommand(app, 1);
+        if (reflect) {
+            for (size_t i = 0; i < b.picks.size(); ++i)
+                if (b.picks[i] == 94) b.pick = int(i);
+            battleChooseGene(app, b.picks[size_t(b.pick)]);
+            if (b.menu == App::Battle::Targets) battleChooseTarget(app, b.picks[0]);
+            if (b.menu == App::Battle::Commands) battleChooseCommand(app, 3);
+            for (int f = 0; f < 2000 && b.active; ++f) {
+                if (b.turnOn && b.turn.kind == cr::kCmdGene && b.turnFrame >= reflectAt) break;
+                stepBattle(app);
+            }
+            std::printf("battle view reflect: frame %d, reflected %d, back at %d, hits at %d (shown %d), escher hp %d/%d, enemy hp %d/%d\n",
+                        b.turnFrame, int(b.turn.reflected), b.bounceAt, b.hitFrame, int(b.hitsShown), b.rules.f[0].hp,
+                        b.rules.f[0].hpMax, b.rules.f[2].hp, b.rules.f[2].hpMax);
+        }
         if (v == "genehit") {
             for (size_t i = 0; i < b.picks.size(); ++i)
                 if (b.picks[i] == 94) b.pick = int(i);
