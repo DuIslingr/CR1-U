@@ -10090,6 +10090,9 @@ void showHits(App& app) {
         else if (h.type == cr::kHitGuard)
             playSlot(app, *a, btlui::kSlotEvade, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
     }
+    // btlact_gene / btlact_item's 0x1004: the barriers that sent it back light up
+    for (int t : b.turn.barriers) spawnEffect(app, effects::kBuff, t);
+    if (!b.turn.barriers.empty()) app.sound.play(0x78);
     // The calcs' effects (eff3d_set_btl in btlcalc_*)
     if (const cr::BattleActionDef* act = app.battleActions.get(b.turn.action)) {
         const int user = b.turn.actors[0];
@@ -11787,7 +11790,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 { cr::BattleRules rr; runAs(403, 2, rr); if (rr.f[2].mp != 300) std::printf("  mp: hp %d %d mp %d oz %d\n", rr.f[2].hp, rr.f[3].hp, rr.f[2].mp, rr.ozStolen), ++cbad; }
                 { cr::BattleRules rr; runAs(409, 2, rr); if (rr.ozStolen != 100 || rr.purse != 900) std::printf("  oz: hp %d %d mp %d oz %d\n", rr.f[2].hp, rr.f[3].hp, rr.f[2].mp, rr.ozStolen), ++cbad; }
                 { cr::BattleRules rr; runAs(109, 0, rr); cbad += !rr.doubleExp; }
-                { // a barrier stops the next hostile gene, then is gone
+                { // a barrier sends the next hostile gene back on its caster, then is gone
                     cr::BattleRules rr;
                     runAs(212, 2, rr);
                     const int plain = 5000 - rr.f[2].hp;
@@ -11804,11 +11807,12 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     cc[1].kind = cr::kCmdDefend;
                     rc.beginRound(cc, app.battleActions);
                     cr::BattleTurn tt;
-                    int hp2 = -1;
+                    int hp2 = -1, hp0 = -1;
+                    bool back = false;
                     while (rc.nextTurn(app.battleActions, tt))
-                        if (tt.actors[0] == 0) hp2 = rc.f[2].hp;
-                    if (plain <= 0 || hp2 != 5000 || rc.f[2].status[cr::kStatusBarrier] != 0)
-                        std::printf("  barrier: plain %d, with %d, left %d\n", plain, hp2, rc.f[2].status[cr::kStatusBarrier]), ++cbad;
+                        if (tt.actors[0] == 0) hp2 = rc.f[2].hp, hp0 = rc.f[0].hp, back = tt.reflected;
+                    if (plain <= 0 || hp2 != 5000 || hp0 >= 5000 || !back || rc.f[2].status[cr::kStatusBarrier] != 0)
+                        std::printf("  barrier: plain %d, with %d, caster %d, left %d\n", plain, hp2, hp0, rc.f[2].status[cr::kStatusBarrier]), ++cbad;
                 }
                 { // revive: a fallen member back with half its HP
                     cr::BattleRules rr;

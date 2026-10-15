@@ -191,6 +191,8 @@ struct BattleTurn {
     int actors[2] = {-1, -1};
     std::vector<BattleHit> hits;
     bool escaped = false;        // kCmdEscape: it worked
+    bool reflected = false;      // a barrier sent the gene / item back on its users
+    std::vector<int> barriers;   // ... whose barriers those were
     bool counter = false;        // skill 154's answer to a hit
     int message = 0;             // a system message to show for it (57xxx), 0 none
     int messageValue = 0;        // its number (Oz stolen) or the element / kind it names
@@ -323,7 +325,7 @@ private:
     bool escaped_ = false;
     std::vector<int> known_;     // abilities, skills and plates the bag held at the start
 
-    void fallRewards(int enemy, const int actors[2]);
+    void fallRewards(int enemy, const int actors[2], bool itemsAndGenes = true);
     int zoku(int amount, const BattleActionDef& a, int user, int target, bool magic) const;
     bool holdsBreak(int i) const { return i < 2 ? breakGauge > 0 : breakGauge < 0; }
     // btlque_make_que's que +0xa4 / +0xa5: the action fended off by a target's skill (131 hits,
