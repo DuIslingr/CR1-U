@@ -128,6 +128,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
     static const Guest kGuest[] = {{370, 0, 4, 1}, {372, 1, 6, 2}, {373, 2, 6, 2}};
     for (const Guest& g : kGuest)
         if (g.group == group && g.route == route) {
+            enemyLevelFrom = leaderLevel(); // (btl_prty_init: the enemies' levels come before the guest)
             Fighter& x = f[1];
             x = Fighter();
             x.present = x.guest = true;
@@ -148,6 +149,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
 
 int BattleRules::leaderLevel() const {
     // btl_enemy_init_lv: the pair's average when both are the route's own, else the leader's
+    if (enemyLevelFrom >= 0) return enemyLevelFrom;
     if (f[0].present && f[1].present && f[1].character == (f[0].character | 1) && !(f[0].character & 1))
         return (f[0].level + f[1].level) / 2;
     return f[0].level;

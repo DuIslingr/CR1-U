@@ -212,6 +212,7 @@ public:
     bool escapeBlocked = false;  // G+0x2c0 bit 0 (script battles)
     bool allyAuto = false;       // +0xa4f: member 1 is a guest who acts by itself (btlord_enemy_rand)
     int allyScript = 0;          // its rotation: 1 (group 370), 2 (groups 372 / 373)
+    int enemyLevelFrom = -1;     // btl_enemy_init_lv's level, when taken before a guest joined
     int allyCounter = 0;         // +0x17c
     int forceAction = 0;         // tests (--battle-view stage<n>): enemy 2 always chooses this action
     int expGained = 0, ozGained = 0;
