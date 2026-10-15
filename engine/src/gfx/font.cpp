@@ -95,6 +95,7 @@ bool Font::rasterise(const std::vector<std::string>& lines, float em, float line
         int prev = 0;
         for (size_t i = 0; i < lines[l].size();) {
             const uint32_t c = nextUtf8(lines[l], i);
+            if (c < 0x20) continue; // (a message's marks, such as the centred line's \x01: not drawn)
             int g = stbtt_FindGlyphIndex(&info, int(c));
             if (!g && c > 0x20 && c != 0x3000) g = fallback;
             int adv = 0, lsb = 0;
