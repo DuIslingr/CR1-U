@@ -1700,6 +1700,8 @@ void showMessages(App& app, const std::vector<int>& ids) {
             for (const auto& pz : info.pauses)
                 if (pz.page == int(k)) pi.pauses.push_back(pz);
             if (k + 1 < pages.size()) pi.closeAfter = -1;
+            for (const auto& t : info.turns) // (a page the window clears by itself after its pause turns so)
+                if (t.page == int(k) && k + 1 < pages.size()) pi.closeAfter = t.frames;
             app.dialogueInfo.push_back(pi);
         }
         app.dialogueVoices.resize(app.dialogue.size() - pages.size());
@@ -14655,7 +14657,7 @@ int runSelfTest(App& app) {
         tapDialogue(app);
         const bool turned = app.dialogue.empty();
         problems += !rate || !whole || !turned;
-        int frames = 0, taps = 0, pauses = 0, pauseFrames = 0, total = 0, closeAfter = -2;
+        int frames = 0, taps = 0, pauses = 0, pauseFrames = 0, total = 0, closeAfter = -2, turnsSeen = 0;
         bool closed = false;
         if (app.events.load(app.dataDir, 18)) {
             showMessages(app, {5203});
@@ -14665,17 +14667,21 @@ int runSelfTest(App& app) {
             for (const auto& pg : app.dialogue) total += pageChars(pg);
             closeAfter = app.dialogueInfo.empty() ? -2 : app.dialogueInfo.back().closeAfter;
             const size_t pages = app.dialogue.size();
+            for (size_t k = 0; k + 1 < app.dialogueInfo.size() && k + 1 < pages; ++k) // pages the window clears by itself
+                if (app.dialogueInfo[k].closeAfter >= 0) ++turnsSeen, closeAfter += app.dialogueInfo[k].closeAfter;
             for (; frames < 4000 && !app.dialogue.empty(); ++frames) {
                 stepTyping(app);
-                if (!app.dialogue.empty() && pageTyped(app) && app.dialoguePage + 1 < app.dialogue.size()) {
+                const cr::MessageInfo* pinfo = pageInfo(app);
+                if (!app.dialogue.empty() && pageTyped(app) && app.dialoguePage + 1 < app.dialogue.size() &&
+                    !(pinfo && pinfo->closeAfter >= 0)) {
                     tapDialogue(app); // the reader turns each page once it's out
                     ++taps;
                 }
             }
-            closed = app.dialogue.empty() && size_t(taps) + 1 == pages;
+            closed = app.dialogue.empty() && size_t(taps + turnsSeen) + 1 == pages;
         }
         const int least = total + pauseFrames + std::max(0, closeAfter);
-        problems += pauses == 0 || closeAfter <= 0 || !closed || frames < least || frames > least + 2 * (taps + 2);
+        problems += pauses + turnsSeen == 0 || closeAfter <= 0 || !closed || frames < least || frames > least + 2 * (taps + turnsSeen + 2);
         std::printf("message typing: a character a frame %s, a tap brings it out %s, the next turns it %s; 5203: %d "
                     "characters, %d pauses (%d frames), then closes by itself %d frames after the last %s in %d frames; %d problems\n",
                     rate ? "yes" : "NO", whole ? "yes" : "NO", turned ? "yes" : "NO", total, pauses, pauseFrames, closeAfter,

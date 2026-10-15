@@ -227,7 +227,7 @@ namespace {
 
 // Decodes the message at `msg` (UTF-16LE) into pages of UTF-8 lines. Control codes (PrcMsg's
 // jump table): 1/2/3/0x15/0x16/0x1a/0x1b/0x1c/0x1e take one parameter (2 = insert a variable's
-// value, 3 = insert a string - the menus' item name is string 9 -, 0x1e = voice clip); 0x10/0x11 break the line, 0x12 waits for a tap (new page),
+// value, 3 = insert a string - the menus' item name is string 9 -, 0x1e = voice clip); 0x11 breaks the line, 0x10 clears the window, 0x12 waits for a tap (new page),
 // 0/0x13/0x14 end; other codes below 0x20 only set display state.
 bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::function<int(int)>& var,
                    std::vector<std::vector<std::string>>& pages, MessageInfo* info,
@@ -292,8 +292,23 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
             q += 2;
             continue;
         }
+        if (u == 0x16) { // the text's colour (PrcMsg: 0 white, 1 black; other values left alone)
+            uint16_t v = 0;
+            rd(data, q + 2, v);
+            if (info && v <= 1) info->colour = v;
+            q += 2;
+            continue;
+        }
         if (u == 0x16 || u == 0x1a || u == 0x1b || u == 0x1c) { q += 2; continue; }
-        if (u == 0x10 || u == 0x11) { lines.emplace_back(); continue; }
+        if (u == 0x10) { // PrcMsg: the window cleared (Msg_allclar), typing again from its first line -
+            // after a tap (0x12) or a pause (0x1a) that's the next page; at a page's start, nothing
+            if (lines.size() > 1 || !lines[0].empty()) {
+                if (info && lastPause >= 0) info->turns.push_back({int(pages.size()), lastPause});
+                newPage();
+            }
+            continue;
+        }
+        if (u == 0x11) { lines.emplace_back(); continue; } // the next line
         if (u == 0x17) { // PrcMsg: this line's alignment flips (+0x10e; CmdFont centres it at tex2d 240) -
             // marked by a leading \x01 for the message window
             if (lines.back().empty() || lines.back()[0] != '\x01') lines.back().insert(0, "\x01");

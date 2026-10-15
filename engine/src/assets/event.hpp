@@ -87,6 +87,10 @@ struct MessageInfo {
     struct Pause { int page; int at; int frames; };
     std::vector<Pause> pauses;
     int closeAfter = -1;
+    // 0x1a n then 0x10: the window clears by itself n frames after that page is out - the page turns
+    struct Turn { int page; int frames; };
+    std::vector<Turn> turns;
+    int colour = -1;   // 0x16 n: the text's colour from there on (PrcMsg +0x884c0: 0 white, 1 black), -1 as the window has it
 };
 
 constexpr int kLanguages = 8; // text sections: ja, en, fr, de, es, zh-Hans, zh-Hant, ko (1.0.1: ja, en)
