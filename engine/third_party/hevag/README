@@ -1,0 +1,4 @@
+The HE-VAG prediction filter table (hevag_coefs.h) from vgmstream's src/coding/psv_decoder.c
+(https://github.com/vgmstream/vgmstream, master as of 2026-10-14, sha256 of that file
+4fd691321e94f6b7b9b800f882c04dcbe19c27594590ddb48aeabfd247f1e8c5), with vgmstream's licence
+(COPYING). The decoder that uses it is the port's own (engine/src/audio/scream.cpp).

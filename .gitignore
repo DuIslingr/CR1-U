@@ -1,0 +1,29 @@
+# Allowlist: only the port's own source, its docs and tools, and the third-party code it may
+# redistribute. Never commit game data, the game's binaries or anything generated from them
+# (re/, extracted/, eboot.*, decompilations), builds, or the NVIDIA DLSS SDK.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/THIRD_PARTY.md
+!/docs/
+!/tools/
+!/engine/
+/engine/*
+!/engine/CMakeLists.txt
+!/engine/src/
+!/engine/tools/
+!/engine/third_party/
+/engine/third_party/dlss/
+__pycache__/
+*.pyc
+*.elf
+*.armv7
+*.ipa
+*.psarc
+*.mct
+*.gxt
+*.at9
+*.bnk
+*.crraw
+*.cralias

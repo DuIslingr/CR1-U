@@ -1,0 +1,2 @@
+AMD FidelityFX SDK v1.1.4 (MIT, see LICENSE.txt): the FSR 3.1 upscaler GPU passes, compiled by
+CMake with glslc; the host side is reimplemented in src/gfx/vk_fsr3.cpp.
