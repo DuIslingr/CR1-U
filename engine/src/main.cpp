@@ -12374,6 +12374,50 @@ int runSelfTest(App& app) {
     for (const auto& [m, c] : offFloor) std::printf(" %s x%d", m.c_str(), c);
     std::printf("\n");
     mapErrors += exitFailures;
+    { // a gold box (j001_d01's boxes 60..98, lid scripts 61..99 - unused in every release): Uty_ChkItem
+      // counts key 2 into var 0 - none, a message; with one, a Yes opens it and DelItem takes the key
+        int gotWithout = -1, gotWith = -1, keysLeft = -1, boxId = -1, boxMap = -1, item = -1;
+        for (int m = 0; m < cr::kNumMaps && boxId < 0; ++m) {
+            if (cr::areaForMap(m, 2) != 2) continue;
+            const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[m]));
+            if (at == app.maps.end()) continue;
+            app.game = cr::GameState();
+            showMap(app, int(at - app.maps.begin()), m, 2);
+            app.pendingEntry = App::Entry::None;
+            app.runner.stop();
+            // (no release shows them: TreasureBoxManager::setup clears their flags, 3180.., and picks
+            // only from 100..179 - shown here by hand)
+            for (int f = 3180; f < 3200; ++f) app.game.setFlag(f, true);
+            for (const cr::FieldNpc& n : app.npcs)
+                if ((n.treasure & 3) && n.id >= 60 && n.id <= 98 && n.id % 2 == 0 && npcActive(app, n) && app.havePlayer) {
+                    boxId = n.id, boxMap = m;
+                    const cr::FieldNpc b = n;
+                    for (int withKey = 0; withKey < 2; ++withKey) {
+                        if (item > 0) app.game.items.erase(item);
+                        if (withKey) app.game.items[2] = 1;
+                        app.walker.pos = {b.pos[0] + b.box[0] / 2 + app.walker.radius, b.pos[1], b.pos[2]};
+                        app.runner.stop();
+                        interact(app);
+                        item = app.game.vars[10];
+                        for (int f = 0; f < 900 && (app.runner.running() || app.itemWindowOpen); ++f) {
+                            stepEvents(app);
+                            if (app.choiceFlag >= 0) answerChoice(app, true);
+                            if (app.itemWindowOpen) app.tapPending = true;
+                            if (!app.dialogue.empty()) app.dialogue.clear(), app.tapPending = true;
+                        }
+                        (withKey ? gotWith : gotWithout) = item > 0 && app.game.items.count(item) ? app.game.items[item] : 0;
+                    }
+                    keysLeft = app.game.items.count(2) ? app.game.items[2] : 0;
+                    app.runner.stop();
+                    app.dialogue.clear();
+                    break;
+                }
+        }
+        const bool ok = boxId >= 0 && gotWithout == 0 && gotWith >= 1 && keysLeft == 0;
+        std::printf("gold box %d (map %d): item %d - without a key %d, with one %d (keys left %d) %s\n", boxId, boxMap, item,
+                    gotWithout, gotWith, keysLeft, ok ? "ok" : "WRONG");
+        mapErrors += !ok;
+    }
     // Stepped scripts: open a chest frame by frame, then walk into an exit
     {
         app.game = cr::GameState(); // fresh: the examine pass above opened every box

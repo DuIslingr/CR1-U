@@ -353,7 +353,12 @@ bool EventRunner::step(EventHost* host) {
             else if (id == 2005 && host) host->showItemWindow(vm.var(9));                   // GetItem window
             else if (id == 2011) { ++state.items[a0]; res.itemsGained.push_back(a0); }       // AddItem
             else if (id == 2012) { if (state.items[a0] > 0) --state.items[a0]; }            // DelItem
-            else if (id == 2013) vm.result = state.items.count(a0) && state.items[a0] > 0;  // ChkItem
+            else if (id == 2013) { // Uty_ChkItem: var (the first push) = how many of the item (the last) - a gold box's key
+                const auto it = state.items.find(vm.arg(1));
+                const int n = it == state.items.end() ? 0 : std::max(0, it->second);
+                state.vars[a0] = n;
+                vm.result = n > 0;
+            }
             else if (id == 2032) state.openedBoxes.push_back(currentArea * 1000 + a0);      // SetOpenedTresureBox
             else if (id == 2022 && host) host->loadParty(vm.var(0), vm.var(1) == 3);      // LoadPrty: pair, clear data
             // ScnEffect_Init: GetXmpStkData 0 (the last pushed: on / off) and 1 (the effect)
