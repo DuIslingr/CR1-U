@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "game/event_vm.hpp"
 
 #include <cstdio>
@@ -244,6 +245,7 @@ bool EventRunner::start(const EventFile& file, int eventNo, GameState& state, in
     result_ = EventResult();
     const uint32_t entry = file.scriptEntry(eventNo);
     if (!entry) return false;
+    if (std::getenv("CR_EVENT_STARTS")) std::printf("     start: area %d map %d script %d\n", currentArea, currentMap, eventNo); // (debugging)
     vm_ = std::make_unique<Vm>(file, state, eventNo, currentArea, currentMap);
     for (const FieldNpc& n : file.npcs(currentMap))
         if (n.id == eventNo) vm_->self = n;
@@ -360,7 +362,8 @@ bool EventRunner::step(EventHost* host) {
                 vm.result = n > 0;
             }
             else if (id == 2032) state.openedBoxes.push_back(currentArea * 1000 + a0);      // SetOpenedTresureBox
-            else if (id == 2022 && host) host->loadParty(vm.var(0), vm.var(1) == 3);      // LoadPrty: pair, clear data
+            else if (id == 2022 && host && (vm.var(1) == 2 || vm.var(1) == 3)) // LoadPrty: a new game's pair (var 1:
+                host->loadParty(vm.var(0), vm.var(1) == 3);                       // 3 with the clear data) - else nothing
             // ScnEffect_Init: GetXmpStkData 0 (the last pushed: on / off) and 1 (the effect)
             else if (id == 2009 && host) host->sceneEffect(vm.arg(1) != 0, vm.arg(0));
             else if (id == 2014) { state.vars[0] = 0; if (host) host->warpCrystalCamera(a0); } // Uty_WarpCrystalCamera_Init

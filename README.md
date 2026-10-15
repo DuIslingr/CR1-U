@@ -376,10 +376,17 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       `sndeff.bnk` (a SCREAM bank of HE-VAG, decoded by the port; the 128 HE-VAG filters from
       vgmstream, `engine/third_party/hevag`, ISC). `crtool vitasfx <folder> [iOS data]` checks the
       253 effects against `sndeff.bin`'s
-- [x] `--explore n`: plays a new game by itself (talks to everyone, walks into every trigger not yet
-      tried with the current story flags, answers yes, picks the first gate) and reports what the
-      story asked for that isn't implemented. Today it reaches the 1st Gate (12 rooms, its puzzle
-      room and first scene); shops are the only unimplemented menu it meets
+- [x] `--explore n`: plays the game by itself through to the end - from the title as a player
+      starts (Character Select, the pair's save screen), talking to everyone and walking into every
+      trigger not yet tried with the current story flags, answering yes, winning the battles the
+      story starts, saving where the game offers, taking each gate in turn and walking back through
+      the doors it knows when stuck; each pair's story to its second ending (flags 31..38), then the
+      next pair from the title, and with all four done the title's last battle to the final ending
+      (flag 39): 3245 actions, 142 rooms, 66 battles (the puzzle rooms taken as solved - it doesn't
+      play them). Its saves go to a new folder under the profile (`CR_SAVE_DIR`'s in tests);
+      `CR_EXPLORE_SAVES=<folder>` goes on from another run's. Debugging: `CR_EXPLORE_FLAGS`,
+      `CR_EXPLORE_CANDS=<map>`, `CR_EXPLORE_TRACE=<step>`, `CR_EVENT_STARTS`; captures take
+      `CR_CAPTURE_MAP=<n>` (maps sharing a file) and `CR_CAPTURE_NPCS`
 - [x] Random encounters as the original counts them (walked distance, rising chance, groups by
       weight and party level, first strike / ambush) and script battles (`Battle`): the battle
       stage, the pair and the enemy group at their formation's places, idling, through battle

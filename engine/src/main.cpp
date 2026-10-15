@@ -3426,7 +3426,21 @@ void saveScreenYes(App& app) {
     } else if (ss.pending == 3) { // New: the boot script carries on with var 1 = the pair
         menuSound(app, se::kLoaded); // SaveLoadPrc plays it for any Yes in load mode
         ss.open = false;
-        if (ss.kind == 1) app.chosenPair = 1; // Set_Prtyno(0): the last battle is the first pair's
+        if (ss.kind == 1) { // Set_Prtyno(0): the last battle is the first pair's - on the one save the game keeps
+            app.chosenPair = 1;  // for all four (here a slot each: their flags together, each pair's own two)
+            cr::GameState g = app.game;
+            for (int pair = 1; pair <= 4; ++pair) {
+                cr::SaveData d;
+                if (!cr::readSave(slotPath(app, pair), d)) continue;
+                if (pair == 1) g.items = d.game.items, g.oz = d.game.oz, g.openedBoxes = d.game.openedBoxes;
+                for (size_t i = 0; i < g.flags.size() && i < d.game.flags.size(); ++i) g.flags[i] |= d.game.flags[i];
+                for (int k = 0; k < 2; ++k) g.party[size_t(2 * (pair - 1) + k)] = d.game.party[size_t(2 * (pair - 1) + k)];
+                g.walkExp[size_t(pair - 1)] = d.game.walkExp[size_t(pair - 1)];
+                g.noEncounters[size_t(pair - 1)] = d.game.noEncounters[size_t(pair - 1)];
+            }
+            for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own
+            app.game = std::move(g);
+        }
         if (app.booting && app.runner.running()) {
             app.game.vars[1] = ss.kind; // SaveLoadClr: SetVar(1, the choice) - the boot script branches on it
         } else {
@@ -14850,7 +14864,20 @@ int runExplore(App& app, int maxActions) {
     app.persist = false;
     app.typeOn = false;
     setMode(app, Mode::Maps);
-    startNewGame(app);
+    // Its own saves (the pairs' stories carry over through them, as a player's do): a new folder
+    // under the profile (CR_SAVE_DIR's in tests), never the player's own
+    app.saveDirOverride = userDir() + "explore-" + std::to_string(SDL_GetTicksNS()) + "/";
+    if (const char* sd = SDL_getenv("CR_EXPLORE_SAVES"); sd && *sd) // (go on from another run's saves)
+        app.saveDirOverride = std::string(sd) + (sd[SDL_strlen(sd) - 1] == '/' ? "" : "/");
+    SDL_CreateDirectory(app.saveDirOverride.c_str());
+    auto stateKey = [&] {
+        uint64_t h = 1469598103934665603ull;
+        for (uint32_t w : app.game.flags) h = (h ^ w) * 1099511628211ull;
+        return h;
+    };
+    std::map<uint64_t, std::set<int>> gatesTried; // story state -> World Select positions chosen in it
+    int worldCount = 0;
+    uint64_t gateKey = 0;      // the state the last World Select opened in
     int totalFrames = 0, pagesRead = 0;
     bool worldAsked = false;                  // the last action opened the World Select
     std::set<std::pair<int, int>> deadExits;           // ways that didn't lead where the dry run said
@@ -14876,8 +14903,16 @@ int runExplore(App& app, int maxActions) {
             stepEvents(app);
             if (!app.dialogue.empty()) { pagesRead += int(app.dialogue.size()); app.dialogue.clear(); }
             if (app.choiceFlag >= 0) answerChoice(app, true);
-            if (app.worldChoiceOpen) { // the newest gate
-                answerWorldChoice(app, int(app.worldSelect.worlds.size()) - 1);
+            if (app.worldChoiceOpen) { // the newest gate not yet taken in this state (then the newest)
+                const int n = int(app.worldSelect.worlds.size());
+                gateKey = stateKey();
+                std::set<int>& done = gatesTried[gateKey];
+                int pos = n - 1;
+                while (pos >= 0 && done.count(pos)) --pos;
+                if (pos < 0) pos = n - 1;
+                done.insert(pos);
+                worldCount = n;
+                answerWorldChoice(app, pos);
                 worldAsked = true;
             }
             if (app.lastBattle.open) { // the last battle's rounds: the last pair listed, the Camp left, Yes
@@ -14894,7 +14929,10 @@ int runExplore(App& app, int maxActions) {
                 stepStaffRoll(app);
                 if (app.staffRoll.state >= 7) staffRollTap(app);
             }
-            if (app.saveScreen.open && !app.booting) closeSaveScreen(app);
+            if (app.saveScreen.open && !app.booting) { // "Save data?": yes, to the pair's slot
+                if (!app.saveScreen.load && app.saveScreen.phase == 1 && app.saveScreen.pending == 1) saveScreenYes(app);
+                closeSaveScreen(app);
+            }
             if (app.itemWindowOpen) app.game.setFlag(0, true);
             app.tapPending = true;
         }
@@ -14906,17 +14944,62 @@ int runExplore(App& app, int maxActions) {
         for (uint32_t w : app.game.flags) c += __builtin_popcount(w);
         return c;
     };
-    auto stateKey = [&] {
-        uint64_t h = 1469598103934665603ull;
-        for (uint32_t w : app.game.flags) h = (h ^ w) * 1099511628211ull;
-        return h;
+    // Through the title as a player goes: Character Select's pair, its save screen's New (with the
+    // clear data when it has some) - or, every pair's story done, the first pair's last battle
+    auto fromTitle = [&](int pair, bool lastBattle) {
+        bootTitle(app);
+        for (int f = 0; f < 3000 && !app.titleOpen; ++f) stepEvents(app);
+        titleChoose(app, 0);
+        for (int f = 0; f < 300 && !app.charSelectOpen; ++f) stepEvents(app);
+        if (!app.charSelectOpen) return false;
+        if ((pair >= 3) != (app.charSelectPage == 1)) charSelectTurn(app);
+        app.charSelectCursor = (pair - 1) & 1;
+        charSelectKey(app, SDLK_RETURN);
+        for (int f = 0; f < 300 && !app.saveScreen.open; ++f) stepEvents(app);
+        if (!app.saveScreen.open) return false;
+        const std::vector<int> plates = savePlates(app);
+        const auto it = std::find(plates.begin(), plates.end(), lastBattle ? 0 : 2);
+        if (it == plates.end()) return false;
+        saveScreenChoose(app, int(it - plates.begin()));
+        saveScreenYes(app);
+        std::printf("     title: pair %d, %s\n", pair, lastBattle ? "the last battle" : app.saveScreen.kind == 3 ? "new game with the clear data" : "new game");
+        return true;
     };
+    // the first pair whose story isn't done (the saves' flags), else the last battle
+    auto nextPair = [&] {
+        const cr::GameState all = allPairsFlags(app);
+        for (int q = 0; q < 4; ++q)
+            if (!all.flag(32 + 2 * q)) return q + 1;
+        return 0;
+    };
+    const int first = nextPair();
+    bool finale = first == 0; // the last battle begun from the title
+    if (!fromTitle(first ? first : 1, finale)) { std::printf("explore: the title didn't start a new game\n"); return 1; }
     settle(20000);
     std::set<std::tuple<int, int, uint64_t>> tried;
     std::set<int> mapsSeen{app.mapNumber};
     std::map<int, int> visits{{app.mapNumber, 1}}; // (rooms seen: the less visited first)
     int step = 0, stuckReason = 0;
     for (; step < maxActions; ++step) {
+        { // a pair's story done (its second ending, 32 + 2 pair): saved, and the next pair's begins
+            const int p = std::clamp(app.playerChar / 2, 0, 3);
+            if (app.game.flag(39)) { stuckReason = 3; break; } // the last battle's ending: the end
+            if (!finale && app.game.flag(32 + 2 * p) && !app.runner.running()) {
+                cr::writeSave(slotPath(app, p + 1), captureSave(app));
+                const cr::GameState all = allPairsFlags(app);
+                const int next = nextPair();
+                std::printf("     pair %d's story done (flags 31..38:%s%s%s%s%s%s%s%s)\n", p + 1,
+                            all.flag(31) ? " 31" : "", all.flag(32) ? " 32" : "", all.flag(33) ? " 33" : "", all.flag(34) ? " 34" : "",
+                            all.flag(35) ? " 35" : "", all.flag(36) ? " 36" : "", all.flag(37) ? " 37" : "", all.flag(38) ? " 38" : "");
+                finale = next == 0;
+                if (!fromTitle(next ? next : 1, finale)) { stuckReason = 4; break; }
+                settle(20000);
+                tried.clear(), triedEver.clear(), escaped.clear(), roomExits.clear(), roomLeft.clear(), deadExits.clear();
+                worldDoors.clear(), gatesTried.clear();
+                mapsSeen.insert(app.mapNumber);
+                continue;
+            }
+        }
         // candidates: people / objects (kind bit 3), then touch boxes that don't warp, then exits
         struct Cand { int id; bool examine; int rank; };
         std::vector<Cand> cands;
@@ -14925,10 +15008,12 @@ int runExplore(App& app, int maxActions) {
         auto rankOf = [&](int id, int base) {
             cr::GameState trial = app.game;
             const cr::EventResult r = cr::runEvent(app.events, id, trial, app.area, app.mapNumber);
-            lastTarget = r.warp.valid && (r.warp.area < 0 || r.warp.area == app.area) ? r.warp.map : -1;
+            // (the puzzle rooms - area 1, j001_p01 - are the dungeon's own: neither way is "away")
+            const bool local = r.warp.area < 0 || r.warp.area == app.area || r.warp.area == 1 || app.area == 1;
+            lastTarget = r.warp.valid && local ? r.warp.map : -1;
             if (!r.warp.valid) return base;
             if (!mapsSeen.count(r.warp.map)) return 2;
-            const bool away = r.warp.area >= 0 && r.warp.area != app.area; // (another area: the Ark - not held back by its many visits)
+            const bool away = !local; // (another area: the Ark - not held back by its many visits)
             return away ? 25 : 5 + std::min(visits[r.warp.map], 50); // (away: once the rooms about are seen ~20 times, or when stuck)
         };
         for (size_t i = 0; i < app.npcs.size(); ++i) {
@@ -14995,7 +15080,7 @@ int runExplore(App& app, int maxActions) {
                 const cr::EventResult r = cr::runEvent(app.events, c.examine && (findNpc(app, c.id) && (findNpc(app, c.id)->treasure & 3))
                                                                       ? c.id + 1 : c.id, trial, app.area, app.mapNumber);
                 if (!r.warp.valid || worldDoors.count({app.mapNumber, c.id})) continue;
-                if (r.warp.area >= 0 && r.warp.area != app.area) { pick = &c; break; }
+                if (r.warp.area >= 0 && r.warp.area != app.area && r.warp.area != 1 && app.area != 1) { pick = &c; break; }
                 if (!anyExit) anyExit = &c;
             }
             if (!pick) pick = anyExit;
@@ -15040,10 +15125,12 @@ int runExplore(App& app, int maxActions) {
             started = false;
             const float dx = n->box[0] / 2 + app.walker.radius, dz = n->box[2] / 2 + app.walker.radius;
             const float side[4][3] = {{dx, 0, 3.14159265f * 1.5f}, {-dx, 0, 3.14159265f * 0.5f}, {0, dz, 3.14159265f}, {0, -dz, 0}};
-            for (int k = 0; k < 4 && !started; ++k) {
-                app.walker.pos = {n->pos[0] + side[k][0], n->pos[1], n->pos[2] + side[k][1]};
-                if (k) app.walker.heading = side[k][2];
-                started = interact(app);
+            // (only where it's the one in reach: two people side by side would answer for each other)
+            for (int k = 0; k < 5 && !started; ++k) {
+                app.walker.pos = k < 4 ? cr::Vec3{n->pos[0] + side[k][0], n->pos[1], n->pos[2] + side[k][1]}
+                                       : cr::Vec3{n->pos[0], n->pos[1], n->pos[2]};
+                if (k && k < 4) app.walker.heading = side[k][2];
+                if (interactTarget(app) == n) started = interact(app);
             }
         } else {
             app.walker.pos = {n->boxCenterX(), n->pos[1], n->boxCenterZ()};
@@ -15053,13 +15140,19 @@ int runExplore(App& app, int maxActions) {
         }
         const int frames = settle(20000);
         cr::setEventTrace(nullptr);
-        if (!started) continue;
+        if (!started) {
+            if (pick->examine) std::printf("     %d on map %d: out of reach\n", pick->id, app.mapNumber);
+            continue;
+        }
         if (app.mapNumber != fromMap) ++visits[app.mapNumber];
         mapsSeen.insert(app.mapNumber);
         std::string extra;
         for (size_t u = unsupportedBefore; u < app.unsupported.size(); ++u) extra += ", " + app.unsupported[u];
         if (app.runner.running()) extra += ", STILL RUNNING (" + app.runner.where() + ")";
-        if (worldAsked) worldDoors.insert({pickMap, pickId});
+        if (worldAsked) { // a terminal: tried last, and again while it has gates not taken in this state
+            worldDoors.insert({pickMap, pickId});
+            if (int(gatesTried[gateKey].size()) < worldCount) tried.erase({pickMap, hopKey, key});
+        }
         if (hopping && app.mapNumber == pickMap) roomExits[pickMap].erase(hopKey), deadExits.insert({pickMap, hopKey}); // (it didn't lead there: forgotten)
         hopping = false;
         std::printf("%4d map %3d %s %4d: %+d flags, %d pages, %d frames%s%s\n", step, fromMap,
@@ -15077,7 +15170,11 @@ int runExplore(App& app, int maxActions) {
     std::printf("explore: area %d, puzzle stage %d\n", app.area, app.puzzle.stage);
     std::printf("explore: %d actions, %d frames, %d pages, %zu maps seen, %d flags set, ends on map %d (%s)\n", step,
                 totalFrames, pagesRead, mapsSeen.size(), flagCount(), app.mapNumber,
-                stuckReason == 1 ? "nothing new to try" : stuckReason == 2 ? "a script never finished" : "action limit");
+                stuckReason == 1   ? "nothing new to try"
+                : stuckReason == 2 ? "a script never finished"
+                : stuckReason == 3 ? "THE END: the last battle's ending (flag 39)"
+                : stuckReason == 4 ? "the title didn't start the next pair"
+                                   : "action limit");
     std::printf("explore: flags set:");
     for (int fl = 0; fl < int(app.game.flags.size()) * 32; ++fl)
         if (app.game.flag(fl)) std::printf(" %d", fl);
@@ -15216,7 +15313,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     else if (app.newGame) startNewGame(app);
     else {
         for (int f : app.captureFlags) app.game.setFlag(f, true);
-        const std::vector<int> numbers = cr::mapNumbersFor(mapName);
+        std::vector<int> numbers = cr::mapNumbersFor(mapName);
+        if (const char* cm = SDL_getenv("CR_CAPTURE_MAP")) numbers.insert(numbers.begin(), SDL_atoi(cm)); // (maps sharing a file)
         if (app.captureArea >= 0 && !numbers.empty()) showMap(app, idx, numbers[0], app.captureArea);
         else showMap(app, idx);
     }
@@ -15329,6 +15427,12 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     app.background.width, app.background.height, app.stageCams.size(),
                     scrollingField(app) ? "a scrolling painting" : paintedField(app) ? "a painting shown whole" : "3D",
                     app.scroll.offX, app.scroll.offY, app.cam.free ? ", camera free" : "");
+        if (SDL_getenv("CR_CAPTURE_NPCS")) // (debugging) the room's NPCs as the scripts left them
+            for (size_t i = 0; i < app.npcs.size(); ++i) {
+                const cr::FieldNpc& n = app.npcs[i];
+                std::printf("npc %d kind %#x at (%.1f %.1f %.1f) active %d visible %d\n", n.id, n.kind, n.pos[0], n.pos[1], n.pos[2],
+                            int(npcActive(app, n)), int(npcVisible(app, i)));
+            }
         if (SDL_getenv("CR_CAPTURE_TRACE")) {
             const cr::StageCamera& sc = app.stageCam;
             std::printf("camera: stage %s fov %.1f view %dx%d; script %s eye (%.1f %.1f %.1f) target (%.1f %.1f %.1f)\n",
