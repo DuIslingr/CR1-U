@@ -225,8 +225,11 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       it is in title mode, as in the original: Reset Data instead of Return to Title. Return to
       Title works. The **Instruction Manual**: the 29 topics of system messages 56000 on (titles
       in label bars, 56007 - the manual's own introduction - first), the page beside them, wrapped
-      to the panel. Not yet: Reset Data; Environment Effects and the orientation lock are stored but
-      have nothing to switch yet
+      to the panel. **Reset Data** (from the title) asks twice ("Erase all the data from your game?",
+      then "This will erase all your game data. Are you sure you want to proceed?") and with Yes to
+      both removes every pair's save and the resume point (`OptionPrc`: `prty_init_all`,
+      `removeSaveData`, `removeContData`). The orientation lock is stored but has nothing to turn
+      on a desktop
 - [x] Solid NPCs (chests, crystals, blocks block the player) and examining (**E**/Enter):
       treasure boxes give their item (from the game's item pools, named from sys.evt) and lose
       their lid; crystals are warp points
@@ -260,8 +263,8 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       starting gear, genes and items; with the pair's clear data the game goes on from it (its
       Oz kept), and "with your clear data" also keeps each member's stat bonuses, equipment and
       gene plates and the bag, less the story's items; `ResetFieldFlag_NewGame` clears the pair's
-      field flags (its four blocks of 3000..3063, and 3300..3363). Olgar / Ayuta (the chara2
-      sheet, after the first stories) aren't offered yet. The
+      field flags (its four blocks of 3000..3063, and 3300..3363). The chara2 sheet (the third and
+      fourth pairs) opens once a first story is done (flag 32 or 34). The
       **Progress Tracker**: leaving the game on the field writes a resume point; the next title
       offers "You have save data from your last session. Resume game from last saved point?".
       Saved: flags, variables, items, opened boxes, area / map / position / facing, the leader,
@@ -282,8 +285,8 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       Item prices, icons and kinds come from sys.evt (+0x38, 20 bytes per item). Talk plays the
       shopkeeper's EvrStart 4 scene while the shop waits. Oz and the party (levels, experience,
       equipment; stats from `_pcparam` + level + equipment, `pcparam_max_*`) are saved. Oz comes
-      from selling and battles; the 10% gene-skill
-      discount and the seeds' and genes' stat bonuses wait for skills.
+      from selling and battles; Sexy Pose's 10% off and the seeds' and genes' stat bonuses apply
+      (see Skills).
       `--capture t0108_10.cmp <out> --shop main|category|buy|items|sell|count|equip|talk`
 - [x] Message windows as the script's `Open` picks them (`__EvtOpen` / `PutWin` / `PutMsg`: its
       style byte and lines choose a rect from 0xd3d30 and the look): style 2, the speech, on the
@@ -393,9 +396,9 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       guard, counters, Boost Recovery / Magic Power, sure escapes, more genes, EXP / OZ +20%,
       post-battle MP, the level-up boosts (saved), the Gates' stat points, Preemptive / Alert on
       encounters and Sexy Pose's 10% off in shops; monsters use their own from level 20; the
-      Blaze / Aqua / Gale Resistance armors. Not
-      done: Encounter (the on / off switch), Happy Smile (EXP per step), Secrets of Stealing;
-      Get More Items has no effect in the original either.
+      Blaze / Aqua / Gale Resistance armors; Encounter (skill 170: the field menu's switch) and
+      Happy Smile (174: EXP banked by walking). Secrets of Stealing and Get More Items have no
+      effect in the original either (`btlcalc_0504` checks skill 157 and drops the answer).
 - [x] Battles (`game/battle_rules.cpp`, from the Ghidra decompile of `btl_main` and its
       helpers): Solo / Pair commands, Attack, Items, Defend and Escape (Yes / No), targets on
       their plates, the turn order by speed, the original's damage, critical and hit rules,

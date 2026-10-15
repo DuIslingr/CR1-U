@@ -267,6 +267,9 @@ public:
     // Applies the battle to the save: MP, and when they won the experience, Oz, drops and genes
     // learned. Returns the party members that levelled up (character numbers).
     std::vector<int> applyRewards(GameState& gs) const;
+    // (tests, the explore) every enemy standing falls as to the pair's blow: btlcalc_chk_dead's
+    // EXP and Oz, and the drops and genes (fallRewards) - the battle is won with its rewards
+    void defeatEnemies();
 
     // btlbreak_set: `who` caused event `event` (2 damage dealt, 8 critical, 0x10 kill, 0x20, 0x40 untouched)
     void breakEvent(int who, int event, int target);

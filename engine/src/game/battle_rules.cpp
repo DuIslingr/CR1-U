@@ -1106,6 +1106,24 @@ int BattleRules::outcome() const {
     return any ? 0 : 2;
 }
 
+void BattleRules::defeatEnemies() {
+    const int actors[2] = {0, f[1].present ? 1 : -1};
+    for (int t = 2; t < 5; ++t) {
+        Fighter& tf = f[size_t(t)];
+        if (!tf.present || tf.hp <= 0) continue;
+        tf.hp = 0;
+        for (int& s : tf.status) s = 0;
+        tf.guarding = false;
+        if (tf.enemy && !tf.rewarded) {
+            tf.rewarded = true;
+            expGained += tf.exp;
+            ozGained += tf.oz + tf.stolen;
+            tf.stolen = 0;
+            fallRewards(t, actors);
+        }
+    }
+}
+
 std::vector<int> BattleRules::applyRewards(GameState& gs) const {
     std::vector<int> levelled;
     const bool won = outcome() == 2;

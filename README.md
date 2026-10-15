@@ -97,7 +97,7 @@ the Vita build) and a reference playthrough:
   `--explore n` plays the game by itself from the title through all four pairs' stories and the
   last battle to the final ending; `--capture` renders any room, screen or battle moment
 
-Not yet: Windows, macOS and Android packaging; Reset Data in the title's Options.
+Not yet: Windows, macOS and Android packaging.
 
 ## Documentation
 

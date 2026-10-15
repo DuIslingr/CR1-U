@@ -191,6 +191,7 @@ struct App {
     int titleCursor = 0;
     int titleAnim = 0;
     bool optionsFromTitle = false;         // ModeOptionMenu(1): Reset Data instead of Return to Title
+    int resetAsk = 0, resetConfirm = 1;    // Reset Data's two questions (OptionPrc 9 / 10: 1, 2), No under the cursor
     bool captureTitle = false;             // --capture ... --title
     // Video. The defaults are the original presentation: a 1024x768 window, 4:3, the paintings at
     // the screen's height, native resolution, no MSAA, vsync
@@ -2970,9 +2971,9 @@ std::vector<OptRow> optionRows(App& app, int page) {
         manual.act = [&app](int) { openManual(app); };
         rows.push_back(manual);
         OptRow title;
-        if (app.optionsFromTitle) { // ModeOptionMenu(1): erasing the save data (there is none yet)
+        if (app.optionsFromTitle) { // ModeOptionMenu(1): erasing the save data, asked twice
             title.label = sysLabel(app, 58122, "Reset Data");
-            title.enabled = false;
+            title.act = [&app](int) { app.resetAsk = 1, app.resetConfirm = 1; };
         } else {
             title.label = sysLabel(app, 58123, "Return to Title");
             title.enabled = app.mode == Mode::Maps && !app.booting;
@@ -3084,7 +3085,7 @@ float optRowY(int i) { return kOptRowTop + kOptRowPitch * float(i); }
 float optCtrlX(float x) { return kOptCtrlX + (x - kOptCtrlX) * kOptCtrlScale; }
 
 void openOptions(App& app, int page) {
-    if (!app.optionsOpen) app.optionsFromTitle = app.titleOpen;
+    if (!app.optionsOpen) app.optionsFromTitle = app.titleOpen, app.resetAsk = 0;
     app.optionsOpen = true;
     app.optionsPage = (page + kOptionPages) % kOptionPages;
     app.optionsRow = 0;
@@ -3182,6 +3183,18 @@ void drawOptions(App& app, float, float) {
         m.text(rows[size_t(app.optionsRow)].hint, 20, std::min(optRowY(int(rows.size())) + 2, kOptBackY - 16), false, a * 0.9f, 9);
     if (app.showHud) // (our key hints: off in a Release build, F3)
         m.text("Up/Down  Left/Right  Enter  Q/E or PgUp/PgDn: page  Esc: back", 20, 372, false, a * 0.8f, 9);
+    if (app.resetAsk) { // OptionPrc 9 / 10: the message board (57078, then 57079), Yes / No at (336, 104 / 160)
+        std::vector<std::vector<std::string>> pages;
+        app.systemText.message(app.resetAsk == 1 ? 57078 : 57079, app.language, nullptr, pages, nullptr);
+        r.setOrigin(0); // (the rows' window goes while it asks: WinDispOff(5))
+        r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
+        r.setOrigin(r.uiX());
+        m.picture(12, 0, 220, 1);
+        if (!pages.empty())
+            for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, 234 + 16.0f * float(l), false, 1, 14);
+        m.plate(336, 104, 0, 0, app.resetConfirm == 0, 1, false);
+        m.plate(336, 160, 1, 1, app.resetConfirm == 1, 1, false);
+    }
     r.setOrigin(r.uiX());
 }
 
@@ -3194,8 +3207,37 @@ void stepOptions(App& app) {
     if (app.optionsBob >= 5 || app.optionsBob <= 0) app.optionsBobDir = -app.optionsBobDir;
 }
 
+// OptionPrc 10, Yes to both questions: prty_init_all, removeSaveData, removeContData - every pair's
+// save and the resume point go; Yes to the first asks the second (sound 2), No leaves it (2)
+std::string slotPath(const App& app, int pair);
+std::string savePath(const App& app, const char* file);
+void resetAnswer(App& app, bool yes) {
+    if (yes && app.resetAsk == 1) {
+        app.resetAsk = 2, app.resetConfirm = 1;
+        menuSound(app, se::kChoose);
+        return;
+    }
+    app.resetAsk = 0;
+    if (!yes) { menuSound(app, se::kChoose); return; }
+    menuSound(app, 13); // (0x9e on Omega's numbering)
+    for (int pair = 1; pair <= 4; ++pair) SDL_RemovePath(slotPath(app, pair).c_str());
+    SDL_RemovePath(savePath(app, "resume.dat").c_str());
+    app.game = cr::GameState();
+}
+
 // Keys: Up/Down rows (then Back), Left/Right change, Enter activates, Q/E PgUp/PgDn pages
 void optionsKey(App& app, SDL_Keycode key) {
+    if (app.resetAsk) { // Reset Data's question: Yes / No
+        switch (key) {
+        case SDLK_UP: case SDLK_DOWN: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_W: case SDLK_S: case SDLK_A: case SDLK_D:
+            app.resetConfirm ^= 1, menuSound(app, se::kCursor);
+            break;
+        case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: resetAnswer(app, app.resetConfirm == 0); break;
+        case SDLK_ESCAPE: case SDLK_BACKSPACE: resetAnswer(app, false); break;
+        default: break;
+        }
+        return;
+    }
     std::vector<OptRow> rows = optionRows(app, app.optionsPage);
     const int n = int(rows.size());
     int& row = app.optionsRow;
@@ -3236,6 +3278,11 @@ void optionsClick(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
     menuPointFit(app, lx, ly, mx, my);
+    if (app.resetAsk) { // the Yes / No plates (0x88 x 0x28)
+        if (mx >= 336 && mx < 472 && my >= 104 && my < 144) resetAnswer(app, true);
+        else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) resetAnswer(app, false);
+        return;
+    }
     if (my >= kOptBackY && my < kOptBackY + 24 && mx >= 192 && mx < 424) { app.optionsOpen = false; menuSound(app, se::kBack); return; }
     if (my >= kOptPageY - 4 && my < kOptPageY + 18 && mx >= 16 && mx < 66) { // "n / m": the next page
         openOptions(app, app.optionsPage + 1);
@@ -12787,6 +12834,32 @@ int runSelfTest(App& app) {
         openOptions(app, 0);
         const std::vector<OptRow> titlePage = optionRows(app, 0);
         problems += titlePage.size() != 8 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
+        { // Reset Data: asked twice; No keeps the saves, Yes to both removes them (in a test folder)
+            const std::string keepDir = app.saveDirOverride;
+            app.saveDirOverride = userDir() + "selftest-reset/";
+            SDL_CreateDirectory(app.saveDirOverride.c_str());
+            const cr::SaveData sd = captureSave(app);
+            for (int pair = 1; pair <= 2; ++pair) cr::writeSave(slotPath(app, pair), sd);
+            cr::writeSave(savePath(app, "resume.dat"), sd);
+            auto saves = [&] {
+                int n = 0;
+                for (int pair = 1; pair <= 4; ++pair) n += SDL_GetPathInfo(slotPath(app, pair).c_str(), nullptr);
+                return n + int(SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr));
+            };
+            app.optionsRow = int(titlePage.size()) - 1;
+            optionsKey(app, SDLK_RETURN);                 // "Erase all the data from your game?"
+            int bad = app.resetAsk != 1 || app.resetConfirm != 1;
+            optionsKey(app, SDLK_RETURN);                 // No (under the cursor)
+            bad += app.resetAsk != 0 || saves() != 3;
+            optionsKey(app, SDLK_RETURN);
+            optionsKey(app, SDLK_LEFT), optionsKey(app, SDLK_RETURN); // Yes: "Are you sure ...?"
+            bad += app.resetAsk != 2 || saves() != 3;
+            optionsKey(app, SDLK_LEFT), optionsKey(app, SDLK_RETURN); // Yes
+            bad += app.resetAsk != 0 || saves() != 0;
+            std::printf("reset data: asked twice, No kept 3 saves, Yes removed them: %s\n", bad ? "WRONG" : "ok");
+            problems += bad;
+            app.saveDirOverride = keepDir;
+        }
         optionsKey(app, SDLK_ESCAPE);
         problems += !app.titleOpen; // back on the title menu
         app.menuSoundLog.clear();
@@ -14893,7 +14966,7 @@ int runExplore(App& app, int maxActions) {
             if (app.battle.active) { // its talks play, then it's won at its first command
                 stepBattle(app);
                 if (!battletalk::on(app) && app.battle.phase == App::Battle::Command) {
-                    for (int k = 2; k < 5; ++k) app.battle.rules.f[size_t(k)].hp = 0;
+                    app.battle.rules.defeatEnemies(); // (with its EXP, Oz and drops)
                     std::printf("     battle %d won\n", app.battle.start.group);
                     endBattle(app, true);
                 }
@@ -15696,6 +15769,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         const int page = app.optionsPage;
         openOptions(app, page);
         app.optionsAnim = 100;
+        if (const char* ra = SDL_getenv("CR_CAPTURE_RESET")) app.resetAsk = SDL_atoi(ra); // (Reset Data's question 1 / 2)
     }
     if (app.havePlayer && app.captureAt[0] == app.captureAt[0]) { // --at x z: put the player there
         float y;
