@@ -11939,6 +11939,25 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 }
                 std::printf("calcs: fixed, split by targets, to 1, %%HP, MP, Oz stolen, Apples, barrier, revive, poison: %d problems\n", cbad);
                 sbad += cbad;
+                { // btlcalc_0404: resistance 1 is immune; an attacker without an element meets no element resistance
+                    cr::MonsterDef md;
+                    cr::BattleRules q;
+                    for (cr::Fighter& x : q.f) x = cr::Fighter();
+                    q.f[0].present = q.f[2].present = true;
+                    q.f[0].atk = 200, q.f[0].spd = 100, q.f[0].level = q.f[2].level = 1, q.f[0].hp = q.f[0].hpMax = 100;
+                    q.f[2].hp = q.f[2].hpMax = 10000, q.f[2].enemy = true, q.f[2].def = &md;
+                    cr::BattleActionDef hit;
+                    hit.id = 10, hit.power = 150, hit.calc = 0, hit.alwaysHits = true, hit.scope = 4, hit.side = 3;
+                    const int who[2] = {0, -1};
+                    md.raw[0x10] = 1;
+                    q.seed(3);
+                    int zbad = q.physical(hit, who, 2).amount != 0;
+                    md.raw[0x10] = 0, md.raw[0x14] = 1;
+                    q.seed(3);
+                    zbad += q.physical(hit, who, 2).amount == 0;
+                    if (zbad) std::printf("  resistances: %d problems\n", zbad);
+                    sbad += zbad;
+                }
                 std::printf("skills: resistance, attack, pierce, boost critical, first attack, MP 1/2, recovery, regen, "
                             "Gate +%d, boosts: %d problems\n", gate ? gate->stat[cr::kAttack] : 0, sbad);
                 bad += sbad;

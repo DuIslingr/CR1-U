@@ -59,6 +59,7 @@ bool BattleActionTable::load(const std::string& dataDir) {
         a.variance = int8_t(r[16]);
         a.motion = r[17];
         a.element = int8_t(r[18]);
+        a.sureGene = r[20] == 1;
         a.affinity = r[22] == 1;
         a.hostile = r[23] == 0;
         actions_.push_back(a);
@@ -229,11 +230,6 @@ int BattleRules::geneCost(const BattleActionDef& a, int user) const {
     return user < 2 && has(user, 132) ? a.mp / 2 : a.mp;
 }
 
-// skills 131 / 136: the target fends the whole hit off ("Miss!")
-bool BattleRules::blocked(int target, int skill) {
-    return has(target, skill) && random(100) < (holdsBreak(target) ? 20 : 10);
-}
-
 // btlcalc_zoku_0204: the skills' scaling of a hit
 int BattleRules::zoku(int amount, const BattleActionDef& a, int user, int target, bool magic) const {
     int pct = has(target, magic ? 147 : 146) ? 75 : 100;
@@ -340,23 +336,22 @@ int BattleRules::elementScale(const BattleActionDef& a, int user, int target, in
     return 50;
 }
 
-// A monster's resistances (+0x10 physical / +0x12 genes, +0x14.. by the user's element). Returns
-// the amount; `type` becomes kHitKill for instant death, kHitNoEffect when immune
+// btlcalc_0404 / 0406: a monster's resistances - +0x10 physical / +0x12 genes, then +0x14 / 16 /
+// 18 by the user's element (none without one): 1 immune (0, the hit's type as it was), 2 half, 3
+// x1.5, 4 instant death (`type` kHitKill, the amount its HP)
 int BattleRules::resist(const BattleActionDef&, int user, int target, int amount, bool magic, int& type) const {
-    if (target < 2 || amount < 1) return amount;
+    if (target < 2) return amount;
     const Fighter& t = f[size_t(target)];
-    switch (monsterField(t, magic ? 0x12 : 0x10)) {
-    case 1: case 2: amount /= 2; break;
-    case 3: amount = amount * 150 / 100; break;
-    default: break;
-    }
     const int e = f[size_t(user)].element;
-    switch (monsterField(t, e <= 1 ? 0x14 : e == 2 ? 0x16 : 0x18)) {
-    case 1: type = kHitNoEffect; return 0;
-    case 2: amount /= 2; break;
-    case 3: amount = amount * 150 / 100; break;
-    case 4: type = kHitKill; return t.hp;
-    default: break;
+    for (int off : {magic ? 0x12 : 0x10, e >= 1 && e <= 3 ? 0x12 + 2 * e : -1}) {
+        if (off < 0) break;
+        switch (monsterField(t, off)) {
+        case 1: return 0;
+        case 2: amount /= 2; break;
+        case 3: amount = amount * 150 / 100; break;
+        case 4: type = kHitKill; return t.hp;
+        default: break;
+        }
     }
     return amount;
 }
@@ -402,7 +397,7 @@ BattleHit BattleRules::physical(const BattleActionDef& a, const int actors[2], i
     if (h.type != kHitGuard) dmg = dmg * elementScale(a, actors[0], target, h.type) / 100;
     if (dmg >= 1) dmg = resist(a, actors[0], target, dmg, false, h.type);
     if (dmg >= 1 && h.type != kHitKill) dmg = zoku(dmg, a, actors[0], target, false);
-    if (blocked(target, 131)) dmg = 0, h.type = kHitMiss;
+    if (dodgeHit_) dmg = 0, h.type = kHitMiss;
     h.amount = dmg;
     return h;
 }
@@ -428,9 +423,9 @@ BattleHit BattleRules::magical(const BattleActionDef& a, const int actors[2], in
             if (actors[k] >= 0) f[size_t(actors[k])].element = a.element, elementTaken = true;
     dmg = std::max(dmg, 0);
     dmg = dmg * elementScale(a, actors[0], target, h.type) / 100;
-    if (dmg >= 1) dmg = resist(a, actors[0], target, dmg, true, h.type);
+    dmg = resist(a, actors[0], target, dmg, true, h.type); // (0406: even at 0)
     if (dmg >= 1 && h.type != kHitKill) dmg = zoku(dmg, a, actors[0], target, true);
-    if (blocked(target, 136)) dmg = 0, h.type = kHitMiss;
+    if (dodgeGene_) dmg = 0, h.type = kHitMiss;
     h.amount = dmg;
     return h;
 }
@@ -706,6 +701,14 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         int counterBy = -1;
         const std::vector<int> hitList = resolveTargets(*a, e);
         firstTarget_ = hitList.empty() ? -1 : hitList.front(); // btlcalc_critical reads G+0x7a
+        // btlque_make_que: each target's 131 / 136 (20% holding the Break, else 10) - one success
+        // fends off the whole action ("Miss!" on every target); +20 rules the gene dodge out
+        dodgeHit_ = dodgeGene_ = false;
+        for (int t : hitList) {
+            if (has(t, 131) && !dodgeHit_ && random(100) < (holdsBreak(t) ? 20 : 10)) dodgeHit_ = true;
+            if (has(t, 136) && !dodgeGene_ && random(100) < (holdsBreak(t) ? 20 : 10)) dodgeGene_ = true;
+        }
+        if (a->sureGene) dodgeGene_ = false;
         int drained = 0;
         auto atkSumOf = [&]() { int s = 0; for (int k : e.actors) if (k >= 0) s += atkOf(k); return s; };
         auto magicBoost = [&](int v) { return has(e.actors[0], 156) ? v + v / 5 : v; };
@@ -738,7 +741,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 if (calc == 7) { base = 0; for (int k : e.actors) if (k >= 0) base += std::max(0, f[size_t(k)].hp - 1); }
                 if (calc == 8) base = atkSumOf();
                 h.amount = magicBoost(zoku(a->power * base / 100, *a, e.actors[0], t, true));
-                if (blocked(t, 136)) h.amount = 0, h.type = kHitMiss;
+                if (dodgeGene_) h.amount = 0, h.type = kHitMiss;
                 if (calc == 8) drained += h.amount;
                 break;
             }

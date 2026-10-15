@@ -35,7 +35,7 @@
 //    against the target's luck (< -100: 50%, < -49: 60, < 0: 70, < 50: 80, < 101: 90, else 99;
 //    100 when the action always hits)
 //  - the element triangle (1 beats 3, 2 beats 1, 3 beats 2): x1.5 ("weak"), the other way x0.5
-//  - monsters' resistances (+16 physical, +18 genes, +20/22/24 elements 1-3 (0 counts as 1)):
+//  - monsters' resistances (+16 physical, +18 genes, +20/22/24 elements 1-3, none without one):
 //    1 none (immune), 2 half, 3 x1.5, 4 instant death
 //  - variance: x (100 - v + random(2v + 1)) / 100
 //  - healing: -(bonus + power) x (sum of luck) / 100, bonus party +100 with the Break, +50 when
@@ -92,6 +92,7 @@ struct BattleActionDef {
     int variance = 0, motion = 0, element = 0;
     bool affinity = false;
     bool hostile = false;   // +23 == 0: a barrier (calc 26) neutralizes it
+    bool sureGene = false;  // +20 == 1: no gene dodge (btlque_make_que clears its +0xa5)
     // The voiced releases' records (2.2.0: 38 bytes, these six s16 at +10, the rest 12 later):
     // the battle-voice situations a turn's actor says - the party's for its three variants, then
     // a monster's (_btlvoice_turn); -1 none
@@ -325,7 +326,9 @@ private:
     void fallRewards(int enemy, const int actors[2]);
     int zoku(int amount, const BattleActionDef& a, int user, int target, bool magic) const;
     bool holdsBreak(int i) const { return i < 2 ? breakGauge > 0 : breakGauge < 0; }
-    bool blocked(int target, int skill);
+    // btlque_make_que's que +0xa4 / +0xa5: the action fended off by a target's skill (131 hits,
+    // 136 genes)
+    bool dodgeHit_ = false, dodgeGene_ = false;
     bool knows(int item) const;
 
     int bonusFor(const int actors[2], bool magic) const;
