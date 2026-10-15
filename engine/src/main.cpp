@@ -8585,7 +8585,11 @@ float actorDuration(App& app, const App::Battle::Actor& a) {
 }
 
 // Where the damage numbers start: over the actor's model
+cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);
 cr::Vec3 actorHead(App& app, const App::Battle::Actor& a) {
+    // __dmg_set: btlcamera_getpos(actor, 0x44e) - the model's node 1102 (else over its bounds)
+    const cr::Vec3 p = actorPoint(app, a, 1102);
+    if (p.x != a.pos.x || p.y != a.pos.y || p.z != a.pos.z) return p;
     const LoadedModel& lm = app.battle.models[a.model];
     return a.pos + cr::Vec3{0, (lm.center.y + lm.radius * 0.6f) * a.scale, 0};
 }
@@ -8601,7 +8605,6 @@ void setBattleCamera(App& app, int id, int actor = 0) {
 
 // btlcamera_prc: the camera's eye and target this frame - still, moving from its first pair of
 // points to its second over raw[15] frames, or turning raw[14] degrees about its target
-cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);
 void battleCameraView(App& app, cr::Vec3& eye, cr::Vec3& target) {
     const App::Battle& b = app.battle;
     const cr::BattleCamera* c = app.battleData.camera(b.cam);
