@@ -876,6 +876,25 @@ int battle(const char* dirArg, bool verbose) {
     return badGroup || badMonster || badModel || badFormation || badStage ? 1 : 0;
 }
 
+// crtool evtmsg <dir> <area> <language> <id>...: an area script's messages - lines, voices, pauses
+int evtmsg(const char* dirArg, int area, int lang, int argc, char** argv) {
+    const std::string dir = std::string(dirArg) + (dirArg[std::strlen(dirArg) - 1] == '/' ? "" : "/");
+    cr::EventFile f;
+    std::string err;
+    if (!f.load(dir, area, &err)) { std::printf("%s\n", err.c_str()); return 1; }
+    for (int i = 0; i < argc; ++i) {
+        std::vector<std::vector<std::string>> pages;
+        cr::MessageInfo info;
+        const int id = std::atoi(argv[i]);
+        const bool ok = f.message(id, lang, [](int) { return 0; }, pages, &info);
+        std::printf("%d:%s %zu pages, %zu voices, %zu pauses, close after %d\n", id, ok ? "" : " (none)", pages.size(),
+                    info.voices.size(), info.pauses.size(), info.closeAfter);
+        for (const auto& pg : pages)
+            for (const auto& l : pg) std::printf("   | %s\n", l.c_str());
+    }
+    return 0;
+}
+
 // System text lines (ids >= 51000) for UI labels: crtool sysmsg <dataHD> <language> <id>...
 int sysmsg(const char* dirArg, int lang, int argc, char** argv) {
     const std::string dir = std::string(dirArg) + (dirArg[std::strlen(dirArg) - 1] == '/' ? "" : "/");
@@ -1170,6 +1189,8 @@ int main(int argc, char** argv) {
     if (argc >= 3 && std::strcmp(argv[1], "npcloads") == 0) return npcLoads(argv[2]);
     if (argc >= 3 && std::strcmp(argv[1], "events") == 0)
         return events(argv[2], argc > 3 && std::strcmp(argv[3], "-v") == 0);
+    if (argc >= 6 && std::strcmp(argv[1], "evtmsg") == 0)
+        return evtmsg(argv[2], std::atoi(argv[3]), std::atoi(argv[4]), argc - 5, argv + 5);
     if (argc >= 5 && std::strcmp(argv[1], "sysmsg") == 0) return sysmsg(argv[2], std::atoi(argv[3]), argc - 4, argv + 4);
     if (argc >= 3 && std::strcmp(argv[1], "battle") == 0)
         return battle(argv[2], argc > 3 && std::strcmp(argv[3], "-v") == 0);
