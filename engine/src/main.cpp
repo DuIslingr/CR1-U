@@ -414,7 +414,7 @@ struct App {
             float yaw = 0;
             int slot = 0, action = -1;     // action slot (BattleAnim) and the package's action index
             float time = 0;
-            float scale = 1;               // +0x540: 0.5 for the pair (btl_main)
+            float scale = 1;               // the model's size (the pair's 1: btl_main's 0.5 at +0x540 is its yaw, half a turn)
             int fighter = -1;              // BattleRules::f index: 0, 1 the pair, 2..4 the enemies
             int then = -1;                 // the slot after this one ends (-1 loop, -2 hold the last frame)
             cr::Vec3 home, from, to;       // its place; a move (btlmove_setpos) from -> to
@@ -8601,6 +8601,7 @@ void setBattleCamera(App& app, int id, int actor = 0) {
 
 // btlcamera_prc: the camera's eye and target this frame - still, moving from its first pair of
 // points to its second over raw[15] frames, or turning raw[14] degrees about its target
+cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);
 void battleCameraView(App& app, cr::Vec3& eye, cr::Vec3& target) {
     const App::Battle& b = app.battle;
     const cr::BattleCamera* c = app.battleData.camera(b.cam);
@@ -8608,8 +8609,8 @@ void battleCameraView(App& app, cr::Vec3& eye, cr::Vec3& target) {
     if (!c) return;
     const int16_t* r = c->raw;
     cr::Vec3 base{0, 0, 0};
-    for (const App::Battle::Actor& a : b.actors)
-        if (a.fighter == b.camActor) base = a.home;
+    for (const App::Battle::Actor& a : b.actors) // btlcamera_prc / getpos: its node 1003 (0x3eb) as it moves
+        if (a.fighter == b.camActor) base = actorPoint(app, a, 1003);
     auto rel = [](int v, float at) { return v > 9000 ? float(v - 10000) + at : float(v); };
     eye = {rel(r[0], base.x), rel(r[1], base.y), rel(r[2], base.z)};
     target = {rel(r[3], base.x), rel(r[4], base.y), rel(r[5], base.z)};
@@ -9073,7 +9074,6 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         App::Battle::Actor& a = add(c, cr::kBattlePosition[0][k], 3.14159265f, k);
         a.name = sysText(app, 58028 + c + 1); // the name plates' character names
         a.level = rules.f[size_t(k)].level;
-        a.scale = 0.5f;
     }
     for (int k = 0; k < 3; ++k) {
         const cr::MonsterDef* m = app.battleData.monster(ids[size_t(k)]);
