@@ -1,0 +1,35 @@
+# The Android release (1.1.1)
+
+Notes from the Android APK (Chaos Rings 1.1.1), read with `tools/re_setup_android.sh <unpacked
+APK>` (Ghidra; output in `re/android/`, never committed). Nothing of the APK is in this repository.
+
+## What the APK holds
+
+| File | What it is |
+|---|---|
+| `lib/armeabi/libchaosrings_native.so` | the game: the iOS code base, Thumb (GCC), **1660 functions exported by name** - ~455 of them names 1.0.1's symbols lack (the voiced release's battle voices, statics) |
+| `lib/armeabi/libmc_eruption_for_android_jni.so` | MascotCapsule eruption, the 3D engine (as on iOS) |
+| `lib/armeabi/libsobridge.so`, `assets/libparser.so` | a loader and an encrypted library it unpacks at run time (entropy 8.0; licence / anti-tamper, not read here) |
+| `classes.dex` | the Java shell: the activity, Google Play licensing (LVL) and the APK Expansion downloader |
+| `assets/00000`, `00001` | two OpenType (CFF) fonts (the same as Omega's APK) |
+| `assets/loading.mct` | the loading picture |
+
+The game's data is **not** in the APK: it comes as a Google Play expansion file (`main.<version
+code>.<package>.obb`), read by the native code. `FileDownLoadAndCheckProc` is empty here.
+
+## The screen
+
+As Omega's Android build (`docs/ANDROID.md` of CRO-U has the details): `is_iPadDisplay` 0 (the
+iPhone code path), the 480 x 320 screen at 1.0, 1.5 (`_15` art, from 720 x 480) or 2.0 (`_hd`,
+from 960 x 640) and centred; the message window's cut-in strip per screen width
+(`window_cutin_854`, `_1280`, ...), `window_15`, `window_char_15`.
+
+## Other differences
+
+- The voiced release: `btl_voice_*`, `voicebtl.bin` / `voiceevnt.bin`, `NDKGetLanguage`.
+- Stereoscopic 3D (`getStereoDevice`, `setStereoMode`), the back key, pause / resume.
+- Names 1.0.1's symbols lack, among them `btlcalc_attack_hit`, `btlcalc_zoku_0203`,
+  `btlcalc_zoku_dmg`, `btlcalc_rand_dmg`, `btlcalc_steal_item_add`, `btlai_make`, `chk_gene2`,
+  `fldencount_encount_debug`, `TreasureBoxManager::*`, the puzzle classes. Carried to 2.2.0 by
+  `tools/ghidra/match_functions.py --cross`, they name 121 more of its functions than 1.0.1's
+  names do (cross-compiler matching: check a name against the code before trusting it).

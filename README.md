@@ -105,6 +105,7 @@ Not yet: Windows, macOS and Android packaging.
 |---|---|
 | `docs/ENGINE.md` | building in detail (renderers, music decoding, upscalers, platforms), the tools, the asset viewer and debugging switches, and the full status list |
 | `docs/FORMATS.md` | the game's file formats and the original's systems as reverse-engineered |
+| `docs/ANDROID.md` | the Android release's APK: what it holds, its screen layout (`tools/re_setup_android.sh`) |
 
 ## Layout
 
