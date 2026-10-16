@@ -93,7 +93,9 @@ the Vita build) and a reference playthrough:
 - **Presentation options** (the defaults are the original's): resolution, fullscreen, 4:3 or
   widescreen (the menus' groups kept to the screen's edges, as the later widescreen release does),
   render scale, MSAA, FSR 3.1 / DLSS, optional HD textures you make yourself (waifu2x /
-  Real-ESRGAN), smoothed models
+  Real-ESRGAN), smoothed models; 60 frames a second (Frame Rate: 30 / 60 / 120 / 144 / unlimited)
+  over the game's own 20 - the leader, NPCs, cameras, scroll and battle actors shown moving
+  between its frames
 - **Testing**: `--selftest` checks every subsystem against the original's rules and data;
   `--explore n` plays the game by itself from the title through all four pairs' stories and the
   last battle to the final ending; `--capture` renders any room, screen or battle moment

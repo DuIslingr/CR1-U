@@ -608,9 +608,11 @@ c101/c102/c104/m207a, 2026-10-12).
       - Command line: `--original`, `--resolution 1920x1080`, `--windowed` / `--fullscreen` /
         `--borderless`, `--widescreen`, `--whole-paintings`, `--zoom-paintings`, `--render-scale 150`, `--msaa 4`,
         `--upscaler off|fsr|dlss`, `--upscale-mode native|quality|balanced|performance|ultra`,
-        `--sharpness 0-100`, `--hd-textures`, `--smooth-models 2|3`, `--no-vsync`; captures and the self-test start from the original
+        `--sharpness 0-100`, `--hd-textures`, `--smooth-models 2|3`, `--no-vsync`, `--fps n` (the frame rate's
+        limit, 0 none); captures and the self-test start from the original
         presentation. `--capture … --settle n` draws the captured moment n times first (the
-        upscaler's history converges), `--settle-moving n` draws n frames 1/30 s apart
+        upscaler's history converges), `--settle-moving n` draws n frames a game frame (1/20 s)
+        apart, `--settle-fps n` 1/n s apart (60: the frames drawn between the game's)
 - [x] C++ LZW + MCT/PVRTC decoders — match the Python tools on all formats, 441/441 decode in ~1 s
 - [x] Engine: 3D renderer (GLES1.1 fixed-function emulation in shaders), figure system, audio
 - [ ] Platform bring-up: Windows, macOS, Android packaging

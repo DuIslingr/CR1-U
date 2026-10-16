@@ -212,6 +212,9 @@ struct App {
         int renderScale = 100;             // % of the window's pixels (Vulkan)
         int msaa = 1;                      // 1, 2, 4, 8 (Vulkan)
         bool vsync = true;
+        int frameLimit = 60;               // frames drawn a second at most (0: as many as the display takes); the
+                                           // game itself runs at 20 (core/timing.hpp), the frames between show
+                                           // it moving
         int upscaler = 0;                  // 0 off, 1 FSR 3.1, 2 DLSS (Vulkan; MSAA is off meanwhile)
         int upscaleMode = 0;               // kUpscaleModes: 0 native AA (DLAA) .. 4 ultra performance
         int sharpness = 25;                // % (FSR's RCAS pass; 0 = none)
@@ -440,6 +443,15 @@ struct App {
             float alpha = 1;
         };
         std::vector<Actor> actors;
+        // Between the battle's frames (as App::Between for the field): each step's actors and
+        // camera at its start and end, and how far into the next step the clock is
+        struct Between {
+            bool valid = false;
+            float alpha = 1;
+            std::vector<Actor> actors[2];
+            cr::Vec3 eye[2], target[2];
+            int cam[2] = {-1, -1};
+        } between;
         std::map<std::string, LoadedModel> models;
         int frames = 0;
         float clock = 0;
@@ -553,7 +565,8 @@ struct App {
     bool newGame = false;                  // --new-game: start where a new game does
     int captureFrames = 0;                 // --capture ... --frames n: play n frames of scripts first
     int captureSettle = 0;                 // --settle n: draw the same moment n times first (temporal AA)
-    bool captureSettleMoving = false;      // --settle-moving n: n frames 1/30 s apart instead
+    bool captureSettleMoving = false;      // --settle-moving n: n frames a game frame apart instead
+    int captureSettleFps = 0;              // --settle-fps n: those frames 1/n s apart (60: as drawn between steps)
     int captureEvent = -1;                 // --event n: start the area's script n in the room first
     int captureArea = -1;                  // --area n: the event file for the map (routes share maps)
     std::vector<int> captureFlags;         // --set-flags a,b,...: story flags set before the map loads
@@ -668,6 +681,25 @@ struct App {
     cr::FieldWalker walker;
     bool havePlayer = false;
     float walkClock = 0;                   // movement runs in fixed 20 Hz steps like the original
+    // Between the game's frames: each field step's values at its start and its end - the leader,
+    // the NPCs drawn, the script's camera, the scroll - and how far into the next step the clock is
+    // (alpha). The frames drawn between steps show those values where they are by then (shown*());
+    // only a value still as its step left it is shown so: whatever moved it since (a warp, a test
+    // stepping the game itself, a new room) is drawn as it is.
+    struct Between {
+        bool valid = false;
+        float alpha = 1;
+        cr::Vec3 walker[2];
+        float heading[2] = {0, 0}, playerAlpha[2] = {1, 1};
+        struct Npc {
+            int index = -1, id = 0;
+            cr::Mat4 world[2];
+            float alpha[2] = {1, 1};
+        };
+        std::vector<Npc> npcs;
+        cr::Vec3 eye[2], target[2];
+        float scroll[2][2] = {{0, 0}, {0, 0}};
+    } between;
     float walkExpDistance = 0;             // G+0x35520: walked with skill 174 worn, 10 units = 1 EXP banked
     struct FieldMenu {                     // menuf_mainPut / Prc: the corner button and the bar it opens
         bool open = false;                 // G+0x3553c
@@ -1430,6 +1462,7 @@ bool npcActive(const App& app, const cr::FieldNpc& n) {
 
 namespace puzzle { void enter(App& app); }
 cr::Mat4 npcWorld(const cr::FieldNpc& n);
+cr::FieldWalker shownWalker(const App& app);
 
 // npcActive, but a puzzle room's objects show as the puzzle has them
 bool npcVisible(const App& app, size_t index) {
@@ -2227,7 +2260,7 @@ void scrollFieldTo(App& app, float vx, float vy, float rate) {
 void followPlayerScroll(App& app) {
     if (!scrollingField(app) || app.cam.free || !app.havePlayer) return;
     app.scroll.scripted = false;
-    const cr::Vec3 head = app.walker.pos + cr::Vec3{0, 7.0f + float(app.stageCam.lookHeight), 0};
+    const cr::Vec3 head = shownWalker(app).pos + cr::Vec3{0, 7.0f + float(app.stageCam.lookHeight), 0};
     float vx, vy;
     if (fieldViewPoint(app, head, vx, vy)) scrollFieldTo(app, vx, vy, 1.0f);
     if (SDL_getenv("CR_SCROLL_DEBUG"))
@@ -2764,7 +2797,7 @@ void saveMix(const App& app) {
                               "\ndisplay=" + std::to_string(v.display) + "\nwidescreen=" + std::to_string(int(v.widescreen)) +
                               "\npainted_rooms=" + std::to_string(v.paintings) + "\nrender_scale=" +
                               std::to_string(v.renderScale) + "\nmsaa=" + std::to_string(v.msaa) +
-                              "\nvsync=" + std::to_string(int(v.vsync)) + "\nupscaler=" + std::to_string(v.upscaler) +
+                              "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
                               std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) +
                               "\nsmooth_models=" + std::to_string(v.smoothModels) +
@@ -2810,6 +2843,7 @@ void loadVideo(App& app, const char* text) {
     v.renderScale = std::clamp(keyValue(text, "\nrender_scale=", v.renderScale), 25, 400);
     v.msaa = std::clamp(keyValue(text, "\nmsaa=", v.msaa), 1, 8);
     v.vsync = keyValue(text, "\nvsync=", v.vsync) != 0;
+    v.frameLimit = std::clamp(keyValue(text, "\nframe_limit=", v.frameLimit), 0, 1000);
     v.upscaler = std::clamp(keyValue(text, "\nupscaler=", v.upscaler), 0, 2);
     v.upscaleMode = std::clamp(keyValue(text, "\nupscale_mode=", v.upscaleMode), 0, 4);
     v.sharpness = std::clamp(keyValue(text, "\nsharpness=", v.sharpness), 0, 100);
@@ -2881,7 +2915,8 @@ void stepChoice(int& value, const int* choices, int count, int dir) {
 
 // adjustVideo's settings: 0 resolution, 1 display, 2 aspect, 3 painted rooms, 4 render scale,
 // 5 MSAA, 6 vsync, 7 the original presentation, 8 anti-aliasing (MSAA / FSR Native AA / DLAA),
-// 9 upscaler, 10 upscale mode, 11 sharpness
+// 9 upscaler, 10 upscale mode, 11 sharpness, 12 HD textures, 13 smoothed models, 14 layout,
+// 15 the frame rate
 
 // Anti-aliasing choices: Off, MSAA 2 / 4 / 8, FSR (Native AA), DLSS (DLAA)
 int aaChoice(const App::Video& v) {
@@ -2948,6 +2983,13 @@ void adjustVideo(App& app, int row, int dir) {
     case 10: v.upscaleMode = (v.upscaleMode + dir + 5) % 5; break;
     case 11: v.sharpness = std::clamp(v.sharpness + dir * 5, 0, 100); break;
     case 14: v.layout = (v.layout + dir + 4) % 4; break;
+    case 15: { // the frame rate: 30, 60, 120, 144, unlimited
+        static const int kLimits[] = {30, 60, 120, 144, 0};
+        int i = 0;
+        while (i < 4 && kLimits[i] != v.frameLimit) ++i;
+        v.frameLimit = kLimits[(i + dir + 5) % 5];
+        break;
+    }
     case 13: v.smoothModels = (v.smoothModels == 0 ? (dir > 0 ? 2 : 3) : v.smoothModels == 2 ? (dir > 0 ? 3 : 0) : (dir > 0 ? 0 : 2)); break;
     case 12: { // HD textures: what loads from now on (the next room); the UI atlas at once
         v.hdTextures = !v.hdTextures;
@@ -3179,6 +3221,9 @@ std::vector<OptRow> optionRows(App& app, int page) {
         static const char* const kPaintings[] = {"Original", "Whole", "Fill Width"};
         value("Painted Rooms", kPaintings[std::clamp(v.paintings, 0, 2)], [&app](int dir) { adjustVideo(app, 3, dir ? dir : 1); });
         onOff("VSync", &v.vsync, [&app] { applyVideo(app); });
+        value("Frame Rate", v.frameLimit ? std::to_string(v.frameLimit) : std::string("Unlimited"),
+              [&app](int dir) { adjustVideo(app, 15, dir ? dir : 1); });
+        rows.back().hint = "Frames drawn a second at most; the game runs at its own 20 a second, shown moving between them";
         OptRow restore;
         restore.label = "Original Presentation";
         restore.hint = "Every display and graphics option back to the original's";
@@ -8281,6 +8326,114 @@ void playFootsteps(App& app) {
 }
 
 // WASD moves the leader relative to the camera (camYaw), as the original's cross key does.
+// A field step's start and end (App::Between): what the step moves, recorded on either side of it
+void betweenRecord(App& app, int side) {
+    App::Between& b = app.between;
+    b.walker[side] = app.walker.pos, b.heading[side] = app.walker.heading, b.playerAlpha[side] = app.playerAlpha;
+    b.eye[side] = app.cam.eye, b.target[side] = app.cam.target;
+    b.scroll[side][0] = app.scroll.offX, b.scroll[side][1] = app.scroll.offY;
+    if (side == 0) {
+        b.npcs.clear();
+        for (const App::NpcDraw& d : app.npcDraws) {
+            App::Between::Npc n;
+            n.index = d.index, n.id = d.id, n.world[0] = n.world[1] = d.world, n.alpha[0] = n.alpha[1] = d.alpha;
+            b.npcs.push_back(n);
+        }
+        b.valid = false;
+        return;
+    }
+    // (the NPCs the step began with that are still drawn: matched by their place and id)
+    std::vector<App::Between::Npc> kept;
+    for (App::Between::Npc n : b.npcs)
+        for (const App::NpcDraw& d : app.npcDraws)
+            if (d.index == n.index && d.id == n.id) {
+                n.world[1] = d.world, n.alpha[1] = d.alpha;
+                kept.push_back(n);
+                break;
+            }
+    b.npcs.swap(kept);
+    b.valid = true;
+}
+
+struct BetweenStep { // betweenRecord on either side of a step, however the step's body leaves
+    App& app;
+    explicit BetweenStep(App& a) : app(a) { betweenRecord(app, 0); }
+    ~BetweenStep() { betweenRecord(app, 1); }
+};
+
+bool same(const cr::Vec3& a, const cr::Vec3& b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
+bool same(const cr::Mat4& a, const cr::Mat4& b) { return std::memcmp(a.m, b.m, sizeof a.m) == 0; }
+
+// how far between the last step's start and end a frame shows (1: no step to show between)
+float betweenK(const App& app) { return app.between.valid ? std::clamp(app.between.alpha, 0.0f, 1.0f) : 1.0f; }
+
+cr::Vec3 lerp(const cr::Vec3& a, const cr::Vec3& b, float k) { return a + (b - a) * k; }
+float lerpAngle(float a, float b, float k) {
+    float d = std::fmod(b - a, 6.2831853f);
+    if (d > 3.14159265f) d -= 6.2831853f;
+    if (d < -3.14159265f) d += 6.2831853f;
+    return a + d * k;
+}
+
+// The leader as a frame between steps shows it (a step's warp - further than it can walk - is
+// shown at once)
+cr::FieldWalker shownWalker(const App& app) {
+    cr::FieldWalker w = app.walker;
+    const App::Between& b = app.between;
+    if (!b.valid || !same(w.pos, b.walker[1]) || w.heading != b.heading[1]) return w;
+    const cr::Vec3 d = b.walker[1] - b.walker[0];
+    if (cr::dot(d, d) > 40.0f * 40.0f) return w;
+    const float k = betweenK(app);
+    w.pos = lerp(b.walker[0], b.walker[1], k);
+    w.heading = lerpAngle(b.heading[0], b.heading[1], k);
+    return w;
+}
+
+float shownPlayerAlpha(const App& app) {
+    const App::Between& b = app.between;
+    if (!b.valid || app.playerAlpha != b.playerAlpha[1]) return app.playerAlpha;
+    return b.playerAlpha[0] + (b.playerAlpha[1] - b.playerAlpha[0]) * betweenK(app);
+}
+
+// An NPC's model matrix and opacity as a frame between steps shows them (a turn of more than
+// about 45 degrees or a jump in one step is shown at once)
+void shownNpc(const App& app, const App::NpcDraw& d, cr::Mat4& world, float& alpha) {
+    world = d.world, alpha = d.alpha;
+    for (const App::Between::Npc& n : app.between.npcs) {
+        if (!app.between.valid || n.index != d.index || n.id != d.id) continue;
+        const float k = betweenK(app);
+        if (d.alpha == n.alpha[1]) alpha = n.alpha[0] + (n.alpha[1] - n.alpha[0]) * k;
+        if (!same(d.world, n.world[1])) return;
+        const float* a = n.world[0].m, *c = n.world[1].m;
+        const float turn = (a[0] * c[0] + a[1] * c[1] + a[2] * c[2]) /
+                           std::max(std::sqrt((a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) * (c[0] * c[0] + c[1] * c[1] + c[2] * c[2])), 1e-6f);
+        const float jx = c[12] - a[12], jy = c[13] - a[13], jz = c[14] - a[14];
+        if (turn < 0.7f || jx * jx + jy * jy + jz * jz > 40.0f * 40.0f) return;
+        for (int i = 0; i < 16; ++i) world.m[i] = a[i] + (c[i] - a[i]) * k;
+        return;
+    }
+}
+
+// The script's free camera as a frame between steps shows it
+void shownCamera(const App& app, cr::Vec3& eye, cr::Vec3& target) {
+    eye = app.cam.eye, target = app.cam.target;
+    const App::Between& b = app.between;
+    if (!b.valid || !same(eye, b.eye[1]) || !same(target, b.target[1])) return;
+    const float k = betweenK(app);
+    eye = lerp(b.eye[0], b.eye[1], k), target = lerp(b.target[0], b.target[1], k);
+}
+
+// The painted field's scroll as a frame between steps shows it (a script's slide; otherwise it
+// follows the leader as shown)
+void shownScroll(const App& app, float& x, float& y) {
+    x = app.scroll.offX, y = app.scroll.offY;
+    const App::Between& b = app.between;
+    if (!b.valid || !app.cam.free || x != b.scroll[1][0] || y != b.scroll[1][1]) return;
+    const float k = betweenK(app);
+    x = b.scroll[0][0] + (b.scroll[1][0] - b.scroll[0][0]) * k;
+    y = b.scroll[0][1] + (b.scroll[1][1] - b.scroll[0][1]) * k;
+}
+
 void updatePlayer(App& app, float dt, float camYaw) {
     if (!app.havePlayer) return;
     const bool* keys = SDL_GetKeyboardState(nullptr);
@@ -8306,6 +8459,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
     app.walkClock += dt;
     while (app.walkClock >= kStep) {
         app.walkClock -= kStep;
+        BetweenStep between(app);
         stepEvents(app);
         if (app.battle.active) break;
         if (app.runner.running() || !app.havePlayer) continue;
@@ -8329,6 +8483,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
             break;
         }
     }
+    app.between.alpha = app.walkClock / kStep; // (how far into the next step this frame is)
     // Actions 0/1/2 = stand / walk / run (mdl_set_act_motion in FieldPCCtrl::operate); while a
     // block is held, slot 3 looped from frame 2 (Psychokinesis::onCheckTouch's
     // mdl_set_act_motion_loop(leader, 3, 2, 2))
@@ -8543,7 +8698,10 @@ void drawNpcs(App& app, const cr::Mat4& vp) {
             }
         }
         if (matAnim) ++app.matAnimDraws[d.model];
-        drawLoaded(app, lm, vp * d.world, nullptr, d.alpha, matAnim ? d.time : -1.0f);
+        cr::Mat4 world; // (as a frame between the game's steps shows it)
+        float alpha;
+        shownNpc(app, d, world, alpha);
+        drawLoaded(app, lm, vp * world, nullptr, alpha, matAnim ? d.time : -1.0f);
     }
 }
 
@@ -10693,13 +10851,36 @@ void drawBattle(App& app, float dt) {
     App::Battle& b = app.battle;
     auto& r = app.renderer;
     const float W = r.screenW(), H = cr::Renderer::kLogicalH; // 3D across the whole screen
-    for (b.clock += dt; b.clock >= 1.0f / kFramesPerSecond && b.active; b.clock -= 1.0f / kFramesPerSecond) stepBattle(app);
+    auto record = [&](int side) { // (the step's start or end: Battle::Between)
+        b.between.actors[side] = b.actors;
+        b.between.eye[side] = {488, 12, 555}, b.between.target[side] = {500, 4, 498};
+        battleCameraView(app, b.between.eye[side], b.between.target[side]);
+        b.between.cam[side] = b.cam;
+        b.between.valid = side == 1;
+    };
+    for (b.clock += dt; b.clock >= 1.0f / kFramesPerSecond && b.active; b.clock -= 1.0f / kFramesPerSecond) {
+        record(0);
+        stepBattle(app);
+        record(1);
+    }
+    b.between.alpha = std::clamp(b.clock * kFramesPerSecond, 0.0f, 1.0f);
     if (!b.active) return;
+    const App::Battle::Between& bt = b.between;
+    const float bk = bt.valid ? bt.alpha : 1.0f;
     r.fillRect(0, 0, W, H, 0, 0, 0, 1);
     drawSpaceBackdrop(app, true); // ScnEffectProc runs in battles too: the Space backdrop at the back
     r.setOrigin(0);
     cr::Vec3 eye{488, 12, 555}, target{500, 4, 498};
     battleCameraView(app, eye, target);
+    // (between steps: where the camera is by then, unless the step cut to another)
+    const bool camBetween = bt.valid && bt.cam[0] == bt.cam[1] && bt.cam[1] == b.cam && same(eye, bt.eye[1]) && same(target, bt.target[1]);
+    if (camBetween) {
+        eye = lerp(bt.eye[0], bt.eye[1], bk);
+        target = lerp(bt.target[0], bt.target[1], bk);
+    }
+    if (SDL_getenv("CR_BETWEEN_DEBUG"))
+        std::printf("battle frame: valid %d alpha %.2f camera %s (cam %d %d now %d)\n", int(bt.valid), bt.alpha, camBetween ? "between" : "as is",
+                    bt.cam[0], bt.cam[1], b.cam);
     cr::Mat4 proj = cr::Mat4::perspective(28.5f * 3.14159265f / 180.0f, W / H, 9.0f, 2000.0f);
     // btl_prc: the quake shifts the frustum by its offset in the 1024 x 768 screen's pixels
     proj.m[8] -= 2.0f * b.quake.off[0] / W;
@@ -10709,7 +10890,20 @@ void drawBattle(App& app, float dt) {
     r.setCamera(9.0f, 2000.0f, 28.5f * 3.14159265f / 180.0f);
     r.begin3DRect(0, 0, W, H);
     drawLoaded(app, b.stage, vp);
-    for (const App::Battle::Actor& a : b.actors) {
+    for (size_t ai = 0; ai < b.actors.size(); ++ai) {
+        // the actor as a frame between steps shows it: moved, turned, faded and its animation
+        // played on by then (an animation that looped, changed or jumped is shown as it is)
+        App::Battle::Actor a = b.actors[ai];
+        if (bt.valid && ai < bt.actors[0].size() && ai < bt.actors[1].size()) {
+            const App::Battle::Actor& p0 = bt.actors[0][ai], &p1 = bt.actors[1][ai];
+            if (p0.model == a.model && p1.model == a.model && same(a.pos, p1.pos) && a.yaw == p1.yaw && a.time == p1.time &&
+                a.action == p1.action) {
+                const cr::Vec3 d = p1.pos - p0.pos;
+                if (cr::dot(d, d) < 40.0f * 40.0f) a.pos = lerp(p0.pos, p1.pos, bk), a.yaw = lerpAngle(p0.yaw, p1.yaw, bk);
+                if (a.alpha == p1.alpha) a.alpha = p0.alpha + (p1.alpha - p0.alpha) * bk;
+                if (p0.action == p1.action && p1.time >= p0.time && p1.time - p0.time <= 1.0f) a.time = p0.time + (p1.time - p0.time) * bk;
+            }
+        }
         if (a.alpha <= 0.001f) continue;
         LoadedModel& lm = b.models[a.model];
         const cr::Model& m = lm.cpu;
@@ -11387,8 +11581,10 @@ void drawFrame(App& app, bool present = true) {
         const bool have3D = app.haveStageCam || scriptCam;
         if (have3D) {
             const cr::StageCamera& sc = app.stageCam;
-            eye = scriptCam ? app.cam.eye : cr::Vec3{sc.eye[0], sc.eye[1], sc.eye[2]};
-            tgt = scriptCam ? app.cam.target : cr::Vec3{sc.target[0], sc.target[1], sc.target[2]};
+            cr::Vec3 camEye, camTarget; // (the script's camera as this frame shows it)
+            shownCamera(app, camEye, camTarget);
+            eye = scriptCam ? camEye : cr::Vec3{sc.eye[0], sc.eye[1], sc.eye[2]};
+            tgt = scriptCam ? camTarget : cr::Vec3{sc.target[0], sc.target[1], sc.target[2]};
             const float aspect = scriptCam ? SW / H : sc.viewHeight > 0 ? float(sc.viewWidth) / float(sc.viewHeight) : 1.0f;
             const float fov = app.haveStageCam ? sc.fovDegrees : 60.0f;
             mvp = cr::Mat4::perspective(fov * 3.14159265f / 180.0f, aspect, scriptCam ? 1.0f : 10.0f, 4000.0f) *
@@ -11405,8 +11601,10 @@ void drawFrame(App& app, bool present = true) {
             followPlayerScroll(app);
             vw = fieldViewW(app);
             vh = fieldViewH(app);
-            vx = (SW - vw) / 2 + app.scroll.offX;
-            vy = (H - vh) / 2 - app.scroll.offY;
+            float sx, sy;
+            shownScroll(app, sx, sy);
+            vx = (SW - vw) / 2 + sx;
+            vy = (H - vh) / 2 - sy;
         } else {
             vw = vh = app.video.paintings == 2 ? std::max(SW, H) : std::min(SW, H);
             vx = (SW - vw) / 2;
@@ -11437,7 +11635,7 @@ void drawFrame(App& app, bool present = true) {
             if (app.showProps) drawLoaded(app, app.model, mvp);
             r.setColorWrite(true);
             drawNpcs(app, mvp);
-            if (app.havePlayer && playerShown(app)) drawLoaded(app, app.player, mvp * playerWorld(app.walker), nullptr, app.playerAlpha);
+            if (app.havePlayer && playerShown(app)) drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
             if (app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
             drawEffects(app, app.fieldEffects, mvp);
             if (app.showCollision && app.collision.vao) {
@@ -11493,7 +11691,7 @@ void drawFrame(App& app, bool present = true) {
             drawLoaded(app, m, mvp);
         }
         if (app.mode == Mode::Maps && app.havePlayer && playerShown(app))
-            drawLoaded(app, app.player, mvp * playerWorld(app.walker), nullptr, app.playerAlpha);
+            drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
         if (app.mode == Mode::Maps && app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
         if (app.mode == Mode::Maps) drawEffects(app, app.fieldEffects, mvp);
         if (app.mode == Mode::Maps && app.collision.vao && app.showCollision) {
@@ -16221,7 +16419,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     }
     // The capture shows exactly the frames stepped above; --settle draws that moment first (an
     // upscaler's history converges on it)
-    const Uint64 frame = Uint64(SDL_NS_PER_SECOND / kFramesPerSecond);
+    const Uint64 frame = Uint64(SDL_NS_PER_SECOND / (app.captureSettleFps > 0 ? float(app.captureSettleFps) : kFramesPerSecond));
     for (int f = 0; f < app.captureSettle; ++f) {
         app.lastTicks = app.captureSettleMoving ? SDL_GetTicksNS() - frame : 0;
         drawFrame(app, false);
@@ -16313,6 +16511,7 @@ void videoArgs(App& app, int argc, char** argv) {
         else if (SDL_strcmp(a, "--render-scale") == 0 && next) v.renderScale = std::clamp(SDL_atoi(next), 25, 400);
         else if (SDL_strcmp(a, "--msaa") == 0 && next) v.msaa = std::clamp(SDL_atoi(next), 1, 8);
         else if (SDL_strcmp(a, "--no-vsync") == 0) v.vsync = false;
+        else if (SDL_strcmp(a, "--fps") == 0 && next) v.frameLimit = std::clamp(SDL_atoi(next), 0, 1000); // 0: unlimited
         else if (SDL_strcmp(a, "--upscaler") == 0 && next) // off | fsr | dlss
             v.upscaler = SDL_strcmp(next, "fsr") == 0 ? 1 : SDL_strcmp(next, "dlss") == 0 ? 2 : 0;
         else if (SDL_strcmp(a, "--upscale-mode") == 0 && next) { // native | quality | balanced | performance | ultra
@@ -16523,6 +16722,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     if (!app->itemTable.load(app->dataDir)) SDL_Log("no item table in sys.evt: shops unavailable");
     for (int i = 1; i + 1 < argc; ++i)
         if (SDL_strcmp(argv[i], "--frames") == 0) app->captureFrames = SDL_atoi(argv[i + 1]);
+        else if (SDL_strcmp(argv[i], "--settle-fps") == 0) app->captureSettleFps = std::clamp(SDL_atoi(argv[i + 1]), 0, 1000);
         else if (SDL_strcmp(argv[i], "--settle") == 0) app->captureSettle = std::clamp(SDL_atoi(argv[i + 1]), 0, 1000);
         else if (SDL_strcmp(argv[i], "--event") == 0) app->captureEvent = SDL_atoi(argv[i + 1]);
         else if (SDL_strcmp(argv[i], "--area") == 0) app->captureArea = SDL_atoi(argv[i + 1]);
@@ -17074,7 +17274,25 @@ SDL_AppResult SDL_AppIterate(void* state) {
         static_cast<App*>(state)->music.update(float(double(now - last) * 1e-9));
         last = now;
     }
-    drawFrame(*static_cast<App*>(state));
+    App& app = *static_cast<App*>(state);
+    // the frame rate's limit: each frame no sooner than its slot (vsync may hold it longer)
+    if (app.video.frameLimit > 0) {
+        static Uint64 next = 0;
+        const Uint64 period = SDL_NS_PER_SECOND / Uint64(app.video.frameLimit), t = SDL_GetTicksNS();
+        if (next > t && next - t <= period) SDL_DelayPrecise(next - t);
+        next = std::max(next, t) + period; // (after a stall: from now, no catching up)
+    }
+    drawFrame(app);
+    if (SDL_getenv("CR_FPS_LOG")) { // (debugging) the frames drawn a second, every two seconds
+        static Uint64 since = SDL_GetTicksNS();
+        static int frames = 0;
+        ++frames;
+        if (const Uint64 now = SDL_GetTicksNS(); now - since >= 2 * SDL_NS_PER_SECOND) {
+            std::printf("fps: %.1f (limit %d)\n", double(frames) * 1e9 / double(now - since), app.video.frameLimit);
+            std::fflush(stdout);
+            frames = 0, since = now;
+        }
+    }
     return SDL_APP_CONTINUE;
 }
 
