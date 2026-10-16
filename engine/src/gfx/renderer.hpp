@@ -98,10 +98,17 @@ public:
     void setPhoneLayout(bool on) { phone_ = on; }
     bool phoneLayout() const { return phone_; }
     static constexpr float kPhoneScale = 1.2f;
+    // The Android release's screen (with the iPhone layout; docs/ANDROID.md): its 480 x 320 2D at
+    // 2x on a 720-tall screen, centred - the layout x 16/15 about the screen's centre here - the
+    // full-width parts at the screen's width; 16:9 when not widescreen
+    void setAndroidScreen(bool on) { android_ = on; }
+    bool androidScreen() const { return android_ && phone_; }
+    static constexpr float kAndroidScale = 16.0f / 15.0f;
+    float layoutScale() const { return androidScreen() ? kAndroidScale : kPhoneScale; }
     void layoutToScreen(float& x, float& y) const;
     // The visible screen's right / top edge in the layout's units (toLogical's)
-    float layoutRight() const { return phone_ ? screenW_ * 0.5f + screenW_ * 0.5f / kPhoneScale : screenW_; }
-    float layoutTop() const { return phone_ ? 64.0f : 0.0f; }
+    float layoutRight() const { return phone_ ? screenW_ * 0.5f + screenW_ * 0.5f / layoutScale() : screenW_; }
+    float layoutTop() const { return androidScreen() ? 384.0f - 384.0f / kAndroidScale : phone_ ? 64.0f : 0.0f; }
     void screenToLayout(float& x, float& y) const;
     // Frames rendered at `scale` x the window's pixels and with `samples` x MSAA, where the
     // device renders offscreen (Vulkan); the frame is then scaled to the window
@@ -121,7 +128,7 @@ public:
     int frameWidth() const { return drawableW_; }      // the frame being drawn, in pixels
     int frameHeight() const { return drawableH_; }
     // Window pixels per logical pixel (text is rasterised at this density).
-    float pixelScale() const { return phone_ ? scale_ * kPhoneScale : scale_; }
+    float pixelScale() const { return phone_ ? scale_ * layoutScale() : scale_; }
 
 private:
     void mapScreen(int w, int h); // logical screen -> the current target's pixels
@@ -135,6 +142,7 @@ private:
     float scale_ = 1, offX_ = 0, offY_ = 0; // scale_: the frame's pixels per logical pixel
     float scaleX_ = 1, scaleY_ = 1;          // the current target's (the scene's, while in it)
     float screenW_ = kLogicalW, originX_ = 0, renderScale_ = 1;
+    bool android_ = false;
     bool widescreen_ = false, inScene_ = false, phone_ = false;
     int frameW_ = 0, frameH_ = 0; // the full frame (drawableW_/H_ is the scene's while in it)
     float windowAspect_ = 4.0f / 3.0f;

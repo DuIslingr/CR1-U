@@ -34,7 +34,7 @@ and a model package's textures when it holds as many of the same sizes (the mesh
 data's); the music plays from its Ogg Vorbis tracks (stb_vorbis) before the iPad's AAC (the Vita's
 ATRAC9 still first), looping at the Android build's own points (`setbgm_caf`'s table at 0x98f70,
 the sample `SndBgmPlayerCallback` seeks back to; -1: bgm30 and bgm31 play once - and Android has
-no bgm31, which stays the iPad's). The folder must hold the OBB and the APK; the APK whose table adds up to the OBB is the
+no bgm31, which stays the iPad's). The folder must hold the OBB and the APK (or the APK's `classes.dex`); the one whose table adds up to the OBB is the
 one used.
 
 ## The screen
@@ -43,6 +43,13 @@ As Omega's Android build (`docs/ANDROID.md` of CRO-U has the details): `is_iPadD
 iPhone code path), the 480 x 320 screen at 1.0, 1.5 (`_15` art, from 720 x 480) or 2.0 (`_hd`,
 from 960 x 640) and centred; the message window's cut-in strip per screen width
 (`window_cutin_854`, `_1280`, ...), `window_15`, `window_char_15`.
+
+The port's Layout: Android (Options, Display, or `--layout android`) draws the iPhone layout
+centred on a 16:9 screen (the window's aspect in widescreen) as a 720-tall phone at 2x would,
+and, with `--android`, the message window's strip as `draw_win` does: `window_cutin_<w>` for
+the screen's width 1:1 from its left edge at y 2 y + 20 (`get_draw_win_point`), the parchment's
+name streak (512, 120, 196, 40) over it at (x, y + 16) (`get_draw_namewin_point`); none above
+1366 wide, where the iPhone's parchment stays.
 
 ## Other differences
 

@@ -323,6 +323,10 @@ confirmed by eye on c101/c102/c104/m207a (2026-10-12).
       pieces moved to its corners, 2.2.0's own camp, save, message box, staff roll and History
       (half-size, scrolling sideways too) - with either data set; Auto picks the iPhone's for
       2.2.0's data
+- [x] The Android release's layout (Options, Display, Layout: Android, or `--layout android`):
+      the iPhone's screens at Android's 2x on a 720-tall 16:9 screen (wider in widescreen),
+      centred, and with its data (`--android`) the message window's full-width strip,
+      `window_cutin_<w>` for the screen's width (docs/ANDROID.md)
 - [x] Text in all eight languages (Options, Language / Text Language, or `--language n`: 0 Japanese,
       1 English, 2 French, 3 German, 4 Spanish, 5/6 Chinese simplified/traditional, 7 Korean;
       1.0.1 has Japanese and English). Drawn with a system font through stb_truetype
