@@ -127,8 +127,9 @@ Known viewer limitations: lighting is approximated as full-bright (surface colou
 emission + ambient + diffuse; many materials are black-diffuse/white-ambient) until scene
 Light records are decoded; effects whose colour is animated (fade in/out) are
 invisible until material animation is implemented. **F** toggles smooth texture filtering
-(the original uses nearest). Playback runs animations at 30 frames per second and models are Y-up — both
-confirmed by eye on c101/c102/c104/m207a (2026-10-12).
+(the original uses nearest). Playback runs animations a frame a game frame - 20 frames per second, the
+game's own rate (FORMATS.md; 30 was an early guess by eye) - and models are Y-up (confirmed by eye on
+c101/c102/c104/m207a, 2026-10-12).
 
 ## Status in detail
 

@@ -193,7 +193,10 @@ mapping poses those convincingly, so they're left out (the slot stands).
 (keyTypes 2–4 orient/roll and 6–10 other Euler orders exist in the engine but are
 not used.) Key `mode`: 1 linear, 2 Hermite, 3 step. Hermite between keys k0,k1 with
 `s = (t − t0)/(t1 − t0)`: `p = h00·v0 + h10·out0 + h01·v1 + h11·in1` — tangents are
-**not** scaled by the interval. Times are in frames within `[0, duration]`, played at 30 fps (confirmed visually).
+**not** scaled by the interval. Times are in frames within `[0, duration]`, a frame a game frame
+(`mdl_actctl_prc`: + 1) - 20 a second: the game runs everything at 20 frames a second (1.0.1 and
+2.2.0 schedule EAGLView's `drawView` -> `CRView prc` -> `gameapp_prc` on an NSTimer of 0.05 s;
+Android paces `onDrawFrame` to 50 ms and adds 50 ms of play time a frame).
 
 Node pose: start from the rest axes/translation, a rotation track replaces the
 3×3, a translation track replaces T, then scale (track value, or the rest scale if
@@ -652,7 +655,7 @@ Checked over 12,241 English messages, structure only:
 
 ### Playing scripts over time
 
-`EventRunner` runs a script a frame (30 Hz) at a time and waits where the original waits:
+`EventRunner` runs a script a frame (20 Hz) at a time and waits where the original waits:
 - **`Wait n`:** n frames. 0xFFFF/0xFFFC wait for the screen fade, 0xFFFD + npc for an NPC's
   animation, and 0xFFFE (loading) doesn't wait.
 - **`Msg`:** waits until the dialogue box closes.

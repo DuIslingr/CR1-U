@@ -59,6 +59,7 @@
 #include "audio/music.hpp"
 #include "audio/sound.hpp"
 #include "core/file.hpp"
+#include "core/timing.hpp"
 #include "core/math.hpp"
 #include "gfx/font.hpp"
 #include "gfx/hud.hpp"
@@ -71,8 +72,8 @@ namespace {
 
 enum class Mode { Textures, Models, Maps };
 
-// Original animations are keyed in frames; the game ran at 30 fps (assumption, see README)
-constexpr float kFramesPerSecond = 30.0f;
+// Original animations are keyed in frames, played a frame a game frame (core/timing.hpp: 20 a second)
+using cr::kFramesPerSecond;
 
 struct LoadedModel {
     cr::Model cpu;                       // skeleton, skin data, rest pose
@@ -666,7 +667,7 @@ struct App {
     std::string playerName;
     cr::FieldWalker walker;
     bool havePlayer = false;
-    float walkClock = 0;                   // movement runs in fixed 30 Hz steps like the original
+    float walkClock = 0;                   // movement runs in fixed 20 Hz steps like the original
     float walkExpDistance = 0;             // G+0x35520: walked with skill 174 worn, 10 units = 1 EXP banked
     struct FieldMenu {                     // menuf_mainPut / Prc: the corner button and the bar it opens
         bool open = false;                 // G+0x3553c
@@ -2040,7 +2041,7 @@ void updateSceneChannels(App& app) {
     }
 }
 
-// One 30 Hz frame of every effect on: the channels, then the counters (as ScnEffectProc: drawn first)
+// One 20 Hz frame of every effect on: the channels, then the counters (as ScnEffectProc: drawn first)
 // Effects 2..5, 9 and 11 run (and draw) only with the Options' Environment Effects on
 // (__GetScreenEffectState, G+0x31dd4 - the option's +0x37); so do the tower's fogs
 bool weatherEffect(int id) { return (id >= 2 && id <= 5) || id == 9 || id == 11; }
@@ -2235,7 +2236,7 @@ void followPlayerScroll(App& app) {
                     app.stageCam.rect[3], app.scroll.offX, app.scroll.offY);
 }
 
-// ScrollAutoCtl, once a 30 Hz step with the camera free: the slide
+// ScrollAutoCtl, once a 20 Hz step with the camera free: the slide
 void stepFieldScroll(App& app) {
     App::FieldScroll& fs = app.scroll;
     if (!fs.sliding) return;
@@ -2425,7 +2426,7 @@ struct ViewerHost : cr::EventHost {
             // draws a slot once 0x200 / 0x400 has turned it on - Uty_TexDisp draws loaded ones itself)
         }
         // __EvtTex2d: the flags stay in the slot (placement bits replaced); every animation is a
-        // straight blend over a few 30 Hz frames (tex2d_img_prc)
+        // straight blend over a few 20 Hz frames (tex2d_img_prc)
         p.flags = uint16_t((p.flags & ~0x3000) | f);
         if (f & 0x1000) p.home = -32, p.y = 0, p.side = -1;
         if (f & 0x2000) p.home = 512, p.y = 0, p.side = 1; // drawn mirrored (+0xbd0e)
@@ -3365,7 +3366,7 @@ void drawOptions(App& app, float, float) {
     r.setOrigin(r.uiX());
 }
 
-// One 30 Hz step: the slide-in and the Back arrows' bob (0..5 and back)
+// One 20 Hz step: the slide-in and the Back arrows' bob (0..5 and back)
 void stepOptions(App& app) {
     takeVitaFolder(app);
     takeAndroidFolder(app);
@@ -3810,7 +3811,7 @@ void drawSaveScreen(App& app) {
     r.setOrigin(r.uiX());
 }
 
-// One 30 Hz step: the fade-in, and the "done" message closing itself
+// One 20 Hz step: the fade-in, and the "done" message closing itself
 void stepSaveScreen(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     if (!ss.open) return;
@@ -4997,7 +4998,7 @@ void drawPuzzleHud(App& app, float a) {
     if (pz.punished > 0 && pz.punishPhase == 0) piece(pz.punishX, pz.punishY, 448, 120, 64, 64);
 }
 
-// menuf_mainPut's counters, a 30 Hz frame: the count's swell (set as it changes:
+// menuf_mainPut's counters, a 20 Hz frame: the count's swell (set as it changes:
 // SetFldMenu_puzzle_count), the retry button's blink at 0, the punishment mark's
 void stepPuzzleHud(App& app) {
     App::Puzzle& pz = app.puzzle;
@@ -7102,7 +7103,7 @@ float screenFadeAlpha(const App& app) {
     return app.fadeFrom + (app.fadeTo - app.fadeFrom) * t;
 }
 
-// One 30 Hz frame of the running script and of the things it set going.
+// One 20 Hz frame of the running script and of the things it set going.
 // Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e), one
 // after another; a new page's line replaces one still playing.
 void updateVoices(App& app) {
@@ -7838,7 +7839,7 @@ void reset(App& app) {
     pz.scene = 2;
 }
 
-// One 30 Hz frame (PuzzleManager::update, under PuzzleScene::update)
+// One 20 Hz frame (PuzzleManager::update, under PuzzleScene::update)
 void step(App& app) {
     App::Puzzle& pz = app.puzzle;
     if (pz.stage < 0) return;
@@ -10514,7 +10515,7 @@ void endRound(App& app) {
     }
 }
 
-// One 30 Hz battle frame: the actors' motions and moves, the round, the HUD's counters
+// One 20 Hz battle frame: the actors' motions and moves, the round, the HUD's counters
 void stepResults(App& app);
 void resultsTap(App& app);
 
@@ -11366,7 +11367,7 @@ void drawFrame(App& app, bool present = true) {
     } else if (app.mode == Mode::Maps && app.battle.active) {
         drawBattle(app, dt);
     } else if (app.mode == Mode::Maps && app.booting) {
-        // The title: no field; the boot script runs at 30 Hz by itself (it shows its pictures
+        // The title: no field; the boot script runs at 20 Hz by itself (it shows its pictures
         // through Tex2d, drawn with the 2D below)
         r.fillRect(0, 0, SW, H, 0, 0, 0, 1);
         for (app.bootClock += dt; app.bootClock >= 1.0f / kFramesPerSecond; app.bootClock -= 1.0f / kFramesPerSecond) {
@@ -15143,7 +15144,7 @@ int runSelfTest(App& app) {
             }
             for (f = 0; f < 4000 && app.runner.running() && !b.active; ++f) {
                 stepEvents(app);
-                animateNpcs(app, 1.0f / 30.0f);
+                animateNpcs(app, 1.0f / kFramesPerSecond);
                 readOn(f);
                 if (const cr::FieldNpc* n = findNpc(app, 508); n && npcActive(app, *n) && app.mapNumber == 63 && !bossIn) {
                     bossIn = true;
@@ -15243,7 +15244,7 @@ int runSelfTest(App& app) {
             for (int f = 0; f < 60; ++f) {
                 const int want = std::min(int(app.walker.gait), int(app.player.actions.size()) - 1);
                 if (want != app.player.action) app.player.action = want, app.player.time = 0, app.footPrev = 0;
-                animate(app, app.player, 1.0f / 30.0f);
+                animate(app, app.player, 1.0f / kFramesPerSecond);
                 playFootsteps(app);
                 stepEffects(app, app.fieldEffects);
             }
@@ -15840,7 +15841,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             if (where != lastWhere) std::printf("frame %d: %s\n", f, where.c_str());
             lastWhere = where;
         }
-        animateNpcs(app, 1.0f / 30.0f);
+        animateNpcs(app, 1.0f / kFramesPerSecond);
         followPlayerScroll(app); // (drawFrame's, every frame the game shows: a capture draws only its last)
         if (f % 45 == 44 && f + 1 < app.captureFrames) {
             if (app.choiceFlag >= 0) answerChoice(app, true);
@@ -16220,7 +16221,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     }
     // The capture shows exactly the frames stepped above; --settle draws that moment first (an
     // upscaler's history converges on it)
-    const Uint64 frame = SDL_NS_PER_SECOND / 30;
+    const Uint64 frame = Uint64(SDL_NS_PER_SECOND / kFramesPerSecond);
     for (int f = 0; f < app.captureSettle; ++f) {
         app.lastTicks = app.captureSettleMoving ? SDL_GetTicksNS() - frame : 0;
         drawFrame(app, false);

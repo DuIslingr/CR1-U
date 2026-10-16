@@ -16,7 +16,7 @@ struct FieldWalker {
     Gait gait = Gait::Stand;
 };
 
-// Units per 30 Hz frame (FieldPCCtrl::operate)
+// Units per 20 Hz frame (FieldPCCtrl::operate)
 constexpr float kWalkSpeed = 0.5f;
 constexpr float kRunSpeed = 1.65f;
 
@@ -29,7 +29,7 @@ bool floorHeight(const Collision& col, float x, float y, float z, float stepUp, 
 // largest floor polygon.
 bool spawnPoint(const Collision& col, Vec3 eye, Vec3 target, const Mat4& viewProj, Vec3& out);
 
-// One 30 Hz frame. `stick` is the cross-key direction in screen space (x right, y down,
+// One 20 Hz frame. `stick` is the cross-key direction in screen space (x right, y down,
 // zero = no input); `camYaw` is atan2(eye.x - target.x, eye.z - target.z).
 void stepWalker(FieldWalker& w, const Collision& col, float stickX, float stickY, bool run, float camYaw);
 

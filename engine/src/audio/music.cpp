@@ -9,6 +9,7 @@
 
 #include "audio/at9.hpp"
 #include "core/file.hpp"
+#include "core/timing.hpp"
 
 #ifdef CR_HAVE_FAAD2
 #include <neaacdec.h>
@@ -375,7 +376,7 @@ void MusicPlayer::command(uint32_t v) {
 void MusicPlayer::update(float dt) {
     if (!impl_ || !impl_->stream) return;
     if (fadeStep_ != 0) {
-        fade_ += fadeStep_ * dt * 30.0f;
+        fade_ += fadeStep_ * dt * cr::kFramesPerSecond; // (a fade counts game frames)
         if (fade_ <= 0) { SDL_DestroyAudioStream(impl_->stream); impl_->stream = nullptr; track_ = -1; fade_ = 1; fadeStep_ = 0; return; }
     }
     SDL_SetAudioStreamGain(impl_->stream, volume_ * std::clamp(fade_, 0.0f, 1.0f));
