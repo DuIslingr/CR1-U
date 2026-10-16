@@ -3,8 +3,11 @@
 // streamed through SDL audio, looping from the game's _BGM_REPEAT packet. _bgmgo semantics.
 // With a Vita source (setVitaSource), the Vita's cr_mNN.at9 instead (ATRAC9, 48 kHz stereo,
 // 144 kb/s: the same tracks but bgm31, looping sample-exactly between its 'smpl' points - the
-// files run on past the loop's end into an ending). Without either decoder everything is a
-// silent no-op. See docs/FORMATS.md ("Music").
+// files run on past the loop's end into an ending). With an Android source (setAndroidSource),
+// its j001mNN.mca instead - Ogg Vorbis after a 1 KB header, 44.1 kHz, ~96 kb/s, looping
+// sample-exactly at the Android build's own point (its SLBgmPlay's ov_pcm_seek). The order: the
+// Vita, Android, the data. Without a decoder everything is a silent no-op. See docs/FORMATS.md
+// ("Music"), docs/ANDROID.md.
 
 #include <cstdint>
 #include <functional>
@@ -28,6 +31,10 @@ bool parseCafAac(const std::vector<uint8_t>& file, CafAac& out, std::string* err
 // (tests: the system and the bundled FAAD2 builds should agree); false without a decoder
 bool decodeTrack(const std::string& dataDir, int t, int64_t& frames, uint64_t& hash, std::string* error = nullptr);
 constexpr int kBgmTracks = 30;
+// Android's track `t` (j001mNN.mca through `read`): its length in samples, and whether its loop
+// point lies inside it and a seek there decodes (true for a track that plays once)
+bool checkAndroidTrack(const std::function<bool(const std::string&, std::vector<uint8_t>&)>& read, int t, int64_t& samples,
+                       bool& loopOk);
 
 class MusicPlayer {
 public:
@@ -35,7 +42,7 @@ public:
     ~MusicPlayer();
     bool init(const std::string& dataDir); // false: no decoder or no audio device
     // _bgmgo(v): bit 29 stop now; bits 25 / 26 / 27 fade out over 40 / 10 / 20 frames and stop;
-    // otherwise play track v & 0xff (0..29, _BGM_FILE), unless it is already playing.
+    // otherwise play track v & 0xff (0..kBgmTracks - 1, _BGM_FILE), unless it is already playing.
     void command(uint32_t v);
     void update(float dt);   // decode ahead, fades
     int current() const { return track_; }
@@ -44,12 +51,16 @@ public:
     using VitaReader = std::function<bool(const std::string& name, std::vector<uint8_t>& out)>;
     void setVitaSource(VitaReader read) { vita_ = std::move(read); }
     bool playingVita() const; // the current track is the Vita's
+    // Reads a file of the Android expansion file by name; empty: none
+    void setAndroidSource(VitaReader read) { android_ = std::move(read); }
+    bool playingAndroid() const; // the current track is Android's
+    bool ready() const;          // an audio device is open
 
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::string dataDir_;
-    VitaReader vita_;
+    VitaReader vita_, android_;
     int track_ = -1;
     float volume_ = 0.8f, fade_ = 1.0f, fadeStep_ = 0.0f;
 };

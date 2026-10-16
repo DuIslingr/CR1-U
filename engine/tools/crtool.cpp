@@ -32,6 +32,8 @@
 #include "assets/gxt.hpp"
 #include "assets/psarc.hpp"
 #include "assets/obb.hpp"
+#define STB_VORBIS_HEADER_ONLY
+#include "stb/stb_vorbis.c"
 #include "assets/model.hpp"
 #include "assets/texture.hpp"
 #include "core/file.hpp"
@@ -802,6 +804,19 @@ int obb(int argc, char** argv) {
             else std::printf("  %s: %s\n", n.c_str(), why.c_str());
         }
     }
+    int tracks = 0, ogg = 0;
+    double seconds = 0;
+    for (const std::string& n : a.names()) { // the music: Ogg Vorbis after a 1 KB header
+        if (n.compare(0, 5, "j001m") != 0) continue;
+        ++tracks;
+        std::vector<uint8_t> f;
+        int e = 0;
+        stb_vorbis* v = a.read(n, f) && f.size() > 0x400 ? stb_vorbis_open_memory(f.data() + 0x400, int(f.size() - 0x400), &e, nullptr) : nullptr;
+        if (!v) { std::printf("  %s: not Ogg Vorbis (%d)\n", n.c_str(), e); continue; }
+        ++ogg, seconds += double(stb_vorbis_stream_length_in_samples(v)) / stb_vorbis_get_info(v).sample_rate;
+        stb_vorbis_close(v);
+    }
+    std::printf("music: %d of %d tracks Ogg Vorbis, %.1f minutes\n", ogg, tracks, seconds / 60);
     std::printf("%zu files:", a.size());
     for (const auto& [k, v] : kinds) std::printf(" %s %d", k.c_str(), v);
     std::printf("\ntextures: %d of %d decode; formats:", decoded, textures);

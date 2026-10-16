@@ -159,6 +159,10 @@ set(GAME_SOURCES
 
 # stb_truetype (public domain, vendored): dialogue in every language with a system font
 set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+# stb_vorbis (public domain, vendored): the Android release's music (Ogg Vorbis)
+target_sources(crcore PRIVATE ${THIRD_PARTY_DIR}/stb/stb_vorbis.c)
+target_include_directories(crcore SYSTEM PRIVATE ${THIRD_PARTY_DIR})
+set_source_files_properties(${THIRD_PARTY_DIR}/stb/stb_vorbis.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 
 # Vulkan back end: the loader + headers and glslc (shaders are compiled to SPIR-V at build time
 # and embedded). Without them the game builds with OpenGL only.
@@ -279,4 +283,5 @@ else()
     # Headless asset tool (decode/verify), desktop only
     add_executable(crtool tools/crtool.cpp)
     target_link_libraries(crtool PRIVATE crcore)
+    target_include_directories(crtool SYSTEM PRIVATE ${THIRD_PARTY_DIR})
 endif()

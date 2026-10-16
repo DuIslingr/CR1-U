@@ -1066,6 +1066,7 @@ bool openAndroid(App& app, const std::string& path) {
         return false;
     }
     app.androidPath = app.androidLoaded = path;
+    app.music.setAndroidSource([&app](const std::string& n, std::vector<uint8_t>& out) { return app.android.read(n, out); });
     SDL_Log("android: %zu files in %s", app.android.size(), app.android.path().c_str());
     return true;
 }
@@ -14316,6 +14317,20 @@ int runSelfTest(App& app) {
 #else
         std::printf("music: built without an AAC decoder\n");
 #endif
+    }
+    if (app.android.isOpen()) { // --android: its j001mNN.mca for bgmNN (Ogg Vorbis, looping at its own sample)
+        int problems = 0, decoded = 0, loops = 0;
+        double minutes = 0;
+        const auto read = [&app](const std::string& n, std::vector<uint8_t>& out) { return app.android.read(n, out); };
+        for (int t = 0; t < cr::kBgmTracks; ++t) {
+            int64_t samples = 0;
+            bool loopOk = false;
+            if (cr::checkAndroidTrack(read, t, samples, loopOk)) ++decoded, loops += loopOk, minutes += double(samples) / 44100 / 60;
+        }
+        problems += decoded < cr::kBgmTracks - 1 || loops != decoded; // (CR1's: no j001m31)
+        std::printf("android music: %d of %d tracks decode (%.1f minutes), %d loop points inside them; %d problems\n", decoded,
+                    cr::kBgmTracks, minutes, loops, problems);
+        mapErrors += problems;
     }
     if (app.vita.isOpen()) { // --vita: the Vita's scripts (eight languages), voices (sorted names = 2.2.0's
                              // clips) and music (cr_mNN.at9 for bgmNN, looping between its smpl points)

@@ -10,7 +10,7 @@ licences, kept beside them in `engine/third_party/`:
 | `libatrac9/` | LibAtrac9 by Alex Barney, commit efca2e3 (the Vita release's ATRAC9 voices and music) | MIT (`LICENSE`) |
 | `hevag/` | The HE-VAG prediction filter table from vgmstream (the Vita's sound effects) | ISC (`COPYING`) |
 | `fidelityfx/` | AMD FidelityFX SDK 1.1.4's FSR 3.1 GPU passes | MIT (`LICENSE.txt`) |
-| `stb/` | stb_truetype by Sean Barrett | MIT / public domain (in the file) |
+| `stb/` | stb_truetype and stb_vorbis 1.22 (commit 1ee679c; the Android release's Ogg Vorbis music) by Sean Barrett | MIT / public domain (in the files) |
 
 Not included: the **NVIDIA DLSS SDK** (proprietary, NVIDIA RTX SDKs licence). DLSS support
 builds only when you place the SDK's `include/` and `lib/libnvsdk_ngx.a` in
