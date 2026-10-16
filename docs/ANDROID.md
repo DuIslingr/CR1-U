@@ -25,7 +25,7 @@ before it added up, and they add up to the OBB exactly. `cr::ObbArchive`
 
 The files: the voiced, multi-language 2.2.0 data plus 148 `_15` pictures (the 1.5x screens' art),
 `window_cutin_480 .. 1366`, and the iPhone's own art; every texture as RGB / RGBA or a palette - no
-PVRTC - and the music as `j001m01.mca` .. `j001m29.mca`, Ogg Vorbis after a 1 KB header (the other
+PVRTC - and the music as `j001m01.mca` .. `j001m30.mca` (29: no 07), Ogg Vorbis after a 1 KB header (the other
 `.mca` files are animations, as on iOS).
 
 `--android <folder | main.*.obb>` (or `CR_ANDROID`, or Options, Game, Android Assets; saved as
