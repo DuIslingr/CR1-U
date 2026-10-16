@@ -14,8 +14,25 @@ APK>` (Ghidra; output in `re/android/`, never committed). Nothing of the APK is 
 | `assets/00000`, `00001` | two OpenType (CFF) fonts (the same as Omega's APK) |
 | `assets/loading.mct` | the loading picture |
 
-The game's data is **not** in the APK: it comes as a Google Play expansion file (`main.<version
-code>.<package>.obb`), read by the native code. `FileDownLoadAndCheckProc` is empty here.
+The game's data is **not** in the APK: it comes as a Google Play expansion file
+(`main.100.com.square_enix.chaosrings.googleplay.obb`, 1,018,269,756 bytes): the game's 1380 files
+one after another, **with no table of its own**. The table is in `classes.dex`: a Java class's
+constructor fills a `String[1380]` with the names, one const-string at a time, and two `int[1380]`
+arrays (fill-array-data payloads) hold each file's size and CRC-16; a file's offset is the sizes
+before it added up, and they add up to the OBB exactly. `cr::ObbArchive`
+(`engine/src/assets/obb.cpp`) reads the table out of your APK at run time; `crtool obb <obb> <apk>
+[name -o out]` lists, checks or extracts. `FileDownLoadAndCheckProc` is empty here.
+
+The files: the voiced, multi-language 2.2.0 data plus 148 `_15` pictures (the 1.5x screens' art),
+`window_cutin_480 .. 1366`, and the iPhone's own art; every texture as RGB / RGBA or a palette - no
+PVRTC - and the music as `j001m01.mca` .. `j001m29.mca`, Ogg Vorbis after a 1 KB header (the other
+`.mca` files are animations, as on iOS).
+
+`--android <folder | main.*.obb>` (or `CR_ANDROID`, or Options, Game, Android Assets; saved as
+`android=`) adds it as a source: a picture the data lacks, or one of the same size, comes from it,
+and a model package's textures when it holds as many of the same sizes (the meshes stay the
+data's). The folder must hold the OBB and the APK; the APK whose table adds up to the OBB is the
+one used.
 
 ## The screen
 

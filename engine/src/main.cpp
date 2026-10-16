@@ -45,6 +45,7 @@
 #include "assets/event.hpp"
 #include "assets/gxt.hpp"
 #include "assets/psarc.hpp"
+#include "assets/obb.hpp"
 #include "game/encounter.hpp"
 #include "game/event_vm.hpp"
 #include "game/field_walker.hpp"
@@ -123,6 +124,12 @@ struct App {
     cr::PsarcArchive vita;
     cr::PsarcArchive vitaBgm, vitaVoice[2];
     int vitaTextures = 0;                // how many images / model packages came from it
+    // The Android release (Google Play) as a source of assets (--android, CR_ANDROID or
+    // settings.ini's android=): its expansion file's textures (8-bit palettes where the iPad's
+    // are PVRTC) and the art only it has (docs/ANDROID.md), its table read from the APK beside it
+    std::string androidPath, androidLoaded, androidNote;
+    cr::ObbArchive android;
+    int androidTextures = 0;
     Mode mode = Mode::Textures;
 
     std::vector<std::string> textures;
@@ -872,6 +879,13 @@ bool loadImage(App& app, const std::string& mct, cr::Image& img) {
     return true;
 }
 
+// An MCT's size from its header alone (no decoding)
+bool mctHeader(const std::vector<uint8_t>& f, cr::MctInfo& mi) {
+    if (f.size() < 0x2b || SDL_memcmp(f.data(), "MCT_", 4) != 0) return false;
+    mi.width = f[0x22] | f[0x23] << 8, mi.height = f[0x24] | f[0x25] << 8;
+    return true;
+}
+
 // A full-image texture by its .mct name: the Vita's lossless .gxt of the same name when --vita is
 // given (same sizes; 8 bits per channel where the iPad files use palettes, PVRTC or RGBA4444),
 // else the data folder's .mct.
@@ -887,6 +901,19 @@ bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img) {
         if (app.vita.read(mct.substr(0, mct.size() - 4) + ".gxt", g) && cr::decodeGxt(g, img)) { ++app.vitaTextures; return true; }
     }
     std::vector<uint8_t> data;
+    // the Android copy of the same name: when the data has none, or one of the same size (the same
+    // layout), as its palettes beat the iPad's PVRTC
+    if (!app.vitaOnly && app.android.isOpen() && app.android.read(mct, data)) {
+        std::vector<uint8_t> mine;
+        const bool own = cr::readFile(app.dataDir + mct, mine);
+        cr::Image a;
+        cr::MctInfo ai, mi;
+        if (cr::decodeMct(data, a, &ai) && (!own || (mctHeader(mine, mi) && mi.width == ai.width && mi.height == ai.height))) {
+            img = std::move(a);
+            ++app.androidTextures;
+            return true;
+        }
+    }
     return cr::readFile(app.dataDir + mct, data) && cr::decodeMct(data, img);
 }
 
@@ -1004,18 +1031,92 @@ void takeVitaFolder(App& app) {
     saveMix(app);
 }
 
+// The game's own expansion file in `path` (a folder, or the .obb itself) and the APK (or
+// classes.dex) beside it whose table adds up to it - not another release's in the same folder
+constexpr const char* kObbPackage = ".com.square_enix.chaosrings.googleplay.obb";
+bool findAndroid(const std::string& path, cr::ObbArchive& out, std::string* error) {
+    std::string dir = path, obb;
+    while (dir.size() > 1 && dir.back() == '/') dir.pop_back();
+    SDL_PathInfo info;
+    if (SDL_GetPathInfo(dir.c_str(), &info) && info.type == SDL_PATHTYPE_FILE) obb = dir, dir = dir.substr(0, dir.rfind('/'));
+    int count = 0;
+    char** files = SDL_GlobDirectory(dir.c_str(), "*", 0, &count);
+    std::vector<std::string> tables;
+    for (int i = 0; files && i < count; ++i) {
+        const std::string n = files[i];
+        const auto ends = [&](const std::string& sfx) {
+            return n.size() > sfx.size() && SDL_strcasecmp(n.c_str() + n.size() - sfx.size(), sfx.c_str()) == 0;
+        };
+        if (obb.empty() && n.compare(0, 5, "main.") == 0 && ends(kObbPackage)) obb = dir + "/" + n;
+        if (ends(".apk") || n == "classes.dex") tables.push_back(dir + "/" + n);
+    }
+    SDL_free(files);
+    if (obb.empty()) { if (error) *error = "no main.*" + std::string(kObbPackage) + " in " + dir; return false; }
+    std::string why = "no APK beside it";
+    for (const std::string& t : tables)
+        if (out.open(obb, t, &why)) return true;
+    if (error) *error = obb + ": " + why;
+    return false;
+}
+
+bool openAndroid(App& app, const std::string& path) {
+    std::string err;
+    if (!findAndroid(path, app.android, &err)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "android: %s", err.c_str());
+        return false;
+    }
+    app.androidPath = app.androidLoaded = path;
+    SDL_Log("android: %zu files in %s", app.android.size(), app.android.path().c_str());
+    return true;
+}
+
+std::mutex androidPickMutex;
+std::string androidPicked;
+bool androidPickedReady = false;
+
+void chooseAndroidFolder(App& app) {
+    SDL_ShowOpenFolderDialog(
+        [](void*, const char* const* list, int) {
+            if (!list || !list[0]) return;
+            std::lock_guard<std::mutex> lock(androidPickMutex);
+            androidPicked = list[0];
+            androidPickedReady = true;
+        },
+        nullptr, app.window, app.androidPath.empty() ? nullptr : app.androidPath.c_str(), false);
+}
+
+void takeAndroidFolder(App& app) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(androidPickMutex);
+        if (!androidPickedReady) return;
+        androidPickedReady = false;
+        path = androidPicked;
+    }
+    cr::ObbArchive probe;
+    std::string err;
+    if (!findAndroid(path, probe, &err)) { app.androidNote = err; return; }
+    app.androidPath = path;
+    app.androidNote = path == app.androidLoaded ? "In use" : "Used from the next start: " + path;
+    saveMix(app);
+}
+
+
 std::string settingsPath();
 
-// settings.ini's vita= (the whole line: a path), read before the data loads
-std::string storedVitaPath() {
+// settings.ini's vita= / android= (the whole line: a path), read before the data loads
+std::string storedSetting(const char* key);
+std::string storedVitaPath() { return storedSetting("vita="); }
+std::string storedSetting(const char* key) {
     size_t size = 0;
     char* text = static_cast<char*>(SDL_LoadFile(settingsPath().c_str(), &size));
     if (!text) return {};
     std::string all(text, size), path;
     SDL_free(text);
+    const size_t kl = SDL_strlen(key);
     for (size_t at = 0; at < all.size();) {
         const size_t e = std::min(all.find('\n', at), all.size());
-        if (all.compare(at, 5, "vita=") == 0) path = all.substr(at + 5, e - at - 5);
+        if (all.compare(at, kl, key) == 0) path = all.substr(at + kl, e - at - kl);
         at = e + 1;
     }
     while (!path.empty() && (path.back() == '\r' || path.back() == ' ')) path.pop_back();
@@ -1050,6 +1151,19 @@ void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool cha
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s: %s", name.c_str(), err.c_str());
         updateTitle(app);
         return;
+    }
+    // --android: the Android package's textures (8-bit palettes where the iPad's are PVRTC) when
+    // it holds as many of the same sizes - the meshes stay the data's
+    if (!fromVita && app.android.isOpen()) {
+        std::vector<uint8_t> ad;
+        cr::Model am;
+        if (app.android.read(name, ad) && cr::loadModelPackage(ad, am, nullptr) && am.textures.size() == m.textures.size() &&
+            !m.textures.empty()) {
+            bool same = true;
+            for (size_t i = 0; i < m.textures.size(); ++i)
+                same &= am.textures[i].width == m.textures[i].width && am.textures[i].height == m.textures[i].height;
+            if (same) m.textures = std::move(am.textures), ++app.androidTextures;
+        }
     }
     // Smooth Models: characters, NPCs and monsters (field props and battle stages stay as built)
     if (character && app.video.smoothModels >= 2) cr::smoothModel(m, app.video.smoothModels);
@@ -2653,7 +2767,7 @@ void saveMix(const App& app) {
                               "\nlayout=" + std::to_string(v.layout) +
                               "\nenvironment_effects=" +
                               std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
-                              std::to_string(int(app.lockOrientation)) + "\n" + "vita=" + app.vitaPath + "\n" + "pad_confirm=" +
+                              std::to_string(int(app.lockOrientation)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
                               (app.padConfirmEast ? "east" : "south") + "\n";
     const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video;
     SDL_SaveFile(settingsPath().c_str(), all.data(), all.size());
@@ -2982,6 +3096,25 @@ std::vector<OptRow> optionRows(App& app, int page) {
                                : !app.vitaNote.empty() ? app.vitaNote
                                : "Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none";
         }
+        { // the Android copy to take assets from (a folder holding its main.*.obb and APK; Left / Right: none)
+            std::string shown = "None";
+            if (!app.androidPath.empty()) {
+                std::string p = app.androidPath;
+                while (p.size() > 1 && p.back() == '/') p.pop_back();
+                shown = p.substr(p.rfind('/') + 1);
+                if (shown.size() > 18) shown = shown.substr(0, 17) + "~";
+            }
+            if (app.androidPath != app.androidLoaded) shown += " (next start)";
+            else if (!app.androidPath.empty() && !app.android.isOpen()) shown += " (not found)";
+            value("Android Assets", shown, [&app](int dir) {
+                if (dir == 0) chooseAndroidFolder(app);
+                else if (!app.androidPath.empty()) app.androidPath.clear(), app.androidNote.clear(), saveMix(app);
+            });
+            rows.back().enabled = !app.vitaOnly;
+            rows.back().hint = !app.androidNote.empty() ? app.androidNote
+                               : "Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art "
+                                 "only it has; Left / Right: none";
+        }
         OptRow swap; // the controller's ○ (east) / × (south): Off as on the Vita, ○ confirms
         swap.label = "Swap \u25cb and \u00d7";
         swap.kind = OptControl::Pair;
@@ -3231,6 +3364,7 @@ void drawOptions(App& app, float, float) {
 // One 30 Hz step: the slide-in and the Back arrows' bob (0..5 and back)
 void stepOptions(App& app) {
     takeVitaFolder(app);
+    takeAndroidFolder(app);
     if (!app.optionsOpen) return;
     ++app.optionsAnim;
     app.optionsBob += app.optionsBobDir;
@@ -13045,7 +13179,7 @@ int runSelfTest(App& app) {
         problems += !app.titleOpen;
         openOptions(app, 0);
         const std::vector<OptRow> titlePage = optionRows(app, 0);
-        problems += titlePage.size() != 8 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
+        problems += titlePage.size() != 9 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
         { // Reset Data: asked twice; No keeps the saves, Yes to both removes them (in a test folder)
             const std::string keepDir = app.saveDirOverride;
             app.saveDirOverride = userDir() + "selftest-reset/";
@@ -13100,8 +13234,8 @@ int runSelfTest(App& app) {
         startNewGame(app); // (the hall, for the in-game Options checks below)
         openOptions(app, 0);
         std::vector<OptRow> gamePage = optionRows(app, 0);
-        problems += gamePage.size() != 8 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
-        if (gamePage.size() == 8 && gamePage.back().act) gamePage.back().act(0);
+        problems += gamePage.size() != 9 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
+        if (gamePage.size() == 9 && gamePage.back().act) gamePage.back().act(0);
         problems += !app.booting;
         app.runner.stop();
         std::printf("options: %d pages, %d rows; FSR 3.1 modes drawn: %d; title menu after %d frames; %d problems\n",
@@ -15693,6 +15827,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         if (found < app.captureTalk) std::printf("talk-portrait: only %d moments with a portrait\n", found + 1);
     }
     if (app.vita.isOpen()) std::printf("vita textures used: %d\n", app.vitaTextures);
+    if (app.android.isOpen()) std::printf("android textures used: %d\n", app.androidTextures);
     if (app.video.hdTextures) std::printf("hd textures: %d replaced, %d without one (%s)\n", app.hdLoaded, app.hdMissing, app.hdDir.c_str());
     if (app.captureTitle) {
         std::printf("title: script %s, title menu %s, fade grey %.2f alpha %.2f", app.runner.running() ? app.runner.where().c_str() : "done",
@@ -16189,6 +16324,19 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         app->vitaPath.clear(); // (openVita takes it as the setting)
     }
     if (app->vitaOnly && app->vitaPath == app->vitaLoaded && app->vitaLoaded == vitaBeside) app->vitaPath.clear();
+    // --android <folder | main.*.obb> (or CR_ANDROID, else settings.ini's android=; none: without):
+    // the Android release's expansion file, its table from the APK beside it
+    {
+        std::string a;
+        bool given = false;
+        for (int i = 1; i + 1 < argc; ++i)
+            if (SDL_strcmp(argv[i], "--android") == 0) a = argv[i + 1], given = true;
+        if (!given)
+            if (const char* env = SDL_getenv("CR_ANDROID")) a = env, given = true;
+        if (!given) a = storedSetting("android=");
+        app->androidPath = a == "none" ? std::string() : a;
+        if (!app->androidPath.empty() && !app->vitaOnly) openAndroid(*app, app->androidPath);
+    }
     if (const char* sd = SDL_getenv("CR_SAVE_DIR")) { // save.dat / resume.dat elsewhere (tests)
         app->saveDirOverride = sd;
         if (!app->saveDirOverride.empty() && app->saveDirOverride.back() != '/') app->saveDirOverride += '/';

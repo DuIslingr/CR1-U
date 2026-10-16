@@ -31,6 +31,7 @@
 #include "game/puzzle.hpp"
 #include "assets/gxt.hpp"
 #include "assets/psarc.hpp"
+#include "assets/obb.hpp"
 #include "assets/model.hpp"
 #include "assets/texture.hpp"
 #include "core/file.hpp"
@@ -774,6 +775,41 @@ int npcs(const char* dirArg, int area, int map) {
 
 // crtool vita <cr1.psarc> [dataHD]: decodes every .gxt texture; with the iPad data, compares each
 // with the .mct of the same name (mean absolute RGBA difference where both are the same size).
+// crtool obb <main.*.obb> <APK or classes.dex> [name -o out]: the Android expansion file through the
+// APK's table - its files, and every texture decoded; or one file written out
+int obb(int argc, char** argv) {
+    cr::ObbArchive a;
+    std::string err;
+    if (!a.open(argv[2], argv[3], &err)) { std::fprintf(stderr, "%s\n", err.c_str()); return 1; }
+    if (argc >= 6 && std::strcmp(argv[5], "-o") == 0 && argc >= 7) {
+        std::vector<uint8_t> f;
+        if (!a.read(argv[4], f)) { std::fprintf(stderr, "no %s\n", argv[4]); return 1; }
+        return SDL_SaveFile(argv[6], f.data(), f.size()) ? 0 : 1;
+    }
+    std::map<std::string, int> kinds;
+    int textures = 0, decoded = 0;
+    std::map<int, int> formats;
+    for (const std::string& n : a.names()) {
+        const size_t dot = n.rfind('.');
+        ++kinds[dot == std::string::npos ? "" : n.substr(dot)];
+        if (n.size() > 4 && n.compare(n.size() - 4, 4, ".mct") == 0) {
+            ++textures;
+            std::vector<uint8_t> f;
+            cr::Image img;
+            cr::MctInfo mi;
+            std::string why;
+            if (a.read(n, f) && cr::decodeMct(f, img, &mi, &why)) ++decoded, ++formats[mi.format];
+            else std::printf("  %s: %s\n", n.c_str(), why.c_str());
+        }
+    }
+    std::printf("%zu files:", a.size());
+    for (const auto& [k, v] : kinds) std::printf(" %s %d", k.c_str(), v);
+    std::printf("\ntextures: %d of %d decode; formats:", decoded, textures);
+    for (const auto& [k, v] : formats) std::printf(" %s %d", cr::mctFormatName(k), v);
+    std::printf("\n");
+    return decoded == textures ? 0 : 1;
+}
+
 int vita(const char* psarcPath, const char* ipadArg) {
     cr::PsarcArchive a;
     std::string err;
@@ -1194,6 +1230,7 @@ int main(int argc, char** argv) {
     if (argc >= 5 && std::strcmp(argv[1], "sysmsg") == 0) return sysmsg(argv[2], std::atoi(argv[3]), argc - 4, argv + 4);
     if (argc >= 3 && std::strcmp(argv[1], "battle") == 0)
         return battle(argv[2], argc > 3 && std::strcmp(argv[3], "-v") == 0);
+    if (argc >= 4 && std::strcmp(argv[1], "obb") == 0) return obb(argc, argv);
     if (argc >= 3 && std::strcmp(argv[1], "vita") == 0) return vita(argv[2], argc > 3 ? argv[3] : nullptr);
     if (argc == 5 && std::strcmp(argv[1], "npcs") == 0) return npcs(argv[2], std::atoi(argv[3]), std::atoi(argv[4]));
     if (argc >= 5 && std::strcmp(argv[1], "trace") == 0)
@@ -1208,6 +1245,7 @@ int main(int argc, char** argv) {
     std::fprintf(stderr,
                  "usage:\n  crtool mct-info <file.mct>...\n  crtool mct-raw <file.mct> <out.rgba>\n"
                  "  crtool check <dataHD dir>\n  crtool models <dataHD dir> [-v]\n"
-                 "  crtool anims <dataHD dir> [model]\n  crtool maps <dataHD dir>\n  crtool events <dataHD dir> [-v]\n");
+                 "  crtool anims <dataHD dir> [model]\n  crtool maps <dataHD dir>\n  crtool events <dataHD dir> [-v]\n"
+                 "  crtool obb <main.*.obb> <APK or classes.dex> [name -o out]\n");
     return 2;
 }

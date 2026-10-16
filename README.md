@@ -36,6 +36,7 @@ directory (so it runs from an unpacked .ipa). Any of these works as the game:
 | iPhone *Chaos Rings* 2.2.0 (Japanese voices, eight languages, the iPhone layout) | `--data …/ChaosRings.app/data` |
 | Vita PCSG00497, alone | `--data <PCSG00497 folder>` |
 | Vita as an add-on (voices, ATRAC9 music, scripts in eight languages, lossless art) | `--vita <PCSG00497 folder>`, or Options, Game, Vita Assets |
+| Android as an add-on (its expansion file's sharper textures and its own art) | `--android <folder with main.*.obb and the APK>`, or Options, Game, Android Assets |
 
 Settings and saves go to the profile folder (`~/.local/share/preservation/ChaosRingsHD/` on
 Linux); `CR_SAVE_DIR` moves the settings.

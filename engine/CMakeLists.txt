@@ -47,6 +47,7 @@ add_library(crcore STATIC
     src/audio/at9.cpp
     src/audio/scream.cpp
     src/assets/psarc.cpp
+    src/assets/obb.cpp
     src/assets/gxt.cpp
     src/assets/battle_data.cpp
     src/assets/hd_texture.cpp
