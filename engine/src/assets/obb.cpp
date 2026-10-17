@@ -223,6 +223,14 @@ bool ObbArchive::read(const std::string& name, std::vector<uint8_t>& out) const 
     const bool ok = SDL_SeekIO(io, Sint64(e.offset), SDL_IO_SEEK_SET) == Sint64(e.offset) &&
                     SDL_ReadIO(io, out.data(), e.size) == e.size;
     SDL_CloseIO(io);
+    // The event files (the areas' and sys.evt) are stored scrambled: file_load_malloc (0x39980:
+    // fldread_evt_init2, sys.evt) XORs every other byte from 0x1000 with a 21-byte key, in turn
+    const std::string& n = e.name;
+    if (ok && n.size() > 4 && SDL_strcasecmp(n.c_str() + n.size() - 4, ".evt") == 0) {
+        static const uint8_t key[21] = {0x61, 0x19, 0x4a, 0xed, 0x04, 0xa7, 0xa1, 0x48, 0x5a, 0x6f, 0x44,
+                                        0xb9, 0xd9, 0xed, 0x74, 0xda, 0x75, 0x9c, 0xd8, 0xf5, 0x3f};
+        for (size_t i = 0x1000, k = 0; i < out.size(); i += 2, k = (k + 1) % 21) out[i] ^= key[k];
+    }
     return ok;
 }
 
@@ -231,6 +239,13 @@ std::vector<std::string> ObbArchive::names() const {
     n.reserve(entries_.size());
     for (const Entry& e : entries_) n.push_back(e.name);
     return n;
+}
+
+bool ObbArchive::locate(const std::string& name, uint64_t& offset, uint32_t& size) const {
+    const auto it = byName_.find(lower(name));
+    if (it == byName_.end()) return false;
+    offset = entries_[it->second].offset, size = entries_[it->second].size;
+    return true;
 }
 
 } // namespace cr

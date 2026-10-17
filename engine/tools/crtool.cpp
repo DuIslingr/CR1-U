@@ -788,6 +788,26 @@ int obb(int argc, char** argv) {
         if (!a.read(argv[4], f)) { std::fprintf(stderr, "no %s\n", argv[4]); return 1; }
         return SDL_SaveFile(argv[6], f.data(), f.size()) ? 0 : 1;
     }
+    if (argc >= 5 && std::strcmp(argv[4], "--names") == 0) { // the names; with the iPad's data, what each has the other lacks
+        const std::vector<std::string> listed = a.names();
+        std::set<std::string> obbNames(listed.begin(), listed.end());
+        if (argc < 6) {
+            for (const std::string& n : a.names()) std::printf("%s\n", n.c_str());
+            return 0;
+        }
+        std::set<std::string> ipad;
+        SDL_EnumerateDirectory(argv[5], [](void* u, const char*, const char* f) {
+            static_cast<std::set<std::string>*>(u)->insert(f);
+            return SDL_ENUM_CONTINUE;
+        }, &ipad);
+        int onlyIpad = 0, onlyObb = 0;
+        for (const std::string& n : ipad)
+            if (!obbNames.count(n)) std::printf("iPad only: %s\n", n.c_str()), ++onlyIpad;
+        for (const std::string& n : obbNames)
+            if (!ipad.count(n)) std::printf("OBB only: %s\n", n.c_str()), ++onlyObb;
+        std::printf("%zu in the OBB, %zu in the iPad's data: %d only in the iPad's, %d only in the OBB\n", obbNames.size(), ipad.size(), onlyIpad, onlyObb);
+        return 0;
+    }
     std::map<std::string, int> kinds;
     int textures = 0, decoded = 0;
     std::map<int, int> formats;
@@ -1261,6 +1281,6 @@ int main(int argc, char** argv) {
                  "usage:\n  crtool mct-info <file.mct>...\n  crtool mct-raw <file.mct> <out.rgba>\n"
                  "  crtool check <dataHD dir>\n  crtool models <dataHD dir> [-v]\n"
                  "  crtool anims <dataHD dir> [model]\n  crtool maps <dataHD dir>\n  crtool events <dataHD dir> [-v]\n"
-                 "  crtool obb <main.*.obb> <APK or classes.dex> [name -o out]\n");
+                 "  crtool obb <main.*.obb> <APK or classes.dex> [name -o out | --names [dataHD]]\n");
     return 2;
 }

@@ -23,6 +23,12 @@ before it added up, and they add up to the OBB exactly. `cr::ObbArchive`
 (`engine/src/assets/obb.cpp`) reads the table out of your APK at run time; `crtool obb <obb> <apk>
 [name -o out]` lists, checks or extracts. `FileDownLoadAndCheckProc` is empty here.
 
+The event files (the 27 areas' `.evt` and `sys.evt`) are stored scrambled: `file_load_malloc`
+(0x39980; `fldread_evt_init2`, the `sys.evt` load) XORs every other byte from 0x1000 on with a
+21-byte key (61 19 4a ed 04 a7 a1 48 5a 6f 44 b9 d9 ed 74 da 75 9c d8 f5 3f, in turn: byte 0x1000 + 2k
+with key[k % 21]); `file_load_malloc2` (everything else) reads as stored. `ObbArchive::read` does
+the same, so an `.evt` comes out as 2.2.0's (the scripts decode: `tools/evt.py --check`).
+
 The files: the voiced, multi-language 2.2.0 data plus 148 `_15` pictures (the 1.5x screens' art),
 `window_cutin_480 .. 1366`, and the iPhone's own art; every texture as RGB / RGBA or a palette - no
 PVRTC - and the music as `j001m01.mca` .. `j001m30.mca` (29: no 07), Ogg Vorbis after a 1 KB header (the other
@@ -36,6 +42,12 @@ ATRAC9 still first), looping at the Android build's own points (`setbgm_caf`'s t
 the sample `SndBgmPlayerCallback` seeks back to; -1: bgm30 and bgm31 play once - and Android has
 no bgm31, which stays the iPad's). The folder must hold the OBB and the APK (or the APK's `classes.dex`); the one whose table adds up to the OBB is the
 one used.
+
+With no iOS data (and no Vita copy) the same folder is the whole game (`--data` or `--android`):
+the files by their names, an iPad-only `_hd` picture by the plain one, the voice banks streamed
+from inside the OBB (`SoundSystem::setLocator`), the music its Ogg Vorbis; it runs as 2.2.0's data,
+with the iPhone layout. Missing next to the iPad: the debug areas `j001_t91` / `j001_d91` (unused)
+and the iPad's AAC music (the Ogg tracks stand in, bgm31 aside).
 
 ## The screen
 

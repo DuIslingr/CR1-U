@@ -27,6 +27,10 @@ public:
     // Opens the default playback device and loads the bank - the data's sndeff.bin, or the Vita's
     // sndeff.bnk (`vitaBank`, a path) instead when given. False (and silence) if either fails.
     bool init(const std::string& dataDir, const std::string& vitaBank = std::string());
+    // Where the voice banks lie when not files of the data folder (the Android release alone:
+    // inside its OBB): the file, the bank's offset and size in it. Set before init.
+    using FileLocator = std::function<bool(const std::string& name, std::string& path, uint64_t& offset, uint64_t& size)>;
+    void setLocator(FileLocator locate) { locate_ = std::move(locate); }
     void shutdown();
     // _effgo(id): low 12 bits = bank entry, bit 23 = loop, bit 29 = stop that sound,
     // bit 22 = the language's variant (+ language offset; English here).
@@ -67,6 +71,8 @@ public:
 
 private:
     std::string linePath_[2];
+    uint64_t lineBase_[2] = {0, 0}; // (the bank's offset in linePath_)
+    FileLocator locate_;
     std::vector<std::pair<uint32_t, uint32_t>> lineTable_[2]; // per bank: {offset, size}
     SDL_AudioStream* line_ = nullptr;
     std::vector<std::pair<int, SDL_AudioStream*>> battleLines_; // {tag, stream}

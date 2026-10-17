@@ -130,6 +130,7 @@ struct App {
     // are PVRTC) and the art only it has (docs/ANDROID.md), its table read from the APK beside it
     std::string androidPath, androidLoaded, androidNote;
     cr::ObbArchive android;
+    bool androidOnly = false;              // no iOS data: the Android release is the whole game
     int androidTextures = 0;
     Mode mode = Mode::Textures;
 
@@ -795,9 +796,9 @@ bool endsWith(const char* s, const char* ext) {
 
 // Checks the package table without reading the whole file (the Vita's: read whole).
 bool isModelFile(const App& app, const std::string& name) {
-    if (app.vitaOnly) {
+    if (app.vitaOnly || app.androidOnly) {
         std::vector<uint8_t> f;
-        if (!app.vita.read(name, f) || f.size() < 8) return false;
+        if (!(app.vitaOnly ? app.vita.read(name, f) : app.android.read(name, f)) || f.size() < 8) return false;
         uint32_t off = 0;
         std::memcpy(&off, f.data(), 4);
         return off + 4 <= f.size() && std::memcmp(&f[off], "MCM_", 4) == 0;
@@ -938,7 +939,7 @@ bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img) {
     std::vector<uint8_t> data;
     // the Android copy of the same name: when the data has none, or one of the same size (the same
     // layout), as its palettes beat the iPad's PVRTC
-    if (!app.vitaOnly && app.android.isOpen() && app.android.read(mct, data)) {
+    if (!app.vitaOnly && !app.androidOnly && app.android.isOpen() && app.android.read(mct, data)) {
         std::vector<uint8_t> mine;
         const bool own = cr::readFile(app.dataDir + mct, mine);
         cr::Image a;
@@ -1102,6 +1103,25 @@ bool openAndroid(App& app, const std::string& path) {
     }
     app.androidPath = app.androidLoaded = path;
     app.music.setAndroidSource([&app](const std::string& n, std::vector<uint8_t>& out) { return app.android.read(n, out); });
+    if (app.androidOnly) {
+        // Alone (no iOS data) every file comes from it, by its own name, or an iPad-only "_hd"
+        // name by the one without (EndBack01, chara3, i001_C00, syuutyuusen, icon); the voice
+        // banks streamed from inside the OBB
+        const std::string obb = app.android.path();
+        app.dataDir = obb.substr(0, obb.rfind('/') + 1);
+        cr::setDataOverlay(app.dataDir, [&app](const std::string& name, std::vector<uint8_t>& out) {
+            if (app.android.read(name, out)) return true;
+            if (name.size() > 7 && name.compare(name.size() - 7, 7, "_hd.mct") == 0)
+                return app.android.read(name.substr(0, name.size() - 7) + ".mct", out);
+            return false;
+        });
+        app.sound.setLocator([&app](const std::string& name, std::string& file, uint64_t& offset, uint64_t& size) {
+            uint32_t n = 0;
+            if (!app.android.locate(name, offset, n)) return false;
+            file = app.android.path(), size = n;
+            return true;
+        });
+    }
     SDL_Log("android: %zu files in %s", app.android.size(), app.android.path().c_str());
     return true;
 }
@@ -3138,7 +3158,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
                 if (dir == 0) chooseVitaFolder(app);
                 else if (!app.vitaPath.empty()) app.vitaPath.clear(), app.vitaNote.clear(), saveMix(app);
             });
-            rows.back().enabled = !app.vitaOnly;
+            rows.back().enabled = !app.vitaOnly && !app.androidOnly;
             rows.back().hint = app.vitaOnly ? "Running from the Vita copy alone: " + app.vitaRoot
                                : !app.vitaNote.empty() ? app.vitaNote
                                : "Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none";
@@ -3151,14 +3171,17 @@ std::vector<OptRow> optionRows(App& app, int page) {
                 shown = p.substr(p.rfind('/') + 1);
                 if (shown.size() > 18) shown = shown.substr(0, 17) + "~";
             }
-            if (app.androidPath != app.androidLoaded) shown += " (next start)";
+            if (app.androidOnly) shown = "The game's data";
+            else if (app.androidPath != app.androidLoaded) shown += " (next start)";
             else if (!app.androidPath.empty() && !app.android.isOpen()) shown += " (not found)";
             value("Android Assets", shown, [&app](int dir) {
+                if (app.androidOnly) return; // (it is the whole game here)
                 if (dir == 0) chooseAndroidFolder(app);
                 else if (!app.androidPath.empty()) app.androidPath.clear(), app.androidNote.clear(), saveMix(app);
             });
-            rows.back().enabled = !app.vitaOnly;
-            rows.back().hint = !app.androidNote.empty() ? app.androidNote
+            rows.back().enabled = !app.vitaOnly && !app.androidOnly;
+            rows.back().hint = app.androidOnly ? "Running from the Android release alone: " + app.android.path()
+                               : !app.androidNote.empty() ? app.androidNote
                                : "Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art "
                                  "only it has; Left / Right: none";
         }
@@ -14544,7 +14567,7 @@ int runSelfTest(App& app) {
         uint64_t hash = 0;
         std::string err;
 #ifdef CR_HAVE_FAAD2
-        if (app.vitaOnly) std::printf("music: the Vita's (no AAC tracks)\n");
+        if (app.vitaOnly || app.androidOnly) std::printf("music: the %s's (no AAC tracks)\n", app.vitaOnly ? "Vita" : "Android release");
         else {
         const bool ok = cr::decodeTrack(app.dataDir, 10, frames, hash, &err) && frames > 1000000;
         mapErrors += !ok;
@@ -15416,7 +15439,7 @@ int runSelfTest(App& app) {
         for (int k = 197; k < cr::kNumNpcModels; ++k) {
             const std::string file = cr::kNpcModelFile[k];
             if (app.npcModels.count(file)) { ++loaded; continue; }
-            if (app.vitaOnly ? !app.vita.contains(file) : !SDL_GetPathInfo((app.dataDir + file).c_str(), nullptr)) { ++absent; continue; } // 197: not shipped, unused
+            if (app.vitaOnly ? !app.vita.contains(file) : app.androidOnly ? !app.android.contains(file) : !SDL_GetPathInfo((app.dataDir + file).c_str(), nullptr)) { ++absent; continue; } // 197: not shipped, unused
             LoadedModel lm;
             loadModelFile(app, file, lm, true);
             if (lm.meshes.empty()) ++failed;
@@ -16575,6 +16598,26 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             app->vitaOnly = false;
         }
         if (app->vitaOnly) SDL_Log("data: the Vita copy alone (%s)", app->vitaRoot.c_str());
+        // else the Android release alone (--data / --android / CR_ANDROID / settings.ini's android=
+        // / android/ beside the build: a folder with its main.*.obb and its APK, or the OBB)
+        if (!app->vitaOnly) {
+            std::vector<std::string> tries = {dataArg};
+            for (int i = 1; i + 1 < argc; ++i)
+                if (SDL_strcmp(argv[i], "--android") == 0) tries.push_back(argv[i + 1]);
+            if (const char* env = SDL_getenv("CR_ANDROID")) tries.push_back(env);
+            tries.push_back(storedSetting("android="));
+            if (!beside.empty() && isDir(beside + "android")) tries.push_back(beside + "android");
+            for (const std::string& p : tries) {
+                if (p.empty() || p == "none") continue;
+                app->androidOnly = true;
+                if (openAndroid(*app, p)) break;
+                app->androidOnly = false;
+            }
+            if (app->androidOnly) {
+                app->phoneData = true; // (2.2.0's data: voiceevnt.bin and the iPhone layout's art)
+                SDL_Log("data: the Android release alone (%s)", app->android.path().c_str());
+            }
+        }
     } else if (!app->vitaPath.empty())
         openVita(*app, app->vitaPath);
     else if (!vitaBeside.empty()) {
@@ -16592,8 +16635,8 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (!given)
             if (const char* env = SDL_getenv("CR_ANDROID")) a = env, given = true;
         if (!given) a = storedSetting("android=");
-        app->androidPath = a == "none" ? std::string() : a;
-        if (!app->androidPath.empty() && !app->vitaOnly) openAndroid(*app, app->androidPath);
+        if (!app->androidOnly) app->androidPath = a == "none" ? std::string() : a;
+        if (!app->androidPath.empty() && !app->vitaOnly && !app->androidOnly) openAndroid(*app, app->androidPath);
     }
     if (const char* sd = SDL_getenv("CR_SAVE_DIR")) { // save.dat / resume.dat elsewhere (tests)
         app->saveDirOverride = sd;
@@ -16609,7 +16652,9 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
                                 "Copy dataHD from your ChaosRingsHD.app to:\n" +
                                 cr::defaultDataDirHint() +
                                 "\n\nor run with --data <path-to-dataHD>, or set CR_DATA - or --data / --vita "
-                                "<your Vita copy's PCSG00497 folder>.";
+                                "<your Vita copy's PCSG00497 folder>, or --data / --android <a folder with "
+                                "the Android release's main.100.com.square_enix.chaosrings.googleplay.obb "
+                                "and its APK>.";
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings", msg.c_str(), nullptr);
         return SDL_APP_FAILURE;
     }
@@ -16653,6 +16698,8 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             const std::string name = n.size() > 4 && n.compare(n.size() - 4, 4, ".gxt") == 0 ? n.substr(0, n.size() - 4) + ".mct" : n;
             collectAssets(app, nullptr, name.c_str());
         }
+    else if (app->androidOnly) // its files, as they are named
+        for (const std::string& n : app->android.names()) collectAssets(app, nullptr, n.c_str());
     else SDL_EnumerateDirectory(app->dataDir.c_str(), collectAssets, app);
     app->systemText.load(app->dataDir);
     // The game's text in every language: a system font (CR_FONT overrides), else the 8x8 font

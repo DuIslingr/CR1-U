@@ -22,6 +22,8 @@ public:
     bool contains(const std::string& name) const { return byName_.count(lower(name)) != 0; }
     size_t size() const { return entries_.size(); }
     std::vector<std::string> names() const; // in the OBB's order
+    // where a file lies in the OBB (path()): its offset and size (for streaming it)
+    bool locate(const std::string& name, uint64_t& offset, uint32_t& size) const;
     const std::string& path() const { return path_; }
 
     // The table alone, from a classes.dex: names in order, sizes, CRCs (all the same length);

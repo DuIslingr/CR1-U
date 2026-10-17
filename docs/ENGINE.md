@@ -356,6 +356,12 @@ c101/c102/c104/m207a, 2026-10-12).
       folder) and `hd-textures/` beside the executable are found by themselves - the Vita copy
       when nothing else is configured (the game itself when no iOS data is found; not written to
       settings.ini), the HD textures on by default unless settings.ini turns them off
+- [x] The Android release alone as the game (`--data` / `--android <folder with the OBB and the APK
+      or classes.dex>`, `CR_ANDROID`, a saved Android Assets folder or `android/` beside the build,
+      with no iOS data or Vita copy found): every file read from inside the OBB (an iPad-only `_hd`
+      name by the plain one), the event files unscrambled as `file_load_malloc` does, the voice
+      banks streamed from inside it, its Ogg Vorbis music; as 2.2.0's data (the iPhone layout).
+      The self-test passes from it alone; `crtool obb <obb> <apk> --names [dataHD]` compares names
 - [x] The Vita copy alone as the game (`--data` or `--vita <PCSG00497 folder>`, `CR_VITA`, or a saved
       Vita Assets folder, with no iOS data found): everything from `cr1.psarc` and `sound/` - the
       textures by their `.gxt` (an iOS `_hd` name the Vita lacks by the plain one), its own

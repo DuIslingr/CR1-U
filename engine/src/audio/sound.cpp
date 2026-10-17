@@ -89,17 +89,21 @@ void SoundSystem::loadLineTables(const std::string& dataDir) {
     const char* names[2] = {"voiceevnt.bin", "voicebtl.bin"};
     for (int b = 0; b < 2; ++b) {
         lineTable_[b].clear();
-        SDL_IOStream* io = SDL_IOFromFile((dataDir + names[b]).c_str(), "rb");
+        std::string path = dataDir + names[b];
+        uint64_t base = 0, located = 0;
+        const bool inside = locate_ && locate_(names[b], path, base, located);
+        SDL_IOStream* io = SDL_IOFromFile(path.c_str(), "rb");
         if (!io) continue;
-        const Sint64 size = SDL_GetIOSize(io);
+        const Sint64 size = inside ? Sint64(located) : SDL_GetIOSize(io);
         uint32_t first[2] = {0, 0};
-        if (SDL_ReadIO(io, first, 8) == 8 && first[0] >= 8 && first[0] % 8 == 0 && first[0] < size) {
+        if (SDL_SeekIO(io, Sint64(base), SDL_IO_SEEK_SET) >= 0 && SDL_ReadIO(io, first, 8) == 8 && first[0] >= 8 && first[0] % 8 == 0 &&
+            first[0] < size) {
             std::vector<uint32_t> t(first[0] / 4);
-            SDL_SeekIO(io, 0, SDL_IO_SEEK_SET);
+            SDL_SeekIO(io, Sint64(base), SDL_IO_SEEK_SET);
             if (SDL_ReadIO(io, t.data(), first[0]) == first[0])
                 for (size_t i = 0; i + 1 < t.size(); i += 2)
                     lineTable_[b].push_back({t[i], uint64_t(t[i]) + t[i + 1] <= uint64_t(size) ? t[i + 1] : 0});
-            linePath_[b] = dataDir + names[b];
+            linePath_[b] = path, lineBase_[b] = base;
         }
         SDL_CloseIO(io);
     }
@@ -121,7 +125,8 @@ bool SoundSystem::readClip(int bank, int clip, std::vector<uint8_t>& pcm) const 
     pcm.resize(table[clip].second & ~1u);
     SDL_IOStream* io = SDL_IOFromFile(linePath_[bank].c_str(), "rb");
     if (!io) return false;
-    const bool ok = SDL_SeekIO(io, table[clip].first, SDL_IO_SEEK_SET) >= 0 && SDL_ReadIO(io, pcm.data(), pcm.size()) == pcm.size();
+    const bool ok = SDL_SeekIO(io, Sint64(lineBase_[bank] + table[clip].first), SDL_IO_SEEK_SET) >= 0 &&
+                    SDL_ReadIO(io, pcm.data(), pcm.size()) == pcm.size();
     SDL_CloseIO(io);
     return ok;
 }

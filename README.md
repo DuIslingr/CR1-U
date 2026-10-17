@@ -2,7 +2,7 @@
 
 A from-scratch native port of *Chaos Rings* (Square Enix / Media.Vision, 2010), built by
 reverse-engineering the iPad's *Chaos Rings HD* v1.0.1. It also runs the voiced iPhone release
-(2.2.0) and the PlayStation Vita release (PCSG00497), alone or as an add-on for their voices, music,
+(2.2.0), the Android release (1.1.1) and the PlayStation Vita release (PCSG00497), alone or as an add-on for their voices, music,
 languages and lossless art. The engine code here is new; it loads the game from **your own copy**
 at runtime.
 
@@ -36,6 +36,7 @@ directory (so it runs from an unpacked .ipa). Any of these works as the game:
 | iPhone *Chaos Rings* 2.2.0 (Japanese voices, eight languages, the iPhone layout) | `--data …/ChaosRings.app/data` |
 | Vita PCSG00497, alone | `--data <PCSG00497 folder>` |
 | Vita as an add-on (voices, ATRAC9 music, scripts in eight languages, lossless art) | `--vita <PCSG00497 folder>`, or Options, Game, Vita Assets |
+| Android 1.1.1, alone (2.2.0's voiced data: the iPhone layout) | `--data` or `--android <folder with main.100.…googleplay.obb and the APK or its classes.dex>` |
 | Android as an add-on (its expansion file's sharper textures and its own art) | `--android <folder with main.*.obb and the APK>`, or Options, Game, Android Assets |
 
 Settings and saves go to the profile folder (`~/.local/share/preservation/ChaosRingsHD/` on
