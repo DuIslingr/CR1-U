@@ -189,6 +189,9 @@ set_source_files_properties(${THIRD_PARTY_DIR}/stb/stb_vorbis.c PROPERTIES COMPI
 # Vulkan back end: the loader + headers and glslc (shaders are compiled to SPIR-V at build time
 # and embedded). Without them the game builds with OpenGL only.
 find_package(Vulkan QUIET)
+if(NOT Vulkan_FOUND AND MINGW AND CMAKE_CROSSCOMPILING)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-vulkan.cmake) # (llvm-mingw: no Vulkan SDK)
+endif()
 find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE})
 set(CR_VULKAN OFF)
 if(Vulkan_FOUND AND GLSLC AND NOT ANDROID) # (Android: GLES 3)
