@@ -1,0 +1,44 @@
+// The APK: the engine's libmain.so (SDL3 linked in, built from source) and SDL's own Java glue
+// (its android-project's org.libsdl.app, from the same SDL source: SDL3_SOURCE_DIR, else
+// android/SDL - a checkout of the tag engine/CMakeLists.txt fetches).
+plugins {
+    id 'com.android.application'
+}
+
+def sdlDir = System.getenv('SDL3_SOURCE_DIR') ?: "${rootDir}/SDL"
+
+android {
+    namespace 'local.preservation.chaosrings'
+    compileSdk 35
+    if (project.hasProperty('ndkVersion')) ndkVersion project.property('ndkVersion')
+
+    defaultConfig {
+        applicationId 'local.preservation.chaosrings'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '0.1'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        externalNativeBuild {
+            cmake {
+                arguments "-DFETCHCONTENT_SOURCE_DIR_SDL3=${sdlDir}", '-DANDROID_STL=c++_static'
+                targets 'main'
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug // (for one's own device)
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path '../../engine/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+    sourceSets {
+        main { java.srcDirs += "${sdlDir}/android-project/app/src/main/java" }
+    }
+}

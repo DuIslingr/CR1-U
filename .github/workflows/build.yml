@@ -72,3 +72,27 @@ jobs:
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.name }}
           path: dist
+
+  android:
+    runs-on: ubuntu-24.04
+    name: android
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: SDL3 source (its Java glue and the engine's SDL)
+        run: git clone --depth 1 -b release-3.2.0 https://github.com/libsdl-org/SDL.git android/SDL
+      - name: Build
+        working-directory: android
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.22.1" > /dev/null
+          gradle assembleRelease --no-daemon -PndkVersion=$(basename "$ANDROID_NDK_LATEST_HOME")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-android
+          path: android/app/build/outputs/apk/release/*.apk

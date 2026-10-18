@@ -4,6 +4,13 @@
 /*
 !/.gitignore
 !/.github/
+!/android/
+/android/SDL/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/app/.cxx/
+/android/local.properties
 !/README.md
 !/LICENSE
 !/THIRD_PARTY.md
