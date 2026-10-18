@@ -934,6 +934,17 @@ private:
         }
         std::vector<const char*> ext(sdlExt, sdlExt + count);
         Dlss::instanceExtensions(ext); // NVIDIA NGX's, when its runtime is present
+        // a portability driver (MoltenVK on macOS) lists its devices only when asked to
+        bool portability = false;
+        {
+            uint32_t n = 0;
+            vkEnumerateInstanceExtensionProperties(nullptr, &n, nullptr);
+            std::vector<VkExtensionProperties> have(n);
+            vkEnumerateInstanceExtensionProperties(nullptr, &n, have.data());
+            for (const VkExtensionProperties& e : have)
+                if (std::strcmp(e.extensionName, "VK_KHR_portability_enumeration") == 0) portability = true;
+            if (portability) ext.push_back("VK_KHR_portability_enumeration");
+        }
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         app.pApplicationName = "Chaos Rings";
         app.apiVersion = VK_API_VERSION_1_3;
@@ -941,6 +952,7 @@ private:
         ci.pApplicationInfo = &app;
         ci.enabledExtensionCount = uint32_t(ext.size());
         ci.ppEnabledExtensionNames = ext.data();
+        if (portability) ci.flags |= 0x00000001; // (VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR)
         if (!ok(vkCreateInstance(&ci, nullptr, &instance_))) return false;
         if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
             SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Vulkan surface: %s", SDL_GetError());
@@ -1004,6 +1016,14 @@ private:
         VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
         f2.pNext = &f12;
         std::vector<const char*> ext = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        { // (a portability device - MoltenVK's - must have its subset enabled)
+            uint32_t n = 0;
+            vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &n, nullptr);
+            std::vector<VkExtensionProperties> have(n);
+            vkEnumerateDeviceExtensionProperties(gpu_, nullptr, &n, have.data());
+            for (const VkExtensionProperties& e : have)
+                if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0) ext.push_back("VK_KHR_portability_subset");
+        }
         // Temporal upscaling: a scene drawn into colour + motion + reactive attachments with
         // their own blend states, depth sampled afterwards
         VkPhysicalDeviceFeatures have;
