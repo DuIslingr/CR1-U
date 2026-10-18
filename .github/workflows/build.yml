@@ -64,7 +64,7 @@ jobs:
         run: |
           wget -q -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy
-          ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --output appimage
+          ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --exclude-library "libvulkan.so*" --output appimage  # (the loader: the system's, with its drivers)
           mv ./*.AppImage dist/
       - name: Package (Windows)
         if: runner.os == 'Windows'
