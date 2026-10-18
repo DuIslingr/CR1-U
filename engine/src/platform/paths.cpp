@@ -45,6 +45,17 @@ std::string findDataDir(int argc, char** argv) {
     }
     const std::string d = platformDefault();
     if (!d.empty() && looksLikeData(d)) return d;
+#ifdef SDL_PLATFORM_MACOS
+    // a .app: dataHD/ beside it too (its base path is its Contents/Resources/)
+    if (const char* base = SDL_GetBasePath()) {
+        const std::string b = base;
+        const size_t app = b.rfind(".app/");
+        if (app != std::string::npos) {
+            const std::string beside = b.substr(0, b.rfind('/', app) + 1) + "dataHD/";
+            if (looksLikeData(beside)) return beside;
+        }
+    }
+#endif
 #ifndef SDL_PLATFORM_ANDROID
     // The working directory: a copied dataHD, the .app itself, or an unpacked .ipa - the iPad HD
     // release (ChaosRingsHD.app/dataHD) or the later voiced iPhone release (ChaosRings.app/data)

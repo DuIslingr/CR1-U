@@ -23,8 +23,8 @@ build/chaosrings --data "<path to>/ChaosRingsHD.app/dataHD"
 ```
 
 C++17 and SDL3 (downloaded and built by CMake when it isn't installed); Vulkan 1.3 by default,
-OpenGL 3.3 / ES 3.0 with `--renderer gl` or when Vulkan can't start. Builds and runs on Linux; the
-code is portable to Windows, macOS and Android but not yet tested there.
+OpenGL 3.3 / ES 3.0 with `--renderer gl` or when Vulkan can't start. See [Platforms](#platforms) for Windows, macOS
+and Android.
 
 The game's data: `--data <dir>`, else `$CR_DATA`, else `dataHD/` beside the executable, else
 `dataHD/`, `ChaosRingsHD.app/dataHD/` or `Payload/ChaosRingsHD.app/dataHD/` under the current
@@ -41,6 +41,23 @@ directory (so it runs from an unpacked .ipa). Any of these works as the game:
 
 Settings and saves go to the profile folder (`~/.local/share/preservation/ChaosRingsHD/` on
 Linux); `CR_SAVE_DIR` moves the settings.
+
+## Platforms
+
+Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
+binaries are that run's artifacts (nothing of the game is in them). Windows, macOS and Android are
+built in CI but not yet played on a real machine.
+
+| Platform | Build | Renderer | The data (besides `--data` and `CR_DATA`) |
+|---|---|---|---|
+| Linux | as above | Vulkan, OpenGL 3.3 | as above |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt; the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan. SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3 | `dataHD\` beside `chaosrings.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools and Ninja; add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | OpenGL 3.3 (Vulkan needs MoltenVK, not yet bundled) | `dataHD/` beside `chaosrings.app`, or in its `Contents/Resources/` |
+| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings/files/dataHD/` on the shared storage (copy it there over USB) |
+
+`-DCR_GLES=ON` builds the desktop game on OpenGL ES 3.0, as Android runs it (Mesa has it): a way
+to test that path without a device. Settings and saves go to SDL's profile folder:
+`%APPDATA%\preservation\ChaosRingsHD\` on Windows, `~/Library/Application Support/preservation/ChaosRingsHD/` on macOS.
 
 ## Controls
 
