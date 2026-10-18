@@ -15,7 +15,7 @@ CR_GL_FUNCTIONS(CR_GL_DEFINE)
 #undef CR_GL_DEFINE
 
 bool load() { return true; }
-const char* shaderHeader() { return "#version 300 es\nprecision mediump float;\n"; }
+const char* shaderHeader() { return "#version 300 es\nprecision highp float;\nprecision highp int;\n"; } // (highp: GLES 3 has it in fragment shaders too)
 
 #else
 

@@ -8,6 +8,9 @@
 #else
 #include <SDL3/SDL_opengl.h>
 #endif
+#ifndef APIENTRY
+#define APIENTRY // (GLES's headers call it GL_APIENTRY)
+#endif
 
 // X(return type, name, parameter list)
 #define CR_GL_FUNCTIONS(X) \
