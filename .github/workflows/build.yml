@@ -35,6 +35,12 @@ jobs:
       - name: MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Vulkan SDK
+        if: runner.os == 'Windows'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.309.0
+          cache: true
 
       - name: Configure
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

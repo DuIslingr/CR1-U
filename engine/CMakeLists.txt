@@ -132,7 +132,23 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libatrac9/src/libatrac9.c)
 endif()
 
 # Vita data (cr1.psarc): zlib when available
+# zlib and the like: the system's, else (Windows, macOS, Android - CR_FETCH_DEPS) built here from
+# their sources, static
+option(CR_FETCH_DEPS "Build zlib (and FreeType) from source where the system has none" ON)
 find_package(ZLIB QUIET)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+    set(CR_FETCH_EXCLUDE EXCLUDE_FROM_ALL)
+endif()
+if(NOT ZLIB_FOUND AND CR_FETCH_DEPS)
+    include(FetchContent)
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5) # (zlib's asks for CMake 2.4, which CMake 4 refuses)
+    FetchContent_Declare(zlib GIT_REPOSITORY https://github.com/madler/zlib.git GIT_TAG v1.3.1 GIT_SHALLOW TRUE ${CR_FETCH_EXCLUDE})
+    FetchContent_MakeAvailable(zlib)
+    set_target_properties(zlibstatic PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}")
+    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+    set(ZLIB_FOUND TRUE)
+    set(ZLIB_VERSION_STRING "1.3.1 (built here)")
+endif()
 if(ZLIB_FOUND)
     target_link_libraries(crcore PUBLIC ZLIB::ZLIB)
     target_compile_definitions(crcore PUBLIC CR_HAVE_ZLIB=1)
