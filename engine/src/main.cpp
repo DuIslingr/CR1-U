@@ -222,6 +222,8 @@ struct App {
         int sharpness = 25;                // % (FSR's RCAS pass; 0 = none)
         bool hdTextures = false;           // upscaled replacements from hdDir (what loads next)
         int smoothModels = 0;              // 0 off, 2 / 3: PN-triangle level for characters and monsters
+        int anisotropy = 16;               // anisotropic filtering's samples on the mipmapped textures (1 off)
+        bool sharpTextures = false;        // those magnified by the nearest texel (square pixels up close)
         int layout = 0;                    // 0 the data's own (2.2.0's iPhone layout for its data), 1 iPad, 2 iPhone, 3 Android
     } video;
     bool phoneData = false;                // the data is a voiced iPhone release's (voiceevnt.bin: 2.2.0)
@@ -2822,6 +2824,7 @@ void saveMix(const App& app) {
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
                               std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) +
                               "\nsmooth_models=" + std::to_string(v.smoothModels) +
+                              "\nanisotropy=" + std::to_string(v.anisotropy) + "\nsharp_textures=" + std::to_string(int(v.sharpTextures)) +
                               "\nlayout=" + std::to_string(v.layout) +
                               "\nenvironment_effects=" +
                               std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
@@ -2871,6 +2874,11 @@ void loadVideo(App& app, const char* text) {
     v.hdTextures = keyValue(text, "\nhd_textures=", v.hdTextures) != 0;
     v.smoothModels = keyValue(text, "\nsmooth_models=", v.smoothModels);
     if (v.smoothModels != 2 && v.smoothModels != 3) v.smoothModels = 0;
+    {
+        const int a = keyValue(text, "\nanisotropy=", v.anisotropy);
+        v.anisotropy = a >= 16 ? 16 : a >= 8 ? 8 : a >= 4 ? 4 : a >= 2 ? 2 : 1;
+    }
+    v.sharpTextures = keyValue(text, "\nsharp_textures=", v.sharpTextures) != 0;
     v.layout = std::clamp(keyValue(text, "\nlayout=", v.layout), 0, 3);
     app.environmentEffects = keyValue(text, "\nenvironment_effects=", app.environmentEffects) != 0;
     app.lockOrientation = keyValue(text, "\nlock_orientation=", app.lockOrientation) != 0;
@@ -2892,6 +2900,12 @@ void applyVideo(App& app) {
     up.ratio = kUpscaleModes[std::clamp(v.upscaleMode, 0, 4)].ratio;
     up.sharpness = v.sharpness / 100.0f;
     r.setUpscaler(up);
+    cr::TextureFiltering tf;
+    tf.anisotropy = v.anisotropy;
+    tf.sharp = v.sharpTextures;
+    // (an upscaler's scene is smaller: the mips its output would take - DLSS's and FSR's advice)
+    tf.lodBias = up.mode != cr::Upscaler::Off ? -std::log2(up.ratio) : 0.0f;
+    r.setFiltering(tf);
     if (!app.window) return;
     if (v.display == 0) {
         SDL_SetWindowFullscreen(app.window, false);
@@ -2937,7 +2951,7 @@ void stepChoice(int& value, const int* choices, int count, int dir) {
 // adjustVideo's settings: 0 resolution, 1 display, 2 aspect, 3 painted rooms, 4 render scale,
 // 5 MSAA, 6 vsync, 7 the original presentation, 8 anti-aliasing (MSAA / FSR Native AA / DLAA),
 // 9 upscaler, 10 upscale mode, 11 sharpness, 12 HD textures, 13 smoothed models, 14 layout,
-// 15 the frame rate
+// 15 the frame rate, 16 anisotropic filtering, 17 texture filtering
 
 // Anti-aliasing choices: Off, MSAA 2 / 4 / 8, FSR (Native AA), DLSS (DLAA)
 int aaChoice(const App::Video& v) {
@@ -3011,6 +3025,19 @@ void adjustVideo(App& app, int row, int dir) {
         v.frameLimit = kLimits[(i + dir + 5) % 5];
         break;
     }
+    case 16: { // anisotropic filtering: off, 2x .. 16x (up to the GPU's)
+        static const int kAniso[] = {1, 2, 4, 8, 16};
+        int i = 0;
+        while (i < 4 && kAniso[i] != v.anisotropy) ++i;
+        const int most = std::max(app.renderer.maxAnisotropy(), 1);
+        for (int step = 0; step < 5; ++step) {
+            i = (i + dir + 5) % 5;
+            if (kAniso[i] <= std::max(most, 1) || kAniso[i] == 1) break;
+        }
+        v.anisotropy = kAniso[i];
+        break;
+    }
+    case 17: v.sharpTextures = !v.sharpTextures; break;
     case 13: v.smoothModels = (v.smoothModels == 0 ? (dir > 0 ? 2 : 3) : v.smoothModels == 2 ? (dir > 0 ? 3 : 0) : (dir > 0 ? 0 : 2)); break;
     case 12: { // HD textures: what loads from now on (the next room); the UI atlas at once
         v.hdTextures = !v.hdTextures;
@@ -3054,9 +3081,9 @@ struct OptRow {
     bool enterSounds = false;     // act(0) plays a sound of its own (Sound Test), so none from the menu
 };
 
-constexpr int kOptionPages = 4;
+constexpr int kOptionPages = 5;
 constexpr int kOptionsBackRow = 99;
-const char* const kOptionPageName[kOptionPages] = {"Game", "Sound", "Display", "Graphics"};
+const char* const kOptionPageName[kOptionPages] = {"Game", "Sound", "Display", "Detail", "Graphics"};
 // Layout, in menu units
 constexpr float kOptRowTop = 52, kOptRowPitch = 36, kOptCtrlX = 224, kOptCtrlScale = 0.85f;
 constexpr float kOptBackY = 344, kOptPageY = 350;
@@ -3255,6 +3282,33 @@ std::vector<OptRow> optionRows(App& app, int page) {
         rows.push_back(restore);
         break;
     }
+    case 3: { // Detail: the textures and the models
+        onOff("HD Textures", &v.hdTextures, nullptr);
+        rows.back().act = [&app](int i) {
+            if (app.video.hdTextures != (i == 0)) adjustVideo(app, 12, 1);
+        };
+        {
+            const bool have = !app.hdDir.empty() && SDL_GetPathInfo(app.hdDir.c_str(), nullptr);
+            rows.back().hint = have ? "Real-ESRGAN upscales (tools/hd_textures.py); from the next room on"
+                                    : "None made yet: see tools/hd_textures.py";
+        }
+        static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
+        value("Smooth Models", kSmooth[v.smoothModels], [&app](int dir) { adjustVideo(app, 13, dir ? dir : 1); });
+        rows.back().hint = v.smoothModels ? "Rounder characters and monsters (4x / 9x triangles); from the next room on"
+                                          : "Rounds characters' and monsters' silhouettes (PN triangles)";
+        {
+            const int most = std::max(app.renderer.maxAnisotropy(), 1);
+            value("Anisotropic Filtering", v.anisotropy > 1 && most > 1 ? std::to_string(std::min(v.anisotropy, most)) + "x" : std::string("Off"),
+                  [&app](int dir) { adjustVideo(app, 16, dir ? dir : 1); });
+            rows.back().enabled = most > 1;
+            rows.back().hint = most > 1 ? "Textures stay sharp on floors and walls seen at an angle" : "Not on this GPU";
+        }
+        pair("Texture Filtering", "Smooth", "Sharp", v.sharpTextures ? 1 : 0, [&app](int i) {
+            if (app.video.sharpTextures != (i == 1)) adjustVideo(app, 17, 1);
+        });
+        rows.back().hint = "Sharp: the world's textures magnified by the nearest texel (square pixels up close)";
+        break;
+    }
     default: { // Graphics: what the Vulkan renderer adds
         const bool scalable = app.renderer.scalable();
         const std::string why = app.renderer.upscalerProblem(kUpscaler[std::clamp(v.upscaler, 0, 2)]);
@@ -3297,19 +3351,6 @@ std::vector<OptRow> optionRows(App& app, int page) {
         });
         rows.back().enabled = scalable && v.upscaler == 1;
         rows.back().hint = "FSR's sharpening pass (RCAS); DLSS has none";
-        onOff("HD Textures", &v.hdTextures, nullptr);
-        rows.back().act = [&app](int i) {
-            if (app.video.hdTextures != (i == 0)) adjustVideo(app, 12, 1);
-        };
-        {
-            const bool have = !app.hdDir.empty() && SDL_GetPathInfo(app.hdDir.c_str(), nullptr);
-            rows.back().hint = have ? "Real-ESRGAN upscales (tools/hd_textures.py); from the next room on"
-                                    : "None made yet: see tools/hd_textures.py";
-        }
-        static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
-        value("Smooth Models", kSmooth[v.smoothModels], [&app](int dir) { adjustVideo(app, 13, dir ? dir : 1); });
-        rows.back().hint = v.smoothModels ? "Rounder characters and monsters (4x / 9x triangles); from the next room on"
-                                          : "Rounds characters' and monsters' silhouettes (PN triangles)";
         break;
     }
     }

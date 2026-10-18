@@ -115,6 +115,10 @@ public:
     void setRenderScale(float scale) { renderScale_ = scale; }
     void setSamples(int n);
     int maxSamples() const { return dev_ ? dev_->maxSamples() : 1; }
+    void setFiltering(const TextureFiltering& f) {
+        if (dev_) dev_->setFiltering(f);
+    }
+    int maxAnisotropy() const { return dev_ ? dev_->maxAnisotropy() : 1; }
     bool scalable() const { return dev_ && dev_->offscreen(); }
     // Temporal upscaling (FSR 3.1 / DLSS, Vulkan): the scene - everything until endScene -
     // renders at 1/ratio of the frame and is resolved to it; the UI then draws at full size.
