@@ -16,6 +16,10 @@ jobs:
           - { os: ubuntu-24.04, name: linux }
           - { os: windows-2022, name: windows }
           - { os: macos-14, name: macos }
+          # DLSS: built and linked to prove it, never uploaded - NVIDIA's NGX library is proprietary and
+          # these programs are GPL, so a DLSS build is for one's own use (THIRD_PARTY.md), not an artifact
+          - { os: ubuntu-24.04, name: linux-dlss, dlss: true }
+          - { os: windows-2022, name: windows-dlss, dlss: true }
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
     steps:
@@ -41,10 +45,24 @@ jobs:
         with:
           vulkan_version: 1.4.309.0
           cache: true
+      - name: DLSS SDK
+        if: matrix.dlss
+        shell: bash
+        run: |
+          # (NVIDIA's public SDK, its headers and this platform's NGX library and runtime only)
+          git clone -q --depth 1 --filter=blob:none --sparse -b v310.9.1 https://github.com/NVIDIA/DLSS.git dlss-sdk
+          if [ "$RUNNER_OS" = Windows ]; then
+            git -C dlss-sdk sparse-checkout set include lib/Windows_x86_64/x64 lib/Windows_x86_64/rel
+            echo "CR_DLSS_ARG=-DCR_DLSS_SDK=$(cygpath -m "$PWD/dlss-sdk")" >> "$GITHUB_ENV"
+          else
+            git -C dlss-sdk sparse-checkout set --no-cone /include/ /lib/Linux_x86_64/rel/ /lib/Linux_x86_64/libnvsdk_ngx.a
+            echo "CR_DLSS_ARG=-DCR_DLSS_SDK=$PWD/dlss-sdk" >> "$GITHUB_ENV"
+          fi
+          ls dlss-sdk/lib/*
 
       - name: Configure
         if: runner.os != 'macOS'
-        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ env.CR_DLSS_ARG }} ${{ matrix.dlss && '-DCR_DLSS_REQUIRED=ON' || '' }}
       - name: Configure (macOS, universal)
         if: runner.os == 'macOS'
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON
@@ -52,13 +70,13 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Package (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.dlss
         run: |
           mkdir -p dist
           cp build/chaosrings build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/
       - name: AppImage (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.dlss
         env:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
@@ -67,7 +85,7 @@ jobs:
           ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --exclude-library "libvulkan.so*" --output appimage  # (the loader: the system's, with its drivers)
           mv ./*.AppImage dist/
       - name: Package (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && !matrix.dlss
         shell: bash
         run: |
           mkdir -p dist
@@ -84,6 +102,7 @@ jobs:
           cp build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/
       - uses: actions/upload-artifact@v4
+        if: ${{ !matrix.dlss }}
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.name }}
           path: dist

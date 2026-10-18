@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <algorithm>
 #include <cstring>
 
@@ -22,9 +23,23 @@ namespace {
 // Any GUID identifies a custom-engine project to NGX
 constexpr const char* kProjectId = "3c2a9e51-7f04-4d6b-9b8e-c4a0d17e52f3";
 
+// UTF-8 (SDL's paths) to wchar_t: UTF-16 on Windows, UTF-32 elsewhere
 std::wstring widen(const char* s) {
     std::wstring w;
-    for (; s && *s; ++s) w.push_back(wchar_t(static_cast<unsigned char>(*s)));
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(s ? s : "");
+    while (*p) {
+        uint32_t c = *p++;
+        int more = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : c >= 0xc0 ? 1 : 0;
+        c &= more == 3 ? 0x07 : more == 2 ? 0x0f : more == 1 ? 0x1f : 0x7f;
+        for (; more > 0 && (*p & 0xc0) == 0x80; --more) c = (c << 6) | (*p++ & 0x3f);
+        if (sizeof(wchar_t) == 2 && c >= 0x10000) {
+            c -= 0x10000;
+            w.push_back(wchar_t(0xd800 + (c >> 10)));
+            w.push_back(wchar_t(0xdc00 + (c & 0x3ff)));
+        } else {
+            w.push_back(wchar_t(c));
+        }
+    }
     return w;
 }
 
