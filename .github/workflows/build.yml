@@ -31,7 +31,7 @@ jobs:
             libpulse-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev
       - name: macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja sdl3
+        run: brew install ninja # (SDL3, FreeType: built here, static - the .app needs no Homebrew)
       - name: MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -43,7 +43,11 @@ jobs:
           cache: true
 
       - name: Configure
+        if: runner.os != 'macOS'
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Configure (macOS, universal)
+        if: runner.os == 'macOS'
+        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON
       - name: Build
         run: cmake --build build --parallel
 
