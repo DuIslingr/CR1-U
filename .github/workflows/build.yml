@@ -4,6 +4,7 @@ name: build
 on:
   push:
     branches: [main, platforms]
+    tags: ['v*'] # (a version: the release job publishes the builds)
   pull_request:
   workflow_dispatch:
 
@@ -114,11 +115,24 @@ jobs:
           cp -R build/chaosrings.app dist/
           cp build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/
+      # (packed here: an artifact keeps no file modes - the binaries' and the .app's executables)
+      - name: Archive
+        if: ${{ !matrix.dlss }}
+        shell: bash
+        run: |
+          mkdir -p upload
+          n="${{ github.event.repository.name }}"
+          case "$RUNNER_OS" in
+            Linux) mv dist/*.AppImage "upload/$n-x86_64.AppImage"; tar -czf "upload/$n-linux-x86_64.tar.gz" -C dist . ;;
+            Windows) 7z a -tzip -bso0 "upload/$n-windows-x64.zip" ./dist/* ;;
+            macOS) (cd dist && zip -qry "../upload/$n-macos-universal.zip" .) ;;
+          esac
+          ls -la upload
       - uses: actions/upload-artifact@v4
         if: ${{ !matrix.dlss }}
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.name }}
-          path: dist
+          path: upload
 
   android:
     runs-on: ubuntu-24.04
@@ -139,7 +153,31 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "cmake;3.22.1" > /dev/null
           gradle assembleRelease --no-daemon -PndkVersion=$(basename "$ANDROID_NDK_LATEST_HOME")
+      - name: Archive
+        run: mkdir -p upload && cp android/app/build/outputs/apk/release/app-release.apk "upload/${{ github.event.repository.name }}-android.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.repository.name }}-android
-          path: android/app/build/outputs/apk/release/*.apk
+          path: upload
+
+  # A version tag (v*): every platform's build - none with DLSS - on a GitHub release, its notes
+  # packaging/release-notes.md
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la artifacts
+          gh release create "$GITHUB_REF_NAME" artifacts/* --title "${{ github.event.repository.name }} $GITHUB_REF_NAME" \
+            --notes-file packaging/release-notes.md
