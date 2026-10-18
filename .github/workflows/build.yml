@@ -100,6 +100,16 @@ jobs:
           ! otool -L build/chaosrings.app/Contents/MacOS/chaosrings | grep -e /opt/homebrew -e /usr/local  # (nothing of Homebrew's)
           lipo -info build/chaosrings.app/Contents/Frameworks/libMoltenVK.dylib build/chaosrings.app/Contents/Frameworks/libvulkan.1.dylib
           test -f build/chaosrings.app/Contents/Resources/vulkan/icd.d/MoltenVK_icd.json
+          # (MoltenVK's and the loader's licences with them: Apache-2.0 - THIRD_PARTY.md)
+          lic=build/chaosrings.app/Contents/Resources/licenses
+          mkdir -p "$lic"
+          find "$VULKAN_SDK/.." -maxdepth 5 \( -iname 'LICENSE*' -o -iname 'NOTICE*' \) | head -40
+          for n in MoltenVK Vulkan-Loader; do
+            f=$(find "$VULKAN_SDK/.." -maxdepth 6 -ipath "*$n*" -iname 'LICENSE*' | head -1)
+            if [ -n "$f" ]; then cp "$f" "$lic/$n-LICENSE.txt"; else curl -fsSL https://www.apache.org/licenses/LICENSE-2.0.txt -o "$lic/$n-LICENSE.txt"; fi
+          done
+          cp LICENSE THIRD_PARTY.md "$lic/"
+          ls -la "$lic"
           cp -R build/chaosrings.app dist/
           cp build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/

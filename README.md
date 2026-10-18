@@ -45,19 +45,26 @@ Linux); `CR_SAVE_DIR` moves the settings.
 ## Platforms
 
 Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
-binaries are that run's artifacts (nothing of the game is in them). Windows, macOS and Android are
-built in CI but not yet played on a real machine.
+binaries are that run's artifacts (nothing of the game is in them): an AppImage, a Windows folder,
+a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vulkan and OpenGL, the
+same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
+MetalFX, in particular, is compiled but untested.
 
 | Platform | Build | Renderer | The data (besides `--data` and `CR_DATA`) |
 |---|---|---|---|
-| Linux | as above | Vulkan, OpenGL 3.3 | as above |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt; the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan. SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3 | `dataHD\` beside `chaosrings.exe` |
-| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools and Ninja; add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | OpenGL 3.3 (Vulkan needs MoltenVK, not yet bundled) | `dataHD/` beside `chaosrings.app`, or in its `Contents/Resources/` |
+| Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (with the SDK) | as above |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (MSVC, with the SDK) | `dataHD\` beside `chaosrings.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | `dataHD/` beside `chaosrings.app`, or in its `Contents/Resources/` |
 | Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings/files/dataHD/` on the shared storage (copy it there over USB) |
 
 `-DCR_GLES=ON` builds the desktop game on OpenGL ES 3.0, as Android runs it (Mesa has it): a way
 to test that path without a device. Settings and saves go to SDL's profile folder:
 `%APPDATA%\preservation\ChaosRingsHD\` on Windows, `~/Library/Application Support/preservation/ChaosRingsHD/` on macOS.
+
+DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
+(`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
+game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
+is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
 
 ## Controls
 
