@@ -194,6 +194,25 @@ public:
                reinterpret_cast<const char*>(gl::GetString(GL_RENDERER));
     }
 
+    void setFiltering(const TextureFiltering& f) override {
+        if (f == filtering_) return;
+        filtering_ = f;
+        for (unsigned id : mipmapped_) filter(id);
+    }
+    int maxAnisotropy() const override {
+        if (anisoLimit_ < 0) {
+            int n = 1;
+            if (SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") ||
+                SDL_GL_ExtensionSupported("GL_ARB_texture_filter_anisotropic")) {
+                float m = 1;
+                gl::GetFloatv(0x84FF, &m); // (GL_MAX_TEXTURE_MAX_ANISOTROPY)
+                n = std::max(1, int(m));
+            }
+            const_cast<GlDevice*>(this)->anisoLimit_ = n;
+        }
+        return anisoLimit_;
+    }
+
     Texture upload(const Image& img) override {
         Texture t;
         t.width = img.width;
@@ -206,13 +225,10 @@ public:
         if (img.mipmaps) {
             gl::GenerateMipmap(GL_TEXTURE_2D);
             mipmapped_.insert(t.id);
-            // GL_TEXTURE_MAX_ANISOTROPY (GL 4.6 / EXT_texture_filter_anisotropic): sharp at an angle
-            if (SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") ||
-                SDL_GL_ExtensionSupported("GL_ARB_texture_filter_anisotropic"))
-                gl::TexParameteri(GL_TEXTURE_2D, 0x84FE, 16); // (clamped to the GPU's limit)
         }
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, img.mipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        if (img.mipmaps) filter(t.id);
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         return t;
@@ -386,6 +402,15 @@ private:
     int uMvp_ = -1, uMeshTex_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1;
     int drawableW_ = 0, drawableH_ = 0;
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain
+    TextureFiltering filtering_;
+    // A mipmapped texture's filtering (bound): GL_TEXTURE_MAX_ANISOTROPY (GL 4.6 /
+    // EXT_texture_filter_anisotropic; clamped to the GPU's limit), the nearest texel magnified
+    void filter(unsigned id) {
+        gl::BindTexture(GL_TEXTURE_2D, id);
+        if (maxAnisotropy() > 1) gl::TexParameteri(GL_TEXTURE_2D, 0x84FE, std::max(filtering_.anisotropy, 1));
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filtering_.sharp ? GL_NEAREST : GL_LINEAR);
+    }
+    int anisoLimit_ = -1;
     Texture white_;
 };
 

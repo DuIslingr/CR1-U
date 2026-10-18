@@ -48,6 +48,18 @@ struct UpscaleSettings {
     float sharpness = 0.0f; // 0..1
 };
 
+// Texture filtering (the options' Graphics): anisotropic filtering at up to `anisotropy` samples
+// (1 off; clamped to the GPU's), `sharp` magnifies by the nearest texel (pixels kept square up
+// close; minified as before), `lodBias` shifts the mip chosen (negative: sharper - the upscalers'
+// log2(scene / output), as DLSS and FSR ask; Vulkan only)
+struct TextureFiltering {
+    int anisotropy = 16;
+    bool sharp = false;
+    float lodBias = 0.0f;
+    bool operator==(const TextureFiltering& o) const { return anisotropy == o.anisotropy && sharp == o.sharp && lodBias == o.lodBias; }
+    bool operator!=(const TextureFiltering& o) const { return !(*this == o); }
+};
+
 class RenderDevice {
 public:
     virtual ~RenderDevice() = default;
@@ -83,6 +95,9 @@ public:
     // API errors since the last call (glGetError / failed Vulkan calls)
     virtual int takeErrors() = 0;
     virtual void setVSync(bool on) = 0;
+    // How the mipmapped textures (the world's) are sampled - the menus' and the text's stay as they are
+    virtual void setFiltering(const TextureFiltering& /*f*/) {}
+    virtual int maxAnisotropy() const { return 1; } // (1: none)
     // Offscreen frames: the frame can be smaller / larger than the window (render scale) and
     // multisampled; false = frames are the window's size, single-sampled
     virtual bool offscreen() const { return false; }

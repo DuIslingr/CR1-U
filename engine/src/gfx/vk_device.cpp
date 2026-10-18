@@ -388,6 +388,7 @@ public:
         Frame& f = frames_[serial_ % kFrames];
         vkWaitForFences(device_, 1, &f.fence, VK_TRUE, UINT64_MAX);
         vkResetFences(device_, 1, &f.fence);
+        applyFiltering();
         runDeletions(serial_ >= kFrames ? serial_ - kFrames : 0);
         f.ringUsed = 0;
         const uint64_t now = SDL_GetTicksNS();
@@ -1274,6 +1275,29 @@ private:
         }
     }
 
+    void setFiltering(const TextureFiltering& f) override { filteringWanted_ = f; }
+    int maxAnisotropy() const override { return int(anisotropy_); }
+    // New samplers for new filtering - between frames (beginFrame: every set this frame binds is
+    // rewritten), once the GPU is done with the old ones
+    void applyFiltering() {
+        if (filteringWanted_ == filtering_ || !device_) return;
+        vkDeviceWaitIdle(device_);
+        for (VkSampler& smp : samplers_) vkDestroySampler(device_, smp, nullptr), smp = VK_NULL_HANDLE;
+        filtering_ = filteringWanted_;
+        if (!createSamplers()) return;
+        for (TextureRec& t : textures_)
+            for (size_t bits = 0; bits < t.sets.size(); ++bits) {
+                if (!t.sets[bits] || !t.view) continue;
+                VkDescriptorImageInfo ii{samplers_[bits], t.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+                w.dstSet = t.sets[bits];
+                w.descriptorCount = 1;
+                w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w.pImageInfo = &ii;
+                vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+            }
+    }
+
     // Samplers by bits: 1 clamp S, 2 clamp T, 4 linear min, 8 linear mag, 16 blend mips (HD)
     bool createSamplers() {
         for (unsigned bits = 0; bits < 32; ++bits) {
@@ -1285,9 +1309,11 @@ private:
             si.addressModeV = (bits & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
             si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             si.maxLod = (bits & 16) ? VK_LOD_CLAMP_NONE : 0.0f;
-            if ((bits & 16) && anisotropy_ > 1.0f) { // HD textures: sharp on surfaces seen at an angle
-                si.anisotropyEnable = VK_TRUE;
-                si.maxAnisotropy = anisotropy_;
+            if (bits & 16) { // (the mipmapped textures: the options' filtering)
+                const float aniso = std::min(float(filtering_.anisotropy), anisotropy_);
+                if (aniso > 1.0f) si.anisotropyEnable = VK_TRUE, si.maxAnisotropy = aniso; // (sharp at an angle)
+                if (filtering_.sharp) si.magFilter = VK_FILTER_NEAREST;
+                si.mipLodBias = filtering_.lodBias;
             }
             if (!ok(vkCreateSampler(device_, &si, nullptr, &samplers_[bits]))) return false;
         }
@@ -1720,6 +1746,7 @@ private:
     std::map<uint32_t, VkPipeline> pipelines_;
     std::array<VkSampler, 32> samplers_{};
     float anisotropy_ = 1.0f;
+    TextureFiltering filtering_, filteringWanted_; // (the samplers', the options')
     std::vector<Block> blocks_;
     std::vector<TextureRec> textures_;
     std::vector<MeshRec> meshes_;

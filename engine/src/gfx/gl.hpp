@@ -69,6 +69,7 @@
     X(void, CullFace, (GLenum mode)) \
     X(void, FrontFace, (GLenum mode)) \
     X(void, Uniform1f, (GLint loc, GLfloat v)) \
+    X(void, GetFloatv, (GLenum pname, GLfloat* data)) \
     X(void, Uniform3f, (GLint loc, GLfloat x, GLfloat y, GLfloat z))
 
 namespace gl {
