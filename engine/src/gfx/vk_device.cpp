@@ -19,6 +19,9 @@
 #include <vulkan/vulkan.h>
 
 #include "gfx/vk_dlss.hpp"
+#ifdef __APPLE__
+#include "gfx/vk_metalfx.hpp"
+#endif
 #include "gfx/vk_fsr3.hpp"
 
 #include <algorithm>
@@ -170,6 +173,7 @@ struct MeshRec {
 
 struct Frame {
     VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkCommandBuffer cmd2 = VK_NULL_HANDLE; // (the frame after MetalFX's scaler: vk_metalfx.hpp)
     VkFence fence = VK_NULL_HANDLE;
     VkSemaphore acquired = VK_NULL_HANDLE;
     VkBuffer ring = VK_NULL_HANDLE;
@@ -217,6 +221,9 @@ public:
         destroySceneTarget();
         fsr_.shutdown();
         dlss_.shutdown();
+#ifdef __APPLE__
+        metalfx_.shutdown();
+#endif
         vkDestroyPipelineLayout(device_, layout_, nullptr);
         if (sceneLayout_) vkDestroyPipelineLayout(device_, sceneLayout_, nullptr);
         vkDestroyDescriptorSetLayout(device_, setLayout_, nullptr);
@@ -582,6 +589,10 @@ public:
             in.reset = historyReset_;
             fsr_.dispatch(cmd_, int(serial_ % kFrames), in);
             done = true;
+        } else if (active_ == Upscaler::MetalFx) {
+#ifdef __APPLE__
+            done = metalFxEncode();
+#endif
         } else if (active_ == Upscaler::Dlss) {
             DlssInputs in;
             in.color = {sceneColor_, sceneColorView_, kColorFormat};
@@ -635,6 +646,13 @@ public:
         if (m == Upscaler::Off) return "";
         if (!upscaleCaps_) return "this GPU lacks what temporal upscaling needs";
         if (m == Upscaler::Fsr3) return fsrSupported_ ? "" : "this GPU can't run FSR 3.1";
+        if (m == Upscaler::MetalFx) {
+#ifdef __APPLE__
+            return metalObjects_ ? metalfx_.problem() : "needs MoltenVK's VK_EXT_metal_objects";
+#else
+            return "MetalFX is Apple's: macOS only";
+#endif
+        }
         return dlss_.problem();
     }
 
@@ -954,6 +972,11 @@ private:
         ci.enabledExtensionCount = uint32_t(ext.size());
         ci.ppEnabledExtensionNames = ext.data();
         if (portability) ci.flags |= 0x00000001; // (VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR)
+#ifdef __APPLE__
+        // (MoltenVK: each vkQueueSubmit committed to its Metal queue before it returns - the order
+        // MetalFX's scaler, committed between two, relies on)
+        setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "1", 1);
+#endif
         if (!ok(vkCreateInstance(&ci, nullptr, &instance_))) return false;
         if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
             SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Vulkan surface: %s", SDL_GetError());
@@ -1025,6 +1048,13 @@ private:
             for (const VkExtensionProperties& e : have)
                 if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0) ext.push_back("VK_KHR_portability_subset");
         }
+#ifdef __APPLE__
+        { // (MetalFX: the Metal objects under MoltenVK's)
+            const size_t before = ext.size();
+            MetalFx::deviceExtensions(gpu_, ext);
+            metalObjects_ = ext.size() > before;
+        }
+#endif
         // Temporal upscaling: a scene drawn into colour + motion + reactive attachments with
         // their own blend states, depth sampled afterwards
         VkPhysicalDeviceFeatures have;
@@ -1059,6 +1089,9 @@ private:
         if (fsrSupported_ && !fsr_.init(device_, gpu_, kFrames)) fsrSupported_ = false;
         if (upscaleCaps_) dlss_.init(instance_, gpu_, device_);
         vkGetDeviceQueue(device_, family_, 0, &queue_);
+#ifdef __APPLE__
+        if (upscaleCaps_ && metalObjects_) metalfx_.init(instance_, device_, queue_);
+#endif
         VkCommandPoolCreateInfo pi{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         pi.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         pi.queueFamilyIndex = family_;
@@ -1353,6 +1386,7 @@ private:
             ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
             ai.commandBufferCount = 1;
             if (!ok(vkAllocateCommandBuffers(device_, &ai, &f.cmd))) return false;
+            if (!ok(vkAllocateCommandBuffers(device_, &ai, &f.cmd2))) return false;
             VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
             fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
             if (!ok(vkCreateFence(device_, &fi, nullptr, &f.fence))) return false;
@@ -1572,6 +1606,9 @@ private:
         ii.samples = VkSampleCountFlagBits(samples);
         ii.tiling = VK_IMAGE_TILING_OPTIMAL;
         ii.usage = usage;
+#ifdef __APPLE__
+        if (metalObjects_) ii.pNext = MetalFx::imageExportInfo(); // (its MTLTexture handed to MetalFX)
+#endif
         if (!ok(vkCreateImage(device_, &ii, nullptr, &image))) return false;
         VkMemoryRequirements req;
         vkGetImageMemoryRequirements(device_, image, &req);
@@ -1783,6 +1820,47 @@ private:
     bool fsrSupported_ = false, upscaleCaps_ = false;
     Fsr3 fsr_;
     Dlss dlss_;
+#ifdef __APPLE__
+    MetalFx metalfx_;
+    bool metalObjects_ = false; // VK_EXT_metal_objects on
+    // MetalFX: the frame's work so far submitted, the scaler after it on the same Metal queue, the
+    // frame going on in its second command buffer (vk_metalfx.hpp)
+    bool metalFxEncode() {
+        Frame& f = frames_[serial_ % kFrames];
+        bool encoded = false;
+        if (ok(vkEndCommandBuffer(cmd_))) {
+            VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+            si.commandBufferCount = 1;
+            si.pCommandBuffers = &cmd_;
+            if (ok(vkQueueSubmit(queue_, 1, &si, VK_NULL_HANDLE))) {
+                MetalFxInputs in;
+                in.color = sceneColor_;
+                in.depth = sceneDepth_;
+                in.motion = sceneMotion_;
+                in.output = colorImage_;
+                in.renderW = sceneW_;
+                in.renderH = sceneH_;
+                in.outW = targetW_;
+                in.outH = targetH_;
+                in.jitterX = jitter_[0];
+                in.jitterY = jitter_[1];
+                in.motionScaleX = float(sceneW_); // (UV offsets -> render pixels, as DLSS's)
+                in.motionScaleY = float(sceneH_);
+                in.reset = historyReset_;
+                encoded = metalfx_.encode(in);
+            }
+        }
+        cmd_ = f.cmd2;
+        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkResetCommandBuffer(cmd_, 0);
+        vkBeginCommandBuffer(cmd_, &bi);
+        bound_ = VK_NULL_HANDLE; // (a new command buffer: nothing bound)
+        boundLayout_ = VK_NULL_HANDLE;
+        boundSet_ = VK_NULL_HANDLE;
+        return encoded;
+    }
+#endif
     VkPipelineLayout sceneLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout boundLayout_ = VK_NULL_HANDLE;
     VkShaderModule sceneQuadVert_ = VK_NULL_HANDLE, sceneQuadFrag_ = VK_NULL_HANDLE, sceneMeshVert_ = VK_NULL_HANDLE,
@@ -1812,12 +1890,22 @@ private:
 
 std::unique_ptr<RenderDevice> makeVkDevice() { return std::make_unique<VkDevice_>(); }
 
+void useBundledVulkan() {
+#ifdef __APPLE__
+    if (const char* base = SDL_GetBasePath()) { // (a .app's: Contents/Resources/)
+        const std::string loader = std::string(base) + "../Frameworks/libvulkan.1.dylib";
+        if (SDL_GetPathInfo(loader.c_str(), nullptr)) SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, loader.c_str());
+    }
+#endif
+}
+
 } // namespace cr
 
 #else
 
 namespace cr {
 std::unique_ptr<RenderDevice> makeVkDevice() { return nullptr; } // built without Vulkan
+void useBundledVulkan() {}
 } // namespace cr
 
 #endif

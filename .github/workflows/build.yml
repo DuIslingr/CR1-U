@@ -40,7 +40,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - name: Vulkan SDK
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' || runner.os == 'macOS' # (macOS: MoltenVK, universal - bundled into the .app)
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: 1.4.309.0
@@ -98,6 +98,8 @@ jobs:
           mkdir -p dist
           lipo -info build/chaosrings.app/Contents/MacOS/chaosrings
           ! otool -L build/chaosrings.app/Contents/MacOS/chaosrings | grep -e /opt/homebrew -e /usr/local  # (nothing of Homebrew's)
+          lipo -info build/chaosrings.app/Contents/Frameworks/libMoltenVK.dylib build/chaosrings.app/Contents/Frameworks/libvulkan.1.dylib
+          test -f build/chaosrings.app/Contents/Resources/vulkan/icd.d/MoltenVK_icd.json
           cp -R build/chaosrings.app dist/
           cp build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/

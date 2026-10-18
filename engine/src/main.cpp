@@ -2849,8 +2849,13 @@ struct UpscaleMode {
 };
 constexpr UpscaleMode kUpscaleModes[] = {
     {"Native AA", 1.0f}, {"Quality", 1.5f}, {"Balanced", 1.7f}, {"Performance", 2.0f}, {"Ultra Perf.", 3.0f}};
-constexpr const char* kUpscalerName[] = {"Off", "FSR 3.1", "DLSS"};
-constexpr cr::Upscaler kUpscaler[] = {cr::Upscaler::Off, cr::Upscaler::Fsr3, cr::Upscaler::Dlss};
+constexpr const char* kUpscalerName[] = {"Off", "FSR 3.1", "DLSS", "MetalFX"};
+constexpr cr::Upscaler kUpscaler[] = {cr::Upscaler::Off, cr::Upscaler::Fsr3, cr::Upscaler::Dlss, cr::Upscaler::MetalFx};
+#ifdef __APPLE__
+constexpr int kUpscalers = 4; // (MetalFX: Apple's own)
+#else
+constexpr int kUpscalers = 3;
+#endif
 
 int keyValue(const char* text, const char* key, int fallback) {
     const char* at = SDL_strstr(text, key);
@@ -2868,7 +2873,7 @@ void loadVideo(App& app, const char* text) {
     v.msaa = std::clamp(keyValue(text, "\nmsaa=", v.msaa), 1, 8);
     v.vsync = keyValue(text, "\nvsync=", v.vsync) != 0;
     v.frameLimit = std::clamp(keyValue(text, "\nframe_limit=", v.frameLimit), 0, 1000);
-    v.upscaler = std::clamp(keyValue(text, "\nupscaler=", v.upscaler), 0, 2);
+    v.upscaler = std::clamp(keyValue(text, "\nupscaler=", v.upscaler), 0, kUpscalers - 1);
     v.upscaleMode = std::clamp(keyValue(text, "\nupscale_mode=", v.upscaleMode), 0, 4);
     v.sharpness = std::clamp(keyValue(text, "\nsharpness=", v.sharpness), 0, 100);
     v.hdTextures = keyValue(text, "\nhd_textures=", v.hdTextures) != 0;
@@ -2896,7 +2901,7 @@ void applyVideo(App& app) {
     r.setSamples(v.msaa);
     r.setVSync(v.vsync);
     cr::UpscaleSettings up;
-    up.mode = kUpscaler[std::clamp(v.upscaler, 0, 2)];
+    up.mode = kUpscaler[std::clamp(v.upscaler, 0, kUpscalers - 1)];
     up.ratio = kUpscaleModes[std::clamp(v.upscaleMode, 0, 4)].ratio;
     up.sharpness = v.sharpness / 100.0f;
     r.setUpscaler(up);
@@ -2962,6 +2967,7 @@ int aaChoice(const App::Video& v) {
 std::string aaName(const App::Video& v) {
     if (v.upscaler == 1) return v.upscaleMode == 0 ? "FSR Native AA" : "FSR 3.1";
     if (v.upscaler == 2) return v.upscaleMode == 0 ? "DLAA" : "DLSS";
+    if (v.upscaler == 3) return v.upscaleMode == 0 ? "MetalFX AA" : "MetalFX";
     return v.msaa <= 1 ? std::string("Off") : std::to_string(v.msaa) + "x MSAA";
 }
 
@@ -3014,7 +3020,7 @@ void adjustVideo(App& app, int row, int dir) {
         }
         break;
     }
-    case 9: v.upscaler = (v.upscaler + dir + 3) % 3; break;
+    case 9: v.upscaler = (v.upscaler + dir + kUpscalers) % kUpscalers; break;
     case 10: v.upscaleMode = (v.upscaleMode + dir + 5) % 5; break;
     case 11: v.sharpness = std::clamp(v.sharpness + dir * 5, 0, 100); break;
     case 14: v.layout = (v.layout + dir + 4) % 4; break;
@@ -3311,7 +3317,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
     }
     default: { // Graphics: what the Vulkan renderer adds
         const bool scalable = app.renderer.scalable();
-        const std::string why = app.renderer.upscalerProblem(kUpscaler[std::clamp(v.upscaler, 0, 2)]);
+        const std::string why = app.renderer.upscalerProblem(kUpscaler[std::clamp(v.upscaler, 0, kUpscalers - 1)]);
         auto unavailable = [&](OptRow& r) {
             if (v.upscaler && !why.empty()) r.hint = std::string(kUpscalerName[v.upscaler]) + " is off here: " + why;
         };
@@ -16707,6 +16713,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     for (int i = 1; i + 1 < argc; ++i)
         if (SDL_strcmp(argv[i], "--renderer") == 0) choice = argv[i + 1];
     if (choice && (SDL_strcasecmp(choice, "gl") == 0 || SDL_strcasecmp(choice, "opengl") == 0)) want = cr::Backend::OpenGL;
+    cr::useBundledVulkan(); // (macOS: the .app's own loader)
     for (cr::Backend b : {want, cr::Backend::OpenGL}) {
         const uint64_t flags = cr::Renderer::windowFlags(b);
         if (!flags) continue; // not built in

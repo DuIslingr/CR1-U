@@ -41,7 +41,7 @@ struct MeshShading {
 // Temporal upscalers (Vulkan): the scene renders smaller (or at the same size: Native AA /
 // DLAA) with sub-pixel jitter, motion vectors and a reactive mask, then is resolved at the
 // frame's size before the UI draws over it
-enum class Upscaler { Off, Fsr3, Dlss };
+enum class Upscaler { Off, Fsr3, Dlss, MetalFx }; // (MetalFX: Apple's, macOS 13+)
 struct UpscaleSettings {
     Upscaler mode = Upscaler::Off;
     float ratio = 1.0f;     // output / render size per axis (1 = native AA)
@@ -59,6 +59,10 @@ struct TextureFiltering {
     bool operator==(const TextureFiltering& o) const { return anisotropy == o.anisotropy && sharp == o.sharp && lodBias == o.lodBias; }
     bool operator!=(const TextureFiltering& o) const { return !(*this == o); }
 };
+
+// macOS: SDL told of the .app's own Vulkan loader (Contents/Frameworks: engine/cmake/apple-vulkan.cmake)
+// before a Vulkan window is made; nothing elsewhere
+void useBundledVulkan();
 
 class RenderDevice {
 public:
