@@ -5,6 +5,7 @@
 !/.gitignore
 !/.github/
 !/android/
+!/packaging/
 /android/SDL/
 /android/.gradle/
 /android/build/

@@ -57,6 +57,15 @@ jobs:
           mkdir -p dist
           cp build/chaosrings build/crtool dist/
           cp README.md LICENSE THIRD_PARTY.md dist/
+      - name: AppImage (Linux)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          wget -q -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy
+          ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --output appimage
+          mv ./*.AppImage dist/
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: bash

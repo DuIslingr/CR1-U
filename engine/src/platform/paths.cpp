@@ -45,6 +45,14 @@ std::string findDataDir(int argc, char** argv) {
     }
     const std::string d = platformDefault();
     if (!d.empty() && looksLikeData(d)) return d;
+#ifdef SDL_PLATFORM_LINUX
+    // an AppImage: dataHD/ beside the .AppImage file (its base path is its read-only mount)
+    if (const char* image = SDL_getenv("APPIMAGE")) {
+        const std::string i = image;
+        const std::string beside = i.substr(0, i.rfind('/') + 1) + "dataHD/";
+        if (looksLikeData(beside)) return beside;
+    }
+#endif
 #ifdef SDL_PLATFORM_MACOS
     // a .app: dataHD/ beside it too (its base path is its Contents/Resources/)
     if (const char* base = SDL_GetBasePath()) {

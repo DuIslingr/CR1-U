@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Chaos Rings
+Comment=A reimplementation of the game (needs your own copy of its data)
+Exec=chaosrings
+Icon=chaosrings
+Terminal=false
+Categories=Game;RolePlaying;
