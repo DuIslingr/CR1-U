@@ -1,0 +1,68 @@
+# Builds the port on Linux, Windows and macOS (no game data: the build, the packaging). The
+# binaries are the run's artifacts; nothing of the game is in them.
+name: build
+on:
+  push:
+    branches: [main, platforms]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, name: linux }
+          - { os: windows-2022, name: windows }
+          - { os: macos-14, name: macos }
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libvulkan-dev glslc libfaad-dev zlib1g-dev libfreetype-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxtst-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libpulse-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev
+      - name: macOS packages
+        if: runner.os == 'macOS'
+        run: brew install ninja sdl3
+      - name: MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp build/chaosrings build/crtool dist/
+          cp README.md LICENSE THIRD_PARTY.md dist/
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/*.exe dist/
+          cp build/*.dll dist/ 2>/dev/null || true
+          cp README.md LICENSE THIRD_PARTY.md dist/
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          cp -R build/chaosrings.app dist/
+          cp build/crtool dist/
+          cp README.md LICENSE THIRD_PARTY.md dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ matrix.name }}
+          path: dist

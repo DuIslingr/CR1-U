@@ -3,6 +3,7 @@
 # (re/, extracted/, eboot.*, decompilations), builds, or the NVIDIA DLSS SDK.
 /*
 !/.gitignore
+!/.github/
 !/README.md
 !/LICENSE
 !/THIRD_PARTY.md
