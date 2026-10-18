@@ -108,6 +108,7 @@ jobs:
             f=$(find "$VULKAN_SDK/.." -maxdepth 6 -ipath "*$n*" -iname 'LICENSE*' | head -1)
             if [ -n "$f" ]; then cp "$f" "$lic/$n-LICENSE.txt"; else curl -fsSL https://www.apache.org/licenses/LICENSE-2.0.txt -o "$lic/$n-LICENSE.txt"; fi
           done
+          [ -f "$VULKAN_SDK/../Licenses/LICENSE.txt" ] && cp "$VULKAN_SDK/../Licenses/LICENSE.txt" "$lic/VulkanSDK-LICENSE.txt"  # (the SDK's: every component's)
           cp LICENSE THIRD_PARTY.md "$lic/"
           ls -la "$lic"
           cp -R build/chaosrings.app dist/
