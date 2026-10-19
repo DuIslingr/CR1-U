@@ -1,7 +1,14 @@
-# CR1-U v0.1.0
+# CR1-U v0.2.0
 
-A from-scratch reimplementation of *Chaos Rings* (iOS / Vita / Android), first release: builds for
-Windows, macOS, Linux and Android.
+A from-scratch reimplementation of *Chaos Rings* (iOS / Vita / Android): builds for Windows,
+macOS, Linux and Android.
+
+**New in this release: your copy found by itself.** Put it in the folder holding the program, in
+a folder named after its release - `ios/`, `android/` or `vita/` (these come made in the download,
+each with a `README.txt` saying what goes in it) - and start the program: nothing to set. HD textures
+the same way: `--export-textures` writes to `textures/export/`, `tools/hd_textures.py <the game
+folder>` upscales into `textures/hd/`, and the game turns them on by itself. The same layout in all
+the Chaos Rings ports; the older places still work.
 
 | File | Platform |
 |---|---|
@@ -17,7 +24,7 @@ holding the `.app` on macOS, the AppImage's on Linux; on Android
 may hold it as it was unpacked or installed (one or two folders down). The iOS copy is the game and the others add their voices, music, languages and art to it (Options, Game); alone, the Vita or the Android release is the game. If none is found it
 says where it looked; the README's "Your copy" has the details.
 
-**In this release:** the game playable with its own menus, Options pages for display, graphics
+**Also in it (from v0.1.0):** the game playable with its own menus, Options pages for display, graphics
 (render scale, MSAA, FSR 3.1 / DLSS / MetalFX), and the new Detail page (HD textures, smoothed
 models, anisotropic filtering, texture filtering); HD textures you make yourself (`chaosrings --export-textures` into `textures/export/`, then
 `tools/hd_textures.py <the game folder>` into `textures/hd/`, read by itself: the README's "HD textures").
