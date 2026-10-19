@@ -14,12 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-24.04, name: linux }
+          - { os: ubuntu-22.04, name: linux }
           - { os: windows-2022, name: windows }
           - { os: macos-14, name: macos }
           # DLSS: built and linked to prove it, never uploaded - NVIDIA's NGX library is proprietary and
           # these programs are GPL, so a DLSS build is for one's own use (THIRD_PARTY.md), not an artifact
-          - { os: ubuntu-24.04, name: linux-dlss, dlss: true }
+          - { os: ubuntu-22.04, name: linux-dlss, dlss: true }
           - { os: windows-2022, name: windows-dlss, dlss: true }
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
@@ -84,6 +84,10 @@ jobs:
           wget -q -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy
           ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --exclude-library "libvulkan.so*" --output appimage  # (the loader: the system's, with its drivers)
+          # (an AppImage runs on the oldest supported LTS too: nothing in it may need a newer glibc than 22.04's 2.35)
+          need=$(find AppDir/usr -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec objdump -T {} + 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "the AppImage needs $need"
+          [ "$(printf '%s\nGLIBC_2.35\n' "$need" | sort -V | tail -1)" = GLIBC_2.35 ] || { echo "::error::needs $need, newer than Ubuntu 22.04's glibc 2.35"; exit 1; }
           mv ./*.AppImage dist/
       - name: Package (Windows)
         if: runner.os == 'Windows' && !matrix.dlss

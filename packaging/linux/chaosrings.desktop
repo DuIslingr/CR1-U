@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Chaos Rings
-Comment=A reimplementation of the game (needs your own copy of its data)
+Name=CR1-U
+GenericName=Chaos Rings (reimplementation)
+Comment=A reimplementation of Chaos Rings (needs your own copy of the game)
 Exec=chaosrings
 Icon=chaosrings
 Terminal=false
