@@ -25,4 +25,8 @@ bool saveRawImage(const std::string& path, const Image& img);
 // original size, larger or equal size
 bool loadHdImage(const std::string& dir, const Image& original, Image& out);
 
+// A cut-out's see-through pixels (alpha under 250) take the nearest opaque pixel's colour, so
+// filtering at its edges doesn't pull in the upscaler's dark fringe
+void fillSeeThrough(Image& img);
+
 } // namespace cr

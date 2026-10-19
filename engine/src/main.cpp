@@ -915,6 +915,7 @@ void applyHd(App& app, cr::Image& img) {
         }
         hd.cutout = binary && some;
     }
+    if (hd.cutout) cr::fillSeeThrough(hd); // (only a cut-out: soft alpha keeps its own colours)
     hd.mipmaps = true;
     img = std::move(hd);
     ++app.hdLoaded;

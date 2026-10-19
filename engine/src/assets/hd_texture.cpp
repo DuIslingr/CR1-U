@@ -19,6 +19,8 @@ void put32(std::vector<uint8_t>& out, uint32_t v) {
 
 uint32_t get32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 
+} // namespace
+
 // An upscale's see-through pixels' colour: drawn filtered (the originals nearest), a cut-out's
 // edge shows the colour under its part-transparent pixels - which the networks leave dark (a
 // black fringe round hair and ornaments). Each pixel short of opaque takes the nearest opaque
@@ -54,8 +56,6 @@ void fillSeeThrough(Image& img) {
         }
     }
 }
-
-} // namespace
 
 uint64_t imageHash(const Image& img) {
     uint64_t h = 1469598103934665603ull;
@@ -104,7 +104,6 @@ bool loadHdImage(const std::string& dir, const Image& original, Image& out) {
         out.rgba.resize(size_t(w) * h * 4);
         uLongf len = uLongf(out.rgba.size());
         ok = uncompress(out.rgba.data(), &len, p + 26, uLong(size - 26)) == Z_OK && len == out.rgba.size();
-        if (ok) fillSeeThrough(out);
     }
     SDL_free(data);
     return ok;
