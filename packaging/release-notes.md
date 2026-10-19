@@ -10,17 +10,17 @@ Windows, macOS, Linux and Android.
 | `CR1-U-x86_64.AppImage`, `CR1-U-linux-x86_64.tar.gz` | Linux x86-64 (Vulkan or OpenGL; FSR 3.1) |
 | `CR1-U-android.apk` | Android 7+, arm64 / x86-64 (OpenGL ES 3.0) |
 
-**The game's data** - any one of: the iPad *Chaos Rings HD* 1.0.1's `dataHD` folder (from
-`ChaosRingsHD.app`), the iPhone 2.2.0's `data`, the Vita's `PCSG00497` folder, or the Android 1.1.1
-release's `main.100.com.square_enix.chaosrings.googleplay.obb` with its APK. Put `dataHD` beside the
-program (beside the `.app` on macOS, beside the AppImage on Linux), in
-`Android/data/local.preservation.chaosrings/files/dataHD/` on Android, or pass `--data <folder>`.
-The Options' Game page adds Vita or Android assets to an iOS copy.
+**The game's data** - nothing to set: put your copy in the folder holding the program (the folder
+holding the `.app` on macOS, the AppImage's on Linux; on Android
+`Android/data/local.preservation.chaosrings/files/` on the shared storage), in a folder named after its release:
+`ios/` - the iPad 1.0.1's `ChaosRingsHD.app` (or the iPhone 2.2.0's `ChaosRings.app`, or the unpacked `.ipa`); `android/` - the 1.1.1 release's `main.100.com.square_enix.chaosrings.googleplay.obb` and its APK; `vita/` - the installed `PCSG00497` folder. Any one is enough, and each
+may hold it as it was unpacked or installed (one or two folders down). The iOS copy is the game and the others add their voices, music, languages and art to it (Options, Game); alone, the Vita or the Android release is the game. If none is found it
+says where it looked; the README's "Your copy" has the details.
 
 **In this release:** the game playable with its own menus, Options pages for display, graphics
 (render scale, MSAA, FSR 3.1 / DLSS / MetalFX), and the new Detail page (HD textures, smoothed
-models, anisotropic filtering, texture filtering); HD textures you make yourself with
-`tools/hd_textures.py` (waifu2x / Real-ESRGAN).
+models, anisotropic filtering, texture filtering); HD textures you make yourself (`chaosrings --export-textures` into `textures/export/`, then
+`tools/hd_textures.py <the game folder>` into `textures/hd/`, read by itself: the README's "HD textures").
 
 **Not included:** any of the game. You need your own copy; the port reads it at run time. DLSS is
 not in these builds either (NVIDIA's NGX library is proprietary and the port is GPL): build it

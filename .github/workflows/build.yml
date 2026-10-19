@@ -122,6 +122,7 @@ jobs:
         run: |
           mkdir -p upload
           n="${{ github.event.repository.name }}"
+          cp -R packaging/folders/. dist/  # (the game folder's ios/, android/, vita/, textures/: each with what goes in it)
           case "$RUNNER_OS" in
             Linux) mv dist/*.AppImage "upload/$n-x86_64.AppImage"; tar -czf "upload/$n-linux-x86_64.tar.gz" -C dist . ;;
             Windows) 7z a -tzip -bso0 "upload/$n-windows-x64.zip" ./dist/* ;;

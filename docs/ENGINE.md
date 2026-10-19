@@ -352,10 +352,15 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] The Vita's boot when its scripts are used (also over iOS data, so every script's text is the
       Vita's): the health warning, Square Enix and Media.Vision logos (opcodes 0x47..0x4a: faded in,
       held - a tap or confirm cuts it short - and out)
-- [x] A build that carries its own data: `vita/` (a Vita copy's CR1 folder, or its PCSG00497
-      folder) and `hd-textures/` beside the executable are found by themselves - the Vita copy
-      when nothing else is configured (the game itself when no iOS data is found; not written to
-      settings.ini), the HD textures on by default unless settings.ini turns them off
+- [x] Your copy found by itself (`platform/paths.hpp`; the README's "Your copy"): `ios/`,
+      `android/` and `vita/` in the game folder (beside the program, the `.app` or the AppImage;
+      on Android its folder on the shared storage; the working directory), each the release or it
+      up to two folders down - the iOS data the game and the others its add-ons (not written to
+      settings.ini), else the Vita copy alone, else the Android release alone; the older places
+      (`dataHD/`, `data/`, the `.app`, `Payload/`) still read. HD textures from `textures/hd/` there
+      (the older `hd-textures/` beside the executable or in the profile folder while there is none),
+      on by themselves unless settings.ini turns them off; `--export-textures` into `textures/export/`.
+      The same layout in all four ports
 - [x] The Android release alone as the game (`--data` / `--android <folder with the OBB and the APK
       or classes.dex>`, `CR_ANDROID`, a saved Android Assets folder or `android/` beside the build,
       with no iOS data or Vita copy found): every file read from inside the OBB (an iPad-only `_hd`
@@ -580,18 +585,18 @@ c101/c102/c104/m207a, 2026-10-12).
         29.7, FSR Native AA 36.5, Quality 31.2, Balanced 29.8, Performance 28.1, Ultra 25.1.
         The game renders in ~0.1 ms at 4K on a desktop GPU and FSR costs 0.7–1.7 ms, so here the
         upscaling modes are for weaker GPUs; Native AA / DLAA is the quality option
-      - **HD Textures** (Graphics page, off by default): waifu2x / Real-ESRGAN upscales of every
-        texture, made once on your machine and kept outside the project and the game data (they're
-        derived from the game's art - personal use only). The engine finds each by the hash of the
+      - **HD Textures** (Detail page; on by itself when `textures/hd/` is in the game folder - the
+        README's "HD textures"): waifu2x / Real-ESRGAN upscales of every texture, made once on your
+        machine and kept outside the project and the game data (they're derived from the game's art -
+        personal use only). The engine finds each by the hash of the
         original's pixels and draws it at the original's layout size, with mipmaps and anisotropic
         filtering. To make them:
-        `chaosrings --export-textures ~/.local/share/preservation/ChaosRingsHD/hd-source/ipad`
-        (676 distinct pictures - 556 lossless, 114 PVRTC, 6 16-bit on the iPad; add `--vita
-        <PCSG00497 folder>` to start from the Vita's lossless versions of every picture it has
+        `chaosrings --export-textures` (into `textures/export/` in the game folder)
+        (676 distinct pictures - 556 lossless, 114 PVRTC, 6 16-bit on the iPad; with the Vita copy
+        in `vita/` (Vita Assets on) it starts from the Vita's lossless versions of every picture it has
         alike - all 676 on 1.0.1's data - with `<ios hash>.cralias` files so each upscale also
-        serves the iOS picture: the game finds them with or without Vita Assets), then `tools/hd_textures.py --source <that folder>
-        --out ~/.local/share/preservation/ChaosRingsHD/hd-textures [--esrgan <realesrgan-ncnn-vulkan
-        folder>]` (2× by default, up to 4096 px). `--engine auto` (default) picks per picture by how
+        serves the iOS picture: the game finds them with or without Vita Assets), then `tools/hd_textures.py <game folder> [--esrgan <realesrgan-ncnn-vulkan folder>]` (into
+        `textures/hd/`, where the game reads them) (2× by default, up to 4096 px). `--engine auto` (default) picks per picture by how
         the export says the game stored it: waifu2x CUnet (`waifu2x-ncnn-vulkan` on the PATH, or
         `--waifu2x`) for lossless ones (no denoise) and PVRTC ones (denoise 1), Real-ESRGAN x4plus for
         16-bit ones (it smooths their dithering away; waifu2x keeps it). On the Vita's lossless art

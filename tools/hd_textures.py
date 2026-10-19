@@ -1,32 +1,40 @@
 #!/usr/bin/env python3
-"""HD textures for the Chaos Rings engine: upscales the pictures `chaosrings --export-textures`
-wrote (<hash>.crraw) with waifu2x (waifu2x-ncnn-vulkan) or Real-ESRGAN (realesrgan-ncnn-vulkan)
-into <hash>.crhd, which the engine loads in place of the originals when Graphics > HD Textures is on.
+"""HD textures for the Chaos Rings ports - CR1:U, CRO-U, CR2-U and CR3-U, the same tool and files in
+each: upscales the pictures the game's --export-textures wrote (<hash>.crraw) with waifu2x
+(waifu2x-ncnn-vulkan) or Real-ESRGAN (realesrgan-ncnn-vulkan) into <hash>.crhd, which the game loads
+in place of the originals when HD Textures is on (Options; on by itself once textures/hd/ is there).
 
-  chaosrings --export-textures ~/.local/share/preservation/ChaosRingsHD/hd-source/ipad
-  tools/hd_textures.py --source ~/.local/share/preservation/ChaosRingsHD/hd-source/ipad \\
-      --out ~/.local/share/preservation/ChaosRingsHD/hd-textures \\
-      [--esrgan <folder with realesrgan-ncnn-vulkan and models/>] [--waifu2x <its executable or folder>]
+Everything lives in the game folder (the folder holding the program - beside the .app on macOS,
+beside the .AppImage on Linux, Android/data/<package>/files/ on Android):
 
---engine auto (the default) picks by how the game's file stored each picture (the .crraw's flags,
-from the export): lossless ones (8 bits a channel, 8-bit palettes, the Vita's) and PVRTC ones go
-through waifu2x's CUnet - no denoising, or level 1 for PVRTC's block noise - and 16-bit ones
-(RGBA4444 / 5551 / RGB565: dithered or banded) through Real-ESRGAN x4plus, which smooths dithering
-away where waifu2x keeps it. Measured (docs/FORMATS.md, "HD textures"): on the Vita's lossless
-art halved and brought back 2x, waifu2x CUnet 33.1 dB / SSIM 0.968 against Real-ESRGAN x4plus's
-27.7 / 0.919 (Lanczos 30.5 / 0.945) - Real-ESRGAN draws outlines and reshapes small details (eyes,
-round dots) that aren't there - and about 15 times faster. Exports from before the flags (0:
-unknown) take waifu2x's level 1. --engine waifu2x / esrgan puts everything through one.
+  <game folder>/textures/export/   the originals, written by the game:   <program> --export-textures
+  <game folder>/textures/hd/       the upscales, read by the game:       tools/hd_textures.py <game folder>
+
+  tools/hd_textures.py <game folder> [--esrgan <folder with realesrgan-ncnn-vulkan and models/>]
+      [--waifu2x <its executable or folder>]      (--source / --out: other folders than those two)
+
+--engine auto (the default) picks by how the release stored each picture (the .crraw's flags):
+lossless ones (8 bits a channel: RGBA8888, I8, AI88, 8-bit palettes, the Vita's U8...) and
+block-compressed ones (the iPad's PVRTC, the Android release's ETC1, the Vita's UBC) go through
+waifu2x's CUnet - no denoising, or level 1 for the blocks' noise - and 16-bit ones (RGBA4444 / 5551
+/ RGB565: dithered or banded) through Real-ESRGAN x4plus, which smooths dithering away where waifu2x
+keeps it. Measured (CR1:U's docs/FORMATS.md, "HD textures"): on the Vita's lossless art halved and
+brought back 2x, waifu2x CUnet 33.1 dB / SSIM 0.968 against Real-ESRGAN x4plus's 27.7 / 0.919
+(Lanczos 30.5 / 0.945) - Real-ESRGAN draws outlines and reshapes small details (eyes, round dots)
+that aren't there - and about 15 times faster. Exports from before the flags (0: unknown) take
+waifu2x's level 1. --engine waifu2x / esrgan puts everything through one.
 
 waifu2x works at 2x a pass (x2, x4 ... as --scale needs), Real-ESRGAN at 4x; the colour is then
 resampled (Lanczos) to --scale and alpha is resampled from the original (cut-outs keep their
 shape); see-through pixels first take their opaque neighbours' colour so no dark fringes bleed in.
-Alpha-only textures (GL_ALPHA) put their alpha through the network instead. An export made with
---vita takes the Vita's lossless version of each picture it has alike and leaves <ios hash>.cralias
-files naming it: each becomes a hard link (else a copy) to that picture's .crhd, so one upscale
-serves the game with or without Vita Assets. Personal use: the
-outputs are derived from the game's art - keep them out of anything shared.
+Alpha-only textures (A8, the Vita's U8) put their alpha through the network instead. Each release
+exports its own pictures (their hashes differ); one textures/hd/ can hold them all. CR1:U and CRO-U
+with Vita Assets on export the Vita's lossless version of each picture it has alike and leave
+<ios hash>.cralias files naming it: each becomes a hard link (else a copy) to that picture's .crhd,
+so one upscale serves the game with or without the Vita's. Personal use: the outputs are derived
+from the game's art - keep them out of anything shared.
 """
+
 import argparse
 import math
 import os
@@ -40,8 +48,8 @@ import zlib
 import numpy as np
 from PIL import Image
 
-LOSSLESS, PVRTC, BITS16 = 1, 2, 3  # the .crraw's storage (Image::Storage); 0 unknown
-STORAGE_NAME = {0: 'unknown', LOSSLESS: 'lossless', PVRTC: 'PVRTC', BITS16: '16-bit'}
+LOSSLESS, PVRTC, BITS16 = 1, 2, 3  # the .crraw's storage (imageStorage); 0 unknown
+STORAGE_NAME = {0: 'unknown', LOSSLESS: 'lossless', PVRTC: 'block-compressed', BITS16: '16-bit'}
 
 
 def read_raw(path):
@@ -117,10 +125,11 @@ def choose(engine, storage, args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--source', required=True, help='the .crraw folder (chaosrings --export-textures)')
-    ap.add_argument('--out', required=True, help='where the .crhd files go (the engine looks in <save dir>/hd-textures)')
+    ap.add_argument('game', nargs='?', default='.', help='the game folder (default: here): its textures/export/ in, textures/hd/ out')
+    ap.add_argument('--source', help='the .crraw folder (default: <game folder>/textures/export, the game\'s --export-textures)')
+    ap.add_argument('--out', help='where the .crhd files go (default: <game folder>/textures/hd, where the game looks)')
     ap.add_argument('--engine', choices=('auto', 'waifu2x', 'esrgan'), default='auto',
-                    help='auto (default): waifu2x for lossless and PVRTC pictures, Real-ESRGAN for 16-bit ones')
+                    help='auto (default): waifu2x for lossless and block-compressed pictures, Real-ESRGAN for 16-bit ones')
     ap.add_argument('--waifu2x', help='waifu2x-ncnn-vulkan: its executable or folder (default: the one on PATH)')
     ap.add_argument('--esrgan', help='folder holding realesrgan-ncnn-vulkan and models/ (for 16-bit pictures, or --engine esrgan)')
     ap.add_argument('--noise', type=int, choices=(-1, 0, 1, 2, 3),
@@ -135,6 +144,11 @@ def main():
     ap.add_argument('--force', action='store_true', help='redo existing outputs')
     ap.add_argument('--keep', help='also keep the network outputs (PNG) here, for inspection')
     args = ap.parse_args()
+    args.source = args.source or os.path.join(args.game, 'textures', 'export')
+    args.out = args.out or os.path.join(args.game, 'textures', 'hd')
+    if not os.path.isdir(args.source):
+        print(f'{args.source}: no exported pictures - run the game with --export-textures first')
+        return 2
 
     os.makedirs(args.out, exist_ok=True)
     names = sorted(n[:-6] for n in os.listdir(args.source) if n.endswith('.crraw'))

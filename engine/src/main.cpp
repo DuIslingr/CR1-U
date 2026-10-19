@@ -227,7 +227,7 @@ struct App {
         int layout = 0;                    // 0 the data's own (2.2.0's iPhone layout for its data), 1 iPad, 2 iPhone, 3 Android
     } video;
     bool phoneData = false;                // the data is a voiced iPhone release's (voiceevnt.bin: 2.2.0)
-    std::string hdDir;                     // HD textures: <save dir>/hd-textures/, or CR_HD_TEXTURES
+    std::string hdDir;                     // HD textures: textures/hd/ in the game folder, or CR_HD_TEXTURES
     int hdLoaded = 0, hdMissing = 0;       // replacements found / not found since startup
     int language = 1;                      // text language (cr::kLanguageName): English by default
     cr::Font font;                         // system font for the game's text (all languages)
@@ -3295,8 +3295,8 @@ std::vector<OptRow> optionRows(App& app, int page) {
         };
         {
             const bool have = !app.hdDir.empty() && SDL_GetPathInfo(app.hdDir.c_str(), nullptr);
-            rows.back().hint = have ? "Real-ESRGAN upscales (tools/hd_textures.py); from the next room on"
-                                    : "None made yet: see tools/hd_textures.py";
+            rows.back().hint = have ? "waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
+                                    : "None in textures/hd yet: --export-textures, then tools/hd_textures.py";
         }
         static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
         value("Smooth Models", kSmooth[v.smoothModels], [&app](int dir) { adjustVideo(app, 13, dir ? dir : 1); });
@@ -15937,16 +15937,18 @@ int runExplore(App& app, int maxActions) {
 
 // --capture <map.cmp> <out.bmp>: renders that map's composite (background + collision through
 // the stage camera, no HUD) and saves the frame — for checking alignment without a person.
-// --export-textures <dir>: every distinct picture the game draws (its .mct files and the textures
-// inside model packages) as <hash>.crraw, for tools/hd_textures.py to upscale into <hash>.crhd.
+// --export-textures [dir] (without one, textures/export/ in the game folder): every distinct picture
+// the game draws (its .mct files and the textures inside model packages) as <hash>.crraw, for tools/hd_textures.py to upscale into <hash>.crhd.
 // With --vita, the Vita's lossless version of each picture it has alike (same size, alpha kept, the
 // same picture: within 12/255 a channel on average - not the art it redrew) is exported instead,
 // and <ios hash>.cralias (the Vita's hash, 16 hex digits) lets the one upscale serve the iOS
 // version too: the game finds it whichever it decoded
 int runExportTextures(App& app, const char* dirArg) {
-    std::string dir = dirArg;
+    // (no folder given: textures/export/ in the game folder, else the profile folder's when that can't be written)
+    std::string dir = dirArg && *dirArg ? dirArg : cr::texturesFolder("export");
     if (dir.back() != '/') dir += '/';
-    SDL_CreateDirectory(dir.c_str());
+    if (!SDL_CreateDirectory(dir.c_str()) && !(dirArg && *dirArg)) dir = cr::saveDir() + "textures/export/", SDL_CreateDirectory(dir.c_str());
+    std::printf("exporting to %s\n", dir.c_str());
     std::set<uint64_t> seen;
     int written = 0, failed = 0, dupes = 0, fromVita = 0, aliases = 0;
     auto put = [&](const cr::Image& img) {
@@ -16608,9 +16610,11 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     auto* app = new App;
     *state = app;
 
+    // Your copy, found by itself (platform/paths.hpp): ios/, android/ and vita/ in the game folder
+    // (beside the program, the .app or the AppImage; on Android its folder on the shared storage) -
+    // the iOS data the game, the others its add-ons (each switched off in Options), else the Vita
+    // copy alone, else the Android release alone
     app->dataDir = cr::findDataDir(argc, argv);
-    // A build that carries its own (beside the executable): hd-textures/ (on unless settings.ini says
-    // otherwise) and vita/ (the Vita copy's CR1 folder: the game itself when no iOS data is found)
     const std::string beside = [] {
         const char* b = SDL_GetBasePath();
         std::string s = b ? b : "";
@@ -16620,6 +16624,21 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     auto isDir = [](const std::string& p) {
         SDL_PathInfo info;
         return SDL_GetPathInfo(p.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
+    };
+    // a release folder that opens: vita/ (or the folders below it), android/ ...
+    auto found = [](const char* kind, const std::function<bool(const std::string&)>& opens) {
+        for (const std::string& r : cr::releaseFolders(kind))
+            if (opens(r)) return r;
+        return std::string();
+    };
+    auto vitaThere = [](const std::string& p) {
+        for (const char* rel : {"CR1/resources/cr1.psarc", "resources/cr1.psarc", "cr1.psarc"})
+            if (SDL_GetPathInfo((p + rel).c_str(), nullptr)) return true;
+        return false;
+    };
+    auto androidThere = [](const std::string& p) {
+        cr::ObbArchive probe;
+        return findAndroid(p, probe, nullptr);
     };
     app->phoneData = SDL_GetPathInfo((app->dataDir + "voiceevnt.bin").c_str(), nullptr); // 2.2.0's data
     // --vita <PCSG00497 folder | cr1.psarc> (or CR_VITA, else settings.ini's vita=; --vita none:
@@ -16633,8 +16652,8 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (const char* env = SDL_getenv("CR_VITA")) vitaArg = env, vitaGiven = true;
     if (!vitaGiven) vitaArg = storedVitaPath();
     app->vitaPath = vitaArg == "none" ? std::string() : vitaArg; // (kept for settings.ini even if it fails to open)
-    std::string vitaBeside; // (the build's own: used, not written to settings.ini)
-    if (!vitaGiven && app->vitaPath.empty() && !beside.empty() && isDir(beside + "vita")) vitaBeside = beside + "vita";
+    std::string vitaBeside; // (found in vita/: used, not written to settings.ini)
+    if (!vitaGiven && app->vitaPath.empty()) vitaBeside = found("vita", vitaThere);
     if (app->dataDir.empty()) {
         std::string dataArg;
         for (int i = 1; i + 1 < argc; ++i)
@@ -16654,7 +16673,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
                 if (SDL_strcmp(argv[i], "--android") == 0) tries.push_back(argv[i + 1]);
             if (const char* env = SDL_getenv("CR_ANDROID")) tries.push_back(env);
             tries.push_back(storedSetting("android="));
-            if (!beside.empty() && isDir(beside + "android")) tries.push_back(beside + "android");
+            tries.push_back(found("android", androidThere));
             for (const std::string& p : tries) {
                 if (p.empty() || p == "none") continue;
                 app->androidOnly = true;
@@ -16685,24 +16704,35 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (!given) a = storedSetting("android=");
         if (!app->androidOnly) app->androidPath = a == "none" ? std::string() : a;
         if (!app->androidPath.empty() && !app->vitaOnly && !app->androidOnly) openAndroid(*app, app->androidPath);
+        else if (!given && a.empty() && !app->vitaOnly && !app->androidOnly) // (found in android/: used, not written to settings.ini)
+            if (const std::string f = found("android", androidThere); !f.empty() && openAndroid(*app, f)) app->androidPath.clear();
     }
     if (const char* sd = SDL_getenv("CR_SAVE_DIR")) { // save.dat / resume.dat elsewhere (tests)
         app->saveDirOverride = sd;
         if (!app->saveDirOverride.empty() && app->saveDirOverride.back() != '/') app->saveDirOverride += '/';
     }
+    // the HD textures: textures/hd/ in the game folder (CR_HD_TEXTURES elsewhere); the older
+    // hd-textures/ beside the program or in the profile folder while there is no textures/hd/
     bool hdBundled = false;
     if (const char* hd = SDL_getenv("CR_HD_TEXTURES")) app->hdDir = hd;
+    else if (isDir(cr::texturesFolder("hd"))) app->hdDir = cr::texturesFolder("hd"), hdBundled = true;
     else if (!beside.empty() && isDir(beside + "hd-textures")) app->hdDir = beside + "hd-textures", hdBundled = true;
-    else app->hdDir = cr::saveDir() + "hd-textures";
+    else if (isDir(cr::saveDir() + "hd-textures")) app->hdDir = cr::saveDir() + "hd-textures";
+    else app->hdDir = cr::texturesFolder("hd");
     if (!app->hdDir.empty() && app->hdDir.back() != '/') app->hdDir += '/';
     if (app->dataDir.empty()) {
-        const std::string msg = "Could not find the original game data (dataHD folder).\n\n"
-                                "Copy dataHD from your ChaosRingsHD.app to:\n" +
-                                cr::defaultDataDirHint() +
-                                "\n\nor run with --data <path-to-dataHD>, or set CR_DATA - or --data / --vita "
-                                "<your Vita copy's PCSG00497 folder>, or --data / --android <a folder with "
-                                "the Android release's main.100.com.square_enix.chaosrings.googleplay.obb "
-                                "and its APK>.";
+        const std::vector<std::string> g = cr::gameFolders();
+#ifdef SDL_PLATFORM_ANDROID
+        if (!g.empty()) // (the folders made, to be seen over USB)
+            for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((g.front() + f).c_str());
+#endif
+        std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n" +
+                          (g.empty() ? std::string("(no folder)") : g.front()) +
+                          "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app, or the unpacked .ipa)"
+                          "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK"
+                          "\n  vita/     the Vita's PCSG00497 folder\n\nAlso looked in:";
+        for (size_t k = 1; k < g.size(); ++k) msg += "\n" + g[k];
+        msg += "\n\nThe README's \"Your copy\" has the details.";
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings", msg.c_str(), nullptr);
         return SDL_APP_FAILURE;
     }
@@ -16869,9 +16899,10 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);
             return runExplore(*app, i + 1 < argc ? SDL_atoi(argv[i + 1]) : 200) ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
         }
-        if (SDL_strcmp(argv[i], "--export-textures") == 0 && i + 1 < argc) {
+        if (SDL_strcmp(argv[i], "--export-textures") == 0) { // [dir]: textures/export/ in the game folder without one
             SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);
-            return runExportTextures(*app, argv[i + 1]) ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
+            const char* dir = i + 1 < argc && argv[i + 1][0] != '-' ? argv[i + 1] : "";
+            return runExportTextures(*app, dir) ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
         }
         if (SDL_strcmp(argv[i], "--print-sysmsg") == 0) { // --print-sysmsg id...: system messages' text (tools)
             for (int k = i + 1; k < argc; ++k) std::printf("%s: %s\n", argv[k], sysText(*app, SDL_atoi(argv[k])).c_str());
