@@ -30,7 +30,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libvulkan-dev glslc libfaad-dev zlib1g-dev libfreetype-dev \
+          sudo apt-get install -y ninja-build libvulkan-dev libfaad-dev zlib1g-dev libfreetype-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxfixes-dev libxtst-dev \
             libxkbcommon-dev libwayland-dev wayland-protocols libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
             libpulse-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libudev-dev libdrm-dev libgbm-dev
@@ -41,7 +41,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       - name: Vulkan SDK
-        if: runner.os == 'Windows' || runner.os == 'macOS' # (macOS: MoltenVK, universal - bundled into the .app)
+        # (glslc and the headers everywhere - Ubuntu 22.04 has no glslc package; macOS: MoltenVK, universal - bundled into the .app)
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: 1.4.309.0
