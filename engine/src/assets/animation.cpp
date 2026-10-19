@@ -154,7 +154,9 @@ bool parseMca(const uint8_t* data, size_t size, size_t pos, std::vector<Action>&
     return true;
 }
 
-bool evaluateTrack(const Track& tr, float time, float* out) {
+namespace {
+
+bool evaluateAt(const Track& tr, float time, float* out) {
     const int c = tr.comps;
     if (!c || tr.keys.empty()) return false;
     const auto& keys = tr.keys;
@@ -190,6 +192,25 @@ bool evaluateTrack(const Track& tr, float time, float* out) {
     }
     for (int i = 0; i < c; ++i)
         if (!std::isfinite(out[i])) return false;
+    return true;
+}
+
+} // namespace
+
+// The game poses at its 20 frames a second - whole frames, where a track of a key every frame
+// sits on its keys. Between them (a faster frame rate) the Hermite curve would swing (13.8 deg
+// off the keys' line in j002e23's loop: a jitter), so a moment between frames is the two frames
+// it lies between, blended - a rotation (turns) the short way round
+bool evaluateTrack(const Track& tr, float time, float* out) {
+    const float whole = std::floor(time), frac = time - whole;
+    if (frac < 1e-4f || frac > 1 - 1e-4f || tr.comps > 4) return evaluateAt(tr, std::round(time), out);
+    float a[4], b[4];
+    if (!evaluateAt(tr, whole, a) || !evaluateAt(tr, whole + 1, b)) return evaluateAt(tr, time, out);
+    for (int i = 0; i < tr.comps; ++i) {
+        float d = b[i] - a[i];
+        if (tr.type == 5) d -= std::round(d);
+        out[i] = a[i] + d * frac;
+    }
     return true;
 }
 

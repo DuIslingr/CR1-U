@@ -89,6 +89,7 @@ void Renderer::destroy(GpuMesh& mesh) {
 
 Texture Renderer::upload(const Image& img) {
     Texture t = dev_->upload(img);
+    t.cutout = img.cutout;
     if (img.logicalW > 0 && img.logicalH > 0) { // HD: drawn at the original's size
         t.width = img.logicalW;
         t.height = img.logicalH;
@@ -136,6 +137,12 @@ void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp
     st.cull = mat.culling == 0 ? 0 : mat.culling == 1 ? 1 : 2;
     st.depthTest = mat.depthTest();
     st.depthWrite = mat.depthWrite();
+    // An HD texture for a cut-out (the original's alpha 0 or 255, drawn nearest): drawn filtered its
+    // edges come out part-transparent, and blended there - over whatever the frame holds yet, the
+    // depth written - they'd ring it in black. As the original looks: kept above half, else gone,
+    // unblended (a material fading the whole thing still blends)
+    if (textured && tex->cutout && st.blend && mat.blendSrc == 4 && mat.blendDst == 5 && sh.color[3] >= 0.999f)
+        st.blend = false, sh.alphaRef = std::max(sh.alphaRef, 0.5f);
     st.clampS = mat.wrapS != 0;
     st.clampT = mat.wrapT != 0;
     st.minLinear = smoothFilter || linearFilter(mat.minFilter);

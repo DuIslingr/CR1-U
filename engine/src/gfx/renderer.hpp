@@ -20,6 +20,7 @@ struct Texture {
     int width = 0;     // the game's size for it (pixel rectangles are in these units)
     int height = 0;
     bool alphaOnly = false;
+    bool cutout = false; // (an HD texture standing in for a cut-out: see Image::cutout)
 };
 
 // A mesh uploaded to the GPU: interleaved position/uv plus a triangle index buffer.

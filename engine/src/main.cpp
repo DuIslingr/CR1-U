@@ -897,13 +897,24 @@ void showTexture(App& app, int index) {
 // the original's size with a mip chain
 void applyHd(App& app, cr::Image& img) {
     if (!app.video.hdTextures || app.hdDir.empty() || img.width <= 0) return;
+    if (const char* only = SDL_getenv("CR_HD_ONLY"); only && cr::hashName(cr::imageHash(img)) != only) return; // (debugging: one replacement alone)
     cr::Image hd;
     if (!cr::loadHdImage(app.hdDir, img, hd)) {
         ++app.hdMissing;
         return;
     }
+    if (SDL_getenv("CR_HD_LOG")) std::printf("hd %s %dx%d -> %dx%d\n", cr::hashName(cr::imageHash(img)).c_str(), img.width, img.height, hd.width, hd.height);
     hd.logicalW = img.width;
     hd.logicalH = img.height;
+    { // (a cut-out: its alpha only 0 and 255, some of it 0)
+        bool binary = !img.alphaOnly, some = false;
+        for (size_t i = 3; binary && i < img.rgba.size(); i += 4) {
+            const uint8_t a = img.rgba[i];
+            binary = a == 0 || a == 255;
+            some |= a == 0;
+        }
+        hd.cutout = binary && some;
+    }
     hd.mipmaps = true;
     img = std::move(hd);
     ++app.hdLoaded;
@@ -1452,6 +1463,29 @@ void showMap(App& app, int index, int forcedMap, int forcedArea) {
     for (size_t k = 1; k < app.stageFit.size(); ++k)
         if (app.stageFit[k] > app.stageFit[app.stageCamIndex] + 1e-4f) app.stageCamIndex = int(k);
     if (app.haveStageCam) app.stageCam = app.stageCams[app.stageCamIndex];
+    if (app.haveStageCam && app.stageCam.scripted) {
+        // its own FOV and view, the script's eye and target - until the script sets them, the best
+        // framing among the maps sharing its collision's name (as a room with no record borrows)
+        cr::StageCamera own = app.stageCam;
+        std::vector<cr::StageCamera> mine = app.stageCams;
+        std::vector<float> fit = app.stageFit;
+        candidates.clear();
+        for (int mapNo = 0; mapNo < cr::kNumMaps; ++mapNo)
+            if (name.compare(0, 2, cr::kMapCollisionFile[mapNo], 2) == 0 && mapNo != own.mapNumber) candidates.push_back(mapNo);
+        app.stageCams.clear(), app.stageFit.clear();
+        tryCandidates();
+        int best = -1;
+        for (size_t k = 0; k < app.stageCams.size(); ++k)
+            if (!app.stageCams[k].scripted && (best < 0 || app.stageFit[k] > app.stageFit[size_t(best)] + 1e-4f)) best = int(k);
+        if (best >= 0)
+            for (int i = 0; i < 3; ++i) own.eye[i] = app.stageCams[size_t(best)].eye[i], own.target[i] = app.stageCams[size_t(best)].target[i];
+        app.stageCams = std::move(mine), app.stageFit = std::move(fit);
+        app.stageCams[size_t(app.stageCamIndex)] = app.stageCam = own;
+    }
+    if (SDL_getenv("CR_STAGE_LOG")) // (debugging: which stage camera a room took)
+        std::printf("stage camera for %s (map %d area %d): %zu candidates%s, took map %d area %d fov %.1f view %dx%d\n", name.c_str(), forcedMap,
+                    forcedArea, app.stageCams.size(), app.stageCamBorrowed ? " (borrowed)" : "", app.haveStageCam ? app.stageCam.mapNumber : -1,
+                    app.haveStageCam ? app.stageCam.area : -1, app.stageCam.fovDegrees, app.stageCam.viewWidth, app.stageCam.viewHeight);
     app.collisionPolys = int(col.polygons.size());
     // Frame the collision (props live inside it)
     const auto& b0 = col.boundsMin;
@@ -2240,8 +2274,19 @@ bool paintedField(const App& app) {
     return app.mode == Mode::Maps && app.showBackground && app.background.id && app.haveStageCam;
 }
 bool scrollingField(const App& app) { return paintedField(app) && app.video.paintings == 0; }
-float fieldViewW(const App& app) { return 2.0f * float(app.stageCam.viewWidth > 0 ? app.stageCam.viewWidth : 1024); }
-float fieldViewH(const App& app) { return 2.0f * float(app.stageCam.viewHeight > 0 ? app.stageCam.viewHeight : 1024); }
+// The stage view on the screen (FieldCamera::setCameraBack / setCamera3D's viewport): the record's
+// view doubled (fldread_prc - the iPad, the Vita always, the iPhone on Retina), that many of the
+// device's pixels - so on the 768-tall logical screen, x 768 / the device's height: the iPad's 768
+// (x 1), the iPhone's Retina 640 (x 1.2), the Android release's 720 (x 16/15), the Vita's 544
+// (the Vita copy as the game, its own layout: x 768 / 544)
+float fieldViewScale(const App& app) {
+    if (app.vitaOnly && app.video.layout == 0) return 768.0f / 544.0f;
+    if (app.renderer.androidScreen()) return cr::Renderer::kAndroidScale;
+    if (app.renderer.phoneLayout()) return cr::Renderer::kPhoneScale;
+    return 1.0f;
+}
+float fieldViewW(const App& app) { return 2.0f * fieldViewScale(app) * float(app.stageCam.viewWidth > 0 ? app.stageCam.viewWidth : 1024); }
+float fieldViewH(const App& app) { return 2.0f * fieldViewScale(app) * float(app.stageCam.viewHeight > 0 ? app.stageCam.viewHeight : 1024); }
 
 cr::Mat4 stageViewProjection(const App& app) {
     const cr::StageCamera& sc = app.stageCam;
@@ -2269,8 +2314,9 @@ void scrollFieldTo(App& app, float vx, float vy, float rate) {
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
     const int* rc = app.stageCam.rect;
     const bool haveRect = rc[2] > 0 && rc[3] > 0;
-    const float rx = haveRect ? 2.0f * float(rc[0]) : 0, ry = haveRect ? 2.0f * float(rc[1]) : 0;
-    const float rw = haveRect ? 2.0f * float(rc[2]) : V, rh = haveRect ? 2.0f * float(rc[3]) : Vh;
+    const float d = 2.0f * fieldViewScale(app); // (the rect in the record's view pixels: doubled, on this screen)
+    const float rx = haveRect ? d * float(rc[0]) : 0, ry = haveRect ? d * float(rc[1]) : 0;
+    const float rw = haveRect ? d * float(rc[2]) : V, rh = haveRect ? d * float(rc[3]) : Vh;
     auto axis = [](float v, float lo, float len, float screen) {
         return len <= screen ? lo + len / 2 : std::clamp(v, lo + screen / 2, lo + len - screen / 2);
     };
@@ -2309,6 +2355,7 @@ void stepFieldScroll(App& app) {
 // The scripts' shots on a painted field: jump (frames 0) or slide to offset (x, y)
 void scriptFieldScroll(App& app, float x, float y, int frames) {
     App::FieldScroll& fs = app.scroll;
+    x *= fieldViewScale(app), y *= fieldViewScale(app); // (the device's pixels of the doubled view)
     if (frames <= 0) {
         fs.sliding = false;
         fs.curX = x, fs.curY = y, fs.scripted = true;
@@ -8723,6 +8770,8 @@ void animateNpcs(App& app, float dt) {
         if (d.action < 0 || d.action >= int(lm.actions.size())) continue;
         const float dur = lm.actions[d.action].duration;
         d.time += dt * kFramesPerSecond;
+        if (const char* tr = SDL_getenv("CR_NPC_TRACE"); tr && (SDL_atoi(tr) < 0 || d.id == SDL_atoi(tr))) // (debugging: an NPC's animation clock; -1 every one)
+            std::printf("npc %d action %d time %.3f dur %.1f once %d loop %d..%d\n", d.id, d.action, d.time, dur, int(d.once), d.loopFrom, d.loopTo);
         if (dur <= 0) continue;
         if (d.once) { d.time = std::min(d.time, dur); continue; } // loop from -1: play once, hold the end
         const float end = d.loopTo > 0 && d.loopTo < dur ? float(d.loopTo) : dur;
@@ -16493,9 +16542,21 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     // The capture shows exactly the frames stepped above; --settle draws that moment first (an
     // upscaler's history converges on it)
     const Uint64 frame = Uint64(SDL_NS_PER_SECOND / (app.captureSettleFps > 0 ? float(app.captureSettleFps) : kFramesPerSecond));
+    const char* every = SDL_getenv("CR_CAPTURE_EVERY"); // (debugging: each --settle-moving frame as <dir>/sNNNN.bmp)
     for (int f = 0; f < app.captureSettle; ++f) {
         app.lastTicks = app.captureSettleMoving ? SDL_GetTicksNS() - frame : 0;
         drawFrame(app, false);
+        int fw = 0, fh = 0;
+        std::vector<uint8_t> fp;
+        if (every && app.renderer.readPixels(fp, fw, fh))
+            if (SDL_Surface* fs = SDL_CreateSurface(fw, fh, SDL_PIXELFORMAT_RGBA32)) {
+                for (int y = 0; y < fh; ++y)
+                    std::memcpy(static_cast<uint8_t*>(fs->pixels) + size_t(y) * fs->pitch, &fp[size_t(y) * fw * 4], size_t(fw) * 4);
+                char name[32];
+                SDL_snprintf(name, sizeof name, "/s%04d.bmp", f);
+                SDL_SaveBMP(fs, (std::string(every) + name).c_str());
+                SDL_DestroySurface(fs);
+            }
     }
     app.lastTicks = app.captureSettleMoving && app.captureSettle ? SDL_GetTicksNS() - frame : 0;
     drawFrame(app, false);

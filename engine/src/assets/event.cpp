@@ -95,7 +95,8 @@ bool loadStageCamera(const std::string& dataDir, int mapNumber, StageCamera& out
                  std::fabs(out.target[i]) < 1e5f;
             d2 += (out.eye[i] - out.target[i]) * (out.eye[i] - out.target[i]);
         }
-        if (ok && d2 > 1e-6f) return true;
+        out.scripted = d2 <= 1e-6f;
+        if (ok) return true;
     }
     if (error) *error = "no event file covers map " + std::to_string(mapNumber);
     return false;

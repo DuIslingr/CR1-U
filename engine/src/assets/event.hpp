@@ -20,6 +20,9 @@ struct StageCamera {
     std::string eventFile;
     int area = -1;      // index of the area (event file) the record came from
     int mapNumber = -1;
+    // a room the script films (no painting): its record's eye and target both 0 - the script sets
+    // them - but its FOV and view the room's own (FieldCamera::setCamera3D takes them as they are)
+    bool scripted = false;
 };
 
 // Map numbers whose collision file is `cmpName` (several maps can share one).

@@ -17,6 +17,12 @@ A `Release` (or `MinSizeRel`) build leaves out the viewer's status and key help 
 the screen and the key hints under the menus (`CR_RELEASE`); F3 shows / hides them in any
 build. `CR_CAPTURE_HUD=1` keeps the top one in a `--capture`.
 
+Debugging switches for captures: `--settle-moving n --settle-fps 60` plays n frames on at that
+rate after the capture's moment and `CR_CAPTURE_EVERY=<dir>` saves each of them (sNNNN.bmp: the
+frames between the game's steps, as the window shows them); `CR_HD_LOG=1` prints each HD
+replacement's hash and `CR_HD_ONLY=<hash>` uses that one alone; `CR_STAGE_LOG=1` prints the stage
+camera each room takes; `CR_NPC_TRACE=<id>` (-1: all) prints an NPC's animation clock each frame.
+
 Music decoding (AAC): the system's FAAD2 when pkg-config finds it (Linux), otherwise FAAD2
 2.11.1's `libfaad`, bundled in `engine/third_party/faad2` (GPL-2.0; sources only, from the
 knik0/faad2 release tarball) and built as a static library - the macOS / Windows path.

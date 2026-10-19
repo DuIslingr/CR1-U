@@ -15,6 +15,7 @@ struct Image {
     bool alphaOnly = false;    // GL_ALPHA source: texture has no colour of its own
     bool mipmaps = false;      // upload with a mip chain (HD textures: minified, they'd shimmer)
     int logicalW = 0, logicalH = 0; // the size the game lays it out at, when larger (HD): 0 = its own
+    bool cutout = false;       // (HD) the original's alpha all 0 or 255: drawn as a cut-out, not blended
     // How the file kept it (for tools/hd_textures.py, through the .crraw): 0 unknown, 1 lossless (8 bits
     // a channel, or 8-bit palettes / L8 / A8 / LA88 - the Vita's all), 2 PVRTC, 3 16-bit colour (RGB565,
     // RGBA5551, RGBA4444 and palettes of them: dithered or banded)
