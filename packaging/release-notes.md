@@ -1,14 +1,19 @@
-# CR1-U v0.2.0
+# CR1-U v0.2.1
 
 A from-scratch reimplementation of *Chaos Rings* (iOS / Vita / Android): builds for Windows,
 macOS, Linux and Android.
 
-**New in this release: your copy found by itself.** Put it in the folder holding the program, in
-a folder named after its release - `ios/`, `android/` or `vita/` (these come made in the download,
-each with a `README.txt` saying what goes in it) - and start the program: nothing to set. HD textures
-the same way: `--export-textures` writes to `textures/export/`, `tools/hd_textures.py <the game
-folder>` upscales into `textures/hd/`, and the game turns them on by itself. The same layout in all
-the Chaos Rings ports; the older places still work.
+**New in this release: the opening as the game plays it.** The eclipse forms as it should - the
+small sun in the sky, the moon sliding over the sun from the lower right, the title centred on the
+black disc (laid out as the Vita does when the Vita copy is the game) - and effects everywhere
+are drawn as the original draws them: their other rotation orders, materials' second textures,
+their own colours (some flames and glows had been dropped), facing the camera on the field and in
+battle. Also: HD textures' cut-out edges (hair, ornaments) without a black fringe, the Character
+Select title's shadow without streaks, smoother idle animations at 60 fps (no Hermite overshoot
+between frames), and the scripted 3D rooms at their own field of view.
+
+**From v0.2.0:** your copy found by itself in `ios/`, `android/` or `vita/` beside the program, and HD
+textures in `textures/hd/` turned on by themselves (below, and the README's "Your copy").
 
 | File | Platform |
 |---|---|
