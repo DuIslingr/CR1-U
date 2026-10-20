@@ -9309,7 +9309,12 @@ LoadedModel* effectModel(App& app, int id) {
     }
     for (const auto& mesh : m.meshes) out.meshes.push_back(app.renderer.upload(mesh));
     out.packageActions = m.actions;
-    for (auto& a : m.actions) // its motion: the first action that fits the skeleton (or its first nodes)
+    // Its motion: the action table's action for the transform tree - one segment a node (the rest are
+    // its materials', 9 segments, and can come first: 30 of Omega's effects) - else the first that
+    // fits the skeleton (or its first nodes)
+    for (auto& a : m.actions)
+        if (out.actions.empty() && a.segments.size() == m.skeleton.nodes.size() && !a.segments.empty()) out.actions.push_back(a);
+    for (auto& a : m.actions)
         if (out.actions.empty() && !a.segments.empty() && a.segments.size() <= m.skeleton.nodes.size())
             out.actions.push_back(a);
     m.actions.clear();
@@ -9422,9 +9427,10 @@ const cr::Texture* secondUnit(const LoadedModel& lm, size_t mesh, const cr::Mate
     return &lm.textures[size_t(t)];
 }
 
-// The field's effects face the camera: mdl_put turns every model eff3d placed (flag 0x837) about Y
-// to the camera's heading, atan2(eye - target) in x and z, each frame - so a sun is seen from the
-// front whichever way the shot looks (their quads are culled from behind). Battles' draw them as set.
+// Effects face the camera: mdl_put turns every model eff3d placed (flag 0x837) about Y to the
+// camera's heading, atan2(eye - target) in x and z, each frame - so a sun is seen from the front
+// whichever way the shot looks (their quads are culled from behind). Battles draw through mdl_put
+// too, with the battle camera (Calc_ev / Calc_cv: gac +0xcc / +0xd8), so theirs turn the same way.
 void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp, const cr::Vec3* eye, const cr::Vec3* target) {
     static const bool noScroll = SDL_getenv("CR_NO_UV_SCROLL") != nullptr; // tests: before / after
     for (const Effect& e : list) {
@@ -9497,7 +9503,9 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp, 
         }
     }
 }
-void drawEffects(App& app, const cr::Mat4& vp) { drawEffects(app, app.battle.effects, vp, nullptr, nullptr); }
+void drawEffects(App& app, const cr::Mat4& vp, const cr::Vec3& eye, const cr::Vec3& target) {
+    drawEffects(app, app.battle.effects, vp, &eye, &target);
+}
 
 // read_btlcpl / btl_prty_init: the stage (kBattleStageFile), the pair at formation 0's first two
 // places facing the enemies, the group's monsters at their formation's places; then the battle
@@ -11090,7 +11098,7 @@ void drawBattle(App& app, float dt) {
         world.m[12] = a.pos.x; world.m[13] = a.pos.y; world.m[14] = a.pos.z;
         drawLoaded(app, lm, vp * world, nullptr, a.alpha);
     }
-    drawEffects(app, vp);
+    drawEffects(app, vp, eye, target);
     r.end3D();
     drawSceneEffects(app, true); // the field's weather goes on over the battle
     r.setOrigin(0);
