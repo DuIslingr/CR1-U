@@ -119,10 +119,10 @@ void Renderer::begin3DRect(float x, float y, float w, float h) {
 }
 
 void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp, const Material& mat,
-                        bool smoothFilter) {
+                        bool smoothFilter, const Texture* tex2, const float* uv2) {
     // GL ES 1.1 lighting with full-bright scene light (ambient = diffuse = 1) until scene
     // Light records are decoded: rgb = emission + ambient + diffuse, alpha = diffuse alpha.
-    // 357 materials rely on this (black diffuse, white ambient), so diffuse alone is not enough.
+    // 357 materials rely on this (black ambient, white diffuse - or the other way), so one alone is not enough.
     MeshShading sh;
     for (int i = 0; i < 3; ++i) sh.color[i] = std::min(1.0f, mat.emission[i] + mat.ambient[i] + mat.diffuse[i]);
     sh.color[3] = mat.diffuse[3];
@@ -130,6 +130,11 @@ void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp
     const bool textured = tex && tex->id;
     sh.texMode = textured ? int(mat.texBlend <= 4 ? mat.texBlend : 4) : -1;
     sh.alphaTex = textured && tex->alphaOnly;
+    if (tex2 && tex2->id && mat.textureRef2 >= 0) {
+        sh.tex2 = tex2;
+        sh.texMode2 = mat.texBlend2 <= 4 ? mat.texBlend2 : 4;
+        if (uv2) std::memcpy(sh.uv2, uv2, sizeof sh.uv2);
+    }
     DrawState st;
     st.blend = mat.blended();
     st.blendSrc = mat.blendSrc;

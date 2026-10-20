@@ -27,8 +27,8 @@ struct Skeleton {
 // engine's; the renderer maps them to GL (GL ES 1.1 enum order).
 struct Material {
     int id = -1;
-    float diffuse[4] = {1, 1, 1, 1};   // colour 0: GL_DIFFUSE and the unlit glColor
-    float ambient[4] = {1, 1, 1, 1};   // colour 1
+    float diffuse[4] = {1, 1, 1, 1};   // colour 1: GL_DIFFUSE and the unlit glColor (the alpha); colour tracks drive it
+    float ambient[4] = {1, 1, 1, 1};   // colour 0
     float emission[4] = {0, 0, 0, 0};  // colour 2
     float specular[4] = {0, 0, 0, 0};  // colour 3
     uint8_t shininess = 0;
@@ -59,6 +59,7 @@ struct Mesh {
     std::vector<uint32_t> indices;   // triangle list
     int appearance = -1;             // index into Model::materials
     int texture = -1;                // index into Model::textures, or -1
+    int texture2 = -1;               // texture unit 1's (the material's textureRef2), or -1
 
     // Deformation inputs (see scene/pose.hpp)
     std::vector<uint32_t> posOf;      // render vertex -> position index

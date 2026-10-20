@@ -74,8 +74,9 @@ Layout verified on all 1,503 records (every byte consumed).
 
 ```
 [class == 0: u32]
-u32  colour[4]         bytes R,G,B,A: 0 diffuse (also the unlit glColor), 1 ambient,
-                       2 emission, 3 specular (hwalSetAppearanceColor_ES1)
+u32  colour[4]         bytes R,G,B,A: 0 ambient, 1 diffuse (also the unlit glColor: the
+                       alpha), 2 emission, 3 specular (mceAppearance_setColor's index: 1 at
+                       +172, 0 at +188 - hwalSetAppearanceColor_ES1's +0 diffuse, +16 ambient)
 u32  silhouette colour
 u8   shininess, alphaThreshold, blendSrc, blendDst, shading, culling, ?
 u16  drawOrder (signed)
@@ -104,8 +105,12 @@ f32  polygonOffset factor, units, silhouette width
 | wrap | 0 REPEAT, 1 CLAMP_TO_EDGE |
 | filter | 0 NEAREST, 1 LINEAR, 2–5 mipmap variants (1,501 of 1,503 materials use 0) |
 
-Effect materials often have diffuse alpha 0 at rest; their colour is animated by the
-non-skeleton (9-segment) actions, whose keyType 12 kind-4 tracks look like RGBA.
+Effect materials' colour is mostly animated by the non-skeleton (9-segment) actions their
+refGid names: segment 1 the diffuse RGBA (keyType 12, kind 4), 6 texture unit 0's transform
+(keyType 1 the offset), 8 texture unit 1's (1 the offset, 11 the scale - only on the 35
+two-unit materials). A material with no colour track keeps its own diffuse: the eclipse's sun
+(effect 94, mesh 0: a glow times the atlas's white half, whose round hole - the moon - its unit-1
+offset slides in over 300 frames).
 
 ### TransformTree body (skeleton) — reader 0xaa820
 
@@ -187,11 +192,13 @@ mapping poses those convincingly, so they're left out (the slot stands).
 |---|---|---|---|
 | 1 | 3 | `setTranslate` | translation (absolute) |
 | 5 | 3 | `setRotateEulerXYZ` | rotation, Euler **turns** (1.0 = 360°), R = Rz·Ry·Rx |
+| 6–10 | 3 | `setRotateEulerXZY` … `ZYX` | the same in the other orders (effects: XZY) |
 | 11 | 3 | `mulScale` | scale (0.001 is used to hide parts) |
 | 12 | 1 | — | visibility/alpha (1.0) |
 
-(keyTypes 2–4 orient/roll and 6–10 other Euler orders exist in the engine but are
-not used.) Key `mode`: 1 linear, 2 Hermite, 3 step. Hermite between keys k0,k1 with
+(keyTypes 2–4 orient/roll exist in the engine but are not used. 6–10 are the other Euler orders -
+XZY, YXZ, YZX, ZXY, ZYX, the first axis turning first (XZY: R = Ry·Rz·Rx; the track table at 0xd0078)
+- none in the `.mca` files, XZY throughout `eff.bin`'s suns and coronas.) Key `mode`: 1 linear, 2 Hermite, 3 step. Hermite between keys k0,k1 with
 `s = (t − t0)/(t1 − t0)`: `p = h00·v0 + h10·out0 + h01·v1 + h11·in1` — tangents are
 **not** scaled by the interval. Times are in frames within `[0, duration]`, a frame a game frame
 (`mdl_actctl_prc`: + 1) - 20 a second: the game runs everything at 20 frames a second (1.0.1 and

@@ -208,7 +208,7 @@ bool evaluateTrack(const Track& tr, float time, float* out) {
     if (!evaluateAt(tr, whole, a) || !evaluateAt(tr, whole + 1, b)) return evaluateAt(tr, time, out);
     for (int i = 0; i < tr.comps; ++i) {
         float d = b[i] - a[i];
-        if (tr.type == 5) d -= std::round(d);
+        if (tr.type >= 5 && tr.type <= 10) d -= std::round(d); // (rotations: the short way)
         out[i] = a[i] + d * frac;
     }
     return true;

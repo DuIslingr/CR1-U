@@ -36,6 +36,11 @@ struct MeshShading {
     int texMode = -1;   // 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured
     bool alphaTex = false;
     float alphaRef = 0;
+    // Texture unit 1 (an Appearance's second texture): its texture environment over unit 0's
+    // result, sampled at uv * uv2.xy + uv2.zw (repeating, linear like unit 0), -1 none
+    const Texture* tex2 = nullptr;
+    int texMode2 = -1;
+    float uv2[4] = {1, 1, 0, 0};
 };
 
 // Temporal upscalers (Vulkan): the scene renders smaller (or at the same size: Native AA /

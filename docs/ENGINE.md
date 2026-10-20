@@ -21,7 +21,9 @@ Debugging switches for captures: `--settle-moving n --settle-fps 60` plays n fra
 rate after the capture's moment and `CR_CAPTURE_EVERY=<dir>` saves each of them (sNNNN.bmp: the
 frames between the game's steps, as the window shows them); `CR_HD_LOG=1` prints each HD
 replacement's hash and `CR_HD_ONLY=<hash>` uses that one alone; `CR_STAGE_LOG=1` prints the stage
-camera each room takes; `CR_NPC_TRACE=<id>` (-1: all) prints an NPC's animation clock each frame.
+camera each room takes; `CR_NPC_TRACE=<id>` (-1: all) prints an NPC's animation clock each frame;
+`CR_OP_TRACE=1` prints every script instruction, native call, camera shot and frame effect (with its
+record's place and angles).
 
 Music decoding (AAC): the system's FAAD2 when pkg-config finds it (Linux), otherwise FAAD2
 2.11.1's `libfaad`, bundled in `engine/third_party/faad2` (GPL-2.0; sources only, from the

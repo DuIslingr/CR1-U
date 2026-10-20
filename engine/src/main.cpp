@@ -103,6 +103,7 @@ struct Effect {
     float time = 0;
     bool loop = false;
     float scale = 1, yaw = 0;
+    float pitch = 0, roll = 0; // FrmPlayEff2: the record's X and Z angles (radians)
     int handle = 0;  // for stopping it
     int key = 0;     // FrmPlayEff's (effect + 1) x (actor + 1)
 };
@@ -2280,8 +2281,9 @@ bool scrollingField(const App& app) { return paintedField(app) && app.video.pain
 // device's pixels - so on the 768-tall logical screen, x 768 / the device's height: the iPad's 768
 // (x 1), the iPhone's Retina 640 (x 1.2), the Android release's 720 (x 16/15), the Vita's 544
 // (the Vita copy as the game, its own layout: x 768 / 544)
+bool vitaLayout(const App& app) { return app.vitaOnly && app.video.layout == 0; } // (the Vita copy as the game)
 float fieldViewScale(const App& app) {
-    if (app.vitaOnly && app.video.layout == 0) return 768.0f / 544.0f;
+    if (vitaLayout(app)) return 768.0f / 544.0f;
     if (app.renderer.androidScreen()) return cr::Renderer::kAndroidScale;
     if (app.renderer.phoneLayout()) return cr::Renderer::kPhoneScale;
     return 1.0f;
@@ -2625,6 +2627,8 @@ struct ViewerHost : cr::EventHost {
         }
         if (paintedField(app)) return; // shown whole: nothing moves
         const cr::Vec3 e{eye[0], eye[1], eye[2]}, t{target[0], target[1], target[2]};
+        if (SDL_getenv("CR_OP_TRACE"))
+            std::printf("  set camera eye (%.1f %.1f %.1f) target (%.1f %.1f %.1f) over %d\n", e.x, e.y, e.z, t.x, t.y, t.z, frames);
         if (std::fabs(e.x - t.x) + std::fabs(e.y - t.y) + std::fabs(e.z - t.z) < 1e-4f) return; // no target actor
         App::ScriptCam& c = app.cam;
         if (frames <= 0 || !c.set) { c.eye = e; c.target = t; c.frames = c.t = 0; }
@@ -2733,13 +2737,22 @@ struct ViewerHost : cr::EventHost {
     void frameEffect(int actor, int effect, int scale, const float* v, bool angled) override {
         ++app.frameEffectCalls;
         cr::Vec3 p;
-        float yaw = 0;
+        if (SDL_getenv("CR_OP_TRACE"))
+            std::printf("  frame effect %d actor %d scale %d%s at (%.1f %.1f %.1f) angles (%.1f %.1f %.1f)\n", effect, actor, scale,
+                        angled ? " angled" : "", v ? v[0] : 0.0f, v ? v[1] : 0.0f, v ? v[2] : 0.0f, v ? v[3] : 0.0f, v ? v[4] : 0.0f,
+                        v ? v[5] : 0.0f);
+        float pitch = 0, roll = 0;
         if (!actorPos(app, actor, p)) { // not an NPC: where the scene's record has it
             if (!v) return;
             p = {v[0], v[1], v[2]};
-            if (angled) yaw = v[4] * kDeg;
+            // FrmPlayEff2 (eff3d_set_with_pos_and_ang) takes its angles too: X and Z stand; the Y
+            // one gives way to the camera, as every field effect's does (drawEffects)
+            if (angled) pitch = v[3] * kDeg, roll = v[5] * kDeg;
         }
-        const int h = startEffect(app, app.fieldEffects, effect, p, true, float(scale) / 100.0f, yaw);
+        const int h = startEffect(app, app.fieldEffects, effect, p, true, float(scale) / 100.0f, 0.0f);
+        if (h)
+            for (Effect& fx : app.fieldEffects)
+                if (fx.handle == h) fx.pitch = pitch, fx.roll = roll;
         if (h && app.frameEffects.size() < 16) app.frameEffects.push_back({(effect + 1) * (actor + 1), effect, h});
     }
     void stopFrameEffect(int effect, int actor) override {
@@ -5948,7 +5961,13 @@ void drawTexDisp(App& app) {
     const float a = float(t.alpha) / 255.0f, ox = r.uiX();
     r.setOrigin(0);
     const float k = float(tex.width) / 1024.0f; // the HD sheet's pixels (1024 wide)
-    if (t.g[5] == 480 && t.g[6] == 96)
+    if (vitaLayout(app)) { // the Vita's: a script picture (Tex2d slot kind 3, tex2d_add at scale 1) is (2x, 2y - 60) of
+        // its 960 x 544 screen, 2w x 2h of the sheet from (2u, 2v) - the screen centred on ours, its pixels 768 / 544 of it
+        const float s = 768.0f / 544.0f, w = 2.0f * float(t.g[5]), h = 2.0f * float(t.g[6]);
+        const float x = 2.0f * float(t.g[1]) - 480.0f, y = 2.0f * float(t.g[2]) - 60.0f - 272.0f;
+        r.drawQuadUV(tex, r.screenW() / 2 + x * s, cr::Renderer::kLogicalH / 2.0f + y * s, w * s, h * s, 2.0f * float(t.g[3]) * k,
+                     2.0f * float(t.g[4]) * k, w * k, h * k, 1, 1, 1, a);
+    } else if (t.g[5] == 480 && t.g[6] == 96)
         r.drawQuadUV(tex, ox + 2.0f * float(t.g[1]), 288, 1024, 192, 2.0f * float(t.g[3]) * k, 2.0f * float(t.g[4]) * k, 1024 * k,
                      192 * k, 1, 1, 1, a);
     else r.drawQuadUV(tex, ox, 0, 1024, 768, 0, 0, 1024 * k, 768 * k, 1, 1, 1, a);
@@ -8786,7 +8805,8 @@ void animateNpcs(App& app, float dt) {
 void drawLoaded(App& app, const LoadedModel& m, const cr::Mat4& mvp, const cr::Material* override = nullptr,
                 float alpha = 1.0f, float matTime = -1.0f);
 const cr::Action* effectMaterialAction(const LoadedModel& lm, const cr::Material* mt);
-bool effectUvMotion(const LoadedModel& lm, const cr::Material* mt, float time, float shift[2], float scale[2]);
+bool effectUvMotion(const LoadedModel& lm, const cr::Material* mt, float time, float shift[2], float scale[2], int unit = 0);
+const cr::Texture* secondUnit(const LoadedModel& lm, size_t mesh, const cr::Material* mt, float time, float uv2[4]);
 
 void drawNpcs(App& app, const cr::Mat4& vp) {
     for (auto& d : app.npcDraws) {
@@ -8808,7 +8828,7 @@ void drawNpcs(App& app, const cr::Mat4& vp) {
                 if (!posed && !moves) continue;
                 if (posed) cr::skinMesh(m, m.meshes[i], lm.world, lm.skinned);
                 const std::vector<float>& pos = posed ? lm.skinned : m.meshes[i].positions;
-                if (moves) { // uv * scale + offset (the material action's segments 8 / 6)
+                if (moves) { // uv * scale + offset (texture unit 0's: the material action's segment 6)
                     lm.uvScratch = m.meshes[i].uvs;
                     for (size_t k = 0; k + 1 < lm.uvScratch.size(); k += 2) {
                         lm.uvScratch[k] = lm.uvScratch[k] * scale[0] + shift[0];
@@ -9364,28 +9384,49 @@ void stepEffects(App& app, std::vector<Effect>& list) { // eff3d_prc: each ends 
 }
 void stepEffects(App& app) { stepEffects(app, app.battle.effects); }
 
-// An effect material's action (its refGid): segment 1 the colour, 6 the texture's offset, 8 its scale
+// An effect material's action (its refGid): segment 1 the colour, 6 texture unit 0's transform, 8
+// unit 1's (keyType 1 the offset, 11 the scale; segment 8 only on two-unit materials)
 const cr::Action* effectMaterialAction(const LoadedModel& lm, const cr::Material* mt) {
     const int g = mt ? int(int32_t(mt->refGid)) : -1;
     return g >= 0 && g < int(lm.packageActions.size()) ? &lm.packageActions[size_t(g)] : nullptr;
 }
 
-// The texture's motion at `time`: uv * scale + shift (false: it has none)
-bool effectUvMotion(const LoadedModel& lm, const cr::Material* mt, float time, float shift[2], float scale[2]) {
+// A texture unit's motion at `time`: uv * scale + shift (false: it has none)
+bool effectUvMotion(const LoadedModel& lm, const cr::Material* mt, float time, float shift[2], float scale[2], int unit) {
     const cr::Action* ma = effectMaterialAction(lm, mt);
+    const size_t seg = unit == 0 ? 6 : 8;
     bool moves = false;
-    for (size_t seg : {size_t(6), size_t(8)})
-        if (ma && ma->segments.size() > seg)
-            for (const cr::Track& t : ma->segments[seg]) {
-                float v[4] = {};
-                if (t.comps != 3 || !cr::evaluateTrack(t, std::min(time, ma->duration), v)) continue;
-                if (seg == 6 && t.type == 1) shift[0] = v[0], shift[1] = v[1], moves = true;
-                if (seg == 8 && t.type == 11) scale[0] = v[0], scale[1] = v[1], moves = true;
-            }
+    if (ma && ma->segments.size() > seg)
+        for (const cr::Track& t : ma->segments[seg]) {
+            float v[4] = {};
+            if (t.comps != 3 || !cr::evaluateTrack(t, std::min(time, ma->duration), v)) continue;
+            if (t.type == 1) shift[0] = v[0], shift[1] = v[1], moves = true;
+            if (t.type == 11) scale[0] = v[0], scale[1] = v[1], moves = true;
+        }
     return moves;
 }
 
-void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp) {
+// Texture unit 1 of a mesh (its material's second texture), and where it samples: uv2 maps the
+// coordinates the mesh holds - unit 0's, moved - to unit 1's (uv * xy + zw). Null: none
+const cr::Texture* secondUnit(const LoadedModel& lm, size_t mesh, const cr::Material* mt, float time, float uv2[4]) {
+    const cr::Model& m = lm.cpu;
+    if (!mt || mt->textureRef2 < 0 || mesh >= m.meshes.size()) return nullptr;
+    const int t = m.meshes[mesh].texture2;
+    if (t < 0 || t >= int(lm.textures.size())) return nullptr;
+    float o0[2] = {0, 0}, s0[2] = {1, 1}, o1[2] = {0, 0}, s1[2] = {1, 1};
+    if (time >= 0) effectUvMotion(lm, mt, time, o0, s0, 0), effectUvMotion(lm, mt, time, o1, s1, 1);
+    for (int k = 0; k < 2; ++k) {
+        const float r = s1[k] / (std::fabs(s0[k]) > 1e-6f ? s0[k] : 1.0f);
+        uv2[k] = r, uv2[2 + k] = o1[k] - o0[k] * r;
+    }
+    return &lm.textures[size_t(t)];
+}
+
+// The field's effects face the camera: mdl_put turns every model eff3d placed (flag 0x837) about Y
+// to the camera's heading, atan2(eye - target) in x and z, each frame - so a sun is seen from the
+// front whichever way the shot looks (their quads are culled from behind). Battles' draw them as set.
+void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp, const cr::Vec3* eye, const cr::Vec3* target) {
+    static const bool noScroll = SDL_getenv("CR_NO_UV_SCROLL") != nullptr; // tests: before / after
     for (const Effect& e : list) {
         LoadedModel* found = effectModel(app, e.id);
         auto it = app.effectModels.find(e.id);
@@ -9405,7 +9446,6 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp) 
             if (posed) cr::computeWorld(m.skeleton, lm.actions.empty() ? nullptr : &lm.actions[0], e.time, lm.world);
             for (size_t i = 0; i < m.meshes.size(); ++i) {
                 float shift[2] = {0, 0}, scale[2] = {1, 1};
-                static const bool noScroll = SDL_getenv("CR_NO_UV_SCROLL") != nullptr; // tests: before / after
                 const bool moves = !noScroll && uvMotion(matOf(i), shift, scale);
                 if (!posed && !moves) continue;
                 cr::skinMesh(m, m.meshes[i], posed ? lm.world : std::vector<cr::Mat4>(), lm.skinned);
@@ -9419,9 +9459,14 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp) 
                 app.renderer.updatePositions(lm.meshes[i], lm.skinned, moves ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
             }
         }
-        cr::Mat4 world; // scaled, turned about Y (eff3d_set_with_pos_and_ang), at its point
-        const float c = std::cos(e.yaw) * e.scale, sn = std::sin(e.yaw) * e.scale;
-        world.m[0] = c, world.m[2] = -sn, world.m[5] = e.scale, world.m[8] = sn, world.m[10] = c;
+        // scaled, turned (Euler XYZ, mdl_put: R = Rz Ry Rx), at its point
+        const float yaw = eye && target ? std::atan2(eye->x - target->x, eye->z - target->z) : e.yaw;
+        const float cx = std::cos(e.pitch), sx = std::sin(e.pitch), cy = std::cos(yaw), sy = std::sin(yaw);
+        const float cz = std::cos(e.roll), sz = std::sin(e.roll), k = e.scale;
+        cr::Mat4 world;
+        world.m[0] = cy * cz * k, world.m[1] = cy * sz * k, world.m[2] = -sy * k;
+        world.m[4] = (sx * sy * cz - cx * sz) * k, world.m[5] = (sx * sy * sz + cx * cz) * k, world.m[6] = sx * cy * k;
+        world.m[8] = (cx * sy * cz + sx * sz) * k, world.m[9] = (cx * sy * sz - sx * cz) * k, world.m[10] = cx * cy * k;
         world.m[12] = e.pos.x, world.m[13] = e.pos.y, world.m[14] = e.pos.z;
         const cr::Mat4 mvp = vp * world;
         // drawn last, depth tested but not written (draw order + 1000, eff3d_set_with_pos_and_ang)
@@ -9446,11 +9491,13 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp) 
             mat.properties &= ~16u; // no depth writes
             const cr::GpuMesh& mesh = lm.meshes[i];
             const cr::Texture* tex = mesh.texture >= 0 && mesh.texture < int(lm.textures.size()) ? &lm.textures[size_t(mesh.texture)] : nullptr;
-            app.renderer.drawMesh(mesh, tex, mvp, mat, app.smoothFilter);
+            float uv2[4];
+            const cr::Texture* tex2 = secondUnit(lm, i, base, noScroll ? -1.0f : e.time, uv2);
+            app.renderer.drawMesh(mesh, tex, mvp, mat, app.smoothFilter, tex2, uv2);
         }
     }
 }
-void drawEffects(App& app, const cr::Mat4& vp) { drawEffects(app, app.battle.effects, vp); }
+void drawEffects(App& app, const cr::Mat4& vp) { drawEffects(app, app.battle.effects, vp, nullptr, nullptr); }
 
 // read_btlcpl / btl_prty_init: the stage (kBattleStageFile), the pair at formation 0's first two
 // places facing the enemies, the group's monsters at their formation's places; then the battle
@@ -11758,7 +11805,7 @@ void drawFrame(App& app, bool present = true) {
             drawNpcs(app, mvp);
             if (app.havePlayer && playerShown(app)) drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
             if (app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
-            drawEffects(app, app.fieldEffects, mvp);
+            drawEffects(app, app.fieldEffects, mvp, &eye, &tgt);
             if (app.showCollision && app.collision.vao) {
                 cr::Material colMat; // translucent so the painted floor shows through
                 colMat.culling = 0;
@@ -11814,7 +11861,7 @@ void drawFrame(App& app, bool present = true) {
         if (app.mode == Mode::Maps && app.havePlayer && playerShown(app))
             drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
         if (app.mode == Mode::Maps && app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
-        if (app.mode == Mode::Maps) drawEffects(app, app.fieldEffects, mvp);
+        if (app.mode == Mode::Maps) drawEffects(app, app.fieldEffects, mvp, &eye, &c);
         if (app.mode == Mode::Maps && app.collision.vao && app.showCollision) {
             cr::Material colMat;          // opaque, untextured, double-sided, depth test + write
             colMat.culling = 0;
@@ -16952,6 +16999,12 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         if (SDL_strcmp(argv[i], "--models") == 0) app->mode = Mode::Models;
         else if (SDL_strcmp(argv[i], "--maps") == 0) app->mode = Mode::Maps;
+    if (SDL_getenv("CR_OP_TRACE")) { // (debugging: every script instruction and native call)
+        cr::setEventTrace([](size_t pc, int op) { std::printf("  op %#zx: %d\n", pc, op); });
+        cr::setNativeTrace([](int id, const int32_t* a) {
+            std::printf("  call %d (%d %d %d %d %d %d %d %d %d %d %d)\n", id, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10]);
+        });
+    }
     for (int i = 1; i < argc; ++i) {
         if (SDL_strcmp(argv[i], "--capture") == 0 && i + 2 < argc) {
             SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);

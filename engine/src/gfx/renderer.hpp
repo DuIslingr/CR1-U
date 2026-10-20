@@ -82,8 +82,9 @@ public:
     // Draws with the original engine's material state: blending, alpha test, culling,
     // depth test/write, texture blend mode, wrap and filter. `smoothFilter` forces linear
     // filtering (the original uses nearest).
+    // tex2: the material's texture unit 1 (its environment texBlend2), at uv * uv2.xy + uv2.zw
     void drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp, const Material& mat,
-                  bool smoothFilter = false);
+                  bool smoothFilter = false, const Texture* tex2 = nullptr, const float* uv2 = nullptr);
     void end3D();
     // Colour writes on/off (glColorMask); off draws depth only, e.g. field occluders.
     void setColorWrite(bool on);

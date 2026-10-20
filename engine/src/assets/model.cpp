@@ -272,8 +272,10 @@ bool readAppearance(Reader& r, Material& m, std::string& err) {
         for (int i = 0; i < 4; ++i) out[i] = float((c >> (8 * i)) & 255) / 255.0f;
     };
     if (h.cls == 0) r.u32();
-    rgba(m.diffuse);
+    // mceAppearance_setColor in file order: index 0 the ambient, 1 the diffuse (its +172, what
+    // hwalSetAppearanceColor_ES1 gives GL_DIFFUSE and, unlit, glColor - the alpha), 2, 3
     rgba(m.ambient);
+    rgba(m.diffuse);
     rgba(m.emission);
     rgba(m.specular);
     r.u32();                  // silhouette colour
@@ -629,6 +631,10 @@ bool loadModelPackage(const std::vector<uint8_t>& file, Model& out, std::string*
             } else {
                 ++out.stats.texMissing;
             }
+            const int ref2 = out.materials[m.appearance].textureRef2; // texture unit 1, the same way
+            for (size_t t = 0; t < out.textureIds.size() && ref2 >= 0 && m.texture2 < 0; ++t)
+                if (out.textureIds[t] == ref2) m.texture2 = int(t);
+            if (ref2 >= 1 && m.texture2 < 0 && ref2 <= int(out.textures.size())) m.texture2 = ref2 - 1;
         }
         out.meshes.push_back(std::move(m));
     };

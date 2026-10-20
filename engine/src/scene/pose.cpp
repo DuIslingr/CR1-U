@@ -9,15 +9,23 @@ namespace {
 
 constexpr float kTwoPi = 6.28318530718f;
 
-// Rotation R = Rz * Ry * Rx from Euler angles in turns (mceTransform_setRotateEulerXYZ),
-// written as three columns.
-void eulerXYZ(const float* turns, float cols[3][3]) {
-    const float x = turns[0] * kTwoPi, y = turns[1] * kTwoPi, z = turns[2] * kTwoPi;
-    const float cx = std::cos(x), sx = std::sin(x), cy = std::cos(y), sy = std::sin(y);
-    const float cz = std::cos(z), sz = std::sin(z);
-    cols[0][0] = cy * cz;                cols[0][1] = cy * sz;                cols[0][2] = -sy;
-    cols[1][0] = sx * sy * cz - cx * sz; cols[1][1] = sx * sy * sz + cx * cz; cols[1][2] = sx * cy;
-    cols[2][0] = cx * sy * cz + sx * sz; cols[2][1] = cx * sy * sz - sx * cz; cols[2][2] = cx * cy;
+// Rotation from Euler angles in turns, written as three columns. keyTypes 5..10 are the orders
+// XYZ, XZY, YXZ, YZX, ZXY, ZYX (the track table at 0xd0078 -> __mceTransform_setRotateEuler*),
+// the first axis turning first: XYZ is R = Rz * Ry * Rx, XZY R = Ry * Rz * Rx (as their matrices).
+void euler(int type, const float* turns, float cols[3][3]) {
+    static const int kOrder[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+    float r[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}; // row-major
+    for (int axis : kOrder[type - 5]) { // r = R_axis * r
+        const float a = turns[axis] * kTwoPi, c = std::cos(a), sn = std::sin(a);
+        const int i = (axis + 1) % 3, j = (axis + 2) % 3; // the plane it turns: i -> j
+        for (int k = 0; k < 3; ++k) {
+            const float ri = r[i][k], rj = r[j][k];
+            r[i][k] = c * ri - sn * rj;
+            r[j][k] = sn * ri + c * rj;
+        }
+    }
+    for (int c = 0; c < 3; ++c)
+        for (int k = 0; k < 3; ++k) cols[c][k] = r[k][c];
 }
 
 Mat4 localMatrix(const float cols[3][3], const float* t, const float* s) {
@@ -80,7 +88,7 @@ void computeWorld(const Skeleton& skel, const Action* action, float time, std::v
                 float v[4];
                 if (tr.comps != 3 || !evaluateTrack(tr, time, v)) continue;
                 if (tr.type == 1) std::memcpy(t, v, sizeof t);
-                else if (tr.type == 5) eulerXYZ(v, cols);
+                else if (tr.type >= 5 && tr.type <= 10) euler(tr.type, v, cols);
                 else if (tr.type == 11) std::memcpy(s, v, sizeof s);
             }
         }

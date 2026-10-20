@@ -55,23 +55,30 @@ const char* kMeshFragment = R"(
 in vec2 vUV;
 in vec4 vColor;
 uniform sampler2D uTex;
+uniform sampler2D uTex2; // texture unit 1
 uniform vec4 uColor;
 uniform int uTexMode;
+uniform int uTexMode2;  // unit 1's environment over unit 0's result, -1 none
+uniform vec4 uUv2;      // unit 1's coordinates: uv * xy + zw
 uniform int uAlphaTex;  // GL_ALPHA texture: colour always comes from the fragment
 uniform float uAlphaRef;
 out vec4 fragColor;
+vec4 texEnv(int mode, vec4 base, vec4 t) {
+    if (mode == 0) return t;
+    if (mode == 1) return vec4(base.rgb + t.rgb, base.a * t.a);
+    if (mode == 2) return vec4(base.rgb * (vec3(1.0) - t.rgb), base.a * t.a);
+    if (mode == 3) return vec4(mix(base.rgb, t.rgb, t.a), base.a);
+    return base * t;
+}
 void main() {
     vec4 base = uColor * vColor;
     vec4 c = base;
     if (uTexMode >= 0) {
         vec4 t = texture(uTex, vUV);
         if (uAlphaTex != 0) c = vec4(base.rgb, uTexMode == 0 ? t.a : base.a * t.a);
-        else if (uTexMode == 0) c = t;
-        else if (uTexMode == 1) c = vec4(base.rgb + t.rgb, base.a * t.a);
-        else if (uTexMode == 2) c = vec4(base.rgb * (vec3(1.0) - t.rgb), base.a * t.a);
-        else if (uTexMode == 3) c = vec4(mix(base.rgb, t.rgb, t.a), base.a);
-        else c = base * t;
+        else c = texEnv(uTexMode, base, t);
     }
+    if (uTexMode2 >= 0) c = texEnv(uTexMode2, c, texture(uTex2, vUV * uUv2.xy + uUv2.zw));
     if (uAlphaRef > 0.0 && c.a < uAlphaRef) discard;
     fragColor = c;
 }
@@ -158,6 +165,9 @@ public:
         uAlphaRef_ = gl::GetUniformLocation(meshProgram_, "uAlphaRef");
         uMeshColor_ = gl::GetUniformLocation(meshProgram_, "uColor");
         uTexMode_ = gl::GetUniformLocation(meshProgram_, "uTexMode");
+        uMeshTex2_ = gl::GetUniformLocation(meshProgram_, "uTex2");
+        uTexMode2_ = gl::GetUniformLocation(meshProgram_, "uTexMode2");
+        uUv2_ = gl::GetUniformLocation(meshProgram_, "uUv2");
         uAlphaTex_ = gl::GetUniformLocation(meshProgram_, "uAlphaTex");
         uProj_ = gl::GetUniformLocation(program_, "uProj");
         uColor_ = gl::GetUniformLocation(program_, "uColor");
@@ -331,6 +341,22 @@ public:
         gl::Uniform1f(uAlphaRef_, sh.alphaRef);
         gl::Uniform1i(uTexMode_, sh.texMode);
         gl::Uniform1i(uAlphaTex_, sh.alphaTex ? 1 : 0);
+        const bool second = sh.tex2 && sh.tex2->id && sh.texMode2 >= 0;
+        gl::Uniform1i(uTexMode2_, second ? sh.texMode2 : -1);
+        gl::Uniform4f(uUv2_, sh.uv2[0], sh.uv2[1], sh.uv2[2], sh.uv2[3]);
+        gl::Uniform1i(uMeshTex2_, 1);
+        gl::ActiveTexture(GL_TEXTURE1);
+        gl::BindTexture(GL_TEXTURE_2D, second ? sh.tex2->id : whiteId());
+        if (second) {
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            const bool mips = mipmapped_.count(sh.tex2->id) != 0;
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                              mips ? (st.minLinear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR)
+                                   : st.minLinear ? GL_LINEAR : GL_NEAREST);
+            gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, st.magLinear ? GL_LINEAR : GL_NEAREST);
+        }
+        gl::ActiveTexture(GL_TEXTURE0);
         const bool textured = tex && tex->id;
         gl::BindTexture(GL_TEXTURE_2D, textured ? tex->id : whiteId());
         if (textured) {
@@ -400,6 +426,7 @@ private:
     int uProj_ = -1, uColor_ = -1, uTex_ = -1;
     unsigned meshProgram_ = 0;
     int uMvp_ = -1, uMeshTex_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1;
+    int uMeshTex2_ = -1, uTexMode2_ = -1, uUv2_ = -1;
     int drawableW_ = 0, drawableH_ = 0;
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain
     TextureFiltering filtering_;
