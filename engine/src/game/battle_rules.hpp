@@ -205,6 +205,7 @@ class BattleRules {
 public:
     std::array<Fighter, 5> f;
     bool pair = false;           // +0xa48: the pair acts as one this round
+    int soloMember() const { return soloMember_; } // G+0xa4a
     bool enemyPair = false;      // +0xa4c: enemies 2 and 3 act together this round
     int breakGauge = 0;          // +0x12, -8..8
     int breakTarget = 0;         // +0x14 (the menu moves the gauge to it a step a frame)

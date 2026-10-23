@@ -890,7 +890,12 @@ instead.
 `SetOpenedTresureBox`, 2033 `TutoTexDisp`, 2034 `LookatRect`, 2035 battle first animation.
 Arguments are `GetXmpStkData(k)`: k = 0 the last pushed, i.e. the frame's argument count − 1 −
 k (`ScnEffect_Init`: 0 on / off, 1 the effect; `eff3d_set_fld`: 0 the effect, 1 the NPC, 2 the
-height). 2016 `TexDisp` (11): slot, x, y, u, v, w, h, fade-in, hold, fade-out frames, ? - state 0
+height; `mdl_set_alpha`: 0 the NPC, 1 / 2 the alpha from / to (0..255), 3 frames; `LookatRect`: 0
+the NPC - `SetFreeCamera`, `SetScroll3D` to it at rate 1; `Mode`: 0 the NPC, 1 its table word
+(+0xe .. +0x14), 2 the bit, 3 test into var 0 / set / clear). SetScale / AdjScale (npc, x, y, z %
+[, frames]) set the NPC's scale (npc ctl +0x2c, the table's in place) at once or over frames
+(`npc_autoctl_set_scale`); Autoadj (npc, x, z, speed %) walks it straight there, distance /
+speed frames (`npc_autoctl_set`). 2016 `TexDisp` (11): slot, x, y, u, v, w, h, fade-in, hold, fade-out frames, ? - state 0
 alpha + 255 / fade-in a frame, 1 until the counter passes hold, 2 alpha 255 / fade-out × (fade-out
 − counter) until the counter reaches fade-in, 3 flag 0 cleared; drawn (`tex2d_add_sca` on slot +
 0x10) as a strip when w × h is 480 × 96 - (2u, 2v) of the sheet, 1024 × 192 at (2x − 32, 320 − h)

@@ -106,6 +106,10 @@ public:
     virtual void moveNpc(int /*npc*/, const float* /*pos*/, float /*yawDegrees*/, Facing /*facing*/, int /*frames*/,
                          int /*mode*/) {}
     virtual void faceNpc(int /*npc*/, int /*target*/) {} // SetDir: npc turns towards target
+    // SetScale / AdjScale: npc's x y z scale (1 = 100%) at once (frames 0) or over frames
+    virtual void scaleNpc(int /*npc*/, const float* /*scale*/, int /*frames*/) {}
+    // Autoadj: npc walks straight to (x, z) at `speed` world units a frame
+    virtual void autoMove(int /*npc*/, float /*x*/, float /*z*/, float /*speed*/) {}
     // Util 3 (the event menu, _menuu_Event*): a yes/no choice; the host sets flag `flag` for yes
     // and clears it for no. The script waits while choiceOpen().
     // NpcMdlRead: bring NPC `npc` (NPC table row) into the room even if its list doesn't have it;
@@ -124,6 +128,7 @@ public:
     // `rate` of the way (1 = at once) to centre on npc `npc` (0 = the player) or, with npc -1,
     // on view pixel (x, y) (FieldCamera::setScroll3D / setScroll2D)
     virtual void mapScroll(int /*npc*/, float /*x*/, float /*y*/, float /*rate*/) {}
+    virtual void lookAtNpc(int /*npc*/) {} // Uty_LookatRect_Init: the camera freed and scrolled to the npc at once
     // Scene effects (ScnEffect*): call 2020 loads effect set n (0..5: the textures of a dungeon's
     // weather), call 2009 starts (on) or stops effect `id` (1..20)
     virtual void sceneEffectSet(int /*set*/) {}

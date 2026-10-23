@@ -261,6 +261,12 @@ struct App {
         int frames = 1, t = 0;
     };
     std::vector<Move> moves;
+    struct Rescale {                       // AdjScale (npc_autoctl_set_scale: autoctl mode 3) from -> to over `frames`
+        int npc = 0;
+        float from[3] = {1, 1, 1}, to[3] = {1, 1, 1};
+        int frames = 1, t = 0;
+    };
+    std::vector<Rescale> rescales;
     std::set<int> placedNpcs;              // actors a script placed: parked slots (y 1000, origin) appear
     std::map<int, std::map<int, int>> actorSlots; // LoadAct: npc -> slot -> action index in its model
     struct ScriptCam {                     // FrmSetCam / FrmAdjCam / FrmPanCam after CameraFree
@@ -426,6 +432,7 @@ struct App {
         int flags = 0;                     // Battle's u8 (G+0x354c6)
         int formation = 0;
         LoadedModel stage;
+        int bossModel = -1, bossWait = 0;  // the boss's end (btl_main 0x3de / 0x3e3..0x3e6): G+0x202, G+0xa40
         struct Actor {
             std::string model;             // battle model package (cache key)
             int modelId = 0;               // kBattleModelFile index, for its action slots
@@ -446,6 +453,7 @@ struct App {
             int loopFrom = -1, loopTo = -1; // mdl_set_act_motion_loop's frames (-1: the slot's own)
             bool fading = false;           // a fallen monster
             float alpha = 1;
+            bool hidden = false;           // the model's +0x55c cleared (a boss's end): not drawn
         };
         std::vector<Actor> actors;
         // Between the battle's frames (as App::Between for the field): each step's actors and
@@ -473,7 +481,7 @@ struct App {
         int requestFlags = 0;
         // The rules (game/battle_rules.hpp) and the scene around them (btl_main's states)
         cr::BattleRules rules;
-        enum Phase { Intro, Command, Acting, WinTalk, Won, Results, Lost, Fled } phase = Intro;
+        enum Phase { Intro, Command, Acting, WinTalk, BossDown, Won, Results, Lost, Fled } phase = Intro;
         int phaseFrames = 0;
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
@@ -2462,7 +2470,36 @@ struct ViewerHost : cr::EventHost {
     bool animBusy(int id) override {
         for (const auto& m : app.moves)
             if (m.npc == id) return true;
+        for (const auto& r : app.rescales)
+            if (r.npc == id) return true;
         return false;
+    }
+    // SetScale (frames 0) / AdjScale: an NPC's x y z scale (the player's, gac +0xd84 / prty_autoctl_set_scale,
+    // no script changes); one autoctl an NPC, so a rescale ends its move and a move its rescale
+    void scaleNpc(int id, const float* s, int frames) override {
+        cr::FieldNpc* n = findNpc(app, id);
+        if (!n || id == 0) return;
+        app.rescales.erase(std::remove_if(app.rescales.begin(), app.rescales.end(), [&](const App::Rescale& o) { return o.npc == id; }),
+                           app.rescales.end());
+        if (frames <= 0) {
+            for (int k = 0; k < 3; ++k) n->axes[k] = s[k];
+            for (auto& d : app.npcDraws)
+                if (d.id == id) d.world = npcWorld(*n);
+            return;
+        }
+        app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }), app.moves.end());
+        App::Rescale r;
+        r.npc = id, r.frames = frames;
+        for (int k = 0; k < 3; ++k) r.from[k] = n->axes[0] >= 0 ? n->axes[k] : n->scale, r.to[k] = s[k];
+        app.rescales.push_back(r);
+    }
+    // Autoadj (npc_autoctl_set / prty_autoctl_set): a straight move to (x, its y, z) at `speed` a frame -
+    // dist / speed frames, truncated (FPToFixed) - facing kept
+    void autoMove(int id, float x, float z, float speed) override {
+        cr::Vec3 p;
+        if (!actorPos(app, id, p) || speed <= 0) return;
+        const float v[3] = {x, p.y, z};
+        moveNpc(id, v, 0, Facing::Keep, int(std::hypot(p.x - x, p.z - z) / speed), 0);
     }
     void fadeNpc(int id, float from, float to, int frames) override {
         for (auto* d : npc(id)) {
@@ -2528,6 +2565,8 @@ struct ViewerHost : cr::EventHost {
         }
         app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }),
                         app.moves.end());
+        app.rescales.erase(std::remove_if(app.rescales.begin(), app.rescales.end(), [&](const App::Rescale& o) { return o.npc == id; }),
+                           app.rescales.end());
         app.moves.push_back(m);
     }
     void tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3]) override {
@@ -2787,6 +2826,10 @@ struct ViewerHost : cr::EventHost {
         cr::Vec3 p;
         float vx, vy;
         if (actorPos(app, npc, p) && fieldViewPoint(app, p, vx, vy)) scrollFieldTo(app, vx, vy, rate);
+    }
+    void lookAtNpc(int npc) override { // SetFreeCamera, SetScroll3D(the npc's place, 1.0)
+        app.cam.free = true;
+        mapScroll(npc, 0, 0, 1.0f);
     }
     void battle(int group, int stage, int flags) override { // starts when this frame's script step ends
         app.battle.requested = true;
@@ -8470,6 +8513,18 @@ void stepEvents(App& app) {
         if (m.t >= m.frames) app.moves.erase(app.moves.begin() + long(i));
         else ++i;
     }
+    for (size_t i = 0; i < app.rescales.size();) { // (npc_autoctl_prc mode 3: the scale in a straight line)
+        App::Rescale& r = app.rescales[i];
+        ++r.t;
+        const float t = float(r.t) / float(r.frames);
+        if (cr::FieldNpc* n = findNpc(app, r.npc)) {
+            for (int k = 0; k < 3; ++k) n->axes[k] = r.from[k] + (r.to[k] - r.from[k]) * t;
+            for (auto& d : app.npcDraws)
+                if (d.id == r.npc) d.world = npcWorld(*n);
+        }
+        if (r.t >= r.frames) app.rescales.erase(app.rescales.begin() + long(i));
+        else ++i;
+    }
     stepFieldScroll(app);
     stepSceneEffects(app);
     if (app.cam.t < app.cam.frames) { // camera moves are straight lines
@@ -8790,10 +8845,12 @@ cr::Mat4 playerWorld(const cr::FieldWalker& w) {
 cr::Mat4 npcWorld(const cr::FieldNpc& n) {
     const float k = n.model <= 1 ? 1.0f : 0.0f;
     const float c = std::cos(n.angle), sn = std::sin(n.angle);
+    const bool set = n.axes[0] >= 0;
+    const float sx = set ? n.axes[0] : n.scale, sy = set ? n.axes[1] : n.scale, sz = set ? n.axes[2] : n.scale;
     cr::Mat4 w;
-    w.m[0] = c * n.scale; w.m[2] = -sn * n.scale;
-    w.m[5] = n.scale;
-    w.m[8] = sn * n.scale; w.m[10] = c * n.scale;
+    w.m[0] = c * sx; w.m[2] = -sn * sx;
+    w.m[5] = sy;
+    w.m[8] = sn * sz; w.m[10] = c * sz;
     w.m[12] = n.pos[0] + k * n.offset[0];
     w.m[13] = n.pos[1] + k * n.offset[1];
     w.m[14] = n.pos[2] + k * n.offset[2];
@@ -10684,6 +10741,19 @@ void startTurn(App& app) {
     }
     if (t.kind == cr::kCmdEscape && t.escaped) btlvoice::playSide(app, 0, 0x13, 0x14, 0x15); // btlact_escape_init
     else if (t.kind == cr::kCmdAttack) btlvoice::attack(app, t);                 // btlact_attack_init
+    if (t.kind == cr::kCmdAttack) { // btlact_attack_init's __effgo: actions 302 / 303's own, each attacker's swing
+        if (t.action == 0x12e) app.sound.play(0xbb);
+        else if (t.action == 0x12f) app.sound.play(0xbd);
+        for (int k : t.actors) {
+            const App::Battle::Actor* u = k >= 0 ? battleActor(app, k) : nullptr;
+            if (!u) continue;
+            const int m = u->modelId; // (G+0xa2: kBattleModelFile's index; the pair's j001..j008 their +0xa6 too)
+            if (k < 2) {
+                if (m != 7) app.sound.play(0x4a + uint32_t(m));
+            } else if ((m < 8 || m > 10) && m != 0x57 && m != 0x58) // (m101 .. m103 sound their own; m008a / b none)
+                app.sound.play(uint32_t(m < 0xd ? m + 0x77 : m < 0x49 ? (m - 0xd) / 3 + 0x84 : (m - 0x49) / 2 + 0x4a));
+        }
+    }
     b.turnFrame = 0;
     b.hitsShown = false;
     b.hitFrame = 20;
@@ -10706,6 +10776,11 @@ void startTurn(App& app) {
     if (t.kind == cr::kCmdGene || t.kind == cr::kCmdItem) // btlact_gene_init / item_init: the casting glow
         for (int k : t.actors)
             if (k >= 0) spawnEffect(app, effects::kCast, k);
+    if (t.kind == cr::kCmdGene) { // btlact_gene_init: __effgo 0x5b (m103's own 0xbb first)
+        const App::Battle::Actor* u = battleActor(app, t.actors[0]);
+        if (u && u->modelId == 10) app.sound.play(0xbb);
+        app.sound.play(0x5b);
+    } else if (t.kind == cr::kCmdItem) app.sound.play(0x5c); // btlact_item_init
     if (t.kind == cr::kCmdItem && t.item > 0) { // the bag gives one up
         auto it = app.game.items.find(t.item);
         if (it != app.game.items.end() && --it->second <= 0) app.game.items.erase(it);
@@ -10763,7 +10838,6 @@ void showHits(App& app) {
             b.notices.push_back(n);
     if (b.turn.gone) // the monster leaves
         if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) u->fading = true;
-    bool any = false, crit = false, guarded = false;
     for (const cr::BattleHit& h : b.turn.hits) {
         App::Battle::Actor* a = battleActor(app, h.target);
         const cr::Fighter& f = b.rules.f[size_t(h.target)];
@@ -10781,20 +10855,63 @@ void showHits(App& app) {
         p.mp = h.mp;
         p.timer = btlui::kPopupTime;
         b.popups.push_back(p);
-        if (h.amount > 0) any = true;
-        crit |= h.type == cr::kHitCritical;
-        guarded |= h.type == cr::kHitGuard;
         if (h.revived) playSlot(app, *a, btlui::kSlotIdle);
         else if (h.fell) {
-            if (a->enemy) a->fading = true; // btlcalc_chk_dead: monsters fade out over 20 frames
-            playSlot(app, *a, a->enemy ? btlui::kSlotHit : btlui::kSlotDown, a->enemy ? -2 : -1);
+            const cr::MonsterDef* def = a->enemy ? b.rules.f[size_t(h.target)].def : nullptr;
+            if (def && def->strongGrowth) // btlcalc_chk_dead: a boss stays - hit, then down (size 1) or standing
+                playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle);
+            else {
+                if (a->enemy) a->fading = true; // monsters fade out over 20 frames
+                playSlot(app, *a, a->enemy ? btlui::kSlotHit : btlui::kSlotDown, a->enemy ? -2 : -1);
+            }
         } else if (h.amount > 0)
             playSlot(app, *a, btlui::kSlotHit, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
         else if (h.type == cr::kHitGuard)
             playSlot(app, *a, btlui::kSlotEvade, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
     }
+    // The calcs' sounds (__effgo in btlcalc_*, a target at a time; each heard once an action)
+    std::vector<uint32_t> sounds;
+    auto sound = [&](uint32_t id) {
+        if (std::find(sounds.begin(), sounds.end(), id) == sounds.end()) sounds.push_back(id);
+    };
+    auto healSound = [&](int healed) { sound(healed < 2000 ? 0x57 : healed < 5000 ? 0x58 : 0x59); }; // (by the HP healed)
+    bool areaSounded = false;
+    auto calcSound = [&](int calc, const cr::BattleHit& h, int user, int ue, bool area, int element) {
+        const int t = h.target;
+        switch (calc) {
+        case 0: // 0404: fended off 0x5d; a critical 0x56, the weapon's element 0x74 + it, else 0x53..0x55
+            if (h.type == cr::kHitGuard) sound(0x5d);
+            else if (h.amount > 0 && h.type != cr::kHitMiss)
+                sound(h.type == cr::kHitCritical ? 0x56 : ue > 0 ? 0x74 + uint32_t(ue) : 0x53 + uint32_t(b.rules.random(3)));
+            break;
+        case 1: // 0406: an element's gene - 0x64 + 2e a target, its burst over a side 0x65 + 2e once
+            if (element > 0 && h.amount >= 0 && h.type != cr::kHitGuard && h.type != cr::kHitMiss) {
+                if (!area) sound(0x64 + 2 * uint32_t(element));
+                else if (!areaSounded) sound(0x65 + 2 * uint32_t(element)), areaSounded = true;
+            }
+            break;
+        case 2: case 3: case 4: case 5: case 6: sound(0x60); break; // 0407 .. 0411
+        case 7: if (t != user) sound(0x6d); break;                   // 0412
+        case 8: // 0413: the one drained 0x6f, the drinker as healed
+            if ((t < 2) != (user < 2)) sound(0x6f);
+            else if (h.amount < 0) healSound(-h.amount);
+            break;
+        case 12: case 15: case 17: if (h.amount < 0) healSound(-h.amount); break; // 0417, 0420, 0422
+        case 13: case 16: case 18: case 22: sound(0x6c); break;      // 0418, 0421, 0423, 042700
+        case 14: sound(0x59); break;                                 // 0419
+        case 19: sound(0x71); break;                                 // 0424
+        case 23: sound(b.turn.action == 0xe8 ? 0x70 : 0x6c); break;  // 042701
+        case 24: sound(0x79); break;                                 // 0428
+        case 26: sound(0x78); break;                                 // 030205
+        case 27: case 28: case 29: case 30: case 32: case 33: case 34: case 35: case 36: sound(0x6e); break; // 030206 .. 0602
+        case 31: sound(0x6f); break;                                 // 030210
+        default: break;
+        }
+    };
     // The calcs' effects (eff3d_set_btl in btlcalc_*)
-    if (const cr::BattleActionDef* act = app.battleActions.get(b.turn.action)) {
+    const cr::BattleActionDef* calcAct = app.battleActions.get(b.turn.action);
+    if (calcAct && calcAct->calc == 10) sound(0x53 + uint32_t(b.rules.random(3))); // 0415: once, after its effects
+    if (const cr::BattleActionDef* act = calcAct) {
         const int user = b.turn.actors[0];
         const int ue = user >= 0 ? b.rules.f[size_t(user)].element : 0;
         bool area = false;
@@ -10830,17 +10947,14 @@ void showHits(App& app) {
             default: break;
             }
             if (id >= 0) spawnEffect(app, id, t);
+            calcSound(act->calc, h, user, ue, act->scope == 5 || act->scope == 3, act->element);
             if (h.fell && t >= 2) { // btlcalc_chk_dead: monsters without strong growth burst
                 const cr::Fighter& f = b.rules.f[size_t(t)];
-                if (f.def && !f.def->strongGrowth) spawnEffect(app, kFall, t);
+                if (f.def && !f.def->strongGrowth) spawnEffect(app, kFall, t), app.sound.play(0x5e);
             }
         }
     }
-    // __effgo: 0x56 a critical, 0x53..0x55 a hit, 0x5d fended off, 0x57 healing
-    if (crit) app.sound.play(0x56);
-    else if (any) app.sound.play(0x53 + uint32_t(b.rules.random(3)));
-    else if (guarded) app.sound.play(0x5d);
-    else if (!b.turn.hits.empty() && b.turn.hits[0].amount < 0) app.sound.play(0x57);
+    for (uint32_t id : sounds) app.sound.play(id);
     if (b.rules.breakGauge != b.gaugeShown && b.rules.breakGauge != 0 && (b.gaugeShown == 0 || (b.gaugeShown > 0) != (b.rules.breakGauge > 0)))
         b.breakPop = 5.0f; // btlbreak_set: the label pops when a side takes the Break
 }
@@ -10945,8 +11059,70 @@ void battleWon(App& app) {
     for (int k = 0; k < 2; ++k)
         if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive()) {
             a->yaw = a->homeYaw;
+            a->hidden = false;
             playSlot(app, *a, btlui::kSlotWin);
         }
+    setBattleCamera(app, b.rules.pair ? 0x47 : b.rules.soloMember() + 0x45); // (btl_main 0x3e9)
+}
+
+// btl_main 8000 -> 1000: a battle with a strong-growth monster (G+0xa4b), won in any formation but
+// 2, shows the boss's end first - the camera on it (the formation's 0x35th, m105a's 0x34th), the
+// fallen monsters' down motion (btlanm_boss_dead_anim), the pair out of sight. m102 .. m105a
+// (0x3e3 .. 0x3e6): a quake and white, the boss gone under it, the pair back; any other (0x3de):
+// its down motion played, then it fades (effect 0x1b, sound 0x5f) and 40 frames pass. Then
+// 1000's 10 frames, and the victory (battleWon)
+void battleVictory(App& app) {
+    App::Battle& b = app.battle;
+    bool boss = false;
+    for (int k = 2; k < 5; ++k)
+        if (const cr::Fighter& f = b.rules.f[size_t(k)]; f.present && f.def && f.def->strongGrowth) boss = true;
+    App::Battle::Actor* m2 = battleActor(app, 2);
+    if (!boss || b.formation == 2 || !m2) return battleWon(app);
+    b.phase = App::Battle::BossDown;
+    b.phaseFrames = 0;
+    b.bossModel = m2->modelId;
+    setBattleCamera(app, b.formation + (b.bossModel == 12 ? 0x34 : 0x35));
+    for (App::Battle::Actor& a : b.actors) {
+        if (a.fighter >= 2 && !b.rules.f[size_t(a.fighter)].alive() && a.slot != btlui::kSlotDown) playSlot(app, a, btlui::kSlotDown, -2);
+        if (a.fighter >= 0 && a.fighter < 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
+    }
+    b.bossWait = int(actorDuration(app, *m2)) - 1 + 20; // (btlanm_get_max_frm(2, .., 6) + 20)
+}
+
+void stepBossDown(App& app) {
+    App::Battle& b = app.battle;
+    const int f = b.phaseFrames, m = b.bossModel;
+    App::Battle::Actor* boss = battleActor(app, 2);
+    if (m < 9 || m > 12) { // 0x3de, then 999's 40 frames and 1000's 10
+        if (b.bossWait > 0 && --b.bossWait < 2) {
+            b.bossWait = -(40 + 10);
+            if (boss) boss->fading = true, spawnEffect(app, 0x1b, 2);
+            app.sound.play(0x5f);
+        } else if (b.bossWait < 0 && ++b.bossWait == 0) battleWon(app);
+        return;
+    }
+    // m102, m103, m104, m105a: the white's frames in and out, when the boss goes, the end
+    static const int kWhite[4] = {60, 66, 104, 60}, kWhiteMs[4] = {1000, 700, 1000, 3500}, kGone[4] = {90, 90, 130, 135},
+                     kBack[4] = {100, 100, 140, 140}, kEnd[4] = {130, 130, 170, 170};
+    const int k = m - 9;
+    if (f == 1) {
+        app.sound.play(0xbe);
+        if (m != 12) app.sound.play(0x62);
+        startQuake(app, 3, 0, 100, 2, true);
+    }
+    if (f == kWhite[k]) setFlash(app, 0, 255, kWhiteMs[k]);
+    if (f == kGone[k]) {
+        if (boss) boss->hidden = true;
+        endQuake(app, 3, 100, 0, 2);
+    }
+    if (f == kBack[k]) {
+        app.sound.play(0xeb);
+        setFlash(app, 255, 0, 2000);
+        setBattleCamera(app, b.rules.pair ? 0x47 : b.rules.soloMember() + 0x45);
+        for (App::Battle::Actor& a : b.actors)
+            if (a.fighter >= 0 && a.fighter < 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = false;
+    }
+    if (f == kEnd[k] + 1 + 10) battleWon(app); // (999's frame, 1000's 10)
 }
 
 void endRound(App& app) {
@@ -10960,7 +11136,7 @@ void endRound(App& app) {
     case 2: // won: the victory pose and tune, then the results (btl_main 0x44b) - a story boss's
         // last word first (8000)
         if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
-        else battleWon(app);
+        else battleVictory(app);
         break;
     case 3: { // lost (0x4b1): the defeat tune and "... lost the battle"
         b.phase = App::Battle::Lost;
@@ -11070,8 +11246,9 @@ void stepBattle(App& app) {
         }
         break;
     case App::Battle::WinTalk: // btl_main 8000: the last word said, the victory
-        battleWon(app);
+        battleVictory(app);
         break;
+    case App::Battle::BossDown: stepBossDown(app); break;
     case App::Battle::Acting:
         if (b.breakFx.on) { // the battle waits for it; then the Break's tutorial (0xff2)
             if (stepBreakFx(app)) b.breakFx.on = false, battletalk::tutorial(app, 0xff2);
@@ -11091,6 +11268,15 @@ void stepBattle(App& app) {
         if (b.stageAction) {
             stepStagedCameras(app);
             if (!b.hitsShown) stepStaged(app);
+        } else if (b.turn.kind == cr::kCmdAttack && b.turn.actors[0] >= 2) { // btlact_attack 0x76c: m101 .. m103's blows
+            const App::Battle::Actor* u = battleActor(app, b.turn.actors[0]);
+            const int m = u ? u->modelId : -1, f = b.turnFrame;
+            if ((m == 8 && f == 22) || (m == 9 && f == 7) || (m == 10 && f == 30)) app.sound.play(m == 8 ? 0x7f : m == 9 ? 0x80 : 0xcc);
+        } else if (b.turn.kind == cr::kCmdGene && !b.hitsShown) { // btlact_gene 1000: the bosses' casting sounds
+            const App::Battle::Actor* u = battleActor(app, b.turn.actors[0]);
+            const int m = u ? u->modelId : -1, f = b.turnFrame; // (m102 .. m105a)
+            if ((m == 9 && f == 18) || (m == 10 && f == 30) || (m == 11 && f == (b.turn.action == 433 ? 36 : 44)) || (m == 12 && f == 28))
+                app.sound.play(m == 9 ? 0xbd : m == 10 ? 0xdd : m == 11 ? 0xd4 : 0xf1);
         }
         if (!b.turn.barriers.empty() && b.bounceAt >= 0 && b.turnFrame == b.bounceAt) // 0x100e: back from the barrier
             for (int k : b.turn.barriers) spawnEffect(app, effects::kCast, k);
@@ -11219,7 +11405,7 @@ void drawBattle(App& app, float dt) {
                 if (p0.action == p1.action && p1.time >= p0.time && p1.time - p0.time <= 1.0f) a.time = p0.time + (p1.time - p0.time) * bk;
             }
         }
-        if (a.alpha <= 0.001f) continue;
+        if (a.alpha <= 0.001f || a.hidden) continue;
         LoadedModel& lm = b.models[a.model];
         const cr::Model& m = lm.cpu;
         if (!m.skeleton.nodes.empty() && lm.meshes.size() == m.meshes.size()) { // skin this instance
@@ -16579,7 +16765,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         int hitsSeen = 0;
         bool wasShown = false;
         // results[@frames][:taps]: the results that many frames in, after that many taps
-        const bool results = v.rfind("results", 0) == 0;
+        const bool results = v.rfind("results", 0) == 0 || v.rfind("bossdown", 0) == 0; // (bossdown@n: n frames into the boss's end)
+        const bool bossDown = v.rfind("bossdown", 0) == 0;
         int resultFrames = 10, resultTaps = 0;
         if (results) {
             if (const size_t at = v.find('@'); at != std::string::npos) resultFrames = SDL_atoi(v.c_str() + at + 1);
@@ -16595,6 +16782,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     if (b.menu == App::Battle::Commands) { battleChooseCommand(app, 0); battleChooseTarget(app, b.picks[0]); }
                 }
                 if (results) {
+                    if (bossDown && b.phase == App::Battle::BossDown && b.phaseFrames >= resultFrames) break;
+                    if (bossDown && b.phase == App::Battle::Won) break;
                     if (b.phase == App::Battle::Results && b.result.frames >= resultFrames) break;
                     if (b.phase == App::Battle::Lost) break;
                 } else {
@@ -16613,8 +16802,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                 std::printf("results: stage %d, line %d, exp shown %.0f of %d, oz %.0f of %d, %zu level-ups, %zu items\n",
                             b.result.stage, b.result.message, b.result.shownExp, b.result.expTotal, b.result.shownOz,
                             b.result.ozTotal, b.result.ups.size(), b.result.items.size());
-            std::printf("battle view %s: phase %d, round %d, break %d, hp", v.c_str(), int(b.phase), b.rules.round,
-                        b.rules.breakGauge);
+            std::printf("battle view %s: phase %d (frame %d, boss model %d, camera %d), round %d, break %d, hp", v.c_str(), int(b.phase),
+                        b.phaseFrames, b.bossModel, b.cam, b.rules.round, b.rules.breakGauge);
             for (int i = 0; i < 5; ++i) std::printf(" %d/%d", b.rules.f[size_t(i)].hp, b.rules.f[size_t(i)].hpMax);
             std::printf(", exp %d oz %d\n", b.rules.expGained, b.rules.ozGained);
         }

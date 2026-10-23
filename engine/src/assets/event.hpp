@@ -48,6 +48,7 @@ struct FieldNpc {
     int16_t link[4] = {0, 0, 0, 0}; // NPC table +22..+28: a candle switch's linked NPCs; a candle block's
                                     // start (+22, 0 = put away) and switch (+24)
     float scale = 1;             // NPC table +38: percent, -1 = 100
+    float axes[3] = {-1, -1, -1}; // SetScale / AdjScale's (npc ctl +0x2c..+0x34, x y z), in place of scale once set
 
     bool touchTrigger() const { return (kind & 1) && (kind & 0x8000); }
     // Box centre as RectWrapper::checkEventKick computes it (the offset is applied twice

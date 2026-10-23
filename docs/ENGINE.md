@@ -461,6 +461,19 @@ c101/c102/c104/m207a, 2026-10-12).
       sounds, white flashes over the 3D and screen quakes at the original's frames, the hit at
       the end and the wait after. Every landing hit shakes the screen (`StartQuake(3, 100, 0,
       5)`). `--battle-view stage<action>[@frame]` makes the first enemy use one.
+- [x] A boss's end (`btl_main` 1000 / 0x3de / 0x3e3..0x3e6): a won battle with a strong-growth
+      monster, in any formation but 2, turns the camera on it, plays the fallen monsters' down
+      motion (`btlanm_boss_dead_anim`) and takes the pair out of sight; m102 .. m105a go under a
+      quake and a white-out (their own frames), the rest play the motion out and fade (effect
+      0x1b, sound 0x5f). Fallen strong-growth monsters don't fade or burst (`btlcalc_chk_dead`).
+      The victory turns the camera on the pair (0x47, or 0x45 + the one standing).
+      `--battle-view bossdown@n` captures n frames into it.
+- [x] The battle's sounds as the original plays them (`__effgo`): each attacker's swing
+      (`btlact_attack_init`: 0x4a + the member, a monster's by its model), the bosses' blows and
+      casts at their frames (`btlact_attack` 0x76c, `btlact_gene` 1000), a gene's or item's start
+      (0x5b / 0x5c), a fall (0x5e), and every calc's own a target at a time - the hits, the
+      weapon's element (0x74 + it), the genes' elements (0x64 / 0x65 + 2 x it), the fixed damage,
+      heals by the amount (0x57 .. 0x59), revives, the status and stat changes.
 - [x] Smaller menu pieces from the playthrough: the event Yes / No (Util 3) as the original's
       plates at (336, 104) / (336, 160) sliding in from the right (`__menuu_EventPut`), not a
       text panel; the battle's Genes list with its HELP board (target and effect); the camp's

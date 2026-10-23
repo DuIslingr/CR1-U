@@ -398,6 +398,11 @@ bool EventRunner::step(EventHost* host) {
             else if (id == 2027 && host) state.vars[a0] = host->pairNo();                   // Uty_GetPartyNo: var a0
             else if (id == 2028 && host) host->nowLoading(state.flag(4086));                // Uty_NowLoading
             else if (id == 2020 && host) host->sceneEffectSet(vm.var(0));                  // ScnEffectRead: set var 0
+            // Uty_mdl_set_alpha: GetXmpStkData 0..3 = the npc, the alpha from, to (0..255), frames (mdl_set_alpha)
+            else if (id == 2019 && host) host->fadeNpc(vm.arg(3), float(vm.arg(2)) / 255.0f, float(vm.arg(1)) / 255.0f, vm.arg(0));
+            else if (id == 2034 && host) host->lookAtNpc(a0); // Uty_LookatRect_Init: SetFreeCamera, SetScroll3D to the npc at rate 1
+            // Uty_Mode (2017): an npc's table word (0..3: +0xe .. +0x14) bit tested into var 0 / set / cleared -
+            // used once, clearing an npc's bits right after its Kill: nothing left to change here
             break;
         }
         case 14: { // Wait: frames, or 0xFFFF/0xFFFC fade, 0xFFFE loading, 0xFFFD + npc
@@ -595,7 +600,6 @@ bool EventRunner::step(EventHost* host) {
             if (host) host->tex2d(slot < 0 ? -slot : slot, f, image, extra);
             break;
         }
-        case 55: vm.skip(10); break;                       // AdjScale
         case 29: { // Anim: u16 npc, u16 slot, s16 loop from, s16 loop to
             const int n = vm.resolve(vm.u16()), slot = vm.u16();
             const int from = int16_t(vm.u16()), to = int16_t(vm.u16());
@@ -629,7 +633,20 @@ bool EventRunner::step(EventHost* host) {
             if (host) host->quake(amp, from, to, frames);
             break;
         }
-        case 30: case 54: vm.skip(8); break;
+        case 30: { // Autoadj npc, x, z, speed %: npc_autoctl_set (npc 0 the party: prty_autoctl_set)
+            const int n = vm.resolve(vm.u16());
+            const int16_t x = int16_t(vm.u16()), z = int16_t(vm.u16()), v = int16_t(vm.u16());
+            if (host) host->autoMove(n, float(x), float(z), float(v) / 100.0f);
+            break;
+        }
+        case 54: case 55: { // SetScale npc, x, y, z % / AdjScale npc, x, y, z %, frames (npc_autoctl_set_scale)
+            const int n = vm.resolve(vm.u16());
+            float s[3];
+            for (float& k : s) k = float(int16_t(vm.u16())) / 100.0f;
+            const int frames = op == 55 ? std::max<int>(int16_t(vm.u16()), 1) : 0;
+            if (host) host->scaleNpc(n, s, frames);
+            break;
+        }
         case 47: case 56: { // FrmPlayEff / FrmPlayEff2 actor, effect + 99, scale %
             const int a = int16_t(vm.u16()), e = int16_t(vm.u16()) - 99, scale = int16_t(vm.u16());
             Vm::Scene s;
