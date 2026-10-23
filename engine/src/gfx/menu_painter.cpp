@@ -189,11 +189,15 @@ void MenuPainter::backButton(float x, float y, bool pressed, int bob, float alph
     const float lime[4] = {0xEB / 255.0f, 1, 0x4B / 255.0f, alpha};
     const float white[4] = {1, 1, 1, alpha};
     const float* c = pressed ? lime : white;
-    const float clear[4] = {c[0], c[1], c[2], 0};
-    quad(x + 24, y, 32, 24, clear, c);
+    const float clear[4] = {white[0], white[1], white[2], 0};
+    // ComUty_CmdBack mode 2: the left arrow's box (24..51, faded in over 0..24), Back (56..176), the
+    // right arrow's box (181..208, fading out to 232); the arrows bob inward (0..5)
+    quad(x, y, 24, 24, clear, white);
+    quad(x + 24, y, 27, 24, white, white);
     quad(x + 56, y, 120, 24, c, c);
-    quad(x + 176, y, 32, 24, c, clear);
-    piece(x + 4 + bob, y + 4, 336, 880, 16, 16, alpha);
+    quad(x + 181, y, 27, 24, white, white);
+    quad(x + 208, y, 24, 24, white, clear);
+    piece(x + 24 + bob, y + 4, 336, 880, 16, 16, alpha);
     piece(x + 197 - bob, y + 4, 352, 880, 16, 16, alpha);
     piece(x + 80, y, 0, 224, 76, 24, alpha);
 }

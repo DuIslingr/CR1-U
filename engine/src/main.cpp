@@ -4033,7 +4033,7 @@ void drawSaveScreen(App& app) {
             m.plate(328, 136 + 48.0f * float(plates[i]), plateIcon(kWord[plates[i]]), kWord[plates[i]], ss.cursor == int(i), a,
                     false); // (window 3; the icon is the word's: ComUty_ChoicePlateDraw)
         r.setOrigin(r.uiX());
-        m.backButton(192, r.phoneLayout() ? 286 : 344, false, 0, a);
+        m.backBar(192, r.phoneLayout() ? 286 : 344, false, a); // (SaveLoadPut: BackButtonDraw mode 1, no arrows)
     } else if (r.phoneLayout()) { // the original's (SaveLoadPut, the same in 2.2.0): the message
         // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234); Yes / No the
         // plates at window 6 + (336, 104) / (336, 160)
@@ -7126,7 +7126,7 @@ void drawScenarios(App& app) {
         m.begin(r, app.windowTex, &app.font);
         const PhoneMenu phoneMenu(app, m);
         drawClockAndOz(app, m, a);
-        m.backButton(192, 286, false, 0, a);
+        m.backBar(192, 286, false, a); // (HistoryPut: BackButtonDraw2 mode 1)
         return;
     }
     // (z: the entries -8 under the pairs' strips -4; the way-in locks -4 over them while above y 688;
@@ -7180,7 +7180,7 @@ void drawScenarios(App& app) {
     }
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
-    m.backButton(272, 330, false, 0, a);
+    m.backBar(272, 330, false, a);
     if (keyHints(app)) // (our key hints)
         m.text("Up/Down: scroll  Esc: back", 300, 372, false, a * 0.8f, 9);
 }
@@ -7406,7 +7406,8 @@ void drawCharSelect(App& app) {
     for (int k = 0; k < 2; ++k)
         m.plate(56 + 232.0f * float(k), 232, plateIcon(kCharSelectWords[app.charSelectPage][k]), // (the word's icon)
                 kCharSelectWords[app.charSelectPage][k], app.charSelectCursor == k, t, false);
-    m.backButton(124, 288, false, 0, t); // ComUty_BackButtonPosSetXYDraw(124, 288)
+    if (laterPairsOpen(app)) m.backButton(124, 288, false, 0, t); // ComUty_BackButtonPosSetXYDraw(124, 288): its arrows
+    else m.backBar(124, 288, false, t);                         // (mode 2) once the later pairs are open (flags 0x20 / 0x22)
     if (keyHints(app)) // (our key hints)
     m.text(laterPairsOpen(app) ? "Left/Right  Q: other pairs  Enter  Esc: back" : "Left/Right  Enter  Esc: back", 20, 372,
            false, t * 0.8f, 9);
