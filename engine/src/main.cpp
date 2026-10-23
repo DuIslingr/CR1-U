@@ -16807,6 +16807,12 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     if (b.menu == App::Battle::Targets) battleChooseTarget(app, b.picks[0]);
                     if (b.menu == App::Battle::Commands) { battleChooseCommand(app, 0); battleChooseTarget(app, b.picks[0]); }
                 }
+                if (bossDown && (b.phase == App::Battle::Command || b.phase == App::Battle::Acting)) // (the test: the pair holds, the monsters fall to a blow)
+                    for (int k = 0; k < 5; ++k)
+                        if (b.rules.f[size_t(k)].alive()) {
+                            b.rules.f[size_t(k)].hp = k < 2 ? b.rules.f[size_t(k)].hpMax : 1;
+                            if (k < 2) b.rules.f[size_t(k)].status[cr::kStatusInvincible] = 9;
+                        }
                 if (results) {
                     if (bossDown && b.phase == App::Battle::BossDown && b.phaseFrames >= resultFrames) break;
                     if (bossDown && b.phase == App::Battle::Won) break;
