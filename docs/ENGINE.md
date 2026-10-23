@@ -466,8 +466,10 @@ c101/c102/c104/m207a, 2026-10-12).
       motion (`btlanm_boss_dead_anim`) and takes the pair out of sight; m102 .. m105a go under a
       quake and a white-out (their own frames), the rest play the motion out and fade (effect
       0x1b, sound 0x5f). Fallen strong-growth monsters don't fade or burst (`btlcalc_chk_dead`).
-      The victory turns the camera on the pair (0x47, or 0x45 + the one standing).
-      `--battle-view bossdown@n` captures n frames into it.
+      The victory turns the camera on the pair (0x47, or 0x45 + the one standing) and holds 140
+      frames or until a tap. Pair mode puts the pair side by side (`_btlinitpos`' second row),
+      solo back at the first (`__menub_mainPrc`). `--battle-view bossdown@n` / `won@n` capture n
+      frames into the boss's end / the victory.
 - [x] The battle's sounds as the original plays them (`__effgo`): each attacker's swing
       (`btlact_attack_init`: 0x4a + the member, a monster's by its model), the bosses' blows and
       casts at their frames (`btlact_attack` 0x76c, `btlact_gene` 1000), a gene's or item's start
