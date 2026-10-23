@@ -405,6 +405,9 @@ struct App {
     // SELECT shows the help, and □ (no text to skip) uses the ability, which the Vita leaves to touch
     SDL_Gamepad* pad = nullptr;
     bool padConfirmEast = true;
+    // CR1:U's own (Options, Game: Field Speed, Battle Speed): the field - while the player walks it,
+    // nothing over it - and the battles run this many times as fast (1, or 2 .. 5)
+    int fieldSpeed = 1, battleSpeed = 1;
     int padHeld = -1;                      // the direction held for the menus' repeat (0 up 1 down 2 left 3 right)
     float padHeldFor = 0;
     int itemWindowItem = 0;
@@ -1387,6 +1390,7 @@ void startNewGame(App& app);
 void bootTitle(App& app);
 void padButton(App& app, int b);
 bool padMenus(const App& app);
+bool padField(const App& app);
 void offerResume(App& app);
 void openSaveScreen(App& app, bool load);
 void openMapScreen(App& app);
@@ -3002,7 +3006,8 @@ void saveMix(const App& app) {
                               "\nenvironment_effects=" +
                               std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
                               std::to_string(int(app.lockOrientation)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
-                              (app.padConfirmEast ? "east" : "south") + "\n";
+                              (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +
+                              "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
     const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video;
     SDL_SaveFile(settingsPath().c_str(), all.data(), all.size());
 }
@@ -3062,6 +3067,8 @@ void loadVideo(App& app, const char* text) {
     app.environmentEffects = keyValue(text, "\nenvironment_effects=", app.environmentEffects) != 0;
     app.lockOrientation = keyValue(text, "\nlock_orientation=", app.lockOrientation) != 0;
     if (const char* at = SDL_strstr(text, "\npad_confirm=")) app.padConfirmEast = SDL_strncmp(at + 13, "south", 5) != 0;
+    app.fieldSpeed = std::clamp(keyValue(text, "\nfield_speed=", app.fieldSpeed), 1, 5);
+    app.battleSpeed = std::clamp(keyValue(text, "\nbattle_speed=", app.battleSpeed), 1, 5);
 }
 
 // Window size / fullscreen mode and the renderer's options from app.video
@@ -3395,6 +3402,15 @@ std::vector<OptRow> optionRows(App& app, int page) {
                                : "Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art "
                                  "only it has; Left / Right: none";
         }
+        const auto speed = [&](const char* label, int* x, const char* what) { // (Off, 2x .. 5x)
+            value(label, *x > 1 ? std::to_string(*x) + "x" : std::string("Off"), [&app, x](int dir) {
+                *x = (*x - 1 + (dir ? dir : 1) + 5) % 5 + 1;
+                saveMix(app);
+            });
+            rows.back().hint = what;
+        };
+        speed("Field Speed", &app.fieldSpeed, "Walking the field 2 .. 5 times as fast - the scenes, talk and menus as they are");
+        speed("Battle Speed", &app.battleSpeed, "The battles 2 .. 5 times as fast");
         OptRow swap; // the controller's ○ (east) / × (south): Off as on the Vita, ○ confirms
         swap.label = "Swap \u25cb and \u00d7";
         swap.kind = OptControl::Pair;
@@ -8875,6 +8891,8 @@ void updatePlayer(App& app, float dt, float camYaw) {
         bool trun;
         if (touchPadStick(app, tx, ty, trun)) sx = tx, sy = ty, run = trun;
     }
+    if (const char* w = SDL_getenv("CR_CAPTURE_WALK"); w && !talking && sx == 0 && sy == 0) // (tests: x,y held - a --settle-moving walk)
+        if (SDL_sscanf(w, "%f,%f", &sx, &sy) != 2) sx = sy = 0;
     constexpr float kStep = 1.0f / kFramesPerSecond;
     app.walkClock += dt;
     while (app.walkClock >= kStep) {
@@ -12239,10 +12257,14 @@ void drawFrame(App& app, bool present = true) {
     // W: the game's 2D layout (1024); SW: the whole logical screen (wider in widescreen)
     const float W = cr::Renderer::kLogicalW, H = cr::Renderer::kLogicalH, SW = r.screenW();
     const Uint64 now = SDL_GetTicksNS();
-    const float dt = std::min(app.lastTicks ? float(double(now - app.lastTicks) * 1e-9) : 0.0f, 0.1f);
+    const float realDt = std::min(app.lastTicks ? float(double(now - app.lastTicks) * 1e-9) : 0.0f, 0.1f);
     app.lastTicks = now;
     if (app.mode == Mode::Maps && !app.booting && !app.titleOpen && (app.havePlayer || app.battle.active))
-        app.playSeconds += dt;
+        app.playSeconds += realDt;
+    // Field Speed / Battle Speed: the battles, and the field while the player walks it, faster
+    const float dt = realDt * float(app.mode == Mode::Maps && app.battle.active && !app.optionsOpen && !app.manualOpen ? app.battleSpeed
+                                         : padField(app)                                                           ? app.fieldSpeed
+                                                                                                                   : 1);
 
     if (app.mode == Mode::Textures) {
         drawCheckerboard(r);
@@ -14160,7 +14182,7 @@ int runSelfTest(App& app) {
         problems += !app.titleOpen;
         openOptions(app, 0);
         const std::vector<OptRow> titlePage = optionRows(app, 0);
-        problems += titlePage.size() != 9 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
+        problems += titlePage.size() != 11 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
         { // Reset Data: asked twice; No keeps the saves, Yes to both removes them (in a test folder)
             const std::string keepDir = app.saveDirOverride;
             app.saveDirOverride = userDir() + "selftest-reset/";
@@ -14215,8 +14237,8 @@ int runSelfTest(App& app) {
         startNewGame(app); // (the hall, for the in-game Options checks below)
         openOptions(app, 0);
         std::vector<OptRow> gamePage = optionRows(app, 0);
-        problems += gamePage.size() != 9 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
-        if (gamePage.size() == 9 && gamePage.back().act) gamePage.back().act(0);
+        problems += gamePage.size() != 11 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
+        if (gamePage.size() == 11 && gamePage.back().act) gamePage.back().act(0);
         problems += !app.booting;
         app.runner.stop();
         std::printf("options: %d pages, %d rows; FSR 3.1 modes drawn: %d; title menu after %d frames; %d problems\n",
@@ -17284,6 +17306,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     SDL_DestroySurface(surf);
     std::printf("%s %s -> %s (%dx%d)\n", ok ? "captured" : "FAILED", mapName, outPath, w, h);
     if (app.hdModelsLoaded) std::printf("hd models: %d replaced (%s)\n", app.hdModelsLoaded, app.modelsDir.c_str());
+    if (app.battle.active) std::printf("battle: %d steps (speed %d)\n", app.battle.frames, app.battleSpeed);
+    if (app.havePlayer && !app.battle.active) std::printf("player: at %.1f %.1f (field speed %d)\n", app.walker.pos.x, app.walker.pos.z, app.fieldSpeed);
     if (app.haveStageCam) {
         const cr::StageCamera& sc = app.stageCam;
         const cr::Mat4 vp = cr::Mat4::perspective(sc.fovDegrees * 3.14159265f / 180.0f, 1.0f, 10.0f, 4000.0f) *
@@ -17604,6 +17628,8 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         else if (SDL_strcmp(argv[i], "--title") == 0) app->captureTitle = true;
     for (int i = 1; i < argc; ++i) {
         if (SDL_strcmp(argv[i], "--no-encounters") == 0) app->noEncounters = true;
+        if (i + 1 < argc && SDL_strcmp(argv[i], "--field-speed") == 0) app->fieldSpeed = std::clamp(SDL_atoi(argv[i + 1]), 1, 5);
+        if (i + 1 < argc && SDL_strcmp(argv[i], "--battle-speed") == 0) app->battleSpeed = std::clamp(SDL_atoi(argv[i + 1]), 1, 5);
         if (SDL_strcmp(argv[i], "--no-environment-effects") == 0) app->environmentEffects = false;
     }
     if (!app->battleData.load(app->dataDir)) SDL_Log("no battle data in sys.evt: battles unavailable");
@@ -17732,6 +17758,10 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     for (int i = 1; i < argc; ++i) // (over the stored setting; captures read it earlier)
         if (SDL_strcmp(argv[i], "--no-environment-effects") == 0) app->environmentEffects = false;
     videoArgs(*app, argc, argv); // the command line wins over settings.ini
+    for (int i = 1; i + 1 < argc; ++i) { // (--field-speed / --battle-speed n: over the stored setting, not saved)
+        if (SDL_strcmp(argv[i], "--field-speed") == 0) app->fieldSpeed = std::clamp(SDL_atoi(argv[i + 1]), 1, 5);
+        if (SDL_strcmp(argv[i], "--battle-speed") == 0) app->battleSpeed = std::clamp(SDL_atoi(argv[i + 1]), 1, 5);
+    }
     applyVideo(*app);
     if (languageArg >= 0) { // the command line wins over settings.ini
         app->language = languageArg;

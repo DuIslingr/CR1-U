@@ -209,6 +209,9 @@ the Vita build) and a reference playthrough:
   Real-ESRGAN), smoothed models; 60 frames a second (Frame Rate: 30 / 60 / 120 / 144 / unlimited)
   over the game's own 20 - the leader, NPCs, cameras, scroll and battle actors shown moving
   between its frames
+- **Speed** (off unless set): Options, Game - Field Speed and Battle Speed, each Off or 2x .. 5x:
+  walking the field (its scenes, talk and menus as they are) and the battles that many times as
+  fast; `--field-speed n` / `--battle-speed n` for one run
 - **Testing**: `--selftest` checks every subsystem against the original's rules and data;
   `--explore n` plays the game by itself from the title through all four pairs' stories and the
   last battle to the final ending; `--capture` renders any room, screen or battle moment
