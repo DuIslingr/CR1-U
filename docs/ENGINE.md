@@ -445,8 +445,11 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] Battle effects (`eff3d_*`, `eff.bin`'s 98 effect models): hit sparks, criticals, the
       elements' hits, gene bursts (single and over a side), heals, buffs, drains, revives,
       the casting glow and monsters' falls, at the original's attachment points (body, head,
-      limbs) and with their materials' colour / fade animation. `--battle-view effect<id>[@frame]`
-      shows one, with their textures' scrolling (the material action's UV offset / scale).
+      limbs) and with their materials' colour / fade animation; on a monster at its size class's
+      scale (`eff3d_set_btl`: 100 100 100 200 250 300, but for 22, 23 and 30). The motion is the
+      package action for the transform tree, never one of the materials' (only segment 1's colour,
+      6 / 8's texture offset and scale). `--battle-view effect<id>[@frame]` shows one, with their
+      textures' scrolling (the material action's UV offset / scale).
 - [x] Field effects (the same models on the field): the puzzle rooms' (gems, teleports, the
       held block's glow, breaks, blocks changing over, the candles' lighting, flames and puffs,
       the crystals coming and going, squashes), the footsteps' dust, the cutscenes' looped

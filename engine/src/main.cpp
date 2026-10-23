@@ -9548,9 +9548,19 @@ LoadedModel* effectModel(App& app, int id) {
     }
     for (const auto& mesh : m.meshes) out.meshes.push_back(app.renderer.upload(mesh));
     out.packageActions = m.actions;
-    // Its motion: the action table's action for the transform tree - one segment a node (the rest are
-    // its materials', 9 segments, and can come first: 30 of Omega's effects) - else the first that
-    // fits the skeleton (or its first nodes)
+    // Its motion: the action table's action for the transform tree - one segment a node, and not one
+    // of its materials' (9 segments, only segment 1's colour and 6 / 8's texture offset and scale:
+    // they can come first - 30 of Omega's effects - and with 9 nodes they'd fit) - else the first
+    // that fits the skeleton (or its first nodes)
+    auto materials = [](const cr::Action& a) {
+        for (size_t k = 0; k < a.segments.size(); ++k)
+            for (const cr::Track& t : a.segments[k])
+                if (!(k == 1 && t.type == 12) && !((k == 6 || k == 8) && (t.type == 1 || t.type == 11))) return false;
+        return true;
+    };
+    for (auto& a : m.actions)
+        if (out.actions.empty() && !materials(a) && a.segments.size() == m.skeleton.nodes.size() && !a.segments.empty())
+            out.actions.push_back(a);
     for (auto& a : m.actions)
         if (out.actions.empty() && a.segments.size() == m.skeleton.nodes.size() && !a.segments.empty()) out.actions.push_back(a);
     for (auto& a : m.actions)
