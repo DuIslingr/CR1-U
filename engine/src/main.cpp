@@ -11063,6 +11063,7 @@ void battleWon(App& app) {
             playSlot(app, *a, btlui::kSlotWin);
         }
     setBattleCamera(app, b.rules.pair ? 0x47 : b.rules.soloMember() + 0x45); // (btl_main 0x3e9)
+    setBanner(app, sysText(app, 57007), 60);                                    // font_set_utf16(11, 6, 7, 60)
 }
 
 // btl_main 8000 -> 1000: a battle with a strong-growth monster (G+0xa4b), won in any formation but
@@ -11144,6 +11145,8 @@ void endRound(App& app) {
         playBgm(app, 0x1a);
         btlvoice::playSide(app, 99, 0x1f, 0x20, 0x21); // btl_main 0x4b0 (as for a pair)
         setBattleCamera(app, 0x48);
+        for (App::Battle::Actor& a : b.actors) // the monsters still standing out of sight (+0x55c)
+            if (a.fighter >= 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
         const App::Battle::Actor* lead = battleActor(app, 0);
         setBanner(app, sysText(app, 57016, lead ? lead->name : std::string()), 1 << 20);
         break;
