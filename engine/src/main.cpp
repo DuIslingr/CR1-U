@@ -188,6 +188,8 @@ struct App {
     bool optionsOpen = false;              // V: the Options screen (__menuu_Option*, plus our pages)
     int optionsPage = 0;                   // Game, Sound, Display, Graphics
     int optionsRow = 0;                    // the cursor: a row, or kOptionsBackRow
+    int optionsScroll = 0;                 // the first row shown (a page of more than kOptVisible scrolls)
+    bool optionsBarDrag = false;           // the scroll bar's thumb held
     int optionsAnim = 0;                   // frames since the page appeared (windows slide in)
     int optionsBob = 0, optionsBobDir = 1; // ComUty_CmdBack's arrows
     float optionsClock = 0;
@@ -3276,6 +3278,10 @@ const char* const kOptionPageName[kOptionPages] = {"Game", "Sound", "Display", "
 // Layout, in menu units
 constexpr float kOptRowTop = 52, kOptRowPitch = 36, kOptCtrlX = 224, kOptCtrlScale = 0.85f;
 constexpr float kOptBackY = 344, kOptPageY = 350;
+// The port's: rows shown at once (the rest scroll, clear of the help line and the Back bar), and
+// the scroll bar at the rows' right
+constexpr int kOptVisible = 7;
+constexpr float kOptBarX = 486, kOptBarW = 8;
 
 std::string sysLabel(const App& app, int id, const char* fallback) {
     const std::string t = sysText(app, id);
@@ -3574,7 +3580,65 @@ void openOptions(App& app, int page) {
     app.optionsOpen = true;
     app.optionsPage = (page + kOptionPages) % kOptionPages;
     app.optionsRow = 0;
+    app.optionsScroll = 0;
     app.optionsAnim = 0;
+}
+
+// The page's scroll kept in range - and, `follow`, moved to show the cursor's row
+void optionsScrollFix(App& app, int n, bool follow) {
+    const int most = std::max(0, n - kOptVisible);
+    if (follow && app.optionsRow >= 0 && app.optionsRow < n) {
+        if (app.optionsRow < app.optionsScroll) app.optionsScroll = app.optionsRow;
+        if (app.optionsRow >= app.optionsScroll + kOptVisible) app.optionsScroll = app.optionsRow - kOptVisible + 1;
+    }
+    app.optionsScroll = std::clamp(app.optionsScroll, 0, most);
+}
+// The scroll bar's track (menu units) and the thumb on it
+void optionsBar(int n, int scroll, float& top, float& height, float& thumbY, float& thumbH) {
+    top = kOptRowTop - 2, height = kOptRowPitch * float(kOptVisible - 1) + 28;
+    thumbH = std::max(height * float(kOptVisible) / float(std::max(n, 1)), 24.0f);
+    const int most = std::max(1, n - kOptVisible);
+    thumbY = top + (height - thumbH) * float(scroll) / float(most);
+}
+// A point on the bar (menu y): the scroll that puts the thumb's middle there; the cursor kept on screen
+void optionsBarTo(App& app, float my) {
+    const int n = int(optionRows(app, app.optionsPage).size());
+    float top, height, ty, th;
+    optionsBar(n, app.optionsScroll, top, height, ty, th);
+    const float f = std::clamp((my - top - th / 2) / std::max(height - th, 1.0f), 0.0f, 1.0f);
+    app.optionsScroll = int(std::lround(f * float(std::max(0, n - kOptVisible))));
+    if (app.optionsRow != kOptionsBackRow)
+        app.optionsRow = std::clamp(app.optionsRow, app.optionsScroll, std::min(n, app.optionsScroll + kOptVisible) - 1);
+}
+// The mouse wheel / a drag over the rows: `rows` rows on; the cursor kept on screen
+void optionsScrollBy(App& app, int rows) {
+    const int n = int(optionRows(app, app.optionsPage).size());
+    app.optionsScroll += rows;
+    optionsScrollFix(app, n, false);
+    if (app.optionsRow != kOptionsBackRow && n > 0)
+        app.optionsRow = std::clamp(app.optionsRow, app.optionsScroll, std::min(n, app.optionsScroll + kOptVisible) - 1);
+}
+// Text in lines no wider than `width` (at most `most`), by words
+std::vector<std::string> wrapText(cr::MenuPainter& m, const std::string& s, float width, float size, int most) {
+    std::vector<std::string> lines(1);
+    size_t at = 0;
+    while (at < s.size()) {
+        size_t end = s.find(' ', at);
+        if (end == std::string::npos) end = s.size();
+        const std::string word = s.substr(at, end - at);
+        const std::string tried = lines.back().empty() ? word : lines.back() + " " + word;
+        if (!lines.back().empty() && m.textWidth(tried, size) > width) {
+            if (int(lines.size()) == most) {
+                lines.back() += "...";
+                return lines;
+            }
+            lines.push_back(word);
+        } else {
+            lines.back() = tried;
+        }
+        at = end + 1;
+    }
+    return lines;
 }
 
 // The iPhone layout (2.2.0): the menus' coordinates are its screen's - (0, 0) the corner, not the
@@ -3629,12 +3693,22 @@ void drawOptions(App& app, float, float) {
     const float t = std::min(1.0f, app.optionsAnim / 8.0f), ease = 1 - (1 - t) * (1 - t);
     const float rowsX = -240 * (1 - ease), ctrlX = 240 * (1 - ease), a = t;
     m.picture(102, 8, 4); // "Options"
-    m.text(kOptionPageName[app.optionsPage], 236, 14, false, a, 16);
     const std::vector<OptRow> rows = optionRows(app, app.optionsPage);
-    for (size_t i = 0; i < rows.size(); ++i) {
-        const OptRow& row = rows[i];
-        const float y = optRowY(int(i)), mid = y + 12;
-        const bool cursor = app.optionsRow == int(i);
+    const int n = int(rows.size()), shown = std::min(n, kOptVisible);
+    optionsScrollFix(app, n, false);
+    { // (the port's: a darker panel under the page's name, the rows and the help line - readable
+      // over any scene - and the help's lines)
+        const float shade[4] = {0, 0, 0, 0.5f * a}, fade[4] = {0, 0, 0, 0.2f * a};
+        const float nameW = m.textWidth(kOptionPageName[app.optionsPage], 16);
+        m.quad(228, 10, nameW + 16, 24, shade, shade);
+        m.quad(12, kOptRowTop - 8, 250, optRowY(shown) + 42 - kOptRowTop, shade, shade);
+        m.quad(262, kOptRowTop - 8, 238, optRowY(shown) + 42 - kOptRowTop, shade, fade);
+    }
+    m.text(kOptionPageName[app.optionsPage], 236, 14, false, a, 16);
+    for (int i = app.optionsScroll; i < n && i < app.optionsScroll + kOptVisible; ++i) {
+        const OptRow& row = rows[size_t(i)];
+        const float y = optRowY(i - app.optionsScroll), mid = y + 12;
+        const bool cursor = app.optionsRow == i;
         const float dim = row.enabled ? a : a * 0.45f;
         m.rowBar(20 + rowsX, y, row.label, dim, cursor);
         // The control in the original's design units (buttons 8 above the bar, gauges 4 below),
@@ -3657,13 +3731,24 @@ void drawOptions(App& app, float, float) {
         m.setScale(0, 0, 1);
         if (cursor && row.kind == OptControl::Pair) m.text(">", kOptCtrlX + ctrlX - 12, y + 4, false, a);
     }
+    if (n > kOptVisible) { // the scroll bar: a dark track, the thumb in the buttons' teal
+        float top, height, ty, th;
+        optionsBar(n, app.optionsScroll, top, height, ty, th);
+        const float track[4] = {0.05f, 0.07f, 0.09f, 0.75f * a}, trackEdge[4] = {0.22f, 0.25f, 0.28f, 0.75f * a};
+        const float lit[4] = {0.55f, 0.92f, 0.92f, a}, deep[4] = {0.16f, 0.5f, 0.55f, a};
+        m.quad(kOptBarX - 1, top - 1, kOptBarW + 2, height + 2, trackEdge, trackEdge);
+        m.quad(kOptBarX, top, kOptBarW, height, track, track);
+        m.quad(kOptBarX + 1, ty + 1, kOptBarW - 2, th - 2, lit, deep);
+    }
     // "n / total" from the game's 14 x 14 digits, and Back
     m.digit(app.optionsPage + 1, 20, kOptPageY, a);
     m.digit(-1, 34, kOptPageY, a);
     m.digit(kOptionPages, 48, kOptPageY, a);
     m.backButton(192, kOptBackY, app.optionsRow == kOptionsBackRow, app.optionsBob, a);
-    if (app.optionsRow >= 0 && app.optionsRow < int(rows.size()) && !rows[size_t(app.optionsRow)].hint.empty())
-        m.text(rows[size_t(app.optionsRow)].hint, 20, std::min(optRowY(int(rows.size())) + 2, kOptBackY - 16), false, a * 0.9f, 9);
+    if (app.optionsRow >= 0 && app.optionsRow < n && !rows[size_t(app.optionsRow)].hint.empty()) { // (under the rows shown, clear of Back)
+        const std::vector<std::string> lines = wrapText(m, rows[size_t(app.optionsRow)].hint, 470, 11, 2);
+        for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 20, optRowY(shown) + 2 + 13 * float(l), false, a, 11);
+    }
     if (app.showHud) // (our key hints: off in a Release build, F3)
         m.text("Up/Down  Left/Right  Enter  Q/E or PgUp/PgDn: page  Esc: back", 20, 372, false, a * 0.8f, 9);
     if (app.resetAsk) { // OptionPrc 9 / 10: the message board (57078, then 57079), Yes / No at (336, 104 / 160)
@@ -3730,6 +3815,8 @@ void optionsKey(App& app, SDL_Keycode key) {
     case SDLK_ESCAPE: case SDLK_BACKSPACE: app.optionsOpen = false; menuSound(app, se::kBack); return;
     case SDLK_UP: case SDLK_W: row = row == kOptionsBackRow ? n - 1 : row > 0 ? row - 1 : kOptionsBackRow; break;
     case SDLK_DOWN: case SDLK_S: row = row == kOptionsBackRow ? 0 : row + 1 < n ? row + 1 : kOptionsBackRow; break;
+    case SDLK_HOME: row = 0; break;
+    case SDLK_END: row = n - 1; break;
     // the original's page arrows sit on its Back bar, and OptionPrc plays the Back sound for them
     case SDLK_Q: case SDLK_PAGEUP: openOptions(app, app.optionsPage - 1); menuSound(app, se::kBack); return;
     case SDLK_E: case SDLK_PAGEDOWN: case SDLK_TAB: openOptions(app, app.optionsPage + 1); menuSound(app, se::kBack); return;
@@ -3753,6 +3840,7 @@ void optionsKey(App& app, SDL_Keycode key) {
     }
     default: return;
     }
+    optionsScrollFix(app, n, true);
     menuSound(app, se::kCursor);
 }
 
@@ -3774,11 +3862,20 @@ void optionsClick(App& app, float px, float py) {
         return;
     }
     std::vector<OptRow> rows = optionRows(app, app.optionsPage);
-    for (size_t i = 0; i < rows.size(); ++i) {
-        OptRow& r = rows[i];
-        const float y = optRowY(int(i));
+    if (int(rows.size()) > kOptVisible && mx >= kOptBarX - 8 && mx < kOptBarX + kOptBarW + 8) { // the scroll bar: there, and held
+        float top, height, ty, th;
+        optionsBar(int(rows.size()), app.optionsScroll, top, height, ty, th);
+        if (my >= top - 4 && my < top + height + 4) {
+            optionsBarTo(app, my);
+            app.optionsBarDrag = true;
+            return;
+        }
+    }
+    for (int i = app.optionsScroll; i < int(rows.size()) && i < app.optionsScroll + kOptVisible; ++i) {
+        OptRow& r = rows[size_t(i)];
+        const float y = optRowY(i - app.optionsScroll);
         if (my < y - 4 || my >= y + 28) continue;
-        app.optionsRow = int(i);
+        app.optionsRow = i;
         if (!r.enabled || !r.act) return;
         auto inX = [&](float x0, float x1) { return mx >= optCtrlX(x0) && mx < optCtrlX(x1); };
         int dir = 2; // the control hit: -1 / 0 / +1, or 2 for the row's label (just moves the cursor)
@@ -17265,6 +17362,10 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         openOptions(app, page);
         app.optionsAnim = 100;
         if (const char* ra = SDL_getenv("CR_CAPTURE_RESET")) app.resetAsk = SDL_atoi(ra); // (Reset Data's question 1 / 2)
+        if (const char* row = SDL_getenv("CR_CAPTURE_OPTIONS_ROW")) { // (that row in focus, the page scrolled to it)
+            app.optionsRow = SDL_atoi(row);
+            optionsScrollFix(app, int(optionRows(app, app.optionsPage).size()), true);
+        }
     }
     if (app.havePlayer && app.captureAt[0] == app.captureAt[0]) { // --at x z: put the player there
         float y;
@@ -18177,6 +18278,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
         app.dragging = false;
+        app.optionsBarDrag = false;
         touchPadUp(app);
         if (app.mode == Mode::Maps && app.puzzle.pkState == 1) {
             int ww = 0, wh = 0;
@@ -18187,6 +18289,16 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (app.optionsOpen && app.optionsBarDrag) { // the scroll bar's thumb follows
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            float lx, ly, mx, my;
+            app.renderer.toLogical(event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f),
+                                   event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f), lx, ly);
+            menuPointFit(app, lx, ly, mx, my);
+            optionsBarTo(app, my);
+            break;
+        }
         if (app.touchPad.down) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -18204,6 +18316,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_WHEEL:
+        if (app.optionsOpen && !app.resetAsk) { optionsScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0); break; }
         if (app.scenariosOpen) { scenariosScrollBy(app, event->wheel.y * 96); break; }
         if (app.manualOpen) { manualKey(app, event->wheel.y > 0 ? SDLK_UP : SDLK_DOWN); break; }
         app.zoom = std::clamp(app.zoom * (event->wheel.y > 0 ? 0.9f : 1.1f), 0.1f, 10.0f);
