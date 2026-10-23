@@ -11052,9 +11052,11 @@ void battleWon(App& app) {
     int& bank = app.game.walkExp[size_t(fieldRoute(app))]; // skill 174's walking EXP joins the battle's
     if (!b.settled) b.rules.expGained += bank, bank = 0;   // (before the Apples double it)
     settleBattle(app);
-    { // var 59: the victory tune (10 for random encounters)
-        const auto v59 = app.game.vars.find(59);
-        playBgm(app, uint32_t(v59 != app.game.vars.end() && v59->second >= 0 && v59->second <= 28 ? v59->second : 10));
+    { // var 59: the victory tune (10 for random encounters) - none when it's the battle's own (var 58)
+        // or 998, the battle's music played on (btl_main 0x3e9)
+        const auto v58 = app.game.vars.find(58), v59 = app.game.vars.find(59);
+        const int battleTune = v58 != app.game.vars.end() ? v58->second : 999, tune = v59 != app.game.vars.end() ? v59->second : 10;
+        if (battleTune != tune && tune != 998) playBgm(app, uint32_t(tune >= 0 && tune < 29 ? tune : 10));
     }
     for (int k = 0; k < 2; ++k)
         if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive()) {
