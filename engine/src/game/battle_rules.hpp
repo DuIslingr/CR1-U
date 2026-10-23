@@ -196,6 +196,7 @@ struct BattleTurn {
     bool counter = false;        // skill 154's answer to a hit
     int message = 0;             // a system message to show for it (57xxx), 0 none
     int messageValue = 0;        // its number (Oz stolen) or the element / kind it names
+    bool cancelled = false;      // btlque_make_que: it can't be any more - its message, no action
     bool gone = false;           // calc 11: the enemy fled
     int escapeChance = 0;
     std::vector<BattleNotice> notices; // the calcs' queued messages (the scene shows them in turn)
@@ -326,6 +327,7 @@ private:
     GameRandom* shared_ = nullptr;
     bool escaped_ = false;
     std::vector<int> known_;     // abilities, skills and plates the bag held at the start
+    std::vector<int> bag_;       // the battle items' counts (21..46) as the actions use them up
 
     void fallRewards(int enemy, const int actors[2], bool itemsAndGenes = true);
     int zoku(int amount, const BattleActionDef& a, int user, int target, bool magic) const;

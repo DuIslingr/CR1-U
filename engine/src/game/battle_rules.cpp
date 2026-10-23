@@ -76,9 +76,12 @@ int BattleRules::random(int n) { return (shared_ ? *shared_ : own_).get(n); }
 void BattleRules::setupParty(const GameState& gs, const ItemTable& items, int route) {
     route = std::clamp(route, 0, 3);
     known_.clear();
+    bag_.assign(47, 0);
     purse = gs.oz;
-    for (const auto& [item, count] : gs.items)
+    for (const auto& [item, count] : gs.items) {
         if (count > 0 && ((item >= 81 && item <= 186) || (item >= 479 && item <= 500))) known_.push_back(item);
+        if (item >= 21 && item <= 46) bag_[size_t(item)] = std::max(count, 0);
+    }
     for (int k = 0; k < 2; ++k) {
         Fighter& x = f[size_t(k)];
         x = Fighter();
@@ -700,12 +703,29 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         const BattleActionDef* a = actions.get(e.action);
         if (!a) continue;
         if (e.kind == kCmdItem) out.item = e.item;
+        // btlque_make_que: a gene silenced since it was chosen (+0x8f) - "can't use genes" (57065)
+        // in place of the action; the pair's without the MP any more - 57081
+        const unsigned ac = unsigned(e.action);
+        if (e.kind == kCmdGene && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u && ac - 1u > 124u && ac - 413u > 16u) {
+            out.cancelled = true, out.message = 57065;
+            return true;
+        }
+        if (e.kind == kCmdItem && e.actors[0] < 2 && e.item >= 21 && e.item <= 46 && !bag_.empty()) { // none left: 57080
+            if (bag_[size_t(e.item)] <= 0) {
+                out.cancelled = true, out.message = 57080;
+                return true;
+            }
+            --bag_[size_t(e.item)];
+        }
         if (e.kind == kCmdGene && e.actors[0] < 2 && !e.paid) { // the gene's MP: each member pays it in pair mode
             const int cost = geneCost(*a, e.actors[0]);
             bool enough = true;
             for (int k : e.actors)
                 if (k >= 0) enough &= f[size_t(k)].mp >= cost;
-            if (!enough) continue;
+            if (!enough) {
+                out.cancelled = true, out.message = 57081;
+                return true;
+            }
             for (int k : e.actors)
                 if (k >= 0) f[size_t(k)].mp -= cost;
         }

@@ -10763,6 +10763,11 @@ void startTurn(App& app) {
         b.hitFrame = 0; // btlact_escape: away - 30 frames (2.2.0; 1.0.1 10, no line to wait for)
         return;          // then 40; stayed - 40
     }
+    if (t.cancelled) { // its message for 40 frames in place of the action
+        setBanner(app, sysText(app, b.turn.message), 40);
+        b.hitFrame = 0;
+        return;
+    }
     const cr::BattleActionDef* a = app.battleActions.get(t.action);
     setBanner(app, sysText(app, 54000 + t.action - 1));
     for (int k : t.actors) // the gene's MP leaves as it's cast
