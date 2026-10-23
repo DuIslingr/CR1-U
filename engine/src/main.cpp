@@ -11756,6 +11756,20 @@ void drawBattleHud(App& app, float W, float H) {
     // Right: the menus
     r.setOrigin(phone ? r.uiX() : 2 * r.uiX());
     if (b.phase == App::Battle::Command && !app.optionsOpen) { // (Options covers them while it's up)
+        // the HELP board across the top (ComUty_HelpWindowDraw): the item's or gene's target and effect
+        auto helpBoard = [&](int item) {
+            const float hx = 152;
+            m.stretch(12, hx, 0, 512 - hx, 66, a);
+            m.picture(18, hx + 4, 2, a);
+            std::vector<std::vector<std::string>> help;
+            if (app.systemText.message(cr::itemHelpId(item), app.language, nullptr, help) && !help.empty()) {
+                float hy = 20;
+                for (const std::string& line : help[0]) {
+                    m.text(line, hx + 14, hy, false, a, 13);
+                    if ((hy += 16) > 52) break;
+                }
+            }
+        };
         switch (b.menu) {
         case App::Battle::Top:
             for (int i = 0; i < 4; ++i) {
@@ -11797,6 +11811,7 @@ void drawBattleHud(App& app, float W, float H) {
                 drawShopNumber(m, it == app.game.items.end() ? 0 : it->second, 448, y + 8, 2, 12, a, 2);
             }
             m.backBar(kBackX, kBackY, false, a);
+            if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // (MuScrList_SetIdInfo's help: the items' too)
             break;
         }
         case App::Battle::Genes: { // the gene list: name, MP / cost (dim when the MP won't pay)
@@ -11816,19 +11831,7 @@ void drawBattleHud(App& app, float W, float H) {
                 drawShopNumber(m, cost, 418, y + 12, 3, 12, ra, 2);
             }
             m.backBar(kBackX, kBackY, false, a);
-            if (b.pick >= 0 && b.pick < n) { // the HELP board across the top: the gene's target and effect
-                const float hx = 152;
-                m.stretch(12, hx, 0, 512 - hx, 66, a);
-                m.picture(18, hx + 4, 2, a);
-                std::vector<std::vector<std::string>> help;
-                if (app.systemText.message(cr::itemHelpId(b.picks[size_t(b.pick)]), app.language, nullptr, help) && !help.empty()) {
-                    float hy = 20;
-                    for (const std::string& line : help[0]) {
-                        m.text(line, hx + 14, hy, false, a, 13);
-                        if ((hy += 16) > 52) break;
-                    }
-                }
-            }
+            if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // the gene's target and effect
             break;
         }
         case App::Battle::EscapeAsk: { // 57015 on the board, Yes / No beneath

@@ -25,7 +25,7 @@ namespace cr {
 struct ItemParam {
     int price = 0;
     int stat[6] = {};   // HP, MP, Attack, Defense, Speed, Luck
-    int icon = -1;      // 0..63: 32 x 32 at (icon % 16 * 32, 248 + icon / 16 * 32) of window_hd
+    int icon = -1;      // its cell (the table's +16 less one; -1 none): 32 x 32 at (icon % 16 * 32, 248 + icon / 16 * 32) of window_hd
     int kind = 0;
     int owners = 0;
 };

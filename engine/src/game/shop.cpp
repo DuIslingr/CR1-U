@@ -47,7 +47,7 @@ bool ItemTable::load(const std::string& dataDir) {
         ItemParam it;
         it.price = int(u32(r));
         for (int k = 0; k < 6; ++k) it.stat[k] = s16(r + 4 + 2 * k);
-        it.icon = int8_t(r[16]);
+        it.icon = int8_t(r[16]) - 1; // (the table counts from 1, 0 none: ComUty_GetIconPictInfo gets it less one)
         it.kind = r[17];
         it.owners = r[19];
         items_.push_back(it);
