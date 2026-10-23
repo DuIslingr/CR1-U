@@ -4725,8 +4725,30 @@ int campCharacter(const App& app, int member) { return campRoute(app) * 2 + std:
 
 // ComUty_BattryAndRealTimeAndOzDraw: the clock (TIME, 71, at (363, 8); the digits at +47 / +59 /
 // +83 / +95, the colon (75) blinking at +71; the line (74) under it) and the purse (OZ, 72, at
-// (326, 24); nine digits from (362, 26); the line at (362, 36)). The battery isn't drawn.
+// (326, 24); nine digits from (362, 26); the line at (362, 36)) and the battery (__ComUty_BattryDraw at
+// (335, 9): picture 0x75 full, +1 under 51%, +2 under 18% - the lower kept from 18 up to 23 when it came from
+// under 18 -, +3 / +4 / +5 the same charging, +6 charged; SDL's power info, looked at once a second; a
+// machine without a battery as charged)
+int batteryPicture() {
+    static Uint64 at = 0;
+    static int picture = 0x75 + 6;
+    static bool low = false; // (_gbMiddleFlg)
+    if (at && SDL_GetTicks() - at < 1000) return picture;
+    at = SDL_GetTicks();
+    int pct = -1;
+    const SDL_PowerState st = SDL_GetPowerInfo(nullptr, &pct);
+    const int rest = pct < 0 ? 100 : pct;
+    const bool charging = st == SDL_POWERSTATE_CHARGING;
+    if (st == SDL_POWERSTATE_NO_BATTERY || st == SDL_POWERSTATE_UNKNOWN || st == SDL_POWERSTATE_ERROR) return picture = 0x75 + 6;
+    if (rest >= 51) picture = 0x75 + (st == SDL_POWERSTATE_CHARGED ? 6 : charging ? 3 : 0);
+    else if (rest >= 23) picture = 0x75 + (charging ? 4 : 1), low = false;
+    else if (rest < 18) picture = 0x75 + (charging ? 5 : 2), low = true;
+    else picture = 0x75 + (low ? (charging ? 5 : 2) : (charging ? 4 : 1));
+    return picture;
+}
+
 void drawClockAndOz(App& app, cr::MenuPainter& m, float a) {
+    m.picture(batteryPicture(), 335, 9, a);
     const time_t now = time(nullptr);
     struct tm tm {};
 #ifdef _WIN32
