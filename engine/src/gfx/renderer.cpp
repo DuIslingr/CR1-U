@@ -292,6 +292,21 @@ void Renderer::fillRect(float x, float y, float w, float h, float r, float g, fl
     drawQuad(white_, x, y, w, h, r, g, b, a);
 }
 
+void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
+    if (!white_.id) return;
+    float p[8];
+    for (int k = 0; k < 4; ++k) {
+        p[2 * k] = xy[2 * k] + originX_, p[2 * k + 1] = xy[2 * k + 1];
+        if (phone_) layoutToScreen(p[2 * k], p[2 * k + 1]);
+    }
+    const float v[24] = {
+        p[0], p[1], 0, 0,  p[2], p[3], 1, 0,  p[4], p[5], 1, 1,
+        p[0], p[1], 0, 0,  p[4], p[5], 1, 1,  p[6], p[7], 0, 1,
+    };
+    const float c[4] = {r, g, b, a};
+    dev_->drawQuad(white_, v, proj_, c);
+}
+
 void Renderer::toLogical(float px, float py, float& lx, float& ly) const {
     lx = (px - offX_) / scaleX_;
     ly = (py - offY_) / scaleY_;

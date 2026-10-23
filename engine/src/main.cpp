@@ -406,6 +406,13 @@ struct App {
     int itemWindowItem = 0;
     bool tapPending = false;               // action key while a script waits for a tap
     float fadeGrey = 0, fadeFrom = 0, fadeTo = 0; // Screen
+    // The menus' mask (MuCom_MenuSetMask / ClrMask: SetFade_back(black, 0 <-> 0xa0, 400 ms) with
+    // G+0x39c60 its shape - 0 the screen, 1 its left past a slant, 2 its right, 3 fading downward)
+    struct MenuMask {
+        int type = 0, want = -1;           // the shape; the menu asking for it (-1 none)
+        int from = 0, to = 0, t = 0, ms = 1; // the fade: from + (to - from) x t / ms, t + 50 a frame
+        float clock = 0;
+    } menuMask;
     int fadeFrames = 0, fadeT = 0;
     cr::SystemText systemText;             // sys.evt: messages >= 51000
     std::vector<std::vector<std::string>> dialogue; // pages of the messages the last event showed
@@ -3557,9 +3564,7 @@ void drawOptions(App& app, float, float) {
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
     const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
-    // Behind the menu: the scene, dimmed (the game shows it over the camp menu / title)
-    r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.6f);
+    // Behind the menu: the scene under the menu mask (drawFrame's drawMenuMask)
     r.setOrigin(r.uiX());
     // The windows slide in: rows from the left, controls from the right (WinDispOn -240 / +240)
     const float t = std::min(1.0f, app.optionsAnim / 8.0f), ease = 1 - (1 - t) * (1 - t);
@@ -3991,12 +3996,8 @@ void drawSaveScreen(App& app) {
     // On the title (__menuu_SaveLoadPut, mode 1) the pair's Character Select art behind it all: piece
     // 16 of texture 0x11 (0x12 with flag 4092, the second sheet) at tex2d (-32, -64), z -10
     // (dimmed a little for the plates and text)
-    if (art) drawCharArt(app, 1, false, 0.65f);
-    else {
-        r.setOrigin(0);
-        r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.6f);
-        r.setOrigin(r.uiX());
-    }
+    if (art) drawCharArt(app, 1, false, 0.65f); // (else the menu mask, drawFrame's)
+    r.setOrigin(r.uiX());
     const float a = std::min(1.0f, ss.anim / 8.0f);
     // Widescreen: the heading, face boards, emblems to the screen's left; the date, the plates to
     // its right; Back and the message centred (as the shop)
@@ -6608,9 +6609,7 @@ void drawCamp(App& app) {
     App::Camp& c = app.camp;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
-    r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.6f);
+    m.begin(r, app.windowTex, &app.font); // (the scene under the menu mask: drawFrame's)
     r.setOrigin(r.uiX());
     const PhoneMenu phoneMenu(app, m);
     // Widescreen: the heading, the boards and the section labels to the screen's left, the plates,
@@ -6636,7 +6635,13 @@ void drawCamp(App& app) {
                 main && c.cursor == i, 1 - out, !save && !kReady[i], save ? "Save" : "");
     }
     centre();
-    m.backButton(kBackX, campBackY(app), false, 0, 1);
+    // ComUty_BackButtonDraw: the arrows (mode 2) where the page turns - the item and equipment lists
+    // (MuScrList's own) and a member's status (__MuCamp_NextProc); plain on the main screen, the gene
+    // list and the member choice
+    const bool arrows = c.page == App::Camp::Items || ((c.page == App::Camp::Equip || c.page == App::Camp::Status) &&
+                                                       c.phase != App::Camp::Member);
+    if (arrows) m.backButton(kBackX, campBackY(app), false, 0, 1);
+    else m.backBar(kBackX, campBackY(app), false, 1);
     left();
     if (!main) {
         static const int kTitle[5] = {0, 58070, 58059, 58087, 58077};
@@ -11687,8 +11692,6 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     cr::Renderer& r = app.renderer;
     const float in = rs.stage == 3 ? std::max(0.0f, float(rs.count) / 4) : std::min(1.0f, float(rs.frames) / 4);
     const float away = 1 - in;
-    r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.45f * a * in);
     r.setOrigin(wideLeft(app)); // (widescreen: the heading and boards left, the takings right)
     m.picture(19, 8, 4, a * in); // "Results"
     for (int k = 0; k < 2; ++k) {
@@ -12118,6 +12121,65 @@ void loseToArk(App& app) {
     app.lastEvent = "lost: back to the Ark";
 }
 
+// The menu asking for the mask, and its shape (as their Set / Prc / Clr calls have it): the camp,
+// options, the shop, the World Select, the last battle's pairs and a battle's results the slant
+// (1), the save screen and the tutorials' pictures the whole screen (0; the save screen at once,
+// MuCom_MenuOneFrSetMask). -1: none
+int menuMaskWanted(const App& app, bool& atOnce) {
+    atOnce = false;
+    if (app.mode != Mode::Maps) return -1;
+    if (app.saveScreen.open) { atOnce = true; return 0; }
+    if (app.tutoTex.on) return 0;
+    if (app.campOpen) return 1;
+    if (app.optionsOpen || app.shop.open || app.worldChoiceOpen || app.lastBattle.open) return 1;
+    if (app.battle.active && app.battle.phase == App::Battle::Results && app.battle.result.stage != 3) return 1; // (MbResultPrc 0 .. 10)
+    return -1;
+}
+
+int menuMaskAlpha(const App& app) {
+    const App::MenuMask& m = app.menuMask;
+    return m.from + (m.to - m.from) * std::min(m.t, m.ms) / std::max(1, m.ms);
+}
+
+// A frame: a menu opening fades the mask in (0 -> 0xa0 over 400 ms, or at once), one closing
+// fades it out from where it is; a change of shape between menus keeps it
+void stepMenuMask(App& app) {
+    App::MenuMask& m = app.menuMask;
+    bool atOnce = false;
+    const int want = menuMaskWanted(app, atOnce);
+    if (want >= 0 && (m.want < 0 || (atOnce && want != m.type))) m.from = 0, m.to = 0xa0, m.t = 0, m.ms = atOnce ? 1 : 400;
+    else if (want < 0 && m.want >= 0) m.from = menuMaskAlpha(app), m.to = 0, m.t = 0, m.ms = 400;
+    else m.t = std::min(m.t + 50, m.ms);
+    if (want >= 0) m.type = want;
+    m.want = want;
+}
+
+void settleMenuMask(App& app) { // (captures: the menu's mask as it stands once in)
+    stepMenuMask(app);
+    app.menuMask.t = app.menuMask.ms;
+}
+
+// PutMask's quad (tex2d-space +-512 x +-384 at z -1: over the 3D, under the 2D); widescreen
+// carries the shapes out to the screen's sides
+void drawMenuMask(App& app) {
+    const int alpha = menuMaskAlpha(app);
+    if (alpha <= 0) return;
+    cr::Renderer& r = app.renderer;
+    r.setOrigin(0);
+    const float a = float(alpha) / 255.0f, SW = r.screenW(), H = cr::Renderer::kLogicalH, x0 = r.uiX();
+    switch (app.menuMask.type) {
+    case 1: { const float q[8] = {0, 0, x0 + 427, 0, x0 + 747, H, 0, H}; r.fillQuad(q, 0, 0, 0, a); break; }
+    case 2: { const float q[8] = {x0 + 597, 0, SW, 0, SW, H, x0 + 277, H}; r.fillQuad(q, 0, 0, 0, a); break; }
+    case 3: // the bottom's corners at 0x10 at most: bands down the screen
+        for (int k = 0; k < 16; ++k) {
+            const float t = (float(k) + 0.5f) / 16, bottom = std::min(a, 16.0f / 255.0f);
+            r.fillRect(0, H * float(k) / 16, SW, H / 16 + 1, 0, 0, 0, a + (bottom - a) * t);
+        }
+        break;
+    default: r.fillRect(0, 0, SW, H, 0, 0, 0, a); break;
+    }
+}
+
 void drawFrame(App& app, bool present = true) {
     if (app.battle.active && app.battle.exit) { // the battle's way out, between frames
         const int e = app.battle.exit;
@@ -12308,6 +12370,9 @@ void drawFrame(App& app, bool present = true) {
     if (app.mode == Mode::Maps) {
         const float a = screenFadeAlpha(app); // Screen: fades to / from a grey level
         if (a > 0.001f) r.fillRect(0, 0, SW, H, app.fadeGrey, app.fadeGrey, app.fadeGrey, a);
+        for (app.menuMask.clock += dt; app.menuMask.clock >= 1.0f / kFramesPerSecond; app.menuMask.clock -= 1.0f / kFramesPerSecond)
+            stepMenuMask(app);
+        drawMenuMask(app);
     }
     r.setOrigin(r.uiX()); // the game's 2D from here on: its 1024 x 768 layout, centred
     if (app.mode == Mode::Maps) {
@@ -17079,6 +17144,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         if (cr::floorHeight(app.collisionData, app.captureAt[0], 1000.0f, app.captureAt[1], 0.0f, y))
             app.walker.pos = {app.captureAt[0], y, app.captureAt[1]};
     }
+    settleMenuMask(app);
     // The capture shows exactly the frames stepped above; --settle draws that moment first (an
     // upscaler's history converges on it)
     const Uint64 frame = Uint64(SDL_NS_PER_SECOND / (app.captureSettleFps > 0 ? float(app.captureSettleFps) : kFramesPerSecond));
