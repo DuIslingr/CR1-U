@@ -160,6 +160,11 @@ Steam Controller (through Steam Input).
 | F3 | the status line and key help (hidden in Release builds) |
 | Mouse | everything the original takes by touch: plates, buttons, the dialogue, the corner button; drag to push a block in puzzle rooms |
 
+Touch (or the mouse) plays the field as the original does: put a finger down anywhere on the field
+and drag - a pad appears where it went down and the leader walks the way the finger points, running
+once it's pulled further out. With something in reach, the "!" button in the bottom right corner (or a
+tap on the "!" over it) examines or talks.
+
 ## What it does
 
 The whole game plays, checked against the original's code (Ghidra decompiles of 1.0.1, 2.2.0 and

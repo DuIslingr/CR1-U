@@ -581,6 +581,7 @@ struct App {
     int captureMenu = 0;                   // --camp (1), --save-screen (2: save, 3: the title's load / new, 7: cleared), --char-select (4), --scenarios (5), --manual (6), --world-select (8), --last-battle (9)
     std::string captureCampView;           // --camp-view items|use|equip|slots|wear|status
     std::string captureFieldMenu;          // --field-menu closed|open|known|off|map[step]
+    std::string captureTouchPad;           // --touch-pad dx,dy[,chest]: the pad held that far from the screen's middle
     int captureSceneFx[3] = {-1, 0, 0};    // --scene-fx set effect [frames]
     std::string captureBattleView;         // --battle-view top|commands|targets|items|escape|hit|results
     std::string captureShop;               // --shop main|category|buy|sell|count|confirm|talk
@@ -712,6 +713,16 @@ struct App {
         int fade = 0;                      // +32 a frame (to 320) on the field, -32 while a scene runs
         float clock = 0;
     } fieldMenu;
+    struct TouchPad {                      // CrossKey: the field's touch pad, where a finger went down
+        bool down = false;                 // a finger (or the mouse) holds it
+        float ox = 0, oy = 0;              // where it went down (tex2d)
+        float dx = 0, dy = 0;              // the finger from there (tex2d = the game's touch units)
+        int hold = 0;                      // frames before it shows unmoved (5)
+        bool shown = false;                // _SetFldMenu_pad_visible
+        float knob[2] = {0, 0};            // _fldpad: the knob's offset, easing toward the finger
+    } touchPad;
+    bool bigPad = false;                   // the UI atlas has 2.2.0's larger pad (iPhone, Vita, Android)
+    float promptX = -1, promptY = -1;      // the "!" bubble's centre as drawn (logical), -1 none
     struct MapScreen {                     // __menuu_Map*: the gate's map, where the pair is, where to go
         bool open = false, closing = false;
         int fade = 0;                      // 4 frames in, 4 out
@@ -1318,6 +1329,7 @@ int triggerAt(const App& app, const cr::Vec3& p);
 void showMessages(App& app, const std::vector<int>& ids);
 bool checkTriggers(App& app, bool instant = false);
 bool interact(App& app, bool instant = false);
+void noteWindowAtlas(App& app, const cr::Image& wi);
 
 // Field collision as a flat-shaded mesh: floors green-grey (tinted by surface type),
 // walls tan, so the walkable layout reads clearly.
@@ -3112,6 +3124,7 @@ void adjustVideo(App& app, int row, int dir) {
         if (app.rendererReady && loadImage(app, "window_hd.mct", wi)) {
             app.renderer.destroy(app.windowTex);
             app.windowTex = app.renderer.upload(wi);
+            noteWindowAtlas(app, wi);
         }
         break;
     }
@@ -6186,6 +6199,127 @@ bool fieldMenuClick(App& app, float px, float py) {
     return false;
 }
 
+// ---- The touch pad (CrossKey, FieldPCCtrl::operate) and the "!" button ----
+// A finger put down on the field where nothing else takes it holds a pad there (CrossKey::update):
+// its offset from that point steers the leader as the keys do, turned by the camera's heading -
+// standing under 14.5 touch units (tex2d), walking under 29, running beyond. The pad shows once the
+// finger has moved or after 5 frames: its base where the finger went down, its knob after the
+// finger (menuf_mainPut): the iPad's 24 x offset / max(|offset|, 72), half the way a frame; 2.2.0's
+// larger art 32 x offset / max(|offset|, 48), a third. With something in reach, the "!" button
+// (FollowWindow::checkTouchEasyButton: within 24 of (460, 316); 2.2.0's (444, 284)) examines it, as
+// a tap within 30 of its bubble does (FollowWindow::update).
+namespace touchpad {
+constexpr float kWalk2 = 210.25f, kRun2 = 841.0f; // squared offsets: walking, running
+constexpr int kShowAfter = 5;
+struct Art { float base[2], baseSize, knob[2], knobSize, reach, limit, ease; }; // window_hd, half scale
+constexpr Art kIpad = {{928, 792}, 72, {928, 724}, 48, 24, 72, 0.5f};
+constexpr Art kBig = {{928, 796}, 96, {944, 724}, 64, 32, 48, 1.0f / 3}; // 2.2.0's
+constexpr float kEasyPiece[2] = {464, 196};
+constexpr float kEasySize = 48;
+} // namespace touchpad
+
+// The UI atlas's pad: 2.2.0's (iPhone, and the Vita's and Android's laid out as it) is larger - a
+// texel of its ring (half-scale (1000, 850): the sheets are 1024 of those across) where the iPad's
+// is clear
+void noteWindowAtlas(App& app, const cr::Image& wi) {
+    const int lw = wi.logicalW ? wi.logicalW : wi.width, lh = wi.logicalH ? wi.logicalH : wi.height;
+    if (lw < 1024 || lh < 1024 || wi.rgba.empty()) return;
+    const int x = 1000 * wi.width / 1024, y = 850 * wi.height / 1024;
+    app.bigPad = wi.rgba[(size_t(y) * size_t(wi.width) + size_t(x)) * 4 + 3] > 64;
+}
+
+const touchpad::Art& padArt(const App& app) { return app.bigPad ? touchpad::kBig : touchpad::kIpad; }
+
+// The "!" button's centre (tex2d, from wideRight): the iPad's, or 2.2.0's in its layout
+void easyButtonCentre(const App& app, float& x, float& y) {
+    x = app.renderer.phoneLayout() ? 444.0f : 460.0f, y = app.renderer.phoneLayout() ? 284.0f : 316.0f;
+}
+
+bool easyButtonShown(const App& app) {
+    return fieldMenuWanted(app) && !fieldSceneRunning(app) && app.fieldMenu.fade > 0 && interactTarget(app) != nullptr;
+}
+
+// A finger down at frame pixel (px, py) on the field: the "!" button or bubble, else the pad.
+// True when it took it.
+bool touchPadDown(App& app, float px, float py) {
+    if (!fieldMenuWanted(app) || fieldSceneRunning(app) || !app.havePlayer || app.puzzle.tpState != 0 ||
+        app.puzzle.pkState != 0)
+        return false;
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    if (easyButtonShown(app)) {
+        float ex, ey;
+        easyButtonCentre(app, ex, ey);
+        const float dx = (lx - wideRight(app)) / 2 - 16 - ex, dy = ly / 2 - 32 - ey;
+        const float bx = (lx - app.promptX) / 2, by = (ly - app.promptY) / 2;
+        if (dx * dx + dy * dy <= 24 * 24 || (app.promptX >= 0 && bx * bx + by * by <= 30 * 30)) {
+            interact(app);
+            return true;
+        }
+    }
+    App::TouchPad& t = app.touchPad;
+    t = App::TouchPad();
+    t.down = true;
+    t.ox = (lx - app.renderer.uiX()) / 2 - 16, t.oy = ly / 2 - 32;
+    t.hold = touchpad::kShowAfter;
+    return true;
+}
+
+void touchPadMove(App& app, float px, float py) {
+    App::TouchPad& t = app.touchPad;
+    if (!t.down) return;
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    t.dx = (lx - app.renderer.uiX()) / 2 - 16 - t.ox, t.dy = ly / 2 - 32 - t.oy;
+}
+
+void touchPadUp(App& app) { app.touchPad = App::TouchPad(); }
+
+// The pad's stick for this step: false standing (or no finger)
+bool touchPadStick(const App& app, float& sx, float& sy, bool& run) {
+    const App::TouchPad& t = app.touchPad;
+    const float d2 = t.dx * t.dx + t.dy * t.dy;
+    if (!t.down || d2 < touchpad::kWalk2) return false;
+    sx = t.dx, sy = t.dy, run = d2 >= touchpad::kRun2;
+    return true;
+}
+
+// One 20 Hz frame: whether it shows (moved, or held 5 frames), the knob after the finger
+void stepTouchPad(App& app) {
+    App::TouchPad& t = app.touchPad;
+    if (!t.down) return;
+    const float d2 = t.dx * t.dx + t.dy * t.dy;
+    if (--t.hold <= 0 || d2 > 1.0f) t.shown = true;
+    const touchpad::Art& a = padArt(app);
+    const float len = std::max(std::sqrt(d2), a.limit);
+    t.knob[0] += (a.reach * t.dx / len - t.knob[0]) * a.ease;
+    t.knob[1] += (a.reach * t.dy / len - t.knob[1]) * a.ease;
+}
+
+void drawTouchPad(App& app) {
+    const App::TouchPad& t = app.touchPad;
+    const App::FieldMenu& f = app.fieldMenu;
+    if (!app.windowTex.id || f.fade <= 0) return;
+    cr::Renderer& r = app.renderer;
+    cr::MenuPainter& m = app.menu;
+    const float alpha = float(std::min(255, f.fade)) / 255.0f;
+    m.begin(r, app.windowTex, &app.font);
+    if (easyButtonShown(app)) {
+        r.setOrigin(wideRight(app)); // (widescreen: in the screen's corner)
+        float ex, ey;
+        easyButtonCentre(app, ex, ey);
+        const float h = touchpad::kEasySize / 2;
+        m.piece(ex - h + 16, ey - h + 32, touchpad::kEasyPiece[0], touchpad::kEasyPiece[1], touchpad::kEasySize,
+                touchpad::kEasySize, 1);
+    }
+    r.setOrigin(r.uiX());
+    if (!t.down || !t.shown) return;
+    const touchpad::Art& a = padArt(app);
+    const float b = a.baseSize / 2, k = a.knobSize / 2;
+    m.piece(t.ox - b + 16, t.oy - b + 32, a.base[0], a.base[1], a.baseSize, a.baseSize, alpha);
+    m.piece(t.ox + t.knob[0] - k + 16, t.oy + t.knob[1] - k + 32, a.knob[0], a.knob[1], a.knobSize, a.knobSize, alpha);
+}
+
 // ---- The map screen (__menuu_MapSet / MapPrc / MapPut, ReadMapMenu) ----
 // The gate's map_D0n (slot 0x30, 512 x 512; MuTex group 1 pictures 13 the map 480 x 320 at
 // (0, 0), 14 the pair's marker 48 x 48 at (0, 320), 15 a marker 16 x 16 at (0, 368)), the pair's
@@ -8592,6 +8726,11 @@ void updatePlayer(App& app, float dt, float camYaw) {
         lx += float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT));
         ly += float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_UP));
         sx = std::clamp(lx, -1.0f, 1.0f), sy = std::clamp(ly, -1.0f, 1.0f);
+    }
+    if (!talking && sx == 0 && sy == 0) { // the touch pad (CrossKey): its offset steers, far out runs
+        float tx, ty;
+        bool trun;
+        if (touchPadStick(app, tx, ty, trun)) sx = tx, sy = ty, run = trun;
     }
     constexpr float kStep = 1.0f / kFramesPerSecond;
     app.walkClock += dt;
@@ -11637,6 +11776,7 @@ void battleClick(App& app, float px, float py) {
 // "[E]" over the examinable NPC in reach (the original's FollowWindow bubble). `vp` maps the
 // world to the 3D rectangle (rx, ry, rw, rh) of the logical screen.
 void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, float rh) {
+    app.promptX = app.promptY = -1;
     if (app.runner.running() || !app.dialogue.empty() || app.itemWindowOpen) return;
     const cr::FieldNpc* n = interactTarget(app);
     if (!n) return;
@@ -11648,6 +11788,7 @@ void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, floa
     if (cw <= 0) return;
     const float sx = rx + ((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * 0.5f + 0.5f) * rw;
     const float sy = ry + (0.5f - (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * 0.5f) * rh;
+    app.promptX = sx, app.promptY = sy - 20.5f; // (a tap there examines it: touchPadDown)
     if (app.windowTex.id) drawWinPiece(app, kWinBadge, sx - 20, sy - 41, 40, 41); // the "!" badge
     else app.promptHud.drawAt(app.renderer, {"[E]"}, sx - 24, sy - 16, 2.0f, 0, 0, 0.8f);
 }
@@ -11942,11 +12083,12 @@ void drawFrame(App& app, bool present = true) {
     }
     if (fieldMenuWanted(app)) { // the corner button and its bar
         for (app.fieldMenu.clock += dt; app.fieldMenu.clock >= 1.0f / kFramesPerSecond; app.fieldMenu.clock -= 1.0f / kFramesPerSecond)
-            stepFieldMenu(app), stepPuzzleHud(app);
+            stepFieldMenu(app), stepPuzzleHud(app), stepTouchPad(app);
         drawFieldMenu(app);
+        drawTouchPad(app);
         r.setOrigin(r.uiX());
     } else
-        app.fieldMenu.fade = 0, app.fieldMenu.clock = 0;
+        app.fieldMenu.fade = 0, app.fieldMenu.clock = 0, touchPadUp(app);
     if (app.mode == Mode::Maps && app.puzzleBanner.on) { // Uty_PuzzleStart_Put, over the scene that runs it
         drawPuzzleBanner(app);
         r.setOrigin(r.uiX());
@@ -13281,6 +13423,31 @@ int runSelfTest(App& app) {
         const auto at = std::find(app.maps.begin(), app.maps.end(), std::string("d0101_10.cmp"));
         showMap(app, int(at - app.maps.begin()), 0, cr::areaForMap(0, 2));
         app.pendingEntry = App::Entry::None; // these tests play one script each
+        app.dialogue.clear(); // (a page left by the tests before: it would hold the field)
+        if (app.havePlayer) { // the touch pad steers as the keys do: pushed up, then right - running, a quarter turn apart
+            const cr::FieldWalker start = app.walker;
+            float heading[2] = {0, 0}, moved[2] = {0, 0};
+            bool ran = true;
+            for (int k = 0; k < 2; ++k) {
+                app.walker = start;
+                app.walkClock = 0;
+                App::TouchPad& t = app.touchPad;
+                t = App::TouchPad();
+                t.down = true, t.dx = k ? 40.0f : 0.0f, t.dy = k ? 0.0f : -40.0f;
+                updatePlayer(app, 1.0f / kFramesPerSecond, 0.0f);
+                heading[k] = app.walker.heading;
+                const cr::Vec3 d = app.walker.pos - start.pos;
+                moved[k] = std::sqrt(d.x * d.x + d.z * d.z);
+                ran = ran && app.walker.gait == cr::Gait::Run;
+            }
+            touchPadUp(app);
+            app.walker = start;
+            const float turn = std::remainder(heading[1] - heading[0], 2 * SDL_PI_F);
+            const bool ok = ran && std::fabs(turn + SDL_PI_F / 2) < 1e-3f && moved[0] > 1.0f && moved[1] > 1.0f;
+            std::printf("touch pad: up and right %s, headings %.3f / %.3f (turn %.3f), moved %.2f / %.2f\n",
+                        ran ? "run" : "DON'T RUN", heading[0], heading[1], turn, moved[0], moved[1]);
+            if (!ok) ++mapErrors;
+        }
         int lidAnimFrame = -1, windowFrame = -1, fadedFrame = -1, endFrame = -1, frames = 0;
         const cr::FieldNpc* box = nullptr;
         for (const cr::FieldNpc& n : app.npcs)
@@ -13288,7 +13455,20 @@ int runSelfTest(App& app) {
         if (box && app.havePlayer) {
             const int boxId = box->id;
             app.walker.pos = {box->pos[0] + box->box[0] / 2 + app.walker.radius, box->pos[1], box->pos[2]};
-            interact(app);
+            { // opened by touch, as on the iPad: the "!" button in the corner (FollowWindow::checkTouchEasyButton)
+                float l0x, l0y, l1x, l1y, ex, ey;
+                app.renderer.toLogical(0, 0, l0x, l0y);
+                app.renderer.toLogical(1000, 1000, l1x, l1y);
+                easyButtonCentre(app, ex, ey);
+                const float lx = wideRight(app) + 2 * (ex + 16), ly = 2 * (ey + 32);
+                app.fieldMenu.fade = 320;
+                const bool shown = easyButtonShown(app);
+                touchPadDown(app, (lx - l0x) * 1000 / (l1x - l0x), (ly - l0y) * 1000 / (l1y - l0y));
+                touchPadUp(app);
+                std::printf("touch: the \"!\" button %s, the chest %s\n", shown ? "shown" : "NOT SHOWN",
+                            app.runner.running() ? "opening" : "NOT OPENED");
+                if (!shown || !app.runner.running()) ++mapErrors;
+            }
             app.soundLog.clear();
             const size_t itemsBefore = app.game.items.size();
             for (frames = 0; frames < 900 && (app.runner.running() || app.itemWindowOpen); ++frames) {
@@ -16510,6 +16690,27 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                     app.puzzle.stage, app.mapNumber, cr::kPuzzleStage[app.puzzle.stage].ability, app.puzzle.esp,
                     app.puzzle.objs.size(), counts[1], counts[2], counts[9], counts[8], counts[10]);
     }
+    if (!app.captureTouchPad.empty()) { // --touch-pad dx,dy[,chest]: the pad held from the screen's middle (tex2d)
+        float dx = 0, dy = 0;
+        SDL_sscanf(app.captureTouchPad.c_str(), "%f,%f", &dx, &dy);
+        app.fieldMenu.fade = 320;
+        if (app.captureTouchPad.find("chest") != std::string::npos) // (beside the first chest: the "!" button)
+            for (const cr::FieldNpc& n : app.npcs)
+                if ((n.treasure & 3) && npcActive(app, n)) {
+                    app.walker.pos = {n.pos[0] + n.box[0] / 2 + app.walker.radius, n.pos[1], n.pos[2]};
+                    break;
+                }
+        App::TouchPad& t = app.touchPad;
+        t = App::TouchPad();
+        t.down = t.shown = true, t.ox = 240, t.oy = 200, t.dx = dx, t.dy = dy;
+        for (int f = 0; f < 12; ++f) stepTouchPad(app);
+        float sx = 0, sy = 0;
+        bool run = false;
+        const bool moving = touchPadStick(app, sx, sy, run);
+        std::printf("touch pad: %s, offset (%g %g), knob (%.1f %.1f), %s pad art, \"!\" button %s\n",
+                    moving ? (run ? "running" : "walking") : "standing", dx, dy, t.knob[0], t.knob[1],
+                    app.bigPad ? "the larger" : "the small", easyButtonShown(app) ? "shown" : "hidden");
+    }
     if (!app.captureFieldMenu.empty()) { // --field-menu closed|open|known|off: the corner button, the bar
         const std::string& v = app.captureFieldMenu;
         if (v != "closed") app.fieldMenu.open = true;
@@ -16915,7 +17116,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     applyLanguage(*app);
     {
         cr::Image wi;
-        if (loadImage(*app, "window_hd.mct", wi)) app->windowTex = app->renderer.upload(wi);
+        if (loadImage(*app, "window_hd.mct", wi)) app->windowTex = app->renderer.upload(wi), noteWindowAtlas(*app, wi);
     }
     std::sort(app->textures.begin(), app->textures.end());
     std::sort(app->models.begin(), app->models.end());
@@ -16983,6 +17184,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         else if (SDL_strcmp(argv[i], "--battle-view") == 0) app->captureBattleView = argv[i + 1];
         else if (SDL_strcmp(argv[i], "--camp-view") == 0) app->captureCampView = argv[i + 1];
         else if (SDL_strcmp(argv[i], "--field-menu") == 0) app->captureFieldMenu = argv[i + 1];
+        else if (SDL_strcmp(argv[i], "--touch-pad") == 0) app->captureTouchPad = argv[i + 1];
         else if (SDL_strcmp(argv[i], "--scene-fx") == 0 && i + 2 < argc) {
             app->captureSceneFx[0] = SDL_atoi(argv[i + 1]);
             app->captureSceneFx[1] = SDL_atoi(argv[i + 2]);
@@ -17443,6 +17645,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
             if (fieldMenuClick(app, event->button.x * kx, event->button.y * ky)) break;
             if (puzzle::click(app, event->button.x * kx, event->button.y * ky)) break; // a tap on a block
+            if (touchPadDown(app, event->button.x * kx, event->button.y * ky)) break; // the pad, the "!" button
         }
         if (app.mode == Mode::Maps && app.runner.running() && app.windowTex.id) {
             // A scene: the skip button (top right) fast-forwards it; a tap elsewhere turns the page
@@ -17480,6 +17683,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
         app.dragging = false;
+        touchPadUp(app);
         if (app.mode == Mode::Maps && app.puzzle.pkState == 1) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -17489,7 +17693,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        if (app.dragging && app.scenariosOpen) { // the chart follows the finger
+        if (app.touchPad.down) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            const float kx = ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f;
+            const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
+            touchPadMove(app, event->motion.x * kx, event->motion.y * ky);
+        } else if (app.dragging && app.scenariosOpen) { // the chart follows the finger
             int wh = 0;
             SDL_GetWindowSize(app.window, nullptr, &wh);
             scenariosScrollBy(app, event->motion.yrel * (wh > 0 ? 768.0f / float(wh) : 1.0f));
