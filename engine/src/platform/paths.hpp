@@ -40,6 +40,8 @@ std::string defaultDataDirHint();
 
 // <game folder>/textures/<which>/ ("export", "hd") - the first game folder's (ends with a separator)
 std::string texturesFolder(const char* which);
+// models/<which>/ in the game folder (the model bridge's export / hd)
+std::string modelsFolder(const char* which);
 
 // Writable per-user directory for saves and settings (ends with a separator).
 std::string saveDir();

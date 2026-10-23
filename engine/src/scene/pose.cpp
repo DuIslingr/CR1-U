@@ -71,29 +71,35 @@ bool actionNearlyFits(const Skeleton& skel, const Action& action) {
     return !action.segments.empty() && d >= 1 && d <= 4;
 }
 
-void computeWorld(const Skeleton& skel, const Action* action, float time, std::vector<Mat4>& world) {
+void computeLocalPoses(const Skeleton& skel, const Action* action, float time, std::vector<NodePose>& out) {
     const size_t n = skel.nodes.size();
-    std::vector<Mat4> local(n);
+    out.resize(n);
     // An action animates the first nodes in order (13 effects carry one or a few nodes more than
     // their action has segments, as do a few models' motions; those stay at rest)
     const bool animate = action && !action->segments.empty() && action->segments.size() <= n;
     for (size_t i = 0; i < n; ++i) {
         const SkeletonNode& node = skel.nodes[i];
-        float cols[3][3], t[3], s[3];
-        std::memcpy(cols, node.axes, sizeof cols);
-        std::memcpy(t, node.translation, sizeof t);
-        std::memcpy(s, node.scale, sizeof s);
+        NodePose& p = out[i];
+        std::memcpy(p.cols, node.axes, sizeof p.cols);
+        std::memcpy(p.t, node.translation, sizeof p.t);
+        std::memcpy(p.s, node.scale, sizeof p.s);
         if (animate && i < action->segments.size()) {
             for (const Track& tr : action->segments[i]) {
                 float v[4];
                 if (tr.comps != 3 || !evaluateTrack(tr, time, v)) continue;
-                if (tr.type == 1) std::memcpy(t, v, sizeof t);
-                else if (tr.type >= 5 && tr.type <= 10) euler(tr.type, v, cols);
-                else if (tr.type == 11) std::memcpy(s, v, sizeof s);
+                if (tr.type == 1) std::memcpy(p.t, v, sizeof p.t);
+                else if (tr.type >= 5 && tr.type <= 10) euler(tr.type, v, p.cols);
+                else if (tr.type == 11) std::memcpy(p.s, v, sizeof p.s);
             }
         }
-        local[i] = localMatrix(cols, t, s);
     }
+}
+
+void computeWorld(const Skeleton& skel, const Action* action, float time, std::vector<Mat4>& world) {
+    std::vector<NodePose> poses;
+    computeLocalPoses(skel, action, time, poses);
+    std::vector<Mat4> local(poses.size());
+    for (size_t i = 0; i < poses.size(); ++i) local[i] = localMatrix(poses[i].cols, poses[i].t, poses[i].s);
     resolveWorld(skel, local, world);
 }
 

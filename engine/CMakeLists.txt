@@ -57,6 +57,7 @@ add_library(crcore STATIC
     src/assets/gxt.cpp
     src/assets/battle_data.cpp
     src/assets/hd_texture.cpp
+    src/assets/gltf_model.cpp
 )
 target_include_directories(crcore PUBLIC src)
 target_include_directories(crcore PRIVATE third_party/hevag) # the HE-VAG filter table (vgmstream's, ISC)
@@ -191,6 +192,10 @@ set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 target_sources(crcore PRIVATE ${THIRD_PARTY_DIR}/stb/stb_vorbis.c)
 target_include_directories(crcore SYSTEM PRIVATE ${THIRD_PARTY_DIR})
 set_source_files_properties(${THIRD_PARTY_DIR}/stb/stb_vorbis.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+# cgltf 1.13 (MIT), stb_image 2.30 and stb_image_write 1.16 (public domain / MIT), vendored: the
+# model bridge's glTF reading, its pictures' decoding and the exports' PNGs (assets/gltf_model.cpp)
+target_sources(crcore PRIVATE ${THIRD_PARTY_DIR}/gltf_libs.c)
+set_source_files_properties(${THIRD_PARTY_DIR}/gltf_libs.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 
 # Vulkan back end: the loader + headers and glslc (shaders are compiled to SPIR-V at build time
 # and embedded). Without them the game builds with OpenGL only.

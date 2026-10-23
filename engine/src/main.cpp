@@ -38,6 +38,7 @@
 #include "assets/hd_texture.hpp"
 #include "audio/at9.hpp"
 #include "scene/smooth.hpp"
+#include "assets/gltf_model.hpp"
 #include "game/save.hpp"
 #include "game/shop.hpp"
 #include "assets/animation.hpp"
@@ -223,6 +224,7 @@ struct App {
         int sharpness = 25;                // % (FSR's RCAS pass; 0 = none)
         bool hdTextures = false;           // upscaled replacements from hdDir (what loads next)
         int smoothModels = 0;              // 0 off, 2 / 3: PN-triangle level for characters and monsters
+        bool hdModels = true;              // replacement models from modelsDir (glTF; what loads next)
         int anisotropy = 16;               // anisotropic filtering's samples on the mipmapped textures (1 off)
         bool sharpTextures = false;        // those magnified by the nearest texel (square pixels up close)
         int layout = 0;                    // 0 the data's own (2.2.0's iPhone layout for its data), 1 iPad, 2 iPhone, 3 Android
@@ -230,6 +232,8 @@ struct App {
     bool phoneData = false;                // the data is a voiced iPhone release's (voiceevnt.bin: 2.2.0)
     std::string hdDir;                     // HD textures: textures/hd/ in the game folder, or CR_HD_TEXTURES
     int hdLoaded = 0, hdMissing = 0;       // replacements found / not found since startup
+    std::string modelsDir;                 // replacement models: models/hd/ in the game folder, or CR_HD_MODELS
+    int hdModelsLoaded = 0;                // since startup
     int language = 1;                      // text language (cr::kLanguageName): English by default
     cr::Font font;                         // system font for the game's text (all languages)
     std::vector<std::vector<int>> dialogueVoices; // per page: voice clips it starts (0x1e)
@@ -1267,8 +1271,30 @@ void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool cha
             if (same) m.textures = std::move(am.textures), ++app.androidTextures;
         }
     }
-    // Smooth Models: characters, NPCs and monsters (field props and battle stages stay as built)
-    if (character && app.video.smoothModels >= 2) cr::smoothModel(m, app.video.smoothModels);
+    // HD Models: models/hd/<name>.glb (or .gltf) in place of the package's meshes - its skeleton,
+    // motions and materials kept (assets/gltf_model.hpp)
+    bool replaced = false;
+    if (app.video.hdModels && !app.modelsDir.empty()) {
+        const std::string base = app.modelsDir + name.substr(0, name.size() - 4);
+        for (const char* ext : {".glb", ".gltf"}) {
+            const std::string path = base + ext;
+            if (!SDL_GetPathInfo(path.c_str(), nullptr)) continue;
+            std::string why;
+            cr::GltfImportStats gs;
+            if (cr::applyGltfReplacement(m, path, &why, &gs)) {
+                replaced = true;
+                ++app.hdModelsLoaded;
+                SDL_Log("%s: replaced by %s (%d meshes, %d triangles%s%s)", name.c_str(), path.c_str(), gs.meshes, gs.triangles,
+                        gs.newTextures ? ", pictures of its own" : "", gs.unmatchedJoints ? ", joints not in the skeleton on its root" : "");
+            } else {
+                SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s: %s left out: %s", name.c_str(), path.c_str(), why.c_str());
+            }
+            break;
+        }
+    }
+    // Smooth Models: characters, NPCs and monsters (field props and battle stages stay as built;
+    // a replacement as its maker built it)
+    if (character && !replaced && app.video.smoothModels >= 2) cr::smoothModel(m, app.video.smoothModels);
     for (const auto& img : m.textures) {
         if (app.video.hdTextures) {
             cr::Image hd = img;
@@ -2970,7 +2996,7 @@ void saveMix(const App& app) {
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
                               std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) +
-                              "\nsmooth_models=" + std::to_string(v.smoothModels) +
+                              "\nsmooth_models=" + std::to_string(v.smoothModels) + "\nhd_models=" + std::to_string(int(v.hdModels)) +
                               "\nanisotropy=" + std::to_string(v.anisotropy) + "\nsharp_textures=" + std::to_string(int(v.sharpTextures)) +
                               "\nlayout=" + std::to_string(v.layout) +
                               "\nenvironment_effects=" +
@@ -3025,6 +3051,7 @@ void loadVideo(App& app, const char* text) {
     v.sharpness = std::clamp(keyValue(text, "\nsharpness=", v.sharpness), 0, 100);
     v.hdTextures = keyValue(text, "\nhd_textures=", v.hdTextures) != 0;
     v.smoothModels = keyValue(text, "\nsmooth_models=", v.smoothModels);
+    v.hdModels = keyValue(text, "\nhd_models=", v.hdModels) != 0;
     if (v.smoothModels != 2 && v.smoothModels != 3) v.smoothModels = 0;
     {
         const int a = keyValue(text, "\nanisotropy=", v.anisotropy);
@@ -3191,6 +3218,7 @@ void adjustVideo(App& app, int row, int dir) {
         break;
     }
     case 17: v.sharpTextures = !v.sharpTextures; break;
+    case 18: v.hdModels = !v.hdModels; break; // (what loads from now on)
     case 13: v.smoothModels = (v.smoothModels == 0 ? (dir > 0 ? 2 : 3) : v.smoothModels == 2 ? (dir > 0 ? 3 : 0) : (dir > 0 ? 0 : 2)); break;
     case 12: { // HD textures: what loads from now on (the next room); the UI atlas at once
         v.hdTextures = !v.hdTextures;
@@ -3445,6 +3473,15 @@ std::vector<OptRow> optionRows(App& app, int page) {
             const bool have = !app.hdDir.empty() && SDL_GetPathInfo(app.hdDir.c_str(), nullptr);
             rows.back().hint = have ? "waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
                                     : "None in textures/hd yet: --export-textures, then tools/hd_textures.py";
+        }
+        onOff("HD Models", &v.hdModels, nullptr);
+        rows.back().act = [&app](int i) {
+            if (app.video.hdModels != (i == 0)) adjustVideo(app, 18, 1);
+        };
+        {
+            const bool have = !app.modelsDir.empty() && SDL_GetPathInfo(app.modelsDir.c_str(), nullptr);
+            rows.back().hint = have ? "Replacement models (glTF) from models/hd, in place of the game's; from the next room on"
+                                    : "None in models/hd yet: --export-models, edit in Blender, save as models/hd/<name>.glb";
         }
         static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
         value("Smooth Models", kSmooth[v.smoothModels], [&app](int dir) { adjustVideo(app, 13, dir ? dir : 1); });
@@ -16579,6 +16616,59 @@ int runExplore(App& app, int maxActions) {
 // same picture: within 12/255 a channel on average - not the art it redrew) is exported instead,
 // and <ios hash>.cralias (the Vita's hash, 16 hex digits) lets the one upscale serve the iOS
 // version too: the game finds it whichever it decoded
+// --export-models [dir] (without one, models/export/ in the game folder): every model package as
+// <name>.glb - its skeleton, meshes at rest skinned to it, materials, textures and motions (the
+// package's and its <name>e*.mca files'), for editing and models/hd/ (assets/gltf_model.hpp)
+int runExportModels(App& app, const char* dirArg) {
+    std::string dir = dirArg && *dirArg ? dirArg : cr::modelsFolder("export");
+    if (dir.back() != '/') dir += '/';
+    if (!SDL_CreateDirectory(dir.c_str()) && !(dirArg && *dirArg)) dir = cr::saveDir() + "models/export/", SDL_CreateDirectory(dir.c_str());
+    std::printf("exporting to %s\n", dir.c_str());
+    int written = 0, failed = 0;
+    size_t bytes = 0;
+    for (const std::string& name : app.models) {
+        std::vector<uint8_t> data;
+        cr::Model m;
+        std::string err;
+        const bool fromVita = app.vita.isOpen() && app.vita.read(name, data) && cr::loadModelPackage(data, m, &err);
+        if (!fromVita && (!cr::readFile(app.dataDir + name, data) || !cr::loadModelPackage(data, m, &err))) {
+            std::printf("  %s: %s\n", name.c_str(), err.c_str());
+            ++failed;
+            continue;
+        }
+        std::vector<cr::Action> actions; // (as loadModelFile keeps them)
+        for (auto& a : m.actions) {
+            const bool motion = a.name.size() > 2 && a.name.compare(a.name.size() - 2, 2, ".1") == 0;
+            if (cr::actionFits(m.skeleton, a) || (motion && cr::actionNearlyFits(m.skeleton, a))) actions.push_back(a);
+        }
+        const std::string stem = name.substr(0, name.size() - 4);
+        for (const auto& file : app.animFiles) {
+            if (file.rfind(stem + "e", 0) != 0) continue;
+            std::vector<uint8_t> ad;
+            std::vector<cr::Action> acts;
+            if (!cr::readFile(app.dataDir + file, ad) || !cr::parseMca(ad.data(), ad.size(), 0, acts)) continue;
+            for (size_t i = 0; i < acts.size(); ++i)
+                if (cr::actionFits(m.skeleton, acts[i])) {
+                    acts[i].name = file.substr(0, file.size() - 4) + "." + std::to_string(i + 1);
+                    actions.push_back(std::move(acts[i]));
+                }
+        }
+        cr::GltfExportStats gs;
+        if (cr::exportGlb(m, actions, dir + stem + ".glb", &err, &gs)) {
+            ++written;
+            bytes += gs.bytes;
+            if (SDL_getenv("CR_EXPORT_VERBOSE"))
+                std::printf("  %s: %d meshes, %d triangles, %d pictures, %d motions (%d channels), %zu KB\n", name.c_str(), gs.meshes,
+                            gs.triangles, gs.images, gs.animations, gs.channels, gs.bytes / 1024);
+        } else {
+            std::printf("  %s: %s\n", name.c_str(), err.c_str());
+            ++failed;
+        }
+    }
+    std::printf("%d models written (%zu MB), %d failed\n", written, bytes >> 20, failed);
+    return failed && !written ? 1 : 0;
+}
+
 int runExportTextures(App& app, const char* dirArg) {
     // (no folder given: textures/export/ in the game folder, else the profile folder's when that can't be written)
     std::string dir = dirArg && *dirArg ? dirArg : cr::texturesFolder("export");
@@ -17193,6 +17283,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     const bool ok = SDL_SaveBMP(surf, outPath);
     SDL_DestroySurface(surf);
     std::printf("%s %s -> %s (%dx%d)\n", ok ? "captured" : "FAILED", mapName, outPath, w, h);
+    if (app.hdModelsLoaded) std::printf("hd models: %d replaced (%s)\n", app.hdModelsLoaded, app.modelsDir.c_str());
     if (app.haveStageCam) {
         const cr::StageCamera& sc = app.stageCam;
         const cr::Mat4 vp = cr::Mat4::perspective(sc.fovDegrees * 3.14159265f / 180.0f, 1.0f, 10.0f, 4000.0f) *
@@ -17402,6 +17493,10 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     else if (isDir(cr::saveDir() + "hd-textures")) app->hdDir = cr::saveDir() + "hd-textures";
     else app->hdDir = cr::texturesFolder("hd");
     if (!app->hdDir.empty() && app->hdDir.back() != '/') app->hdDir += '/';
+    // the replacement models: models/hd/ in the game folder (CR_HD_MODELS elsewhere)
+    if (const char* hm = SDL_getenv("CR_HD_MODELS")) app->modelsDir = hm;
+    else app->modelsDir = cr::modelsFolder("hd");
+    if (!app->modelsDir.empty() && app->modelsDir.back() != '/') app->modelsDir += '/';
     if (app->dataDir.empty()) {
         const std::vector<std::string> g = cr::gameFolders();
 #ifdef SDL_PLATFORM_ANDROID
@@ -17587,6 +17682,11 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (SDL_strcmp(argv[i], "--explore") == 0) {
             SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);
             return runExplore(*app, i + 1 < argc ? SDL_atoi(argv[i + 1]) : 200) ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
+        }
+        if (SDL_strcmp(argv[i], "--export-models") == 0) { // [dir]: models/export/ in the game folder without one
+            SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);
+            const char* dir = i + 1 < argc && argv[i + 1][0] != '-' ? argv[i + 1] : "";
+            return runExportModels(*app, dir) ? SDL_APP_FAILURE : SDL_APP_SUCCESS;
         }
         if (SDL_strcmp(argv[i], "--export-textures") == 0) { // [dir]: textures/export/ in the game folder without one
             SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);

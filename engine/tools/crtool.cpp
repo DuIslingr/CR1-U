@@ -36,6 +36,7 @@
 #define STB_VORBIS_HEADER_ONLY
 #include "stb/stb_vorbis.c"
 #include "assets/model.hpp"
+#include "assets/gltf_model.hpp"
 #include "assets/texture.hpp"
 #include "core/file.hpp"
 #include "core/text.hpp"
@@ -989,6 +990,101 @@ int sysmsg(const char* dirArg, int lang, int argc, char** argv) {
 // crtool smooth <dataHD> [level]: PN-triangle smoothing of every model, checked: no new open
 // edges (cracks), original vertices unmoved, bone weights summing to 1, the rest pose skinned
 // back onto the smoothed positions, and how far new vertices move off the flat triangles
+// gltfcheck <dataHD> <model.bin> [file.glb]: the model bridge's round trip - the package exported
+// (or the .glb given, e.g. Blender's re-export) loaded back as its replacement, then both skinned in
+// every motion (start, middle, end): each replacement vertex against the original's nearest at rest
+int gltfcheck(const char* dirArg, const char* name, const char* glb) {
+    std::string dir = dirArg;
+    if (dir.back() != '/') dir += '/';
+    std::vector<uint8_t> data;
+    cr::Model m;
+    std::string err;
+    if (!cr::readFile(dir + name, data) || !cr::loadModelPackage(data, m, &err)) { std::fprintf(stderr, "%s: %s\n", name, err.c_str()); return 1; }
+    std::vector<cr::Action> acts;
+    for (const auto& a : m.actions)
+        if (cr::actionFits(m.skeleton, a)) acts.push_back(a);
+    std::string path = glb ? glb : "";
+    if (!glb) { // (its own file: checks can run side by side)
+        char* pref = SDL_GetPrefPath("preservation", "crtool");
+        SDL_Time now = 0;
+        SDL_GetCurrentTime(&now);
+        path = std::string(pref ? pref : "./") + "gltfcheck_" + name + "_" + std::to_string(now) + ".glb";
+        SDL_free(pref);
+    }
+    if (!glb) {
+        cr::GltfExportStats es;
+        if (!cr::exportGlb(m, acts, path, &err, &es)) { std::fprintf(stderr, "export: %s\n", err.c_str()); return 1; }
+        std::printf("exported %d meshes, %d triangles, %d motions (%zu KB)\n", es.meshes, es.triangles, es.animations, es.bytes / 1024);
+    }
+    if (SDL_getenv("CR_GLTFCHECK_MESHES"))
+        for (size_t i = 0; i < m.meshes.size(); ++i)
+            std::printf("  mesh %zu: attach %d skinned %d bones %zu nodes %zu\n", i, m.meshes[i].attachNode, int(m.meshes[i].skinned),
+                        m.meshes[i].boneNodes.size(), m.skeleton.nodes.size());
+    cr::Model r = m;
+    cr::GltfImportStats is;
+    if (!cr::applyGltfReplacement(r, path, &err, &is)) { std::fprintf(stderr, "import: %s\n", err.c_str()); return 1; }
+    if (!glb) SDL_RemovePath(path.c_str());
+    std::printf("replacement: %d meshes, %d vertices, %d triangles, %d pictures of its own, %d joints off the skeleton\n", is.meshes,
+                is.vertices, is.triangles, is.newTextures, is.unmatchedJoints);
+    auto skinAll = [](const cr::Model& mod, const cr::Action* a, float t, std::vector<float>& pts, std::vector<float>* uvs) {
+        std::vector<cr::Mat4> w;
+        cr::computeWorld(mod.skeleton, a, t, w);
+        pts.clear();
+        if (uvs) uvs->clear();
+        std::vector<float> sk;
+        for (const auto& mesh : mod.meshes) {
+            cr::skinMesh(mod, mesh, w, sk);
+            pts.insert(pts.end(), sk.begin(), sk.end());
+            if (uvs) uvs->insert(uvs->end(), mesh.uvs.begin(), mesh.uvs.end());
+        }
+    };
+    std::vector<float> a0, b0, ua, ub;
+    skinAll(m, nullptr, 0, a0, &ua);
+    skinAll(r, nullptr, 0, b0, &ub);
+    float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+    for (size_t k = 0; k + 2 < a0.size(); k += 3)
+        for (int c = 0; c < 3; ++c) lo[c] = std::min(lo[c], a0[k + c]), hi[c] = std::max(hi[c], a0[k + c]);
+    const float size = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-6f});
+    const size_t na = a0.size() / 3, nb = b0.size() / 3;
+    std::vector<size_t> match(nb);
+    double restWorst = 0;
+    bool same = na == nb; // (the bridge's own round trip keeps the order: vertex by vertex)
+    for (size_t i = 0; i < nb && same; ++i) {
+        match[i] = i;
+        double d = 0;
+        for (int c = 0; c < 3; ++c) d += double(b0[i * 3 + c] - a0[i * 3 + c]) * (b0[i * 3 + c] - a0[i * 3 + c]);
+        same = std::sqrt(d) < 1e-4 * size;
+        restWorst = std::max(restWorst, std::sqrt(d));
+    }
+    for (size_t i = 0; i < nb && !same; ++i) {
+        double best = 1e30;
+        for (size_t j = 0; j < na; ++j) {
+            double d = 0;
+            for (int c = 0; c < 3; ++c) d += double(b0[i * 3 + c] - a0[j * 3 + c]) * (b0[i * 3 + c] - a0[j * 3 + c]);
+            if (j * 2 + 1 < ua.size() && i * 2 + 1 < ub.size())
+                d += 1e-3 * (double(ub[i * 2] - ua[j * 2]) * (ub[i * 2] - ua[j * 2]) + double(ub[i * 2 + 1] - ua[j * 2 + 1]) * (ub[i * 2 + 1] - ua[j * 2 + 1]));
+            if (d < best) best = d, match[i] = j;
+        }
+        restWorst = std::max(restWorst, std::sqrt(best));
+    }
+    double worst = 0;
+    std::string worstAt = "rest";
+    for (const auto& a : acts)
+        for (float t : {0.0f, a.duration / 2, a.duration}) {
+            std::vector<float> pa, pb;
+            skinAll(m, &a, t, pa, nullptr);
+            skinAll(r, &a, t, pb, nullptr);
+            for (size_t i = 0; i < nb; ++i) {
+                double d = 0;
+                for (int c = 0; c < 3; ++c) d += double(pb[i * 3 + c] - pa[match[i] * 3 + c]) * (pb[i * 3 + c] - pa[match[i] * 3 + c]);
+                if (std::sqrt(d) > worst) worst = std::sqrt(d), worstAt = a.name + " at " + std::to_string(int(t));
+            }
+        }
+    std::printf("size %.2f: at rest the replacement lies within %.5f (%.4f%%) of the original; in %zu motions within %.5f (%.4f%%, %s)\n",
+                size, restWorst, 100 * restWorst / size, acts.size(), worst, 100 * worst / size, worstAt.c_str());
+    return worst / size < 1e-3 ? 0 : 2;
+}
+
 int smooth(const char* dirArg, int level) {
     std::string dir = dirArg;
     if (dir.back() != '/') dir += '/';
@@ -1278,9 +1374,10 @@ int main(int argc, char** argv) {
     if (argc == 4 && std::strcmp(argv[1], "mct-raw") == 0) return mctRaw(argv[2], argv[3]);
     if (argc == 3 && std::strcmp(argv[1], "check") == 0) return check(argv[2]);
     if (argc >= 3 && std::strcmp(argv[1], "smooth") == 0) return smooth(argv[2], argc > 3 ? std::atoi(argv[3]) : 2);
+    if (argc >= 4 && std::strcmp(argv[1], "gltfcheck") == 0) return gltfcheck(argv[2], argv[3], argc > 4 ? argv[4] : nullptr);
     std::fprintf(stderr,
                  "usage:\n  crtool mct-info <file.mct>...\n  crtool mct-raw <file.mct> <out.rgba>\n"
-                 "  crtool check <dataHD dir>\n  crtool models <dataHD dir> [-v]\n"
+                 "  crtool check <dataHD dir>\n  crtool models <dataHD dir> [-v]\n  crtool gltfcheck <dataHD dir> <model.bin> [file.glb]\n"
                  "  crtool anims <dataHD dir> [model]\n  crtool maps <dataHD dir>\n  crtool events <dataHD dir> [-v]\n"
                  "  crtool obb <main.*.obb> <APK or classes.dex> [name -o out | --names [dataHD]]\n");
     return 2;

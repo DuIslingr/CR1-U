@@ -104,6 +104,27 @@ the profile folder is still read while there is no `textures/hd/`. The `tools/hd
 same in all four ports. Personal use: the outputs are made from the game's art - keep them out of
 anything shared.
 
+## HD models
+
+Models you make or improve yourself, drawn in place of the game's - more detailed, smoother,
+retextured - moving with the game's own skeleton and animations:
+
+1. `chaosrings --export-models` writes every model to `<game folder>/models/export/` as glTF 2.0
+   (`<name>.glb`: its skeleton, meshes, materials, pictures and animations; `--export-models <folder>`
+   elsewhere). Blender (File, Import, glTF 2.0) opens them as they are, animations included.
+2. Edit it - sculpt, subdivide, rebuild, re-weight, paint - keeping the armature: its bones are named
+   `node_<n>...` and the game finds them by that (a new bone goes with its nearest original parent).
+   A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
+   (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the model's.
+3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<package>.glb` (`j001.glb` for Escher's `j001.bin`). With HD Models on
+   (Options, Detail; on by itself) it is drawn instead of the original from the next scene on.
+
+What it reads: triangles, the first UV set and colour set, four weights a vertex; up to 255 joints a mesh; the game's particle props (`be*` / `ee*`) hang pieces on bones resting at scale 0, which Blender can't keep - edit those outside it. The
+animations in the file are for previewing - the game plays its own. `crtool gltfcheck <data> <model.bin> [file.glb]`
+checks a round trip (the export loaded back: every model lands exactly on the original in every
+animation). `CR_HD_MODELS=<folder>` reads them from elsewhere. Personal use: the exports are the
+game's models - keep them, and what you make from them, out of anything shared.
+
 ## Platforms
 
 Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the

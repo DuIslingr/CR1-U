@@ -643,6 +643,20 @@ c101/c102/c104/m207a, 2026-10-12).
         unchanged. `crtool smooth <dataHD> [2|3]` checks all 335 models: no new open edges, the
         original vertices unmoved, weights summing to 1, the rest pose skinning back onto the
         smoothed points, bounding boxes growing at most 2.3%
+      - **HD Models** (Detail page; on by itself) - replacement models: the model bridge
+        (`assets/gltf_model.cpp`). `--export-models [dir]` writes each package as glTF 2.0 (`.glb`,
+        to `models/export/`): the skeleton's nodes (`node_<i>`) at rest as TRS (`computeLocalPoses`),
+        skinned meshes in the rest pose with the rest pose's inverse binds, rigid meshes as their
+        node's children in its space (an effect's node can rest at scale 0), unlit materials
+        `cr_mat_<appearance>` with the textures as PNG (`tex_<k>`), the motions sampled at 20 a
+        second (channels that leave the rest pose only). `models/hd/<package>.glb` / `.gltf`
+        (`CR_HD_MODELS` elsewhere) stands in for the package's meshes at load (before Smooth
+        Models, which leaves it alone): joints by name, the rest positions through the file's own
+        skin (world x inverse bind), bound as skinMesh binds them - rigid meshes in their node's
+        space, through the world when its rest can be undone - materials by name (pictures of their
+        own decoded by stb_image and appended), the package's skeleton, motions and records kept.
+        `crtool gltfcheck <data> <model.bin> [file.glb]` skins both in every motion: all 335 models (and 69 particle props aside, through Blender too) land
+        exactly on the originals
       - Command line: `--original`, `--resolution 1920x1080`, `--windowed` / `--fullscreen` /
         `--borderless`, `--widescreen`, `--whole-paintings`, `--zoom-paintings`, `--render-scale 150`, `--msaa 4`,
         `--upscaler off|fsr|dlss`, `--upscale-mode native|quality|balanced|performance|ultra`,

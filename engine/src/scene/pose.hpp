@@ -9,6 +9,16 @@
 
 namespace cr {
 
+// A node's local transform as computeWorld composes it (local = T * R * S): its rotation's basis
+// columns (unscaled), translation and scale
+struct NodePose {
+    float cols[3][3];
+    float t[3];
+    float s[3];
+};
+// Every node's local transform for `action` at `time` (frames); a null action gives the rest pose
+void computeLocalPoses(const Skeleton& skel, const Action* action, float time, std::vector<NodePose>& out);
+
 // World matrices of every skeleton node for `action` at `time` (frames).
 // A null action gives the rest pose; an action animates its first segments' nodes.
 void computeWorld(const Skeleton& skel, const Action* action, float time, std::vector<Mat4>& world);

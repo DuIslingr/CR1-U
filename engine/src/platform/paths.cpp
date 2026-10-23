@@ -122,6 +122,11 @@ std::string texturesFolder(const char* which) {
     return (g.empty() ? std::string() : g.front()) + "textures/" + which + "/";
 }
 
+std::string modelsFolder(const char* which) {
+    const std::vector<std::string> g = gameFolders();
+    return (g.empty() ? std::string() : g.front()) + "models/" + which + "/";
+}
+
 std::string saveDir() {
     char* pref = SDL_GetPrefPath("preservation", kProfile);
     std::string out = pref ? withSlash(pref) : std::string("./");
