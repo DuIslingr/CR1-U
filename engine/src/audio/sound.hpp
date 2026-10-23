@@ -33,7 +33,9 @@ public:
     void setLocator(FileLocator locate) { locate_ = std::move(locate); }
     void shutdown();
     // _effgo(id): low 12 bits = bank entry, bit 23 = loop, bit 29 = stop that sound,
-    // bit 22 = the language's variant (+ language offset; English here).
+    // bit 22 = the language's variant (+ language offset; English here). Bits 26 / 27 / 25 fade
+    // the entry playing out over 10 / 20 / 40 frames (__eff_vol2), bits 18 / 19 / 17 in from
+    // nothing (__eff_vol_fadein) - no new sound for either.
     void play(uint32_t id);
     void stop(int entry);
     void stopAll();
@@ -81,7 +83,8 @@ private:
     bool readClip(int bank, int clip, std::vector<uint8_t>& pcm) const;
     // A clip's s16 mono PCM and rate, from the Vita's files when set, else the data's banks
     bool clipAudio(int bank, int clip, std::vector<uint8_t>& pcm, int& rate) const;
-    struct Voice { SDL_AudioStream* stream = nullptr; int entry = -1; bool loop = false, voice = false; };
+    // (a fade, __eff_vol2 / __eff_vol_fadein: over `fadeMs` from `fadeAt`, in or out - out ends it)
+    struct Voice { SDL_AudioStream* stream = nullptr; int entry = -1; bool loop = false, voice = false, fadeIn = false; uint64_t fadeAt = 0; int fadeMs = 0; };
     float effects_ = 0.8f, voice_ = 0.8f;
     std::vector<int> voiceEntries_;
     std::vector<PcmSound> bank_;

@@ -228,6 +228,16 @@ void SoundSystem::stopAll() {
 void SoundSystem::play(uint32_t id) {
     const int entry = int(id & 0xfff);
     if (id & 0x20000000) { stop(entry); return; }
+    const int fadeOut = id & 0x4000000 ? 10 : id & 0x8000000 ? 20 : id & 0x2000000 ? 40 : 0;
+    const int fadeIn = fadeOut ? 0 : id & 0x40000 ? 10 : id & 0x80000 ? 20 : id & 0x20000 ? 40 : 0;
+    if (fadeOut || fadeIn) { // (the original's frames, 20 a second)
+        for (Voice& v : voices_)
+            if (v.stream && v.entry == entry) {
+                v.fadeIn = fadeIn > 0, v.fadeAt = SDL_GetTicks(), v.fadeMs = (fadeOut + fadeIn) * 50;
+                if (v.fadeIn) SDL_SetAudioStreamGain(v.stream, 0.0f);
+            }
+        return;
+    }
     if (!device_ || entry >= int(bank_.size()) || bank_[entry].data.empty()) return;
     const PcmSound& s = bank_[entry];
     SDL_AudioSpec spec{};
@@ -273,6 +283,16 @@ void SoundSystem::setVolumes(float effects, float voice) {
 void SoundSystem::update() {
     for (Voice& v : voices_) {
         if (!v.stream) continue;
+        if (v.fadeMs > 0) {
+            const float t = std::min(1.0f, float(SDL_GetTicks() - v.fadeAt) / float(v.fadeMs));
+            if (!v.fadeIn && t >= 1.0f) {
+                SDL_DestroyAudioStream(v.stream);
+                v = Voice();
+                continue;
+            }
+            SDL_SetAudioStreamGain(v.stream, (v.voice ? voice_ : effects_) * (v.fadeIn ? t : 1.0f - t));
+            if (t >= 1.0f) v.fadeMs = 0;
+        }
         const int queued = SDL_GetAudioStreamQueued(v.stream);
         if (v.loop) {
             const PcmSound& s = bank_[v.entry];
