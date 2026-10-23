@@ -11091,7 +11091,7 @@ void battleVictory(App& app) {
     b.bossModel = m2->modelId;
     setBattleCamera(app, b.formation + (b.bossModel == 12 ? 0x34 : 0x35));
     for (App::Battle::Actor& a : b.actors) {
-        if (a.fighter >= 2 && !b.rules.f[size_t(a.fighter)].alive() && a.slot != btlui::kSlotDown) playSlot(app, a, btlui::kSlotDown, -2);
+        if (a.fighter >= 2 && !b.rules.f[size_t(a.fighter)].alive() && a.slot != btlui::kSlotDown) playSlot(app, a, btlui::kSlotDown, -3);
         if (a.fighter >= 0 && a.fighter < 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
     }
     b.bossWait = int(actorDuration(app, *m2)) - 1 + 20; // (btlanm_get_max_frm(2, .., 6) + 20)
@@ -11191,6 +11191,8 @@ void stepBattle(App& app) {
         a.time += 1.0f;
         if (a.then == -2) { // held on its last frame (a fallen monster)
             a.time = std::max(dur - 1, 0.0f);
+        } else if (a.then == -3) { // played once, then held (mdl_set_act_motion_loop mode 2: a boss's end)
+            a.time = std::min(a.time, std::max(dur - 1, 0.0f));
         } else if (a.then >= 0) {
             if (a.time >= std::max(dur, 1.0f)) {
                 const int next = a.then;
