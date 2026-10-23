@@ -1,16 +1,30 @@
-# CR1-U v0.2.1
+# CR1-U v0.3.0
 
 A from-scratch reimplementation of *Chaos Rings* (iOS / Vita / Android): builds for Windows,
 macOS, Linux and Android.
 
-**New in this release: the opening as the game plays it.** The eclipse forms as it should - the
-small sun in the sky, the moon sliding over the sun from the lower right, the title centred on the
-black disc (laid out as the Vita does when the Vita copy is the game) - and effects everywhere
-are drawn as the original draws them: their other rotation orders, materials' second textures,
-their own colours (some flames and glows had been dropped), facing the camera on the field and in
-battle. Also: HD textures' cut-out edges (hair, ornaments) without a black fringe, the Character
-Select title's shadow without streaks, smoother idle animations at 60 fps (no Hermite overshoot
-between frames), and the scripted 3D rooms at their own field of view.
+**New in this release: much closer to the original**, from an audit against the game's code and a
+comparison with a full playthrough on video.
+
+Battles
+- A boss's end as the game plays it: the camera on the boss, its down motion played through, the
+  burst and fade (or the white-out for the story's bosses), then "Victory!" with the camera on the
+  pair, held until a tap. A defeat takes the monsters still standing out of sight.
+- The pair stands side by side in pair mode, as in the game.
+- The battle's own sounds: each swing, each hit by its kind, genes and items as they start, the
+  bosses' own; the victory tune only when it isn't the battle's own music.
+- An action that can't happen any more says so (silenced, the item gone, too little MP).
+- Effects on big monsters at their size; fading models fade instead of vanishing at once.
+- The item and gene lists with the game's plates, icons and HELP board.
+
+The field, scripts and menus
+- Walking by touch: the pad and the "!" button.
+- The scripts' last natives and opcodes: an NPC's fade, the camera turning onto someone, scaling,
+  straight walks; the radial lines as a monster appears before its battle; sound fades.
+- The menus' darkening as the game's: a slanted mask that fades in and out; Back's arrows only
+  where pages turn, drawn as the game draws them; the battery beside the clock.
+- A message that ends by itself stays up until the scene closes it; the map screen dims only the
+  game's own screen in widescreen.
 
 **From v0.2.0:** your copy found by itself in `ios/`, `android/` or `vita/` beside the program, and HD
 textures in `textures/hd/` turned on by themselves (below, and the README's "Your copy").
