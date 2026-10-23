@@ -205,8 +205,9 @@ c101/c102/c104/m207a, 2026-10-12).
       up, down or still behind the 3D, fog drifting both ways over the top). They go on in
       battles too, the weather with its "(128)" copies; Options' Environment Effects Off leaves
       out the weather and the tower's fog, as the original's does. `--capture … --scene-fx <set> <effect>
-      [frames]` turns one on. Not drawn: effect 1 (a blinking overlay whose texture nothing found
-      loads)
+      [frames]` turns one on. Effect 1: the concentration lines (`syuutyuusen_hd`, Tex2d slot 47,
+      loaded by `tex2d_setup_tex`) on every other frame in four mirrored quarters, as the scripts
+      bring a monster on before its battle.
 - [x] The game boots as the original does: the boot area's script (j001_t99, EvrStart 0) shows the
       Square Enix, Media.Vision and Mascot Capsule logos, the title picture and music, then the
       title menu (Start / Scenarios / Options, `Util 0`). Start goes on to Character Select and the

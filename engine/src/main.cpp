@@ -303,6 +303,7 @@ struct App {
         uint32_t rng = 12345;
         int spaceDrift = 0, spaceRise = 0; // 0xddfb8: the fog's drift (0..480); 0xddfb4: the rise (Up +1, Down -1)
     } fx;
+    cr::Texture speedLinesTex;             // syuutyuusen_hd.mct (Tex2d slot 47, tex2d_setup_tex): scene effect 1
     struct Portrait {                      // Tex2d slots (+0xbd10 + slot * 0x70 in the original)
         cr::Texture tex;
         int image = -1;
@@ -2167,6 +2168,7 @@ void stepSceneEffects(App& app) {
         int& a = fx.timerA[size_t(id)];
         int& b = fx.timerB[size_t(id)];
         switch (id) {
+        case 1: a ^= 1; break; // the concentration lines: every other frame (G + 0x184)
         case 2: initSceneChannels(app, 2); updateSceneChannels(app); if (++a > 512) a = 0; break;
         case 3: if (++a > 400) a = 0; if (++b > 440) b = 0; break;
         case 4: initSceneChannels(app, 4); updateSceneChannels(app); if (++a > 200) a = 0; break;
@@ -2243,8 +2245,7 @@ void drawSceneLayer(App& app, int slot, float x, float y, float w, float h, floa
 // ScnEffectProc's draws, by effect number; sx, sy = half the field's scroll. In a battle the
 // weather (effects 2..5, 9) draws the "(128)" copy in the next slot, and nothing scrolls
 void drawSceneEffects(App& app, bool battle = false) {
-    const App::SceneFx& fx = app.fx;
-    if (fx.set < 0) return;
+    const App::SceneFx& fx = app.fx; // (effect 1 needs no set read)
     const float sx = battle ? 0.0f : app.scroll.offX * 0.5f, sy = battle ? 0.0f : app.scroll.offY * 0.5f;
     const int bo = battle ? 1 : 0; // the "(128)" copies' slot
     cr::Renderer& r = app.renderer;
@@ -2255,6 +2256,21 @@ void drawSceneEffects(App& app, bool battle = false) {
         const float a = float(fx.timerA[size_t(id)]), b = float(fx.timerB[size_t(id)]);
         const int ch0 = fx.ch[0].alpha, ch1 = fx.ch[1].alpha, ch2 = fx.ch[2].alpha;
         switch (id) {
+        case 1: { // syuutyuusen's concentration lines on alternate frames: four mirrored quarters
+            // (_bkanTexUv: each tex2d (x - 16, y - 32) its own (u, v) and size, z -50)
+            if (!(fx.timerA[1] & 1)) break;
+            if (!app.speedLinesTex.id) {
+                cr::Image img;
+                if (loadImage(app, "syuutyuusen_hd.mct", img)) app.speedLinesTex = app.renderer.upload(img);
+            }
+            if (!app.speedLinesTex.id) break;
+            static const int kUv[4][4] = {{0, 0, 256, 192}, {256, 0, -256, 192}, {256, 192, -256, -192}, {0, 192, 256, -192}};
+            const float k = float(app.speedLinesTex.width) / 256.0f, extra = r.uiX(); // (widescreen: the outer halves stretched over the sides)
+            for (const auto& q : kUv) // (a negative size flips the uv only)
+                r.drawQuadUV(app.speedLinesTex, q[0] ? 512.0f : -extra, 2.0f * float(q[1]), 512 + extra, 384, q[0] * k, q[1] * k, q[2] * k,
+                             q[3] * k);
+            break;
+        }
         case 2: // d0307_fog: two layers, breathing
             drawSceneLayer(app, 49 + bo, -16, -32, 512, 384, a - sx, 0.5f * a - sy, ch0);
             drawSceneLayer(app, 49 + bo, -16, -32, 512, 384, a + 128 - sx, 384 - 0.5f * a - sy, ch1);
