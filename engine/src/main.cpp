@@ -9337,7 +9337,8 @@ constexpr short kBreakTick[8][4] = {{4, 4, 96, 120},    {4, 4, 64, 120},    {4, 
 // __dmg_prc: the digits' hop (0xcb398) and the label's (0xcb390), by (383 - timer) / 16
 constexpr int kDigitHop[8] = {16, 20, 15, 10, 5, 0, 0, 0}, kLabelHop[8] = {3, 6, 12, 6, 3, 0, 0, 0};
 constexpr int kPopupTime = 0x17f; // __dmg_set; 16 off a frame
-constexpr int kItemRows = 5;
+constexpr int kItemRows = 4;      // the battle lists' rows shown, 48 apart (the plates 44 tall, as the camp's)
+constexpr float kItemPitch = 48;
 constexpr int kBannerFrames = 40;  // font_set_utf16's 0x28 (the action's name)
 constexpr int kMessageFrames = 60; // 0x3c: the calcs' messages and the queued ones
 // Action slots (BattleAnim): 0 standing, 1 victory, 3 back to place, 4 defending, 5 hit,
@@ -11798,17 +11799,10 @@ void drawBattleHud(App& app, float W, float H) {
             const int n = int(b.picks.size());
             for (int k = 0; k < kItemRows && b.pickTop + k < n; ++k) {
                 const int index = b.pickTop + k, item = b.picks[size_t(index)];
-                const float y = 112 + 40.0f * float(k);
-                const bool sel = index == b.pick;
-                const float white[4] = {1, 1, 1, (sel ? 0.95f : 0.7f) * a}, clear[4] = {1, 1, 1, 0};
-                const float cyan[4] = {0x4b / 255.f, 1, 0xeb / 255.f, 0.95f * a};
-                m.quad(232, y, 220, 32, sel ? cyan : white, white);
-                m.quad(452, y, 40, 32, white, clear);
-                const cr::ItemParam* ip = app.itemTable.item(item);
-                if (ip && ip->icon >= 0) m.piece(236, y, float(ip->icon % 16 * 32), float(248 + ip->icon / 16 * 32), 32, 32, a);
-                m.textCentred(itemName(app, item), 272, y + 16, true, a, 14);
+                const float y = 112 + btlui::kItemPitch * float(k);
+                // ComUty_ComPlate_Item: the plate (8 / 9 picked), icon, name, how many at (222, 30)
                 const auto it = app.game.items.find(item);
-                drawShopNumber(m, it == app.game.items.end() ? 0 : it->second, 448, y + 8, 2, 12, a, 2);
+                drawCampRow(app, m, 232, y, item, it == app.game.items.end() ? 0 : it->second, index == b.pick, a);
             }
             m.backBar(kBackX, kBackY, false, a);
             if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // (MuScrList_SetIdInfo's help: the items' too)
@@ -11818,17 +11812,12 @@ void drawBattleHud(App& app, float W, float H) {
             const int n = int(b.picks.size()), have = battleGeneMp(app);
             for (int k = 0; k < kItemRows && b.pickTop + k < n; ++k) {
                 const int index = b.pickTop + k, g = b.picks[size_t(index)], cost = geneMpCost(app, g);
-                const float y = 112 + 40.0f * float(k), ra = cost <= have ? a : a * 0.5f;
-                const bool sel = index == b.pick;
-                const float white[4] = {1, 1, 1, (sel ? 0.95f : 0.7f) * ra}, clear[4] = {1, 1, 1, 0};
-                const float cyan[4] = {0x4b / 255.f, 1, 0xeb / 255.f, 0.95f * ra};
-                m.quad(232, y, 220, 32, sel ? cyan : white, white);
-                m.quad(452, y, 40, 32, white, clear);
-                if (const cr::ItemParam* ip = app.itemTable.item(g); ip && ip->icon >= 0)
-                    m.piece(236, y, float(ip->icon % 16 * 32), float(248 + ip->icon / 16 * 32), 32, 32, ra);
-                m.textCentred(itemName(app, g), 272, y + 16, true, ra, 14);
-                m.piece(392, y + 18, 22, 14, 22, 10, ra); // MP
-                drawShopNumber(m, cost, 418, y + 12, 3, 12, ra, 2);
+                const float y = 112 + btlui::kItemPitch * float(k), ra = cost <= have ? a : a * 0.5f;
+                // ComUty_ComPlate_Gene: the plate, icon, name, "MP/" (picture 27 at (188, 34)) and the cost
+                // (three digits to (218, 30)), dim when the MP won't pay
+                drawCampRow(app, m, 232, y, g, 0, index == b.pick, ra);
+                m.picture(27, 232 + 188, y + 34, ra);
+                drawShopNumber(m, cost, 232 + 218 - 20, y + 30, 3, 10, ra, 2);
             }
             m.backBar(kBackX, kBackY, false, a);
             if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // the gene's target and effect
@@ -11956,8 +11945,8 @@ void battleClick(App& app, float px, float py) {
     }
     case App::Battle::Items:
     case App::Battle::Genes:
-        if (rx >= 232 && rx < 492 && my >= 112 && my < 112 + 40 * kItemRows) {
-            const int index = b.pickTop + int((my - 112) / 40);
+        if (rx >= 232 && rx < 492 && my >= 112 && my < 112 + kItemPitch * kItemRows) {
+            const int index = b.pickTop + int((my - 112) / kItemPitch);
             if (index < int(b.picks.size())) {
                 b.pick = index;
                 if (b.menu == App::Battle::Genes) battleChooseGene(app, b.picks[size_t(index)]);
