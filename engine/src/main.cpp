@@ -6598,9 +6598,8 @@ void drawMapScreen(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     const float a = float(ms.fade) / 4;
-    r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f * a);
-    r.setOrigin(r.uiX());
+    r.setOrigin(r.uiX()); // __menuu_MapPut's PutWin: the game's screen dimmed to a quarter (widescreen: its sides
+    r.fillRect(0, 0, cr::Renderer::kLogicalW, cr::Renderer::kLogicalH, 0, 0, 0, 0.75f * a); // left as they are, as the reference's)
     m.begin(r, app.windowTex, &app.font);
     if (!ms.tex.id) return;
     m.imagePiece(ms.tex, 16, 32, 0, 0, 480, 320, a);
