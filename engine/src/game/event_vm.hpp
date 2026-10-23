@@ -77,6 +77,7 @@ public:
     // 0x10 none, 0x20 the black band, 0x40 the grey panel) and its lines (1 picks the rect's
     // one-line place)
     virtual void openWindow(int /*style*/, int /*lines*/) {}
+    virtual void closeWindow() {}
     virtual bool messageOpen() { return false; }         // the script waits while true
     virtual bool tapped() { return false; }              // action key pressed this frame (touch_up_chk)
     virtual void showItemWindow(int /*item*/) {}         // Uty_GetItem

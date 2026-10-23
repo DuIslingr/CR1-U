@@ -425,6 +425,7 @@ struct App {
     bool typeOn = true;                    // false: pages appear whole (tests, captures)
     int textLimit = 1 << 30;               // drawMessageLines: how many characters it draws
     std::vector<std::string> lastPage;     // the page just read: stays up while a choice asks about it
+    bool heldPage = false;                 // ... or because it ended itself (0x14): up until Close (PrcMsg)
     cr::MessageInfo lastPageInfo;
     int choiceFlag = -1;                   // Util 3: the flag a yes/no choice answers (-1 = none open)
     std::vector<std::string> unsupported;  // battles / menus scripts asked for (--explore reports them)
@@ -1878,6 +1879,9 @@ void stepTyping(App& app) {
             if (app.dialogueHold > 0) return;
         }
         advanceDialogue(app, false);
+        // PrcMsg 0x14: the message is done (the script goes on) but its text stays in the window
+        // until Close, the next message or the script's end
+        if (app.dialogue.empty()) app.heldPage = true;
         return;
     }
     if (info && app.dialoguePause < int(info->pauses.size()) && info->pauses[size_t(app.dialoguePause)].at <= app.dialogueTyped) {
@@ -1926,6 +1930,7 @@ void answerWorldChoice(App& app, int pos) {
 
 // Queues the messages an event showed (English text) for the dialogue box.
 void showMessages(App& app, const std::vector<int>& ids) {
+    app.heldPage = false;
     if (app.dialogue.empty()) { app.dialogueInfo.clear(); app.dialogueVoices.clear(); ++app.dialogueSerial; resetTyping(app); }
     for (int id : ids) {
         std::vector<std::vector<std::string>> pages;
@@ -2793,7 +2798,8 @@ struct ViewerHost : cr::EventHost {
         ++app.tutoCalls;
     }
     void exclamationMark() override { app.exclamation = true; ++app.exclamationCalls; }
-    void openWindow(int style, int lines) override { app.msgStyle = style, app.msgLines = lines; }
+    void openWindow(int style, int lines) override { app.msgStyle = style, app.msgLines = lines, app.heldPage = false; }
+    void closeWindow() override { app.heldPage = false; } // Close: a page that ended itself goes with its window
     bool logoSeen() override { const bool seen = app.logoSeen; app.logoSeen = true; return seen; }
     void padArt() override { app.padArt = true; }
     // Uty_Btl_ParamUp01 / 02: battle fighter 1 / 0's attack, defense, speed and luck up for 6 rounds
@@ -12476,6 +12482,15 @@ void drawFrame(App& app, bool present = true) {
                                  cx + 36, cy + 24, 2.0f, 0, 0, 0.0f);
         }
     }
+    if (app.heldPage && (!app.runner.running() || !app.dialogue.empty() || app.lastPage.empty())) app.heldPage = false;
+    if (app.mode == Mode::Maps && app.dialogue.empty() && app.heldPage && app.choiceFlag < 0) { // (a page that ended itself)
+        std::string speaker;
+        std::vector<std::vector<std::string>> name;
+        if (app.lastPageInfo.nameId >= 0 && app.systemText.message(app.lastPageInfo.nameId, app.language, nullptr, name) &&
+            !name.empty() && !name[0].empty())
+            speaker = name[0][0];
+        drawMessageBox(app, app.lastPage, speaker, false, "");
+    }
     if (app.mode == Mode::Maps && !app.dialogue.empty()) {
         const size_t pi = std::min(app.dialoguePage, app.dialogue.size() - 1);
         std::string speaker; // PrcMsg 0x15: the name plate
@@ -16735,7 +16750,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         }
         animateNpcs(app, 1.0f / kFramesPerSecond);
         followPlayerScroll(app); // (drawFrame's, every frame the game shows: a capture draws only its last)
-        if (f % 45 == 44 && f + 1 < app.captureFrames) {
+        if (f % 45 == 44 && f + 1 < app.captureFrames && !SDL_getenv("CR_CAPTURE_NOTAP")) { // (CR_CAPTURE_NOTAP: no taps)
             if (app.choiceFlag >= 0) answerChoice(app, true);
             else if (app.worldChoiceOpen) answerWorldChoice(app, 0);
             else advanceDialogue(app);

@@ -459,7 +459,7 @@ bool EventRunner::step(EventHost* host) {
             if (host) host->openWindow(style, lines);
             break;
         }
-        case 5: case 6: break;                             // Close
+        case 5: case 6: if (host) host->closeWindow(); break; // Close
         case 7: case 8: { // Msg
             const int id = vm.u16();
             res.messages.push_back(id);
