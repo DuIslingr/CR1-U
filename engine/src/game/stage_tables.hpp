@@ -22,7 +22,8 @@ extern const char* const kBattleStageFile[kNumBattleStages];
 extern const char* const kBattleModelFile[kNumBattleModels];
 // read_btlcpl: the enemies' size classes as decimal digits (first enemy = ones) -> index / 3 is
 // the formation; positions [formation][slot][x, z]: 0-2 enemies, 3-5 where attackers stand to
-// hit them, 6-11 the party
+// hit them, 6-11 the party; rows 0 and 1 (no line-up's) hold the pair's own places, 0-1 solo and
+// in pair mode (__menub_mainPrc)
 extern const short kBattleFormationCode[48];
 extern const short kBattlePosition[16][12][2];
 // Menu pictures (MuTex_GetTexInfo sheet 0): x, y, w, h in window_hd.mct at half scale (the

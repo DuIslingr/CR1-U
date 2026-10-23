@@ -483,6 +483,7 @@ struct App {
         cr::BattleRules rules;
         enum Phase { Intro, Command, Acting, WinTalk, BossDown, Won, Results, Lost, Fled } phase = Intro;
         int phaseFrames = 0;
+        bool wonTap = false; // a tap in the victory's hold (state 1099: 140 frames or pad_chk_trg_up)
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
         int member = 0;                    // solo: the member choosing
@@ -10094,6 +10095,17 @@ void battleCommandDone(App& app) {
     battleStartRound(app);
 }
 
+// __menub_mainPrc 3: the pair's places for the round - in pair mode side by side (_btlinitpos'
+// second row), solo back where they began (the first; the second member only standing)
+void placePair(App& app, bool pair) {
+    App::Battle& b = app.battle;
+    for (int k = 0; k < 2; ++k)
+        if (App::Battle::Actor* a = battleActor(app, k); a && (pair || k == 0 || b.rules.f[size_t(k)].alive())) {
+            const short* place = cr::kBattlePosition[pair ? 1 : 0][k];
+            a->pos = a->home = {float(place[0]), 0.0f, float(place[1])};
+        }
+}
+
 void battleChooseTop(App& app, int i) {
     App::Battle& b = app.battle;
     b.cmds[0] = b.cmds[1] = cr::BattleCommand();
@@ -10101,6 +10113,7 @@ void battleChooseTop(App& app, int i) {
     switch (i) {
     case 0: // Solo
         b.rules.pair = false;
+        placePair(app, false);
         if (!b.rules.f[0].alive() && b.rules.allyAuto) { battleStartRound(app); break; } // only the guest stands
         b.member = b.rules.f[0].alive() ? 0 : 1;
         menuSound(app, se::kChoose);
@@ -10109,6 +10122,7 @@ void battleChooseTop(App& app, int i) {
     case 1: // Pair: both standing (not with a guest)
         if (!b.rules.f[0].alive() || !b.rules.f[1].alive() || b.rules.allyAuto) { menuSound(app, se::kBuzzer); break; }
         b.rules.pair = true;
+        placePair(app, true);
         b.member = 0;
         menuSound(app, se::kChoose);
         battleMenu(app, App::Battle::Commands);
@@ -11076,6 +11090,7 @@ void battleWon(App& app) {
     App::Battle& b = app.battle;
     b.phase = App::Battle::Won;
     b.phaseFrames = 0;
+    b.wonTap = false;
     btlvoice::victory(app); // btl_main 0x3e9
     int& bank = app.game.walkExp[size_t(fieldRoute(app))]; // skill 174's walking EXP joins the battle's
     if (!b.settled) b.rules.expGained += bank, bank = 0;   // (before the Apples double it)
@@ -11361,7 +11376,8 @@ void stepBattle(App& app) {
         }
         break;
     case App::Battle::Won:
-        if (b.phaseFrames >= 50) {
+        if (b.phaseFrames >= 140 || b.wonTap) {
+            b.wonTap = false;
             b.phase = App::Battle::Results;
             b.phaseFrames = 0;
             b.result.stage = 0, b.result.frames = 0, b.result.message = 57007;
@@ -11883,6 +11899,10 @@ void battleKey(App& app, SDL_Keycode key) {
         if (enter || back) resultsTap(app);
         return;
     }
+    if (b.phase == App::Battle::Won) {
+        if (enter || back) b.wonTap = true;
+        return;
+    }
     if (b.phase != App::Battle::Command) return;
     switch (b.menu) {
     case App::Battle::Top:
@@ -11935,6 +11955,10 @@ void battleClick(App& app, float px, float py) {
     }
     if (b.phase == App::Battle::Results) { // __MbResult_IsTouchChack: (0, 0, 480, 320)
         resultsTap(app);
+        return;
+    }
+    if (b.phase == App::Battle::Won) { // (anywhere ends the victory's hold)
+        b.wonTap = true;
         return;
     }
     if (b.phase != App::Battle::Command) return;
@@ -16791,8 +16815,10 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         int hitsSeen = 0;
         bool wasShown = false;
         // results[@frames][:taps]: the results that many frames in, after that many taps
-        const bool results = v.rfind("results", 0) == 0 || v.rfind("bossdown", 0) == 0; // (bossdown@n: n frames into the boss's end)
-        const bool bossDown = v.rfind("bossdown", 0) == 0;
+        // (bossdown@n: n frames into the boss's end; won@n: into the victory)
+        const bool won = v.rfind("won", 0) == 0;
+        const bool results = v.rfind("results", 0) == 0 || v.rfind("bossdown", 0) == 0 || won;
+        const bool bossDown = v.rfind("bossdown", 0) == 0 || won;
         int resultFrames = 10, resultTaps = 0;
         if (results) {
             if (const size_t at = v.find('@'); at != std::string::npos) resultFrames = SDL_atoi(v.c_str() + at + 1);
@@ -16814,8 +16840,9 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                             if (k < 2) b.rules.f[size_t(k)].status[cr::kStatusInvincible] = 9;
                         }
                 if (results) {
-                    if (bossDown && b.phase == App::Battle::BossDown && b.phaseFrames >= resultFrames) break;
-                    if (bossDown && b.phase == App::Battle::Won) break;
+                    if (bossDown && !won && b.phase == App::Battle::BossDown && b.phaseFrames >= resultFrames) break;
+                    if (bossDown && !won && b.phase == App::Battle::Won) break;
+                    if (won && b.phase == App::Battle::Won && b.phaseFrames >= resultFrames) break;
                     if (b.phase == App::Battle::Results && b.result.frames >= resultFrames) break;
                     if (b.phase == App::Battle::Lost) break;
                 } else {
