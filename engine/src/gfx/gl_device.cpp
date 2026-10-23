@@ -75,8 +75,9 @@ void main() {
     vec4 c = base;
     if (uTexMode >= 0) {
         vec4 t = texture(uTex, vUV);
-        if (uAlphaTex != 0) c = vec4(base.rgb, uTexMode == 0 ? t.a : base.a * t.a);
+        if (uAlphaTex == 1) c = vec4(base.rgb, uTexMode == 0 ? t.a : base.a * t.a);
         else c = texEnv(uTexMode, base, t);
+        if (uAlphaTex == 2 && uTexMode == 0) c.a = base.a; // (GL_RGB: replace takes the colour alone)
     }
     if (uTexMode2 >= 0) c = texEnv(uTexMode2, c, texture(uTex2, vUV * uUv2.xy + uUv2.zw));
     if (uAlphaRef > 0.0 && c.a < uAlphaRef) discard;
@@ -340,7 +341,7 @@ public:
         gl::Uniform4f(uMeshColor_, sh.color[0], sh.color[1], sh.color[2], sh.color[3]);
         gl::Uniform1f(uAlphaRef_, sh.alphaRef);
         gl::Uniform1i(uTexMode_, sh.texMode);
-        gl::Uniform1i(uAlphaTex_, sh.alphaTex ? 1 : 0);
+        gl::Uniform1i(uAlphaTex_, sh.alphaTex ? 1 : sh.noAlphaTex ? 2 : 0);
         const bool second = sh.tex2 && sh.tex2->id && sh.texMode2 >= 0;
         gl::Uniform1i(uTexMode2_, second ? sh.texMode2 : -1);
         gl::Uniform4f(uUv2_, sh.uv2[0], sh.uv2[1], sh.uv2[2], sh.uv2[3]);

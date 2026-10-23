@@ -13,6 +13,7 @@ struct Image {
     int height = 0;
     std::vector<uint8_t> rgba; // top row first, 4 bytes per pixel
     bool alphaOnly = false;    // GL_ALPHA source: texture has no colour of its own
+    bool noAlpha = false;      // GL_RGB / GL_LUMINANCE source: GL_REPLACE keeps the fragment's alpha
     bool mipmaps = false;      // upload with a mip chain (HD textures: minified, they'd shimmer)
     int logicalW = 0, logicalH = 0; // the size the game lays it out at, when larger (HD): 0 = its own
     bool cutout = false;       // (HD) the original's alpha all 0 or 255: drawn as a cut-out, not blended

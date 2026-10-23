@@ -928,6 +928,7 @@ void applyHd(App& app, cr::Image& img) {
     if (SDL_getenv("CR_HD_LOG")) std::printf("hd %s %dx%d -> %dx%d\n", cr::hashName(cr::imageHash(img)).c_str(), img.width, img.height, hd.width, hd.height);
     hd.logicalW = img.width;
     hd.logicalH = img.height;
+    hd.noAlpha = img.noAlpha;
     { // (a cut-out: its alpha only 0 and 255, some of it 0)
         bool binary = !img.alphaOnly, some = false;
         for (size_t i = 3; binary && i < img.rgba.size(); i += 4) {
@@ -9123,8 +9124,10 @@ void drawLoaded(App& app, const LoadedModel& m, const cr::Mat4& mvp, const cr::M
         if (override) {
             app.renderer.drawMesh(mesh, nullptr, mvp, *override);
         } else if (alpha < 0.999f) {
+            // (mdl_put: a fading model's texture unit 0 modulated, colour 1's alpha the model's)
             cr::Material faded = materialOf(i);
             faded.diffuse[3] *= alpha;
+            faded.texBlend = 4;
             if (!faded.blended()) { faded.blendSrc = 4; faded.blendDst = 5; }
             app.renderer.drawMesh(mesh, tex, mvp, faded, app.smoothFilter);
         } else {
@@ -9587,6 +9590,12 @@ void spawnEffect(App& app, int id, int fighter) {
     if (!a) return;
     Effect e;
     e.id = id, e.pos = actorPoint(app, *a, effects::kNode[id]);
+    // on a monster all but 22, 23 and 30 at its size class's scale (0xd387a: 100 100 100 200 250 300)
+    const cr::Fighter& f = b.rules.f[size_t(std::clamp(fighter, 0, 4))];
+    if (fighter > 1 && f.def && id != 22 && id != 23 && id != 30) {
+        static const short kScale[6] = {100, 100, 100, 200, 250, 300};
+        e.scale = float(kScale[std::clamp(f.def->size, 0, 5)]) / 100.0f;
+    }
     b.effects.push_back(e);
 }
 

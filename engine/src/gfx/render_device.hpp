@@ -35,6 +35,7 @@ struct MeshShading {
     float color[4] = {1, 1, 1, 1};
     int texMode = -1;   // 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured
     bool alphaTex = false;
+    bool noAlphaTex = false; // (an RGB / luminance texture: replace keeps the fragment's alpha)
     float alphaRef = 0;
     // Texture unit 1 (an Appearance's second texture): its texture environment over unit 0's
     // result, sampled at uv * uv2.xy + uv2.zw (repeating, linear like unit 0), -1 none

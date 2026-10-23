@@ -25,8 +25,9 @@ void main() {
     vec4 c = base;
     if (pc.texMode >= 0) {
         vec4 t = texture(uTex, vUV);
-        if (pc.alphaTex != 0) c = vec4(base.rgb, pc.texMode == 0 ? t.a : base.a * t.a);
+        if (pc.alphaTex == 1) c = vec4(base.rgb, pc.texMode == 0 ? t.a : base.a * t.a);
         else c = texEnv(pc.texMode, base, t);
+        if (pc.alphaTex == 2 && pc.texMode == 0) c.a = base.a; // (GL_RGB: replace takes the colour alone)
     }
     if (pc.texMode2 >= 0) c = texEnv(pc.texMode2, c, texture(uTex2, vUV * pc.uv2.xy + pc.uv2.zw));
     if (pc.alphaRef > 0.0 && c.a < pc.alphaRef) discard;

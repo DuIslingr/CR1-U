@@ -266,6 +266,9 @@ bool decodeMct(const std::vector<uint8_t>& file, Image& out, MctInfo* info, std:
     uint8_t* o = out.rgba.data();
     const size_t n = size_t(w) * ht;
 
+    // (no alpha of their own: RGB, RGB565, L8, the RGB palettes and RGB PVRTC)
+    out.noAlpha = fmt == kRGB888 || fmt == kRGB888b || fmt == kRGB565 || fmt == kL8 || fmt == kPal8RGB8 ||
+                  fmt == kPal8R5G6B5 || fmt == kPal4RGB8 || fmt == kPal4R5G6B5 || fmt == kPvrtcRGB4 || fmt == kPvrtcRGB2;
     switch (fmt) {
     case kRGB888: case kRGB888b:
         for (size_t i = 0; i < n; ++i) { o[i*4] = p[i*3]; o[i*4+1] = p[i*3+1]; o[i*4+2] = p[i*3+2]; o[i*4+3] = 255; }

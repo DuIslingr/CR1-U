@@ -820,7 +820,7 @@ public:
         toVulkanClip(mvp, pc.base.matrix);
         std::memcpy(pc.base.color, sh.color, sizeof pc.base.color);
         pc.base.texMode = sh.texMode;
-        pc.base.alphaTex = sh.alphaTex ? 1 : 0;
+        pc.base.alphaTex = sh.alphaTex ? 1 : sh.noAlphaTex ? 2 : 0;
         pc.base.alphaRef = sh.alphaRef;
         const bool second = sh.tex2 && sh.tex2->id && sh.tex2->id <= textures_.size() && textures_[sh.tex2->id - 1].image &&
                             sh.texMode2 >= 0;

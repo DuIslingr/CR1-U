@@ -4,7 +4,7 @@ layout(push_constant) uniform Draw {
     mat4 matrix;     // clip space (already Vulkan's: depth 0..1)
     vec4 color;
     int texMode;     // meshes: 0 replace, 1 add, 2 blend, 3 decal, 4 modulate, -1 untextured
-    int alphaTex;    // GL_ALPHA texture: colour always comes from the fragment
+    int alphaTex;    // 1 a GL_ALPHA texture: colour always comes from the fragment; 2 GL_RGB: replace keeps its alpha
     float alphaRef;  // alpha test (0 = off)
     float reactive;  // scene: > 0 alpha-blended (reactive = this x alpha), < 0 additive (x brightness)
     int texMode2;    // meshes: texture unit 1's environment over unit 0's result, -1 none

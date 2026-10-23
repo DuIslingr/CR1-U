@@ -20,6 +20,7 @@ struct Texture {
     int width = 0;     // the game's size for it (pixel rectangles are in these units)
     int height = 0;
     bool alphaOnly = false;
+    bool noAlpha = false; // (Image::noAlpha: a mesh's GL_REPLACE keeps the fragment's alpha)
     bool cutout = false; // (an HD texture standing in for a cut-out: see Image::cutout)
 };
 

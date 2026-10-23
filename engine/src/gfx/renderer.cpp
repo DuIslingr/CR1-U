@@ -90,6 +90,7 @@ void Renderer::destroy(GpuMesh& mesh) {
 Texture Renderer::upload(const Image& img) {
     Texture t = dev_->upload(img);
     t.cutout = img.cutout;
+    t.noAlpha = img.noAlpha;
     if (img.logicalW > 0 && img.logicalH > 0) { // HD: drawn at the original's size
         t.width = img.logicalW;
         t.height = img.logicalH;
@@ -130,6 +131,7 @@ void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp
     const bool textured = tex && tex->id;
     sh.texMode = textured ? int(mat.texBlend <= 4 ? mat.texBlend : 4) : -1;
     sh.alphaTex = textured && tex->alphaOnly;
+    sh.noAlphaTex = textured && tex->noAlpha;
     if (tex2 && tex2->id && mat.textureRef2 >= 0) {
         sh.tex2 = tex2;
         sh.texMode2 = mat.texBlend2 <= 4 ? mat.texBlend2 : 4;
