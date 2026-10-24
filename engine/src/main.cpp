@@ -68,6 +68,7 @@
 #include "gfx/menu_painter.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
+#include "platform/setup.hpp"
 #include "scene/pose.hpp"
 
 namespace {
@@ -1218,6 +1219,23 @@ std::string settingsPath();
 // settings.ini's vita= / android= (the whole line: a path), read before the data loads
 std::string storedSetting(const char* key);
 std::string storedVitaPath() { return storedSetting("vita="); }
+// settings.ini's line `key` (with its '=') set to `value`, the others kept (the first start's setup)
+void storeSetting(const char* key, const std::string& value) {
+    size_t size = 0;
+    char* text = static_cast<char*>(SDL_LoadFile(settingsPath().c_str(), &size));
+    std::string all = text ? std::string(text, size) : std::string(), out;
+    SDL_free(text);
+    const size_t kl = SDL_strlen(key);
+    bool set = false;
+    for (size_t at = 0; at < all.size();) {
+        const size_t e = std::min(all.find('\n', at), all.size());
+        if (all.compare(at, kl, key) == 0) out += key + value + "\n", set = true;
+        else out += all.substr(at, e - at) + "\n";
+        at = e + 1;
+    }
+    if (!set) out += key + value + "\n";
+    SDL_SaveFile(settingsPath().c_str(), out.data(), out.size());
+}
 std::string storedSetting(const char* key) {
     size_t size = 0;
     char* text = static_cast<char*>(SDL_LoadFile(settingsPath().c_str(), &size));
@@ -17627,6 +17645,35 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
 #ifdef SDL_PLATFORM_ANDROID
         if (!g.empty()) // (the folders made, to be seen over USB)
             for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((g.front() + f).c_str());
+#endif
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+        // The first start without a copy: where is it? (platform/setup.hpp - the .ipa unpacked into
+        // ios/, the Android and Vita copies read where they are, settings.ini remembering them)
+        static bool setupAsked = false;
+        bool plain = true; // (not a test's or a tool's run)
+        for (int i = 1; i < argc; ++i)
+            for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models", "--data", "--vita", "--android"})
+                if (SDL_strcmp(argv[i], f) == 0) plain = false;
+        if (!setupAsked && plain && !SDL_getenv("CR_DATA")) {
+            setupAsked = true;
+            cr::SetupGame setup;
+            setup.title = "Chaos Rings", setup.port = "CR1:U", setup.vitaId = "PCSG00497", setup.trilogyDir = "CR1";
+            setup.obbHint = "main.100.com.square_enix.chaosrings.googleplay.obb";
+            setup.iosOk = [](const std::string& p) {
+                const char* args[] = {"chaosrings", "--data", p.c_str()};
+                return !cr::findDataDir(3, const_cast<char**>(args)).empty();
+            };
+            setup.androidOk = androidThere;
+            setup.vitaOk = vitaThere;
+            cr::SetupResult got;
+            if (!cr::runSetup(setup, g.empty() ? cr::saveDir() + "ios/" : g.front() + "ios/", cr::saveDir() + "ios/", got)) return SDL_APP_FAILURE;
+            if (!got.android.empty()) storeSetting("android=", got.android);
+            if (!got.vita.empty()) storeSetting("vita=", got.vita);
+            SDL_Log("setup: iOS %s, Android %s, Vita %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str());
+            delete app;
+            *state = nullptr;
+            return SDL_AppInit(state, argc, argv); // (found now, as on any start)
+        }
 #endif
         std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n" +
                           (g.empty() ? std::string("(no folder)") : g.front()) +

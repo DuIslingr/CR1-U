@@ -32,8 +32,20 @@ the command line.
 
 ## Your copy
 
-Nothing has to be given on the command line: put your copy in the **game folder** and start the
-program - it finds it by itself. The game folder is:
+The easiest way: just start the program. With no copy found, it asks where yours is - pick
+any of them in the window it opens, and it takes the files from there:
+
+- **iOS** - the `.ipa` (or any file in its unpacked `.app`): unpacked into `ios/` in the game folder
+  (the profile folder's if that one can't be written), found there from then on;
+- **Android** - the APK and its `main.*.obb` (in one folder): read where they are;
+- **Vita** - Vita3K's folder (its own, the folder its `config.yml` names as `pref-path`, or `ux0`)
+  or the game's own `PCSG00497` folder: read where it is.
+
+The Android and Vita copies are remembered in `settings.ini` (in the profile folder). (Windows,
+Linux and macOS; on Android, copy the files over USB as below.)
+
+Or, as before, nothing given on the command line: put your copy in the **game folder** and start
+the program - it finds it by itself. The game folder is:
 
 | Platform | The game folder |
 |---|---|

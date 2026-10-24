@@ -99,6 +99,18 @@ std::string findDataDir(int argc, char** argv) {
     }
     for (const std::string& r : releaseFolders("ios"))
         if (const std::string d = dataIn(r); !d.empty()) return d;
+    { // (the profile folder's ios/: where the first start's setup unpacks an .ipa when the game folder can't be written)
+        const std::string top = saveDir() + "ios/";
+        if (isDir(top)) {
+            std::vector<std::string> tries = {top};
+            for (const std::string& a : subfolders(top)) {
+                tries.push_back(a);
+                for (const std::string& b : subfolders(a)) tries.push_back(b);
+            }
+            for (const std::string& t : tries)
+                if (const std::string d = dataIn(t); !d.empty()) return d;
+        }
+    }
     // the older places: dataHD/ or data/ in a game folder, the .app there, an unpacked .ipa's Payload/
     for (const std::string& g : gameFolders()) {
         if (const std::string d = dataIn(g); !d.empty()) return d;

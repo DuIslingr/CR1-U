@@ -177,6 +177,7 @@ endif()
 set(GAME_SOURCES
     src/main.cpp
     src/platform/paths.cpp
+    src/platform/setup.cpp
     src/gfx/gl.cpp
     src/gfx/renderer.cpp
     src/gfx/gl_device.cpp
