@@ -321,13 +321,14 @@ bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& a
 
 std::string findVitaGame(const std::string& picked, const SetupGame& g) {
     const std::string p = withSlash(picked);
-    std::vector<std::string> tries = {p};
+    std::vector<std::string> tries; // (the game's own folders first, the folder chosen last - a reader that looks deep would take any game under it)
     const std::string id = g.vitaId, tri = g.trilogyDir;
     for (const std::string& top : {p, p + "app/", p + "ux0/app/"}) {
         tries.push_back(top + id + "/");
         if (!tri.empty()) tries.push_back(top + "PCSG00457/" + tri + "/");
     }
     if (!tri.empty()) tries.push_back(p + tri + "/"); // (the trilogy's own folder chosen)
+    tries.push_back(p);
     for (const std::string& t : tries)
         if (isDir(t) && g.vitaOk(t)) return t;
     // (Vita3K's own folder: its config.yml's pref-path, where its ux0 is)
