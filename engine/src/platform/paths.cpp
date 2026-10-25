@@ -68,6 +68,7 @@ std::vector<std::string> gameFolders() {
 #endif
     add(base);
     if (char* cwd = SDL_GetCurrentDirectory()) add(cwd), SDL_free(cwd);
+    add(saveDir()); // (the profile folder: where the first start's setup copies the game when the game folder can't be written)
 #endif
     return out;
 }

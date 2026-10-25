@@ -17648,18 +17648,19 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((g.front() + f).c_str());
 #endif
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
-        // The first start without a copy: where is it? (platform/setup.hpp - the .ipa unpacked into
-        // ios/, the Android and Vita copies read where they are, settings.ini remembering them)
+        // The first start without a copy: where is it? (platform/setup.hpp - what's chosen copied into
+        // the game folder's ios/, android/, vita/: found as on any start)
         static bool setupAsked = false;
         bool plain = true; // (not a test's or a tool's run)
         for (int i = 1; i < argc; ++i)
             for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models", "--data", "--vita", "--android"})
                 if (SDL_strcmp(argv[i], f) == 0) plain = false;
-        if (!setupAsked && plain && !SDL_getenv("CR_DATA")) {
+        if (!setupAsked && (plain || cr::setupScripted()) && !SDL_getenv("CR_DATA")) {
             setupAsked = true;
             cr::SetupGame setup;
             setup.title = "Chaos Rings", setup.port = "CR1:U", setup.vitaId = "PCSG00497", setup.trilogyDir = "CR1";
             setup.obbHint = "main.100.com.square_enix.chaosrings.googleplay.obb";
+            setup.package = "com.square_enix.chaosrings.googleplay";
             setup.iosOk = [](const std::string& p) {
                 const char* args[] = {"chaosrings", "--data", p.c_str()};
                 return !cr::findDataDir(3, const_cast<char**>(args)).empty();
@@ -17667,10 +17668,15 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             setup.androidOk = androidThere;
             setup.vitaOk = vitaThere;
             cr::SetupResult got;
-            if (!cr::runSetup(setup, g.empty() ? cr::saveDir() + "ios/" : g.front() + "ios/", cr::saveDir() + "ios/", got)) return SDL_APP_FAILURE;
-            if (!got.android.empty()) storeSetting("android=", got.android);
-            if (!got.vita.empty()) storeSetting("vita=", got.vita);
+            if (!cr::runSetup(setup, g.empty() ? cr::saveDir() : g.front(), cr::saveDir(), got)) return SDL_APP_SUCCESS; // (Quit)
             SDL_Log("setup: iOS %s, Android %s, Vita %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str());
+            if (cr::setupScripted()) { // (a test's: the setup alone - whether a start finds the copy now)
+                const char* noArgs[] = {argv[0]};
+                const std::string d = cr::findDataDir(1, const_cast<char**>(noArgs));
+                const bool found = !d.empty() || !cr::releaseFolders("android").empty() || !cr::releaseFolders("vita").empty();
+                SDL_Log("setup: the game: %s", found ? (d.empty() ? "android/ or vita/" : d.c_str()) : "(none)");
+                return found ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+            }
             delete app;
             *state = nullptr;
             return SDL_AppInit(state, argc, argv); // (found now, as on any start)
