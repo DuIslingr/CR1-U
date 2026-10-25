@@ -472,6 +472,30 @@ namespace {
 // (psvpfsparser), or such a dump packed in an archive (libarchive)
 
 bool exists(const std::string& p) { return SDL_GetPathInfo(p.c_str(), nullptr); }
+std::filesystem::path fsPath(const std::string& s) { // (UTF-8, as SDL's paths are)
+#if defined(__cpp_char8_t)
+    return std::filesystem::path(std::u8string(s.begin(), s.end()));
+#else
+    return std::filesystem::u8path(s);
+#endif
+}
+
+// the fan translation's own folder - rePatch's <id>/ - wherever it is in what was chosen (a download's
+// folder: its .rar beside an extracted/rePatch/<id>/), not the folders around it nor the archive
+std::string patchFolder(const std::string& from, const std::string& id) {
+    std::error_code ec;
+    std::string best;
+    int bestDepth = 99;
+    std::filesystem::recursive_directory_iterator it(fsPath(from), std::filesystem::directory_options::skip_permission_denied, ec), end;
+    for (; it != end && !ec; it.increment(ec)) {
+        if (it.depth() >= 6) it.disable_recursion_pending();
+        if (it.depth() < bestDepth && it->is_directory(ec) && it->path().filename() == fsPath(id)) {
+            const auto u = it->path().u8string(); // (UTF-8: std::string, or C++20's std::u8string)
+            best = withSlash(std::string(u.begin(), u.end())), bestDepth = it.depth();
+        }
+    }
+    return best.empty() ? from : best;
+}
 bool encryptedVita(const std::string& dir) { return exists(withSlash(dir) + "sce_sys/package/work.bin") && isDir(withSlash(dir) + "sce_pfs"); }
 
 bool decryptVita(const std::string& from, const std::string& to, std::string* error, const std::function<void(double)>& progress) {
@@ -481,14 +505,7 @@ bool decryptVita(const std::string& from, const std::string& to, std::string* er
     const bool read = w && SDL_SeekIO(w, 0x50, SDL_IO_SEEK_SET) == 0x50 && SDL_ReadIO(w, key, 16) == 16;
     if (w) SDL_CloseIO(w);
     if (!read) return fail(error, "no work.bin (its licence) to decrypt it with");
-    auto u8 = [](const std::string& s) { // (UTF-8, as SDL's paths are)
-#if defined(__cpp_char8_t)
-        return std::filesystem::path(std::u8string(s.begin(), s.end()));
-#else
-        return std::filesystem::u8path(s);
-#endif
-    };
-    const std::filesystem::path src = u8(from), dst = u8(to);
+    const std::filesystem::path src = fsPath(from), dst = fsPath(to);
     const auto crypto = std::make_shared<BuiltinCryptoOperations>();
     const auto f00d = std::make_shared<F00DNativeKeyEncryptor>(crypto);
     std::ostringstream log;
@@ -1164,7 +1181,8 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                         if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
                     if (from.empty()) tell(g, "No fan translation in " + chosen + " - choose its rePatch folder (or the " + g.vitaId + " in it).");
                 }
-                if (!from.empty()) {
+                if (!from.empty()) { // (its <id>/ alone, where that is the translation)
+                    if (const std::string own = patchFolder(from, g.vitaId); own != from && g.patchOk(own)) from = own;
                     Progress pbar(g.title, "Copying the fan translation ...");
                     Copier pc{[&](double v) { pbar.show(v); }, treeBytes(from)};
                     std::string to;
