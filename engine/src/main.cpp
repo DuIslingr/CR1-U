@@ -17659,6 +17659,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             setupAsked = true;
             cr::SetupGame setup;
             setup.title = "Chaos Rings", setup.port = "CR1:U", setup.vitaId = "PCSG00497", setup.trilogyDir = "CR1";
+            setup.trilogyAddon = "DIESEL1000ADDCON"; // (the Prequel Trilogy keeps the game's data in its add-on)
             setup.obbHint = "main.100.com.square_enix.chaosrings.googleplay.obb";
             setup.package = "com.square_enix.chaosrings.googleplay";
             setup.iosOk = [](const std::string& p) {

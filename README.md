@@ -42,6 +42,10 @@ folder's if that one can't be written), the same layout as putting them there by
 - **Vita** - Vita3K's folder with the game installed (its own, the folder its `config.yml` names as
   `pref-path`, or `ux0`), or the game's own `PCSG00497` folder: copied into `vita/PCSG00497/` as Vita3K installs
   it (`eboot.bin`, `sce_sys/`, the game's folder).
+  A **NoNpDrm dump** (its files encrypted, `sce_sys/package/work.bin` its licence) - its folder, or packed as
+  `.rar`, `.7z`, `.zip` or `.vpk` - is decrypted as Vita3K's install does, this game's parts alone; from the
+  Prequel Trilogy (`PCSG00457`) its add-on `addcont/PCSG00457/DIESEL1000ADDCON` - where the game's data is - is merged into
+  the game's folder.
 
 More than one adds to it - the Vita's voices and music over the iOS data, say -; then Start. Nothing is read where it was chosen, so the folder it came from can go
 afterwards. (Windows, Linux and macOS; on Android, copy the files over USB as below.)

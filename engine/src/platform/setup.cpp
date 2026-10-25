@@ -12,6 +12,19 @@
 #include <mutex>
 #include <vector>
 
+#include <filesystem>
+#include <memory>
+#include <sstream>
+#ifdef CR_HAVE_PSVPFS
+#include "BuiltinCryptoOperations.h"
+#include "F00DNativeKeyEncryptor.h"
+#include "PfsFilesystem.h"
+#endif
+#ifdef CR_HAVE_LIBARCHIVE
+#include <archive.h>
+#include <archive_entry.h>
+#endif
+
 #if defined(CR_HAVE_ZLIB)
 #include <zlib.h>
 #endif
@@ -450,6 +463,351 @@ bool setupScripted() { return script().on; }
 
 namespace {
 
+// ---- the Vita release: as Vita3K installs it (ux0/app/<id>/, the Prequel Trilogy's add-ons in
+// ux0/addcont/PCSG00457/), or a NoNpDrm dump of it - its files in the Vita's PFS, encrypted, their
+// key in sce_sys/package/work.bin (+0x50: the klicensee) - decrypted as Vita3K's install does
+// (psvpfsparser), or such a dump packed in an archive (libarchive)
+
+bool exists(const std::string& p) { return SDL_GetPathInfo(p.c_str(), nullptr); }
+bool encryptedVita(const std::string& dir) { return exists(withSlash(dir) + "sce_sys/package/work.bin") && isDir(withSlash(dir) + "sce_pfs"); }
+
+bool decryptVita(const std::string& from, const std::string& to, std::string* error, const std::function<void(double)>& progress) {
+#ifdef CR_HAVE_PSVPFS
+    uint8_t key[16];
+    SDL_IOStream* w = SDL_IOFromFile((withSlash(from) + "sce_sys/package/work.bin").c_str(), "rb");
+    const bool read = w && SDL_SeekIO(w, 0x50, SDL_IO_SEEK_SET) == 0x50 && SDL_ReadIO(w, key, 16) == 16;
+    if (w) SDL_CloseIO(w);
+    if (!read) return fail(error, "no work.bin (its licence) to decrypt it with");
+    auto u8 = [](const std::string& s) { // (UTF-8, as SDL's paths are)
+#if defined(__cpp_char8_t)
+        return std::filesystem::path(std::u8string(s.begin(), s.end()));
+#else
+        return std::filesystem::u8path(s);
+#endif
+    };
+    const std::filesystem::path src = u8(from), dst = u8(to);
+    const auto crypto = std::make_shared<BuiltinCryptoOperations>();
+    const auto f00d = std::make_shared<F00DNativeKeyEncryptor>(crypto);
+    std::ostringstream log;
+    PfsFilesystem pfs(crypto, f00d, log, key, src);
+    if (pfs.mount() < 0) return fail(error, "its files can't be read with its own work.bin - not a whole NoNpDrm dump");
+    if (pfs.decrypt_files(dst, [&](std::uint64_t done, std::uint64_t total, const std::string&) {
+            if (progress && total) progress(double(done) / double(total));
+        }) < 0)
+        return fail(error, "its files don't decrypt (a part of the dump missing or damaged?)");
+    return true;
+#else
+    (void)from, (void)to, (void)progress;
+    return fail(error, "this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder");
+#endif
+}
+
+#ifdef CR_HAVE_LIBARCHIVE
+constexpr bool kArchives = true;
+#else
+constexpr bool kArchives = false;
+#endif
+
+// an archive's entries `want` takes (its paths with '/'), unpacked into `to`; `progress` by the bytes read
+bool unpackArchive(const std::string& path, const std::string& to, const std::function<bool(const std::string&)>& want, std::string* error,
+                   const std::function<void(double)>& progress) {
+#ifdef CR_HAVE_LIBARCHIVE
+    archive* a = archive_read_new();
+    archive_read_support_format_all(a);
+    archive_read_support_filter_all(a);
+    if (archive_read_open_filename(a, path.c_str(), 1 << 20) != ARCHIVE_OK) {
+        const std::string why = archive_error_string(a) ? archive_error_string(a) : "can't be opened";
+        archive_read_free(a);
+        return fail(error, why);
+    }
+    const uint64_t total = fileBytes(path);
+    archive_entry* e = nullptr;
+    bool ok = true;
+    std::vector<char> buf(1 << 20);
+    int r;
+    while (ok && (r = archive_read_next_header(a, &e)) == ARCHIVE_OK) {
+        const char* n = archive_entry_pathname_utf8(e);
+        if (!n) n = archive_entry_pathname(e);
+        std::string name = n ? n : "";
+        std::replace(name.begin(), name.end(), '\\', '/');
+        const bool unsafe = name.empty() || name[0] == '/' || name.find(':') != std::string::npos || ("/" + name + "/").find("/../") != std::string::npos;
+        if (unsafe || !want(name)) {
+            archive_read_data_skip(a);
+            continue;
+        }
+        const std::string out = withSlash(to) + name;
+        if (archive_entry_filetype(e) == AE_IFDIR) {
+            SDL_CreateDirectory(out.c_str());
+            continue;
+        }
+        if (archive_entry_filetype(e) != AE_IFREG) {
+            archive_read_data_skip(a);
+            continue;
+        }
+        SDL_CreateDirectory(parentOf(out).c_str());
+        SDL_IOStream* f = SDL_IOFromFile(out.c_str(), "wb");
+        if (!f) {
+            ok = false, fail(error, out + ": can't be written");
+            break;
+        }
+        for (la_ssize_t got; (got = archive_read_data(a, buf.data(), buf.size())) != 0;) {
+            if (got < 0 || SDL_WriteIO(f, buf.data(), size_t(got)) != size_t(got)) {
+                ok = false, fail(error, got < 0 ? name + ": " + (archive_error_string(a) ? archive_error_string(a) : "can't be read") : out + ": can't be written");
+                break;
+            }
+            if (progress && total) progress(double(archive_filter_bytes(a, -1)) / double(total));
+        }
+        if (!SDL_CloseIO(f)) ok = false;
+    }
+    if (ok && r != ARCHIVE_EOF) ok = false, fail(error, archive_error_string(a) ? archive_error_string(a) : "a broken entry");
+    archive_read_free(a);
+    return ok;
+#else
+    (void)path, (void)to, (void)want, (void)progress;
+    return fail(error, "this build can't open archives - unpack it first, then choose its folder");
+#endif
+}
+
+// a folder's entries moved into another, their folders merged (an add-on's into its game's)
+bool mergeInto(const std::string& from, const std::string& to) {
+    struct Ctx {
+        std::string to;
+        bool ok = true;
+    } ctx{withSlash(to)};
+    SDL_EnumerateDirectory(
+        from.c_str(),
+        [](void* user, const char* parent, const char* name) -> SDL_EnumerationResult {
+            Ctx& c = *static_cast<Ctx*>(user);
+            const std::string p = std::string(parent) + name, t = c.to + name;
+            if (isDir(p) && isDir(t)) c.ok = mergeInto(withSlash(p), t);
+            else {
+                if (exists(t)) SDL_RemovePath(t.c_str());
+                c.ok = SDL_RenamePath(p.c_str(), t.c_str());
+            }
+            return c.ok ? SDL_ENUM_CONTINUE : SDL_ENUM_FAILURE;
+        },
+        &ctx);
+    return ctx.ok;
+}
+
+// ---- a Vita program (a SELF) decrypted to its ELF, as Vita3K does when it loads one (its
+// packages/sce_utils.cpp, GPL-2.0): the segments' keys in its metadata - for an app, under the
+// NPDRM key and its klicensee, then the metadata key (Vita3K's retail app keys, by the SELF's key
+// revision and system version) -, each segment AES-128-CTR, some deflated
+
+struct SelfKey {
+    int revision;
+    const char* key; // (AES-256)
+    const char* iv;
+    uint64_t minVersion, maxVersion;
+};
+const SelfKey kAppMetadataKeys[] = {
+    {0, "AAA508FA5E85EAEE597ED2B27804D22287CFADF1DF32EDC7A7C58E8C9AA8BB36", "CD1BD3A59200CC67A3B804808DC2AE73", 0x00000000000, 0x16920000000},
+    {0, "5661E5FB20CFD1D1DFF50C1E59A6EA977D0AA5C5770F53B9CDD4E9451FFF55CB", "23D02FF79BF430E2D123869BF0CACAA0", 0x18000000000, ~uint64_t(0)},
+    {1, "4181B2DF5F5D94D3C80B7D86EACF1928533A49BA58EDE2B43CDEE7E572568BD4", "B1678C0543B6C1997B63A6F4F3C8FD33", 0, ~uint64_t(0)},
+    {2, "5282582F17F068F89A260AAFB71C58928F45A8D08C681376B07FF9EAB1114226", "29672DF43E426F41AF46D42E8437D449", 0, ~uint64_t(0)},
+    {3, "270CBA370061B87077672ADB5142D18844AAED352A9CCEE63602B0D740594334", "1CF2454FBF47D76221B91AFC3B608C28", 0, ~uint64_t(0)},
+    {4, "A782BC5A9EDDFC49A513FF3E592C4677A8C8920F23C9F11F2558FB9D99A43868", "559B5E658559EB65EBF892C274E098A9", 0, ~uint64_t(0)},
+    {5, "12D64D0172495226010A687DE245A73DE028B3561E25E69BABC325636F3CAE0A", "F149EED1757E5A915B24309795BFC380", 0, ~uint64_t(0)},
+};
+const char* const kNpdrmKeys[2] = {"C10368BF3D2943BC6E5BD05E46A9A7B6", "16419DD3BFBE8BDC596929B72CE237CD"}; // (key revision < 2, 2 on)
+
+std::vector<uint8_t> hexBytes(const char* hex) {
+    std::vector<uint8_t> out;
+    for (size_t k = 0; hex[k] && hex[k + 1]; k += 2) out.push_back(uint8_t(std::stoi(std::string(hex + k, 2), nullptr, 16)));
+    return out;
+}
+uint32_t le32At(const std::vector<uint8_t>& f, uint64_t at) { return at + 4 <= f.size() ? u32(&f[size_t(at)]) : 0; }
+uint64_t le64At(const std::vector<uint8_t>& f, uint64_t at) { return at + 8 <= f.size() ? u64(&f[size_t(at)]) : 0; }
+
+// whether a program's segments are encrypted (its first's "plaintext" no)
+bool selfEncrypted(const std::vector<uint8_t>& f) {
+    if (f.size() < 0x80 || std::memcmp(f.data(), "SCE\0", 4) != 0) return false;
+    return le32At(f, le64At(f, 32 + 56) + 24) == 1;
+}
+
+bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector<uint8_t>& elf, std::string* error) {
+#ifdef CR_HAVE_PSVPFS
+    if (f.size() < 0x80 || std::memcmp(f.data(), "SCE\0", 4) != 0 || (f[10] | f[11] << 8) != 1) return fail(error, "not a SELF");
+    const int keyRevision = f[9];
+    const uint64_t metadataAt = le32At(f, 12), headerLength = le64At(f, 16);
+    const uint64_t appInfo = le64At(f, 32 + 24), elfAt = le64At(f, 32 + 32), phdrAt = le64At(f, 32 + 40), segAt = le64At(f, 32 + 56);
+    const uint32_t selfType = le32At(f, appInfo + 12);
+    const uint64_t sysVersion = le64At(f, appInfo + 16);
+    if (headerLength > f.size() || metadataAt + 48 + 64 > headerLength || elfAt + 52 > f.size()) return fail(error, "a broken SELF");
+    const int phnum = f[size_t(elfAt) + 44] | f[size_t(elfAt) + 45] << 8;
+    struct Segment {
+        uint64_t offset, size;
+        bool compressed, encrypted;
+        uint32_t fileOffset, fileSize;
+    };
+    std::vector<Segment> segs;
+    bool any = false;
+    for (int i = 0; i < phnum; ++i) {
+        const uint64_t s = segAt + uint64_t(i) * 32, p = phdrAt + uint64_t(i) * 32;
+        segs.push_back({le64At(f, s), le64At(f, s + 8), le32At(f, s + 16) == 2, le32At(f, s + 24) == 1, le32At(f, p + 4), le32At(f, p + 16)});
+        any = any || segs.back().encrypted;
+        if (segs.back().offset + segs.back().size > f.size()) return fail(error, "a broken SELF (a segment past its end)");
+    }
+    BuiltinCryptoOperations crypto;
+    struct Keyed {
+        int idx;
+        std::vector<uint8_t> key, iv;
+    };
+    std::vector<Keyed> keyed; // (the encrypted segments, in the metadata's order)
+    if (any) {
+        const SelfKey* mk = nullptr;
+        for (const SelfKey& k : kAppMetadataKeys)
+            if (k.revision == keyRevision && sysVersion >= k.minVersion && sysVersion <= k.maxVersion) mk = &k;
+        if (selfType != 8 || !mk) return fail(error, "a SELF of a kind (or key revision) the port has no key for");
+        std::vector<uint8_t> dat(f.begin() + long(metadataAt + 48), f.begin() + long(headerLength));
+        uint8_t in[64], info[64], zero[16] = {}, iv[16] = {};
+        std::memcpy(in, dat.data(), 64);
+        { // (an app's: the metadata's first block under the klicensee, itself under the NPDRM key)
+            const std::vector<uint8_t> np = hexBytes(kNpdrmKeys[keyRevision >= 2 ? 1 : 0]);
+            uint8_t klicKey[16];
+            std::memcpy(iv, zero, 16);
+            crypto.aes_cbc_decrypt(klic, klicKey, 16, np.data(), 128, iv);
+            std::memcpy(iv, zero, 16);
+            crypto.aes_cbc_decrypt(dat.data(), in, 64, klicKey, 128, iv);
+        }
+        const std::vector<uint8_t> key = hexBytes(mk->key), kiv = hexBytes(mk->iv);
+        std::memcpy(iv, kiv.data(), 16);
+        crypto.aes_cbc_decrypt(in, info, 64, key.data(), 256, iv);
+        for (int k = 16; k < 32; ++k)
+            if (info[k] || info[k + 32]) return fail(error, "its key doesn't open it (its licence isn't its own?)");
+        std::vector<uint8_t> meta((dat.size() - 64) / 16 * 16);
+        std::memcpy(iv, info + 32, 16);
+        crypto.aes_cbc_decrypt(dat.data() + 64, meta.data(), int(meta.size()), info, 128, iv);
+        if (meta.size() < 32) return fail(error, "a broken SELF (no metadata)");
+        const uint32_t sections = le32At(meta, 12), keys = le32At(meta, 16);
+        const uint64_t vault = 32 + uint64_t(sections) * 48;
+        if (vault + uint64_t(keys) * 16 > meta.size()) return fail(error, "a broken SELF (its metadata)");
+        for (uint32_t k = 0; k < sections; ++k) {
+            const uint64_t m = 32 + uint64_t(k) * 48;
+            const int segIdx = int(le32At(meta, m + 20)), keyIdx = int(le32At(meta, m + 36)), ivIdx = int(le32At(meta, m + 40));
+            if (le32At(meta, m + 32) != 3) continue; // (AES-128-CTR)
+            if (keyIdx < 0 || ivIdx < 0 || uint32_t(keyIdx) >= keys || uint32_t(ivIdx) >= keys || segIdx < 0 || segIdx >= phnum)
+                return fail(error, "a broken SELF (its keys)");
+            keyed.push_back({segIdx, std::vector<uint8_t>(meta.begin() + long(vault + 16 * uint64_t(keyIdx)), meta.begin() + long(vault + 16 * uint64_t(keyIdx) + 16)),
+                             std::vector<uint8_t>(meta.begin() + long(vault + 16 * uint64_t(ivIdx)), meta.begin() + long(vault + 16 * uint64_t(ivIdx) + 16))});
+        }
+    }
+    // the ELF: its header and program headers, each segment at its p_offset
+    elf.assign(f.begin() + long(elfAt), f.begin() + long(elfAt + 52));
+    for (int i = 0; i < phnum; ++i) elf.insert(elf.end(), f.begin() + long(phdrAt + uint64_t(i) * 32), f.begin() + long(phdrAt + uint64_t(i) * 32 + 32));
+    for (int i = 0; i < phnum; ++i) {
+        const int idx = keyed.empty() ? i : i < int(keyed.size()) ? keyed[size_t(i)].idx : -1;
+        if (idx < 0) break;
+        const Segment& s = segs[size_t(idx)];
+        if (s.fileSize == 0) continue;
+        if (s.fileOffset > elf.size()) elf.resize(s.fileOffset);
+        std::vector<uint8_t> data(f.begin() + long(s.offset), f.begin() + long(s.offset + s.size));
+        if (s.encrypted) {
+            if (keyed.empty()) return fail(error, "a broken SELF (an encrypted segment without its key)");
+            std::vector<uint8_t> iv = keyed[size_t(i)].iv;
+            std::vector<uint8_t> plain(data.size());
+            crypto.aes_ctr_decrypt(data.data(), plain.data(), int(data.size()), keyed[size_t(i)].key.data(), 128, iv.data());
+            data.swap(plain);
+        }
+        if (s.compressed) {
+#if defined(CR_HAVE_ZLIB)
+            std::vector<uint8_t> out(size_t(s.fileSize));
+            uLongf n = uLongf(out.size());
+            if (uncompress(out.data(), &n, data.data(), uLong(data.size())) != Z_OK) return fail(error, "a segment doesn't inflate");
+            out.resize(n);
+            data.swap(out);
+#else
+            return fail(error, "built without zlib");
+#endif
+        }
+        if (elf.size() > s.fileOffset) elf.resize(s.fileOffset); // (at its offset, over what came before)
+        elf.insert(elf.end(), data.begin(), data.end());
+    }
+    return true;
+#else
+    (void)f, (void)klic, (void)elf;
+    return fail(error, "this build can't decrypt the Vita's programs");
+#endif
+}
+
+// a licence's klicensee: the dump's sce_sys/package/work.bin, else Vita3K's ux0/license/<id>/*.rif (+0x50)
+bool klicenseeOf(const std::string& root, const std::string& id, uint8_t* key) {
+    std::vector<std::string> tries = {withSlash(root) + "sce_sys/package/work.bin"};
+    const std::string lic = parentOf(parentOf(withSlash(root))) + "license/" + id + "/";
+    int count = 0;
+    char** names = SDL_GlobDirectory(lic.c_str(), "*.rif", SDL_GLOB_CASEINSENSITIVE, &count);
+    for (int k = 0; names && k < count; ++k) tries.push_back(lic + names[k]);
+    SDL_free(names);
+    for (const std::string& t : tries) {
+        SDL_IOStream* w = SDL_IOFromFile(t.c_str(), "rb");
+        const bool got = w && SDL_SeekIO(w, 0x50, SDL_IO_SEEK_SET) == 0x50 && SDL_ReadIO(w, key, 16) == 16;
+        if (w) SDL_CloseIO(w);
+        if (got) return true;
+    }
+    return false;
+}
+
+// The game as installed: <id>/ - or the Prequel Trilogy's PCSG00457/ with this game's folder in it
+// (CR1-U, CRO-U and CR2-U's games' data in its add-ons, ux0/addcont/PCSG00457/<addon>/) -, found
+// from Vita3K's folder (its own, or the pref path its config.yml names), ux0, ux0/app, a dump's
+// folder (its app/; an archive's "<title> (JPN)/app/<id>/" a folder or two down), the install
+// or the game's folder itself
+struct VitaInstall {
+    std::string root;  // <id>/ or PCSG00457/
+    bool trilogy = false;
+    std::string addon; // (the trilogy's: its add-on's folder, "" none)
+};
+std::string addonOf(const SetupGame& g, const std::string& root) {
+    if (!*g.trilogyAddon) return {};
+    const std::string a = parentOf(parentOf(root)) + "addcont/PCSG00457/" + g.trilogyAddon + "/";
+    return isDir(a) ? a : std::string();
+}
+bool findVitaInstall(const std::string& picked, const SetupGame& g, VitaInstall& out, int depth = 0) {
+    const std::string p = withSlash(picked), id = g.vitaId, tri = g.trilogyDir;
+    std::vector<std::string> tops = {p, p + "app/", p + "ux0/app/", parentOf(p), parentOf(parentOf(p))};
+    if (depth == 0) // (a dump's own folder or an archive's: the app/ a folder or two down)
+        for (const std::string& top : {p, p + "app/"}) {
+            int count = 0;
+            char** names = SDL_GlobDirectory(top.c_str(), "*", 0, &count);
+            for (int k = 0; names && k < count; ++k)
+                if (isDir(top + names[k])) tops.push_back(withSlash(top + names[k])), tops.push_back(withSlash(top + names[k]) + "app/");
+            SDL_free(names);
+        }
+    auto usable = [&](const std::string& root, bool trilogy) {
+        if (!isDir(root)) return false;
+        if (!trilogy) return encryptedVita(root) || g.vitaOk(root);
+        return isDir(root + tri) && (encryptedVita(root) || g.vitaOk(root + tri + "/") || !addonOf(g, root).empty());
+    };
+    std::string lacking; // (the trilogy without this game's add-on: said so)
+    for (const std::string& top : tops) {
+        if (top.empty()) continue;
+        for (const std::string& root : {top + id + "/", baseName(top) == id ? top : std::string()})
+            if (!root.empty() && usable(root, false)) return out = {root, false, {}}, true;
+        if (tri.empty()) continue;
+        for (const std::string& root : {top + "PCSG00457/", baseName(top) == "PCSG00457" ? top : std::string()}) {
+            if (!root.empty() && usable(root, true)) return out = {root, true, addonOf(g, root)}, true;
+            if (!root.empty() && isDir(root + tri) && lacking.empty()) lacking = root;
+        }
+    }
+    if (!lacking.empty()) out = {lacking, true, {}};
+    // (Vita3K's own folder: its config.yml's pref-path, where its ux0 is)
+    size_t size = 0;
+    if (char* text = static_cast<char*>(SDL_LoadFile((p + "config.yml").c_str(), &size))) {
+        const std::string all(text, size);
+        SDL_free(text);
+        const size_t at = all.find("pref-path:");
+        if (at != std::string::npos && depth < 2) {
+            std::string pref = all.substr(at + 10, all.find('\n', at) - at - 10);
+            pref.erase(0, pref.find_first_not_of(" \t'\""));
+            while (!pref.empty() && (pref.back() == '\r' || pref.back() == ' ' || pref.back() == '\'' || pref.back() == '"')) pref.pop_back();
+            if (pref.rfind("./", 0) == 0 || pref.rfind(".\\", 0) == 0 || pref == ".") pref = p + pref.substr(std::min<size_t>(pref.size(), 2)); // (relative: Vita3K's folder's)
+            if (!pref.empty() && withSlash(pref) != p) return findVitaInstall(pref, g, out, depth + 1);
+        }
+    }
+    return false;
+}
+
 // a job done in the game folder, else - it can't be written there - in the profile folder: `job`
 // returns 1 done, 0 not (the next folder tried), -1 not and no use trying again
 bool inGameFolder(const std::vector<std::string>& roots, const std::function<int(const std::string&)>& job) {
@@ -632,68 +990,159 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                 continue;
             }
             out.android = dest;
-        } else if (choice == 3) { // (the game's folder as Vita3K installed it, copied into vita/<id>/)
-            const std::string picked = pickFolder();
-            if (picked.empty()) continue;
-            const std::string game = findVitaGame(picked, g);
-            if (game.empty()) {
-                tell(g, std::string("No ") + g.title + " (" + g.vitaId + ") in " + picked +
-                            " - choose Vita3K's folder, its ux0, or the game's own folder.");
+        } else if (choice == 3) { // (the Vita release copied - a NoNpDrm dump's decrypted - into vita/<id>/)
+            int how = 1;
+            if (kArchives)
+                how = ask(g,
+                          "Where is the Vita release?\n\n"
+                          "  A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's\n"
+                          "  An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk",
+                          {{1, "A folder..."}, {2, "An archive..."}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION);
+            if (how <= 0) continue;
+            std::string picked, unpacked; // (an archive's: unpacked into vita/.unpack/, gone after)
+            if (how == 2) {
+                static const SDL_DialogFileFilter kDump[] = {{"A Vita dump (.rar, .7z, .zip, .vpk)", "rar;7z;zip;vpk"}, {"Any file", "*"}};
+                const std::vector<std::string> files = pickFiles(kDump, 2, false);
+                if (files.empty()) continue;
+                // (this game's parts alone: those under its title id - the trilogy's PCSG00457 and its add-on, not the other games')
+                const std::string id = g.vitaId, addon = g.trilogyAddon;
+                auto want = [&](const std::string& n) {
+                    const std::string s = "/" + n + "/";
+                    if (s.find("/" + id + "/") != std::string::npos) return true;
+                    if (!*g.trilogyDir || s.find("/PCSG00457/") == std::string::npos) return false;
+                    return s.find("/addcont/") == std::string::npos || (!addon.empty() && s.find("/" + addon + "/") != std::string::npos);
+                };
+                Progress bar(g.title, "Unpacking " + baseName(files.front()) + " ...");
+                std::string why;
+                const bool ok = inGameFolder(roots, [&](const std::string& r) {
+                    const std::string v = r + "vita/", u = v + ".unpack/";
+                    if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
+                    if (isDir(u)) removeTree(u);
+                    if (!SDL_CreateDirectory(u.c_str())) return 0;
+                    if (unpackArchive(files.front(), u, want, &why, [&](double x) { bar.show(x); })) return unpacked = u, 1;
+                    removeTree(u);
+                    return why.find("can't be written") != std::string::npos ? 0 : -1;
+                });
+                if (!ok) {
+                    tell(g, baseName(files.front()) + ": " + why);
+                    continue;
+                }
+                picked = unpacked;
+            } else {
+                picked = pickFolder();
+                if (picked.empty()) continue;
+            }
+            VitaInstall in;
+            if (!findVitaInstall(picked, g, in)) {
+                if (!unpacked.empty()) removeTree(unpacked);
+                if (in.trilogy) // (the Prequel Trilogy, this game's data - its add-on - not with it)
+                    tell(g, std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon + "), and it isn't beside " +
+                                in.root + " - install the add-on in Vita3K too, or choose a dump with it.");
+                else tell(g, std::string("No ") + g.title + " (" + g.vitaId + ") in " + (unpacked.empty() ? picked : std::string("the archive")) +
+                            " - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it.");
                 continue;
             }
-            // the install: ux0/app/<id>/ (the game's folder, or the folder in it chosen); the
-            // trilogy's PCSG00457/ - its own files and this game's folder, not the other games'
-            const std::string gs = withSlash(game), tri = g.trilogyDir;
-            std::string install = gs, name = g.vitaId, only;
-            if (baseName(gs) != g.vitaId && baseName(parentOf(gs)) == g.vitaId) install = parentOf(gs);
-            else if (!tri.empty() && baseName(gs) == tri && baseName(parentOf(gs)) == "PCSG00457") install = parentOf(gs), name = "PCSG00457", only = tri;
-            Progress bar(g.title, "Copying the Vita release ...");
-            Copier copy{[&](double v) { bar.show(v); }, treeBytes(install)}; // (the trilogy's other games left: the bar ends short)
-            std::string dest;
+            // the install, into vita/<id>/: a dump's decrypted, else copied - the trilogy's own files
+            // and this game's folder, not the other games' -, then the trilogy's add-on (this game's
+            // data) merged into this game's folder
+            const std::string tri = g.trilogyDir, name = in.trilogy ? "PCSG00457" : g.vitaId;
+            static const char* const kGames[] = {"CR1", "CRO", "CR2", "CR3"}; // (the Prequel Trilogy's - CR3 itself too)
+            std::string dest, why;
             bool notGame = false;
             const bool ok = inGameFolder(roots, [&](const std::string& r) {
                 const std::string v = r + "vita/", part = v + name + ".part/", done = v + name + "/";
                 if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
                 if (isDir(part)) removeTree(part);
-                copy.done = 0;
-                bool good = true;
-                if (only.empty()) good = copy.tree(install, part);
-                else { // (the trilogy: all but the other games' folders and programs - eboot.bin, sce_sys/, sound/ ... and this game's)
+                bool good;
+                if (encryptedVita(in.root)) {
+                    {
+                        Progress bar(g.title, "Decrypting the Vita release ...");
+                        good = decryptVita(in.root, part, &why, [&](double x) { bar.show(x); });
+                    }
+                    if (!good) return removeTree(part), why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+                    if (in.trilogy)
+                        for (const char* other : kGames)
+                            if (tri != other) removeTree(part + other + "/"), SDL_RemovePath((part + other + ".self").c_str());
+                } else {
+                    Progress bar(g.title, "Copying the Vita release ...");
+                    Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.root)}; // (the trilogy's other games left: the bar ends short)
                     good = SDL_CreateDirectory(part.c_str());
                     struct Ctx {
                         Copier* c;
                         std::string part, only;
                         bool ok = true;
-                    } ctx{&copy, part, only};
+                    } ctx{&copy, part, in.trilogy ? tri : std::string()};
                     if (good)
                         SDL_EnumerateDirectory(
-                            install.c_str(),
+                            in.root.c_str(),
                             [](void* user, const char* parent, const char* n) -> SDL_EnumerationResult {
                                 Ctx& x = *static_cast<Ctx*>(user);
                                 const std::string p = std::string(parent) + n, s = n;
-                                static const char* const kGames[] = {"CR1", "CRO", "CR2", "CR3"}; // (the trilogy's - the Prequel Trilogy has CR3 too)
-                                for (const char* other : kGames)
-                                    if (x.only != other && (s == other || s == std::string(other) + ".self")) return SDL_ENUM_CONTINUE;
+                                if (!x.only.empty())
+                                    for (const char* other : kGames)
+                                        if (x.only != other && (s == other || s == std::string(other) + ".self")) return SDL_ENUM_CONTINUE;
                                 x.ok = isDir(p) ? x.c->tree(withSlash(p), x.part + s) : x.c->file(p, x.part + s);
                                 return x.ok ? SDL_ENUM_CONTINUE : SDL_ENUM_FAILURE;
                             },
                             &ctx);
                     good = good && ctx.ok;
+                    if (!good) return removeTree(part), 0;
                 }
-                if (!good) return removeTree(part), 0;
+                if (!in.addon.empty()) { // (the trilogy's add-on: this game's data, into its folder)
+                    const std::string a = v + ".addon.part/";
+                    if (isDir(a)) removeTree(a);
+                    if (encryptedVita(in.addon)) {
+                        {
+                            Progress bar(g.title, "Decrypting the game's add-on ...");
+                            good = decryptVita(in.addon, a, &why, [&](double x) { bar.show(x); });
+                        }
+                        good = good && mergeInto(a + tri + "/", part + tri + "/");
+                    } else {
+                        Progress bar(g.title, "Copying the game's add-on ...");
+                        Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.addon + tri + "/")};
+                        good = copy.tree(in.addon + tri + "/", part + tri);
+                    }
+                    removeTree(a);
+                    if (!good) return removeTree(part), why.empty() || why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+                }
+                if (g.vitaProgram) { // (its program, encrypted: decrypted beside it - <name>.elf)
+                    const std::string program = in.trilogy ? tri + ".self" : std::string("eboot.bin");
+                    size_t size = 0;
+                    std::vector<uint8_t> self;
+                    if (void* d = SDL_LoadFile((part + program).c_str(), &size)) self.assign(static_cast<uint8_t*>(d), static_cast<uint8_t*>(d) + size), SDL_free(d);
+                    if (selfEncrypted(self)) {
+                        uint8_t klic[16];
+                        std::vector<uint8_t> elf;
+                        if (!klicenseeOf(in.root, name, klic)) why = program + ": no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)";
+                        else if (decryptSelf(self, klic, elf, &why)) {
+                            const std::string to = part + program.substr(0, program.rfind('.')) + ".elf";
+                            SDL_IOStream* o = SDL_IOFromFile(to.c_str(), "wb");
+                            const bool wrote = o && SDL_WriteIO(o, elf.data(), elf.size()) == elf.size();
+                            if (o) SDL_CloseIO(o);
+                            if (!wrote) return removeTree(part), 0;
+                        } else why = program + ": " + why;
+                        if (!why.empty()) return removeTree(part), notGame = true, -1;
+                    }
+                }
                 if (isDir(done)) removeTree(done);
                 if (!SDL_RenamePath(part.c_str(), done.c_str())) return removeTree(part), 0;
-                const std::string gameDir = only.empty() ? done : done + only + "/";
+                const std::string gameDir = in.trilogy ? done + tri + "/" : done;
                 if (!g.vitaOk(gameDir) && !g.vitaOk(done)) return removeTree(done), notGame = true, -1;
                 dest = gameDir;
                 return 1;
             });
             if (!ok) {
-                tell(g, notGame ? install + " isn't " + g.title + "'s Vita release as the port reads it."
-                                : std::string("The Vita release in ") + install + " can't be copied into " + roots[0] + "vita/ (nor the profile folder's).");
+                if (!unpacked.empty()) removeTree(unpacked);
+                if (notGame && !why.empty()) tell(g, std::string("The Vita release in ") + in.root + ": " + why);
+                else if (notGame && in.trilogy && in.addon.empty())
+                    tell(g, std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon +
+                                "), and it isn't beside " + in.root + " - install it in Vita3K too, or choose the dump with it.");
+                else if (notGame) tell(g, in.root + " isn't " + g.title + "'s Vita release as the port reads it.");
+                else tell(g, std::string("The Vita release in ") + in.root + " can't be copied into " + roots[0] + "vita/ (nor the profile folder's).");
                 continue;
             }
             out.vita = dest;
+            const std::string game = in.trilogy ? in.root + tri + "/" : in.root; // (where its fan translation is looked for)
             if (g.patchOk) { // (the fan translation: Vita3K's ux0/rePatch/<id> by itself, else asked for - copied into translation/<id>/)
                 out.patch.clear();
                 std::string from;
@@ -731,6 +1180,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     out.patch = to;
                 }
             }
+            if (!unpacked.empty()) removeTree(unpacked);
         }
         if (g.oneRelease && (!out.ios.empty() || !out.android.empty() || !out.vita.empty())) return true;
     }

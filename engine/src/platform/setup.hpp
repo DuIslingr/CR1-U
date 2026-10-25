@@ -7,11 +7,15 @@
 //   ios/<name>.app/      the .ipa's app, unpacked
 //   android/             the APK and its OBB (or the .apks)
 //   vita/<title id>/     the Vita game's folder as Vita3K installs it (ux0/app/<id>: eboot.bin, sce_sys/,
-//                        the game's own folder); the Prequel Trilogy's PCSG00457/ with this game's folder in it
+//                        the game's own folder); the Prequel Trilogy's PCSG00457/ with this game's folder in
+//                        it, its add-on's data (ux0/addcont/PCSG00457/<addon>/<game>/) merged into that
 //   translation/<id>/    (CR3-U) the Vita release's fan translation, ux0/rePatch/<id>
 //
 // - where the game folder can't be written, the same in the profile folder. Every start finds them
-// there as it would files put there by hand; nothing is read where it was chosen.
+// there as it would files put there by hand; nothing is read where it was chosen. A NoNpDrm dump
+// (its files encrypted, sce_sys/package/work.bin its licence) is decrypted as Vita3K's install does
+// (third_party/psvpfsparser); one packed in a .rar, .7z, .zip or .vpk is unpacked first (libarchive),
+// this game's parts alone.
 //
 // Tests: CRU_SETUP_ANSWERS answers it without windows - ';' between the answers, each a button's id
 // (1 iOS, 2 Android, 3 Vita, 4 Start, 0 Quit; Yes 1 / No 0 to a question) or a path chosen ('|'
@@ -27,9 +31,11 @@ struct SetupGame {
     const char* port = "";       // ("CR1:U")
     const char* vitaId = "";     // the Vita release's title id ("PCSG00497")
     const char* trilogyDir = ""; // its folder in the Vita's trilogy, PCSG00457 ("CR1"; "" none)
+    const char* trilogyAddon = ""; // the trilogy's add-on with its data (ux0/addcont/PCSG00457/"DIESEL1000ADDCON"; "" none - CR3's in the app)
     const char* obbHint = "";    // the expansion file's name ("main.100.com...obb"; or a hint, for the message)
     const char* package = "";    // the Android package ("com.square_enix.chaosrings"; "" none): APKs beside a pick that carry it go along
     bool oneRelease = false;     // (CR2-U, CR3-U: one copy is the game; the others aren't added to it)
+    bool vitaProgram = false;    // (CR2-U: the Vita program read too - an encrypted one decrypted beside it, <name>.elf)
     // whether a folder holds the release (the .app's / its data folder; an Android folder or OBB; a Vita game folder)
     std::function<bool(const std::string&)> iosOk, androidOk, vitaOk;
     // (CR3-U: the Vita release's fan translation - a folder that reads over it; none: not asked)
