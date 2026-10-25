@@ -129,7 +129,7 @@ retextured - moving with the game's own skeleton and animations:
    A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
    (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the model's.
 3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<package>.glb` (`j001.glb` for Escher's `j001.bin`). With HD Models on
-   (Options, Detail; on by itself) it is drawn instead of the original from the next scene on.
+   (Options, Detail; off until you switch it on) it is drawn instead of the original from the next scene on.
 
 What it reads: triangles, the first UV set and colour set, four weights a vertex; up to 255 joints a mesh; the game's particle props (`be*` / `ee*`) hang pieces on bones resting at scale 0, which Blender can't keep - edit those outside it. The
 animations in the file are for previewing - the game plays its own. `crtool gltfcheck <data> <model.bin> [file.glb]`

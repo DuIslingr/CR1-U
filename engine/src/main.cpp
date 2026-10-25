@@ -227,7 +227,7 @@ struct App {
         int sharpness = 25;                // % (FSR's RCAS pass; 0 = none)
         bool hdTextures = false;           // upscaled replacements from hdDir (what loads next)
         int smoothModels = 0;              // 0 off, 2 / 3: PN-triangle level for characters and monsters
-        bool hdModels = true;              // replacement models from modelsDir (glTF; what loads next)
+        bool hdModels = false;             // replacement models from modelsDir (glTF; what loads next)
         int anisotropy = 16;               // anisotropic filtering's samples on the mipmapped textures (1 off)
         bool sharpTextures = false;        // those magnified by the nearest texel (square pixels up close)
         int layout = 0;                    // 0 the data's own (2.2.0's iPhone layout for its data), 1 iPad, 2 iPhone, 3 Android
@@ -1315,9 +1315,10 @@ void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool cha
             break;
         }
     }
-    // Smooth Models: characters, NPCs and monsters (field props and battle stages stay as built;
-    // a replacement as its maker built it)
-    if (character && !replaced && app.video.smoothModels >= 2) cr::smoothModel(m, app.video.smoothModels);
+    // Smooth Models: every model - characters, NPCs, monsters, field props and battle stages (a
+    // replacement as its maker built it)
+    (void)character;
+    if (!replaced && app.video.smoothModels >= 2) cr::smoothModel(m, app.video.smoothModels);
     for (const auto& img : m.textures) {
         if (app.video.hdTextures) {
             cr::Image hd = img;
@@ -3525,8 +3526,8 @@ std::vector<OptRow> optionRows(App& app, int page) {
         }
         static const char* const kSmooth[] = {"Off", "", "Smooth", "Smoother"};
         value("Smooth Models", kSmooth[v.smoothModels], [&app](int dir) { adjustVideo(app, 13, dir ? dir : 1); });
-        rows.back().hint = v.smoothModels ? "Rounder characters and monsters (4x / 9x triangles); from the next room on"
-                                          : "Rounds characters' and monsters' silhouettes (PN triangles)";
+        rows.back().hint = v.smoothModels ? "Rounder models (4x / 9x triangles), hard edges kept; from the next room on"
+                                          : "Rounds the models' silhouettes - characters, monsters, props, stages (PN triangles)";
         {
             const int most = std::max(app.renderer.maxAnisotropy(), 1);
             value("Anisotropic Filtering", v.anisotropy > 1 && most > 1 ? std::to_string(std::min(v.anisotropy, most)) + "x" : std::string("Off"),

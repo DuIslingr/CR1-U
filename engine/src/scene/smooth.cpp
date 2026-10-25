@@ -119,6 +119,16 @@ void smoothMesh(const Model& model, Mesh& m, int L, float cosCrease, SmoothStats
             around[a].push_back(uint32_t(f));
             edgeFaces[edgeKey(a, b)].push_back(uint32_t(f));
         }
+    { // (flat - a sign, a decal, a floor -: nothing to round)
+        bool flat = true;
+        const Vec3* first = nullptr;
+        for (size_t f = 0; f < nTri && flat; ++f)
+            if (dot(spaces[0].faceNormal[f], spaces[0].faceNormal[f]) >= 1e-12f) {
+                if (!first) first = &unitN[f];
+                else flat = dot(*first, unitN[f]) > 0.9999f;
+            }
+        if (flat) return;
+    }
     auto degenerate = [&](uint32_t f) { return dot(spaces[0].faceNormal[f], spaces[0].faceNormal[f]) < 1e-12f; };
     // A face's corner normal at point g (in space si): the faces around g within the crease
     auto cornerNormal = [&](size_t si, uint32_t f, uint32_t g) {
