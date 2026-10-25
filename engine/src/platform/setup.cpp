@@ -1,3 +1,6 @@
+#if defined(_WIN32) && !defined(NOMINMAX)
+#define NOMINMAX // (archive.h brings <windows.h>: its min / max macros would take std::min)
+#endif
 #include "platform/setup.hpp"
 
 #include <SDL3/SDL.h>
