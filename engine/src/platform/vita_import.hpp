@@ -17,7 +17,13 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+// Some Android zlib headers define the old near/far compatibility macros.
+// Keep those implementation details out of the engine's camera/geometry code.
+#pragma push_macro("near")
+#pragma push_macro("far")
 #include <zlib.h>
+#pragma pop_macro("far")
+#pragma pop_macro("near")
 
 namespace vitaimport {
 namespace fs = std::filesystem;
