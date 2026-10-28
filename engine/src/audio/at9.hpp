@@ -39,6 +39,7 @@ public:
 private:
     void* handle_ = nullptr;
     const At9File* file_ = nullptr;
+    std::vector<uint8_t> input_; // one superframe plus zero padding for decoder lookahead
     int superframeSamples_ = 0, frames_ = 0, frameSamples_ = 0;
 };
 

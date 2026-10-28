@@ -6,18 +6,22 @@ int Min(int a, int b) { return a > b ? b : a; }
 
 unsigned int BitReverse32(unsigned int value, int bitCount)
 {
+	if (bitCount <= 0) return 0;
 	value = ((value & 0xaaaaaaaa) >> 1) | ((value & 0x55555555) << 1);
 	value = ((value & 0xcccccccc) >> 2) | ((value & 0x33333333) << 2);
 	value = ((value & 0xf0f0f0f0) >> 4) | ((value & 0x0f0f0f0f) << 4);
 	value = ((value & 0xff00ff00) >> 8) | ((value & 0x00ff00ff) << 8);
 	value = (value >> 16) | (value << 16);
-	return value >> (32 - bitCount);
+	return bitCount >= 32 ? value : value >> (32 - bitCount);
 }
 
 int SignExtend32(int value, int bits)
 {
-	const int shift = 8 * sizeof(int) - bits;
-	return (value << shift) >> shift;
+	if (bits <= 0) return 0;
+	if (bits >= 32) return value;
+	const unsigned int sign = 1u << (bits - 1);
+	const unsigned int field = (unsigned int)value & ((1u << bits) - 1u);
+	return (int)(field & (sign - 1u)) - (int)(field & sign);
 }
 
 short Clamp16(int value)

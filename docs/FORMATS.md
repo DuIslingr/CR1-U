@@ -523,6 +523,12 @@ Map numbers are global (0..129). The four routes' dungeons share map numbers, so
 file) is part of the destination. If the destination map equals the current one, only the player
 moves; otherwise the field reloads.
 
+After loading, `FieldScene::onLoading` calls `SetMask2(1)` (Android 0x82b6c, iPad 0x3ee18):
+keep the mask's colour and fade its alpha from 255 to 0 over 500 ms. This is needed even when
+an exit's event file changes and its bytecode stops at `Warp`; puzzle exits leave a white mask
+and rely on this arrival fade. A save load also discards the previous scene's transient mask
+and crystal-camera request before entering the saved field.
+
 In practice: 534 touch triggers, of which 460 warp on a new game (all to known maps). The
 self-test fires all 459 active exits and every arrival lands on a floor. Five destinations sit
 up to 6 units past a floor edge and are snapped to the nearest floor.

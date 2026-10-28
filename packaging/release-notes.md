@@ -1,13 +1,16 @@
-# CR1-U v0.4.1
+# CR1-U v0.4.2
 
 A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Android-data fixes:** walking animations now play correctly on the field, dialogue boxes render correctly, and affected cutscenes retain their backgrounds. Shared rendering fixes also cover iOS and Vita data.
-- **Control Hints setting:** hide or show the on-screen keyboard and controller help from Options → Game. The choice is saved between sessions.
-- **Vita save importing:** import decrypted Vita saves directly from the native title-screen Options → Game → Import Vita Saves menu. Existing saves are backed up. The download also includes the optional command-line converter and instructions.
-- **Level cap raised to 100.**
+- **Touch and mouse menus:** item, gene and equipment lists now support swiping, scrollbar dragging, arrow taps and wheel scrolling without accidentally selecting a row. Equipment touch targets match the drawn rows, including phone layouts.
+- **Field transitions:** restore the arrival fade after crystal/puzzle exits and clear stale fades and crystal-camera state when loading a save, fixing fields left covered by white.
+- **Dialogue audio:** advancing dialogue interrupts its speech and queued clips, preventing voices from overlapping during rapid taps.
+- **Orientation:** Lock Screen Orientation now applies on Android and remembers the selected landscape direction between sessions.
+- **Vita audio:** fix ATRAC9 bit operations and compressed-frame lookahead bounds. Added decoder regression tests.
+
+Checked with Android, iOS and Vita game data. Physical Android touch and rotation testing remains pending; the reported early crystal-room crash has not been confirmed.
 
 ## Downloads
 

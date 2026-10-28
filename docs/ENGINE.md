@@ -36,6 +36,17 @@ the UI atlas comes from an add-on release.
 `CR_SELFTEST_CONTROLS=1 chaosrings --selftest` checks that the Game settings toggle hides /
 shows the hints and that both it and F3 save their choice and restore it when settings reload.
 
+`CR_SELFTEST_MOBILE=1 chaosrings --selftest` checks Camp swipes, scrollbars, wheel input and
+all seven equipment hitboxes in iPad, iPhone and Android layouts, with and without widescreen.
+It also checks orientation settings across reloads, rapid dialogue voice replacement, and the
+first puzzle's solve/exit sequence on all four routes, before and after loading a save. Run it
+with each data source separately and an isolated `XDG_DATA_HOME` (it writes test settings).
+
+Vita audio supplies zero-padded superframes for LibAtrac9's Huffman lookahead and uses defined
+unsigned bit operations, including zero-bit fields. `ctest --test-dir engine/build -R atrac9-bits`
+checks bit reversal, sign extension and bit reads at every width and alignment using synthetic
+inputs; the Vita asset checks exercise the actual ATRAC9 clips.
+
 Music decoding (AAC): the system's FAAD2 when pkg-config finds it (Linux), otherwise FAAD2
 2.11.1's `libfaad`, bundled in `engine/third_party/faad2` (GPL-2.0; sources only, from the
 knik0/faad2 release tarball) and built as a static library - the macOS / Windows path.
@@ -249,8 +260,9 @@ c101/c102/c104/m207a, 2026-10-12).
       to the panel. **Reset Data** (from the title) asks twice ("Erase all the data from your game?",
       then "This will erase all your game data. Are you sure you want to proceed?") and with Yes to
       both removes every pair's save and the resume point (`OptionPrc`: `prty_init_all`,
-      `removeSaveData`, `removeContData`). The orientation lock is stored but has nothing to turn
-      on a desktop
+      `removeSaveData`, `removeContData`). On Android, Lock Screen Orientation holds the current
+      landscape direction and restores it on restart; Off allows either landscape direction.
+      Desktop windows retain the preference without rotating the display.
 - [x] Solid NPCs (chests, crystals, blocks block the player) and examining (**E**/Enter):
       treasure boxes give their item (from the game's item pools, named from sys.evt) and lose
       their lid; crystals are warp points
@@ -419,7 +431,9 @@ c101/c102/c104/m207a, 2026-10-12).
       armor / jewel, what the bag holds for it with the state board showing the change;
       **Status** - a member's boards (Left/Right for the other); **Genes** - the gene plates in
       the bag on the gene board (picture, n / 6 known, abilities and skills). Seed points and
-      worn plates are saved. `--capture … --camp --camp-view
+      worn plates are saved. Item, equipment and gene lists support swiping, dragging the
+      scrollbar, tapping its arrows and using the mouse wheel; a swipe does not select an item.
+      All seven equipment rows fit above Back in phone layouts. `--capture … --camp --camp-view
       items|use|equip|slots|wear|status|genes|plate` renders a page.
 - [x] Genes (`game/genes.cpp`): abilities (items 81-130, battle actions +120), skills (131-186)
       and the 22 gene plates; each member wears the Human Genes and up to three plates (Equip).

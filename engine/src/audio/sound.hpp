@@ -63,6 +63,10 @@ public:
     bool vitaVoices() const { return !vitaLines_[0].empty(); }
     void playLine(int clip, bool battle = false);
     void stopLine();
+    // Story lines can also live in Android's effects bank. Keep effects and
+    // separately tagged battle lines playing when a dialogue page is skipped.
+    void stopDialogueVoices();
+    int dialogueVoiceCount() const;
     bool linePlaying() const;
     // Battle lines (__voicego(clip | 0x200000, tag = speaker x 1000)): one per tag at a time -
     // the speaker's last line stops first (0x200ffe) - while other speakers' play on

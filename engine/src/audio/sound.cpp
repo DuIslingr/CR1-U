@@ -115,6 +115,20 @@ void SoundSystem::stopLine() {
     line_ = nullptr;
 }
 
+void SoundSystem::stopDialogueVoices() {
+    stopLine();
+    for (Voice& v : voices_) if (v.stream && v.voice) {
+        SDL_DestroyAudioStream(v.stream);
+        v = Voice();
+    }
+}
+int SoundSystem::dialogueVoiceCount() const {
+    int count = linePlaying() ? 1 : 0;
+    for (const Voice& v : voices_)
+        count += v.stream && v.voice && (SDL_GetAudioStreamQueued(v.stream) > 0 || SDL_GetAudioStreamAvailable(v.stream) > 0);
+    return count;
+}
+
 bool SoundSystem::linePlaying() const {
     return line_ && (SDL_GetAudioStreamQueued(line_) > 0 || SDL_GetAudioStreamAvailable(line_) > 0);
 }

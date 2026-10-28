@@ -22,6 +22,9 @@
 #include "platform/vita_import_ui.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef SDL_PLATFORM_ANDROID
+#include <jni.h>
+#endif
 
 #include <algorithm>
 #include <bitset>
@@ -197,6 +200,7 @@ struct App {
     int optionsBob = 0, optionsBobDir = 1; // ComUty_CmdBack's arrows
     float optionsClock = 0;
     bool environmentEffects = true;        // the original's Environment Effects (weather; stored)
+    bool lockLandscapeFlipped = false; // the landscape direction retained by the orientation lock
     bool lockOrientation = false;          // Lock Screen Orientation (an iPad setting; stored)
     cr::MenuPainter menu;
     bool persist = true;                   // settings.ini is written (not by tests and captures)
@@ -399,6 +403,13 @@ struct App {
         int anim = 0;
         std::array<cr::Texture, 22> plateArt; // gene_m*c.mct, loaded when a board first shows them
     } camp;
+    struct CampPointer {
+        bool down = false, dragging = false, bar = false;
+        float startX = 0, startY = 0, lastY = 0, remainder = 0;
+        float px = 0, py = 0;
+        Camp::Page page = Camp::Main;
+        Camp::Phase phase = Camp::List;
+    } campPointer;
     float saveClock = 0;
     int resumePrompt = 0;                  // 1: "You have save data from your last session" (Yes / No)
     int resumeCursor = 0;
@@ -1648,6 +1659,7 @@ void enterMap(App& app) {
     app.placedNpcs.clear();
     app.actorSlots.clear();
     app.cam = App::ScriptCam();
+    app.crystalCam = App::CrystalCam();
     app.scroll = App::FieldScroll();
     if (app.area < 0 || app.mapNumber < 0) return;
     if (app.events.area() != app.area) {
@@ -1751,7 +1763,13 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     const auto it = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[w.map]));
     if (it == app.maps.end()) return false;
     const int fromMap = app.mapNumber;
-    if (w.map != app.mapNumber || area != app.area) showMap(app, int(it - app.maps.begin()), w.map, area);
+    if (w.map != app.mapNumber || area != app.area) {
+        showMap(app, int(it - app.maps.begin()), w.map, area);
+        // FieldScene::onLoading calls SetMask2(1): retain the outgoing mask's
+        // colour and reveal the loaded field over 500 ms. Area-changing scripts
+        // end at Warp and rely on this, notably puzzle crystals' white-out.
+        app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0;
+    }
     if (!app.havePlayer) return false;
     cr::Vec3 p{w.pos[0], w.pos[1], w.pos[2]};
     float y;
@@ -1879,6 +1897,8 @@ void resetTyping(App& app) {
 // clears or closes by itself (0x1a then 0x10 / 0x14) sets no flag
 void advanceDialogue(App& app, bool tapped = true) {
     if (app.dialogue.empty()) return;
+    app.sound.stopDialogueVoices();
+    app.voiceQueue.clear();
     if (tapped) app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
     resetTyping(app);
     if (++app.dialoguePage < app.dialogue.size()) return;
@@ -2609,7 +2629,16 @@ struct ViewerHost : cr::EventHost {
     }
     bool screenFading() override { return app.fadeT < app.fadeFrames; }
     void warp(const cr::WarpRequest& w) override { performWarp(app, w, app.runner.eventNo()); }
-    void playSound(uint32_t id) override { app.sound.play(id); app.soundLog.push_back(id); }
+    void playSound(uint32_t id) override {
+        const bool speech = (id & 0x400000) || app.sound.isVoice(int(id & 0xfff));
+        const bool control = id & (0x20000000u | 0xe000000u | 0xe0000u);
+        if (speech && !control && !app.battle.active) {
+            app.sound.stopDialogueVoices();
+            if (app.skipScene) return;
+        }
+        app.sound.play(id);
+        app.soundLog.push_back(id);
+    }
     void playMusic(uint32_t v) override { playBgm(app, v); app.soundLog.push_back(0x40000000u | v); }
     void recoverPair() override { // pcparam_hpmp_recovery: the current pair's two
         const int p = std::clamp(currentPair(app) - 1, 0, 3);
@@ -3037,7 +3066,8 @@ void saveMix(const App& app) {
                               "\ncontrol_hints=" + std::to_string(int(app.showHud)) +
                               "\nenvironment_effects=" +
                               std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
-                              std::to_string(int(app.lockOrientation)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
+                              std::to_string(int(app.lockOrientation)) + "\nlock_landscape_flipped=" +
+                              std::to_string(int(app.lockLandscapeFlipped)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
                               (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
     const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video;
@@ -3099,9 +3129,38 @@ void loadVideo(App& app, const char* text) {
     app.showHud = keyValue(text, "\ncontrol_hints=", app.showHud) != 0;
     app.environmentEffects = keyValue(text, "\nenvironment_effects=", app.environmentEffects) != 0;
     app.lockOrientation = keyValue(text, "\nlock_orientation=", app.lockOrientation) != 0;
+    app.lockLandscapeFlipped = keyValue(text, "\nlock_landscape_flipped=", app.lockLandscapeFlipped) != 0;
     if (const char* at = SDL_strstr(text, "\npad_confirm=")) app.padConfirmEast = SDL_strncmp(at + 13, "south", 5) != 0;
     app.fieldSpeed = std::clamp(keyValue(text, "\nfield_speed=", app.fieldSpeed), 1, 5);
     app.battleSpeed = std::clamp(keyValue(text, "\nbattle_speed=", app.battleSpeed), 1, 5);
+}
+
+// Keep the preferred landscape direction in the same settings file as the lock.
+// SDL's hint constrains subsequent Android window updates; the Activity call
+// applies the change immediately, without recreating the window or GL context.
+void applyOrientation(App& app, bool captureDirection = false) {
+    if (captureDirection && app.window) {
+        const auto orientation = SDL_GetCurrentDisplayOrientation(SDL_GetDisplayForWindow(app.window));
+        if (orientation == SDL_ORIENTATION_LANDSCAPE || orientation == SDL_ORIENTATION_LANDSCAPE_FLIPPED)
+            app.lockLandscapeFlipped = orientation == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
+    }
+    const char* hint = !app.lockOrientation ? "LandscapeLeft LandscapeRight" :
+        app.lockLandscapeFlipped ? "LandscapeRight" : "LandscapeLeft";
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, hint);
+#ifdef SDL_PLATFORM_ANDROID
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return;
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID method = cls ? env->GetMethodID(cls, "setOrientationLock", "(ZZ)V") : nullptr;
+    if (method) env->CallVoidMethod(activity, method, jboolean(app.lockOrientation), jboolean(app.lockLandscapeFlipped));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        SDL_LogWarn(SDL_LOG_CATEGORY_VIDEO, "Could not apply the screen orientation lock");
+    }
+    if (cls) env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+#endif
 }
 
 // Window size / fullscreen mode and the renderer's options from app.video
@@ -3141,6 +3200,7 @@ void applyVideo(App& app) {
         SDL_SetWindowFullscreen(app.window, true);
     }
     SDL_SyncWindow(app.window);
+    applyOrientation(app);
     // The window manager applies the size when it gets to it: wait for it (up to a second) so the
     // next frame, and captures, have it
     for (int i = 0; i < 50 && v.display == 0; ++i) {
@@ -3405,7 +3465,8 @@ std::vector<OptRow> optionRows(App& app, int page) {
             saveMix(app);
         });
         onOff(sysLabel(app, 58108, "Environment Effects"), &app.environmentEffects, nullptr);
-        onOff(sysLabel(app, 58109, "Lock Screen Orientation"), &app.lockOrientation, nullptr);
+        onOff(sysLabel(app, 58109, "Lock Screen Orientation"), &app.lockOrientation,
+              [&app] { applyOrientation(app, app.lockOrientation); });
         onOff("Control Hints", &app.showHud, nullptr);
         rows.back().hint = "Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut.";
         value("Import Vita Saves", "Choose Folder", [&app](int dir) {
@@ -5126,12 +5187,33 @@ void campMessage(App& app, const std::string& text) {
     app.camp.messageFrames = text.empty() ? 0 : 90;
 }
 
+float campEase(const App& app) {
+    const float t = std::min(1.0f, float(app.camp.anim) / 8.0f);
+    return 1 - (1 - t) * (1 - t);
+}
+float campSlotY(const App& app, int slot) {
+    return app.renderer.phoneLayout() ? 76 + 29.0f * slot : 84 + 34.0f * slot;
+}
+float campSlotScale(const App& app) { return app.renderer.phoneLayout() ? 0.65f : 0.7f; }
+float campListX(const App& app) {
+    return campui::kRowX + (app.camp.page == App::Camp::Items ? 160 * (1 - campEase(app)) : 64);
+}
+void campScrollBy(App& app, int rows) {
+    auto& c = app.camp;
+    if (c.page == App::Camp::Main || c.phase != App::Camp::List) return;
+    const int before = c.listTop, most = std::max(0, int(c.list.size()) - campui::kRows);
+    c.listTop = std::clamp(c.listTop + rows, 0, most);
+    c.listCursor = std::clamp(c.listCursor, c.listTop, std::max(c.listTop, std::min(int(c.list.size()) - 1, c.listTop + campui::kRows - 1)));
+    if (before != c.listTop) menuSound(app, se::kCursor);
+}
+
 int campEntries(const App& app) { return app.renderer.phoneLayout() ? campui::kEntries - 1 : campui::kEntries; }
 float campBackY(const App& app) { return app.renderer.phoneLayout() ? campui::kPhoneBackY : campui::kBackY; }
 
 void openCamp(App& app) {
     App::Camp& c = app.camp;
     app.campOpen = true;
+    app.campPointer = App::CampPointer();
     auto art = std::move(c.plateArt); // the plates' pictures stay loaded
     c = App::Camp();
     c.plateArt = std::move(art);
@@ -5370,22 +5452,26 @@ void campClick(App& app, float px, float py) {
     switch (c.page) {
     case App::Camp::Main:
         for (int i = 0; i < campEntries(app); ++i)
-            if (in(kPlateX, kPlateY + kPlateStep * float(i), 136, 40)) { c.cursor = i; campChoose(app); return; }
+            if (in(kPlateX + 360 * (1 - campEase(app)), kPlateY + kPlateStep * float(i), 136, 40)) { c.cursor = i; campChoose(app); return; }
         return;
     default: break;
     }
     if (c.phase == App::Camp::Member || (c.page == App::Camp::Status && c.phase == App::Camp::Slot)) {
         for (int k = 0; k < 2; ++k)
-            if (in(kPlateX, kMemberY + kMemberStep * float(k), 136, 40)) { c.member = k; if (c.phase == App::Camp::Member) campChoose(app); return; }
+            if (in(kPlateX + 200 * (1 - campEase(app)), kMemberY + kMemberStep * float(k), 136, 40)) { c.member = k; if (c.phase == App::Camp::Member) campChoose(app); return; }
         return;
     }
     if (c.phase == App::Camp::Slot) {
-        for (int k = 0; k < 3; ++k)
-            if (in(kRowX, kRowY + kRowH * float(k), 256, 44)) { c.slot = k; campChoose(app); return; }
+        for (int k = 0; k < kEquipSlots; ++k)
+            if (in(kRowX + 64 + 160 * (1 - campEase(app)), campSlotY(app, k), 256 * campSlotScale(app), 44 * campSlotScale(app))) {
+                c.slot = k; campChoose(app); return;
+            }
         return;
     }
     if (c.phase == App::Camp::List) {
-        if (in(kRowX, kRowY, 256, kRowH * kRows)) {
+        if (int(c.list.size()) > kRows && in(454, kRowY - 18, 28, 20)) campScrollBy(app, -1);
+        else if (int(c.list.size()) > kRows && in(454, kRowY + kRowH * kRows - 2, 28, 22)) campScrollBy(app, 1);
+        else if (in(campListX(app), kRowY, 256, kRowH * kRows)) {
             const int index = c.listTop + int((my - kRowY) / kRowH);
             if (index < int(c.list.size())) { c.listCursor = index; campChoose(app); }
         } else if (c.page == App::Camp::Items && inAt(lx0, 0, 40, 180, 40))
@@ -5398,6 +5484,59 @@ void campClick(App& app, float px, float py) {
         else if (in(436, 60, 36, 31) && item >= 3 && item <= 6) campKey(app, SDLK_RIGHT);
         else if (in(336, 104, 136, 40)) { c.confirm = 0; campChoose(app); }
         else if (in(336, 160, 136, 40)) { c.confirm = 1; campChoose(app); }
+    }
+}
+
+void campPointerPoint(const App& app, float px, float py, float& mx, float& my) {
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, wideRight(app), mx, my);
+}
+void campPointerDown(App& app, float px, float py) {
+    auto& p = app.campPointer;
+    p = App::CampPointer();
+    p.down = true, p.page = app.camp.page, p.phase = app.camp.phase;
+    p.px = px, p.py = py;
+    campPointerPoint(app, px, py, p.startX, p.startY);
+    p.lastY = p.startY;
+    const bool list = p.page != App::Camp::Main && p.phase == App::Camp::List;
+    p.bar = list && int(app.camp.list.size()) > campui::kRows && p.startX >= 454 && p.startX < 482 &&
+        p.startY >= campui::kRowY && p.startY < campui::kRowY + campui::kRowH * campui::kRows;
+}
+void campPointerMove(App& app, float px, float py) {
+    auto& p = app.campPointer;
+    if (!p.down) return;
+    if (!app.campOpen || app.camp.page != p.page || app.camp.phase != p.phase) { p = App::CampPointer(); return; }
+    float mx, my;
+    campPointerPoint(app, px, py, mx, my);
+    const bool list = p.page != App::Camp::Main && p.phase == App::Camp::List;
+    const bool inList = p.startX >= campListX(app) && p.startX < campListX(app) + 256 &&
+        p.startY >= campui::kRowY && p.startY < campui::kRowY + campui::kRowH * campui::kRows;
+    if (std::fabs(mx - p.startX) > 6 || std::fabs(my - p.startY) > 6) p.dragging = true;
+    if (list && p.bar && p.dragging) {
+        const float track = campui::kRowH * campui::kRows - 40;
+        const int most = std::max(0, int(app.camp.list.size()) - campui::kRows);
+        const int top = int(std::lround(std::clamp((my - campui::kRowY - 20) / track, 0.0f, 1.0f) * most));
+        campScrollBy(app, top - app.camp.listTop);
+    } else if (list && inList && p.dragging) {
+        p.remainder += p.lastY - my;
+        const int rows = int(p.remainder / campui::kRowH);
+        if (rows) { campScrollBy(app, rows); p.remainder -= rows * campui::kRowH; }
+    }
+    p.lastY = my;
+}
+void campPointerUp(App& app, float px, float py) {
+    if (!app.campPointer.down) return;
+    campPointerMove(app, px, py);
+    const auto p = app.campPointer;
+    app.campPointer = App::CampPointer();
+    if (p.down && !p.dragging && app.campOpen && app.camp.page == p.page && app.camp.phase == p.phase) {
+        if (p.bar) {
+            const float track = campui::kRowH * campui::kRows - 40;
+            const int most = std::max(0, int(app.camp.list.size()) - campui::kRows);
+            const int top = int(std::lround(std::clamp((p.startY - campui::kRowY - 20) / track, 0.0f, 1.0f) * most));
+            campScrollBy(app, top - app.camp.listTop);
+        } else campClick(app, px, py);
     }
 }
 
@@ -6861,7 +7000,7 @@ void drawCamp(App& app) {
     const auto right = [&] { r.setOrigin(wideRight(app)); };
     const auto centre = [&] { r.setOrigin(r.uiX()); };
     left();
-    const float t = std::min(1.0f, float(c.anim) / 8.0f), ease = 1 - (1 - t) * (1 - t);
+    const float ease = campEase(app);
     const bool main = c.page == App::Camp::Main;
     m.picture(81, 8, 4, 1); // "Camp"
     const float out = main ? 1 - ease : ease; // the main screen's pieces slide away on a page
@@ -6969,8 +7108,8 @@ void drawCamp(App& app) {
             drawShopBoard(app, 12, 92, ch, 0, ease);
             right();
             for (int k = 0; k < kEquipSlots; ++k) { // the rows at 70%: weapon, armor, jewel, the genes
-                const float rx = kRowX + 160 * (1 - ease) + 64, ry = 84 + 34.0f * float(k);
-                m.setScale(rx, ry, 0.7f);
+                const float rx = kRowX + 160 * (1 - ease) + 64, ry = campSlotY(app, k);
+                m.setScale(rx, ry, campSlotScale(app));
                 drawCampRow(app, m, rx, ry, k < 3 ? pm.equip[k] : pm.genes[k - 3], 0, c.slot == k, k == 3 ? ease * 0.7f : ease,
                             sysText(app, 58061 + k));
                 m.setScale(0, 0, 1);
@@ -13920,6 +14059,207 @@ int fieldPresentationSelfTest(App& app) {
     return problems;
 }
 
+// Exercise the SDL input path, including window/frame scaling and the phone projection.
+int mobileInputSelfTest(App& app) {
+    int problems = 0, gestures = 0, slots = 0;
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.titleOpen = app.optionsOpen = app.charSelectOpen = false;
+    app.saveScreen.open = false;
+    app.game = cr::GameState();
+    app.playerChar = 0;
+    for (int n = 1; n <= 500; ++n) app.game.items[n] = 10;
+    const auto keepVideo = app.video;
+    auto pointer = [&](SDL_EventType type, float mx, float my) {
+        float x0, y0, x1, y1;
+        app.renderer.toLogical(0, 0, x0, y0);
+        app.renderer.toLogical(1000, 1000, x1, y1);
+        const bool phone = app.renderer.phoneLayout();
+        const float lx = wideRight(app) + 2 * (mx + (phone ? 16 : 0));
+        const float ly = 2 * (my + (phone ? 32 : 0));
+        int ww, wh;
+        SDL_GetWindowSize(app.window, &ww, &wh);
+        const float x = (lx - x0) * 1000 / (x1 - x0) * ww / app.renderer.frameWidth();
+        const float y = (ly - y0) * 1000 / (y1 - y0) * wh / app.renderer.frameHeight();
+        SDL_Event e{};
+        e.type = type;
+        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y;
+        else e.button.x = x, e.button.y = y, e.button.button = SDL_BUTTON_LEFT;
+        SDL_AppEvent(&app, &e);
+    };
+    auto tap = [&](float x, float y) {
+        pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y);
+        pointer(SDL_EVENT_MOUSE_BUTTON_UP, x, y);
+    };
+    for (int layout = 1; layout <= 3; ++layout) for (bool wide : {false, true}) {
+        app.video.layout = layout, app.video.widescreen = wide;
+        applyVideo(app);
+        app.renderer.beginFrame(1280, 720);
+        app.renderer.endFrame(false);
+        for (auto page : {App::Camp::Items, App::Camp::Genes}) {
+            openCamp(app);
+            auto& c = app.camp;
+            campOpenPage(app, page == App::Camp::Items ? 0 : 2);
+            c.anim = 8;
+            if (c.list.size() <= 6) { ++problems; continue; }
+            pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, campListX(app) + 60, 250);
+            pointer(SDL_EVENT_MOUSE_MOTION, campListX(app) + 60, 150);
+            pointer(SDL_EVENT_MOUSE_BUTTON_UP, campListX(app) + 60, 150);
+            bool ok = c.listTop == 2 && c.phase == App::Camp::List;
+            SDL_Event wheel{};
+            wheel.type = SDL_EVENT_MOUSE_WHEEL, wheel.wheel.y = -1;
+            SDL_AppEvent(&app, &wheel);
+            ok &= c.listTop == 3;
+            pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 468, 140);
+            pointer(SDL_EVENT_MOUSE_MOTION, 468, 284);
+            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 284);
+            ok &= c.listTop == int(c.list.size()) - campui::kRows;
+            pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 468, 250);
+            pointer(SDL_EVENT_MOUSE_MOTION, 468, 92);
+            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 92);
+            ok &= c.listTop == 0;
+            tap(468, 292);
+            ok &= c.listTop == 1;
+            tap(468, 82);
+            ok &= c.listTop == 0;
+            // A tap after scrolling still chooses the visible row, rather than the old top.
+            c.listTop = 2;
+            tap(campListX(app) + 60, campui::kRowY + campui::kRowH + 20);
+            ok &= c.listCursor == 3;
+            if (!ok) std::printf("mobile input: layout %d wide %d page %d FAILED (top %d cursor %d phase %d)\n",
+                                      layout, wide, int(page), c.listTop, c.listCursor, int(c.phase));
+            problems += !ok;
+            ++gestures;
+        }
+        for (int anim : {4, 8}) for (int slot = 0; slot < campui::kEquipSlots; ++slot) {
+            openCamp(app);
+            auto& c = app.camp;
+            c.page = App::Camp::Equip, c.phase = App::Camp::Slot, c.anim = anim;
+            tap(campui::kRowX + 64 + 160 * (1 - campEase(app)) + 60, campSlotY(app, slot) + 14);
+            const bool ok = c.slot == slot && (slot == 3 ? c.phase == App::Camp::Slot : c.phase == App::Camp::List);
+            problems += !ok;
+            if (!ok) std::printf("mobile equipment: layout %d wide %d anim %d slot %d FAILED\n", layout, wide, anim, slot);
+            ++slots;
+        }
+    }
+    app.campOpen = false;
+    app.video = keepVideo;
+    applyVideo(app);
+    // The settings file must restore both the lock and its chosen landscape direction.
+    app.persist = true;
+    const bool keepLock = app.lockOrientation, keepFlip = app.lockLandscapeFlipped;
+    for (bool locked : {false, true}) for (bool flipped : {false, true}) {
+        app.lockOrientation = locked, app.lockLandscapeFlipped = flipped;
+        applyOrientation(app);
+        saveMix(app);
+        app.lockOrientation = !locked, app.lockLandscapeFlipped = !flipped;
+        loadMix(app);
+        applyVideo(app);
+        const char* expected = !locked ? "LandscapeLeft LandscapeRight" : flipped ? "LandscapeRight" : "LandscapeLeft";
+        problems += app.lockOrientation != locked || app.lockLandscapeFlipped != flipped ||
+                    std::string(SDL_GetHint(SDL_HINT_ORIENTATIONS)) != expected;
+    }
+    app.lockOrientation = keepLock, app.lockLandscapeFlipped = keepFlip;
+    app.persist = false;
+    applyOrientation(app);
+    startSound(app);
+    vitaAudio(app);
+    ViewerHost host(app);
+    int clip = -1;
+    for (int i = 0; i < app.sound.entries(); ++i) {
+        host.playSound(0x400000u | uint32_t(i));
+        if (app.sound.dialogueVoiceCount() == 1) { clip = i; break; }
+    }
+    if (clip >= 0) {
+        for (int i = 0; i < 10; ++i) host.playSound(0x400000u | uint32_t(clip));
+        problems += app.sound.dialogueVoiceCount() != 1;
+        app.dialogue = {{"First page"}, {"Silent page"}};
+        app.dialoguePage = 0;
+        advanceDialogue(app);
+        problems += app.sound.dialogueVoiceCount() != 0 || app.dialoguePage != 1;
+        host.playSound(0x400000u | uint32_t(clip));
+        advanceDialogue(app);
+        problems += app.sound.dialogueVoiceCount() != 0 || !app.dialogue.empty();
+    } else ++problems;
+    if (app.sound.hasVoices()) {
+        app.sound.playLine(1);
+        app.dialogue = {{"Voiced page"}};
+        app.dialoguePage = 0;
+        advanceDialogue(app);
+        problems += app.sound.dialogueVoiceCount() != 0;
+    }
+    app.sound.stopAll();
+    problems += app.renderer.takeErrors();
+    std::printf("mobile input: %d list gesture/tap checks, %d equipment hitboxes; orientation persists both directions, rapid speech replacement (clip %d); %d problems\n",
+                gestures, slots, clip, problems);
+    return problems;
+}
+
+// Real puzzle exit bytecode across area-file changes, both before and after loading a save.
+int mobileTransitionSelfTest(App& app) {
+    int problems = 0;
+    auto settle = [&] {
+        for (int quiet = 0, f = 0; f < 5000 && quiet < 10; ++f) {
+            stepEvents(app);
+            if (!app.dialogue.empty()) advanceDialogue(app);
+            if (app.choiceFlag >= 0) answerChoice(app, true);
+            app.tapPending = true;
+            if (f % 64 == 0) { app.lastTicks = 0; drawFrame(app, false); }
+            quiet = app.runner.running() || app.pendingEntry != App::Entry::None || app.tutoTex.on ||
+                    app.fadeT < app.fadeFrames ? 0 : quiet + 1;
+        }
+    };
+    for (int route = 0; route < 4; ++route) for (bool reload : {false, true}) for (bool solved : {false, true}) {
+        app.runner.stop();
+        app.game = cr::GameState();
+        app.playerChar = 2 * route;
+        app.game.route = route;
+        app.game.setFlag(3070, true);
+        app.game.setFlag(3000, !solved); // revisit a cleared room, or solve it from scratch
+        app.mapNumber = app.entryArea = -1;
+        cr::WarpRequest w;
+        w.valid = true, w.area = cr::kPuzzleArea, w.map = cr::kFirstPuzzleMap;
+        performWarp(app, w, -1);
+        settle();
+        if (solved) {
+            std::vector<cr::Vec3> gems;
+            for (const auto& o : app.puzzle.objs)
+                if (o.type == cr::kTypeGem) gems.push_back(puzzle::centre(app, o.row, o.col));
+            for (const auto& pos : gems) {
+                setActor(app, 0, pos, nullptr, true);
+                for (int f = 0; f < 3; ++f) stepEvents(app);
+            }
+            settle();
+            problems += puzzle::gemsLeft(app) || !app.game.flag(3300);
+        }
+        if (reload) {
+            const auto save = captureSave(app);
+            // Loading must discard a previous scene's mask/camera before the arrival fade.
+            app.fadeGrey = app.fadeFrom = app.fadeTo = 1;
+            app.fadeT = app.fadeFrames = 1;
+            problems += !applySave(app, save);
+            settle();
+        }
+        // Stage 0 has a return for each route; use the real trigger's warp-table entry.
+        const int event = 1 + 8 * route;
+        cr::WarpEntry dest;
+        const bool have = app.events.warpEntry(event, dest);
+        problems += !have || !app.runner.start(app.events, event, app.game, app.area, app.mapNumber);
+        app.runnerWhat = "mobile regression: crystal exit";
+        settle();
+        const bool ok = have && app.area == dest.area && app.mapNumber == dest.map && app.puzzle.stage == -1 &&
+                        !app.runner.running() && screenFadeAlpha(app) < 0.01f;
+        std::printf("mobile transition: route %d reload %d solved %d -> area %d map %d fade %.2f; %s\n",
+                    route, reload, solved, app.area, app.mapNumber, screenFadeAlpha(app), ok ? "ok" : "FAILED");
+        problems += !ok + app.renderer.takeErrors();
+        app.lastTicks = 0;
+        drawFrame(app, false);
+    }
+    app.trackerArmed = false;
+    std::printf("mobile transitions: %d problems\n", problems);
+    return problems;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.typeOn = false; // pages whole (the typing has its own test)
@@ -13940,6 +14280,7 @@ int runSelfTest(App& app) {
                     app.playerChar, app.game.party[size_t(app.playerChar)].level, problems);
         return problems ? 1 : 0;
     }
+    if (SDL_getenv("CR_SELFTEST_MOBILE")) return mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_BATTLES")) { // only the battle pass
@@ -16654,6 +16995,11 @@ void bootTitle(App& app) {
     endSceneEffects(app); // MuCom_PreReturnTitle: ScnEffectEnd
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.runner.stop();
+    app.sound.stopDialogueVoices();
+    app.voiceQueue.clear();
+    app.fadeGrey = app.fadeFrom = app.fadeTo = 0;
+    app.fadeT = app.fadeFrames = 0;
+    app.crystalCam = App::CrystalCam();
     unloadModel(app);
     if (app.battle.active) endBattle(app, false);
     app.runner.stop();
@@ -17810,6 +18156,7 @@ void videoArgs(App& app, int argc, char** argv) {
 }
 
 SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     SDL_SetAppMetadata("Chaos Rings HD (reimplementation)", "0.1", "local.preservation.chaosrings");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Init: %s", SDL_GetError());
@@ -18562,7 +18909,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float px = event->button.x * kx, py = event->button.y * ky;
             if (app.saveScreen.open) saveScreenClick(app, px, py);
             else if (app.charSelectOpen) charSelectClick(app, px, py);
-            else if (app.campOpen) campClick(app, px, py);
+            else if (app.campOpen) campPointerDown(app, px, py);
             else if (app.lastBattle.open) lastBattleClick(app, px, py);
             else if (app.worldChoiceOpen) worldSelectClick(app, px, py);
             else if (app.shop.open) shopClick(app, px, py);
@@ -18629,6 +18976,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (app.campPointer.down) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            campPointerUp(app, event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f),
+                          event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f));
+            break;
+        }
         app.dragging = false;
         app.optionsBarDrag = false;
         touchPadUp(app);
@@ -18641,6 +18995,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (app.campPointer.down) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            campPointerMove(app, event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f),
+                            event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f));
+            break;
+        }
         if (app.optionsOpen && app.optionsBarDrag) { // the scroll bar's thumb follows
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -18669,6 +19030,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_MOUSE_WHEEL:
         if (app.optionsOpen && !app.resetAsk) { optionsScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0); break; }
+        if (app.campOpen) { campScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0); break; }
         if (app.scenariosOpen) { scenariosScrollBy(app, event->wheel.y * 96); break; }
         if (app.manualOpen) { manualKey(app, event->wheel.y > 0 ? SDLK_UP : SDLK_DOWN); break; }
         app.zoom = std::clamp(app.zoom * (event->wheel.y > 0 ? 0.9f : 1.1f), 0.1f, 10.0f);

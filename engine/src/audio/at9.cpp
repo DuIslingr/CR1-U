@@ -96,12 +96,19 @@ bool At9Decoder::decode(size_t i, std::vector<int16_t>& pcm) {
 #else
     if (!handle_ || !file_ || i >= superframes()) return false;
     pcm.resize(size_t(superframeSamples_) * size_t(file_->channels));
-    const uint8_t* p = file_->data + i * size_t(file_->superframeBytes);
-    const uint8_t* end = p + file_->superframeBytes;
+    // LibAtrac9's Huffman reader peeks ahead even when the code consumes fewer
+    // bits. Isolate each superframe and provide zero padding at its end rather
+    // than letting a peek read past the final compressed byte of a clip.
+    const size_t bytes = size_t(file_->superframeBytes);
+    input_.resize(bytes + 8);
+    std::memcpy(input_.data(), file_->data + i * bytes, bytes);
+    std::fill(input_.begin() + std::ptrdiff_t(bytes), input_.end(), 0);
+    const uint8_t* p = input_.data();
+    const uint8_t* end = p + bytes;
     for (int k = 0; k < frames_; ++k) {
         int used = 0;
         if (Atrac9Decode(handle_, p, pcm.data() + size_t(k) * size_t(frameSamples_) * size_t(file_->channels), &used) != 0 ||
-            used <= 0 || p + used > end)
+            used <= 0 || size_t(used) > size_t(end - p))
             return false;
         p += used;
     }

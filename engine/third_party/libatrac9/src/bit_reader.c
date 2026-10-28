@@ -39,7 +39,7 @@ int PeekInt(BitReaderCxt* br, const int bits)
 
 	if (bits <= 9)
 	{
-		int value = buffer[byteIndex] << 8 | buffer[byteIndex + 1];
+		unsigned int value = (unsigned int)buffer[byteIndex] << 8 | buffer[byteIndex + 1];
 		value &= 0xFFFF >> bitIndex;
 		value >>= 16 - bits - bitIndex;
 		return value;
@@ -47,7 +47,7 @@ int PeekInt(BitReaderCxt* br, const int bits)
 
 	if (bits <= 17)
 	{
-		int value = buffer[byteIndex] << 16 | buffer[byteIndex + 1] << 8 | buffer[byteIndex + 2];
+		unsigned int value = (unsigned int)buffer[byteIndex] << 16 | buffer[byteIndex + 1] << 8 | buffer[byteIndex + 2];
 		value &= 0xFFFFFF >> bitIndex;
 		value >>= 24 - bits - bitIndex;
 		return value;
@@ -55,7 +55,7 @@ int PeekInt(BitReaderCxt* br, const int bits)
 
 	if (bits <= 25)
 	{
-		int value = buffer[byteIndex] << 24
+		unsigned int value = (unsigned int)buffer[byteIndex] << 24
 			| buffer[byteIndex + 1] << 16
 			| buffer[byteIndex + 2] << 8
 			| buffer[byteIndex + 3];
@@ -80,7 +80,7 @@ void AlignPosition(BitReaderCxt* br, const unsigned int multiple)
 
 static int PeekIntFallback(BitReaderCxt* br, int bitCount)
 {
-	int value = 0;
+	unsigned int value = 0;
 	int byteIndex = br->Position / 8;
 	int bitIndex = br->Position % 8;
 	const unsigned char* buffer = br->Buffer;

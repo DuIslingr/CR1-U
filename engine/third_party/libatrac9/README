@@ -1,4 +1,5 @@
 LibAtrac9 - an ATRAC9 decoder in C, by Alex Barney (MIT licence, see LICENSE).
 https://github.com/Thealexbarney/LibAtrac9, commit efca2e3af35562a09a9bb6deed90e45b4b824dc4
-(2025-03-14): the C/src folder, unchanged. Used to play the Vita release's .at9 voices and music
+(2025-03-14): the C/src folder, with local fixes in utility.c and bit_reader.c
+for defined zero-width shifts, sign extension and unsigned bit-field extraction. Used to play the Vita release's .at9 voices and music
 (engine/src/audio/at9.cpp).
