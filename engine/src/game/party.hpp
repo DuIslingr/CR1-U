@@ -20,7 +20,7 @@ namespace cr {
 class ItemTable;
 
 constexpr int kCharacters = 8;  // Escher, Musiea, Eluca, Zhamo, Olgar, Vahti, Ayuta, Mana
-constexpr int kMaxLevel = 99;
+constexpr int kMaxLevel = 100;
 enum Stat { kHp, kMp, kAttack, kDefense, kSpeed, kLuck, kStats };
 enum EquipSlot { kWeapon, kArmor, kJewel, kEquipSlots };
 

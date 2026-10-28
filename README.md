@@ -97,6 +97,13 @@ To use a copy elsewhere: `--data <iOS data>` (or `CR_DATA`), `--vita <PCSG00497 
 (`~/.local/share/preservation/ChaosRingsHD/` on Linux; the same folders under `%APPDATA%\` on Windows and
 `~/Library/Application Support/` on macOS), not the game folder. All four ports (CR1:U, CRO-U, CR2-U, CR3-U) look for their copies the same way.
 
+## Vita save importing
+
+Import decrypted Vita saves from title-screen **Options**, using **Game → Import Vita Saves**.
+Choose the exported save folder and confirm; existing saves are backed up automatically.
+No Python is needed. See [Vita save importing](docs/VITA_SAVES.md) for supported state,
+profile locations and the optional command-line converter. CR1 supports level 100.
+
 ## HD textures
 
 Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN, drawn in place of
@@ -196,7 +203,7 @@ Steam Controller (through Steam Input).
 | V | Options |
 | PgUp / PgDn (Q / E in Options) | pages |
 | T, F5, F6 | puzzle rooms: the ability straight ahead, retry, help |
-| F3 | the status line and key help (hidden in Release builds) |
+| F3 | toggle Control Hints (also in Options, Game; saved between runs) |
 | Mouse | everything the original takes by touch: plates, buttons, the dialogue, the corner button; drag to push a block in puzzle rooms |
 
 Touch (or the mouse) plays the field as the original does: put a finger down anywhere on the field

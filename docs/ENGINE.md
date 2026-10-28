@@ -13,9 +13,11 @@ Vulkan loader + headers and `glslc` at build time (shaders are compiled to SPIR-
 embedded); without them CMake builds the OpenGL renderer only. All texture formats are
 decoded to RGBA on the CPU, so no GPU-specific formats are needed.
 
-A `Release` (or `MinSizeRel`) build leaves out the viewer's status and key help at the top of
-the screen and the key hints under the menus (`CR_RELEASE`); F3 shows / hides them in any
-build. `CR_CAPTURE_HUD=1` keeps the top one in a `--capture`.
+A `Release` (or `MinSizeRel`) build defaults to hiding the viewer's status and key help at the
+top of the screen and the key hints under the menus (`CR_RELEASE`). Options, Game, Control
+Hints switches them On / Off on every platform; F3 changes the same setting. Both save the
+choice as `control_hints` in `settings.ini`. `CR_CAPTURE_HUD=1` keeps the top overlay in a capture
+when Control Hints is on.
 
 Debugging switches for captures: `--settle-moving n --settle-fps 60` plays n frames on at that
 rate after the capture's moment and `CR_CAPTURE_EVERY=<dir>` saves each of them (sNNNN.bmp: the
@@ -24,6 +26,15 @@ replacement's hash and `CR_HD_ONLY=<hash>` uses that one alone; `CR_STAGE_LOG=1`
 camera each room takes; `CR_NPC_TRACE=<id>` (-1: all) prints an NPC's animation clock each frame;
 `CR_OP_TRACE=1` prints every script instruction, native call, camera shot and frame effect (with its
 record's place and angles).
+
+`CR_SELFTEST_FIELD=1 chaosrings --selftest` runs the focused field checks: all eight party
+members' walk / run poses, Confirm after pausing the model viewer, and the Ark, fourth-gate and
+tower cutscene backdrops shown at the origin by `Born`. It also checks that both halves of the loaded release's
+dialogue parchment render in Auto, iPad, iPhone, Android and widescreen layouts, including when
+the UI atlas comes from an add-on release.
+
+`CR_SELFTEST_CONTROLS=1 chaosrings --selftest` checks that the Game settings toggle hides /
+shows the hints and that both it and F3 save their choice and restore it when settings reload.
 
 Music decoding (AAC): the system's FAAD2 when pkg-config finds it (Linux), otherwise FAAD2
 2.11.1's `libfaad`, bundled in `engine/third_party/faad2` (GPL-2.0; sources only, from the

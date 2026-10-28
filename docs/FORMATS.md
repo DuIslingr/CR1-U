@@ -722,6 +722,11 @@ for a scene and `Born 0` shows it again.
 | `FrmAdjCam id, n` | move to that shot over n frames |
 | `FrmPanCam dx, dy, dz, n` | shift the camera over n frames |
 
+`Born` explicitly shows an actor at its current position, including the origin; it does not
+require a preceding `Setc` / `FrmSetc`. The Ark's `t0152bt`, fourth gate's `d0451bt` and tower's
+`d0551bt` / `d0555bt` backdrops have scenes that rely on this. Treating the origin as an unused
+actor slot even after `Born` hides their scenery behind the characters.
+
 `FrmSetCam` moves the 3D camera only in rooms filmed in 3D: maps 13, 29, 46, 88 and 113,
 maps 63–87, or while +0x2c0 bit 6 is set. Elsewhere it scrolls the painted background
 (`SetScroll`, `SetScroll2D`). Room 113 (`t0150`, j001_t01) has no painting and a zero

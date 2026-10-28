@@ -61,7 +61,9 @@ centred on a 16:9 screen (the window's aspect in widescreen) as a 720-tall phone
 and, with `--android`, the message window's strip as `draw_win` does: `window_cutin_<w>` for
 the screen's width 1:1 from its left edge at y 2 y + 20 (`get_draw_win_point`), the parchment's
 name streak (512, 120, 196, 40) over it at (x, y + 16) (`get_draw_namewin_point`); none above
-1366 wide, where the iPhone's parchment stays.
+1366 wide in the original. The port stretches the largest strip for wider screens. The Android
+atlas needs this separate parchment in every layout, including Auto / iPhone and when used as
+an add-on over iOS data; its atlas alone has only the name streak and a partial panel.
 
 ## Other differences
 

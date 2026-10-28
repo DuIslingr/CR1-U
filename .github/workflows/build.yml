@@ -26,6 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Vita save converter tests
+        if: runner.os == 'Linux'
+        run: python3 tools/test_import_vita_save.py
+
       - name: Linux packages
         if: runner.os == 'Linux'
         run: |
@@ -69,6 +73,8 @@ jobs:
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON
       - name: Build
         run: cmake --build build --parallel
+      - name: Native Vita importer tests
+        run: ctest --test-dir build --output-on-failure
 
       - name: Package (Linux)
         if: runner.os == 'Linux' && !matrix.dlss
@@ -125,6 +131,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p upload
+          mkdir -p dist/tools dist/docs
+          cp tools/import_vita_save.py dist/tools/
+          cp docs/VITA_SAVES.md dist/docs/
           n="${{ github.event.repository.name }}"
           cp -R packaging/folders/. dist/  # (the game folder's ios/, android/, vita/, textures/: each with what goes in it)
           case "$RUNNER_OS" in

@@ -12,12 +12,14 @@
 //   U                toggle model up-axis (Y-up / Z-up)
 //   F                toggle smooth texture filtering (original: nearest)
 //   N / B            next / previous animation (includes the rest pose)
-//   Space            pause / resume           - / =         slower / faster
+//   Space            confirm on the field; pause / resume in the model viewer
+//   - / =            slower / faster
 //   W A S D          walk the party leader on a field (Shift: run)
 //   P / O            player on/off / next party character (f001-f008)
 //   Esc              quit
 
 #define SDL_MAIN_USE_CALLBACKS 1
+#include "platform/vita_import_ui.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
@@ -247,6 +249,7 @@ struct App {
     std::vector<int> voiceEntries;         // bank entries marked as voice (sound test, T)
     cr::Hud optionsHud;
     cr::Texture windowTex;                 // window_hd.mct: the game's UI atlas (panels, badges, …)
+    bool androidWindow = false;            // this atlas keeps its dialogue parchment in window_cutin_<w>
     cr::Texture cutinWideTex;              // window_cutin_<w>.mct (Android, slot 0x30): androidCutin's
     std::string cutinWideName;
     float footPrev = 0;                    // player's animation time last frame (footsteps)
@@ -274,7 +277,7 @@ struct App {
         int frames = 1, t = 0;
     };
     std::vector<Rescale> rescales;
-    std::set<int> placedNpcs;              // actors a script placed: parked slots (y 1000, origin) appear
+    std::set<int> placedNpcs;              // actors a script placed or showed: parked slots (y 1000, origin) appear
     std::map<int, std::map<int, int>> actorSlots; // LoadAct: npc -> slot -> action index in its model
     struct ScriptCam {                     // FrmSetCam / FrmAdjCam / FrmPanCam after CameraFree
         bool free = false, set = false;
@@ -400,6 +403,7 @@ struct App {
     int resumePrompt = 0;                  // 1: "You have save data from your last session" (Yes / No)
     int resumeCursor = 0;
     cr::SaveData resumeData;
+    vitaimport::Session saveImport;
     std::string saveDirOverride;           // tests: where save.dat / resume.dat go
     bool trackerArmed = false;             // G+0x34e1d: the Progress Tracker saves from the second scene's end on
     // A controller, as the Vita's buttons (its manual, 56000 / 56025): the D-pad / left stick move
@@ -962,11 +966,11 @@ void applyHd(App& app, cr::Image& img) {
     ++app.hdLoaded;
 }
 
-bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img);
+bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img, bool* fromAndroid = nullptr);
 
 // A full-image texture by its .mct name (loadOriginalImage), its HD replacement when that's on
-bool loadImage(App& app, const std::string& mct, cr::Image& img) {
-    if (!loadOriginalImage(app, mct, img)) return false;
+bool loadImage(App& app, const std::string& mct, cr::Image& img, bool* fromAndroid = nullptr) {
+    if (!loadOriginalImage(app, mct, img, fromAndroid)) return false;
     applyHd(app, img);
     return true;
 }
@@ -981,7 +985,8 @@ bool mctHeader(const std::vector<uint8_t>& f, cr::MctInfo& mi) {
 // A full-image texture by its .mct name: the Vita's lossless .gxt of the same name when --vita is
 // given (same sizes; 8 bits per channel where the iPad files use palettes, PVRTC or RGBA4444),
 // else the data folder's .mct.
-bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img) {
+bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img, bool* fromAndroid) {
+    if (fromAndroid) *fromAndroid = false;
     // Art the Vita redrew for its own screen layout (crtool vita: > 12/255 from the iPad's) keeps
     // the iPhone / iPad version
     static const char* const kVitaRedrawn[] = {"MAPtitle_hd.mct", "chaos_hd.mct", "chara1_hd.mct", "chara2_hd.mct",
@@ -1002,11 +1007,14 @@ bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img) {
         cr::MctInfo ai, mi;
         if (cr::decodeMct(data, a, &ai) && (!own || (mctHeader(mine, mi) && mi.width == ai.width && mi.height == ai.height))) {
             img = std::move(a);
+            if (fromAndroid) *fromAndroid = true;
             ++app.androidTextures;
             return true;
         }
     }
-    return cr::readFile(app.dataDir + mct, data) && cr::decodeMct(data, img);
+    const bool ok = cr::readFile(app.dataDir + mct, data) && cr::decodeMct(data, img);
+    if (fromAndroid) *fromAndroid = ok && app.androidOnly;
+    return ok;
 }
 
 // An iOS data file's names in the Vita's cr1.psarc: x.mct -> x.gxt (and x.gxt for x_hd.mct, which
@@ -1425,8 +1433,7 @@ void drawShopNumber(cr::MenuPainter& m, int value, float x, float y, int digits,
 void openCharSelect(App& app);
 void drawCharArt(App& app, float alpha, bool banner, float grey = 1);
 int plateIcon(int word);
-// The port's own key hints under the menus: not in a Release build (F3 shows them, with the status
-// text at the top), nor in the iPhone layout - its screen has no room below
+// Control Hints (Options, Game; F3): the port's own menu help. The iPhone layout has no room below.
 bool keyHints(const App& app);
 void openManual(App& app);
 void openScenarios(App& app);
@@ -2036,7 +2043,7 @@ void animate(App& app, LoadedModel& lm, float dt) {
     const cr::Model& m = lm.cpu;
     if (m.skeleton.nodes.empty() || lm.meshes.size() != m.meshes.size()) return;
     const cr::Action* act = lm.action >= 0 && lm.action < int(lm.actions.size()) ? &lm.actions[lm.action] : nullptr;
-    if (act && app.playing) {
+    if (act && (app.mode != Mode::Models || app.playing)) {
         lm.time += dt * kFramesPerSecond * app.speed;
         if (lm.loopFrom > 0 && lm.loopFrom < act->duration && lm.time >= act->duration)
             lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), act->duration - float(lm.loopFrom));
@@ -2591,6 +2598,9 @@ struct ViewerHost : cr::EventHost {
     void showNpc(int id, bool shown) override {
         app.npcShown[id] = shown;
         if (id == 0) return; // the player: drawn while showPlayer and not hidden here
+        // Born explicitly activates the actor at its current position. Some scenes show the
+        // hall loaded at the origin without a Setc (t01 event 202, the execution scene).
+        if (shown) app.placedNpcs.insert(id);
         buildNpcDraws(app);
         buildWalkCollision(app);
     }
@@ -3024,6 +3034,7 @@ void saveMix(const App& app) {
                               "\nsmooth_models=" + std::to_string(v.smoothModels) + "\nhd_models=" + std::to_string(int(v.hdModels)) +
                               "\nanisotropy=" + std::to_string(v.anisotropy) + "\nsharp_textures=" + std::to_string(int(v.sharpTextures)) +
                               "\nlayout=" + std::to_string(v.layout) +
+                              "\ncontrol_hints=" + std::to_string(int(app.showHud)) +
                               "\nenvironment_effects=" +
                               std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
                               std::to_string(int(app.lockOrientation)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
@@ -3085,6 +3096,7 @@ void loadVideo(App& app, const char* text) {
     }
     v.sharpTextures = keyValue(text, "\nsharp_textures=", v.sharpTextures) != 0;
     v.layout = std::clamp(keyValue(text, "\nlayout=", v.layout), 0, 3);
+    app.showHud = keyValue(text, "\ncontrol_hints=", app.showHud) != 0;
     app.environmentEffects = keyValue(text, "\nenvironment_effects=", app.environmentEffects) != 0;
     app.lockOrientation = keyValue(text, "\nlock_orientation=", app.lockOrientation) != 0;
     if (const char* at = SDL_strstr(text, "\npad_confirm=")) app.padConfirmEast = SDL_strncmp(at + 13, "south", 5) != 0;
@@ -3251,7 +3263,7 @@ void adjustVideo(App& app, int row, int dir) {
     case 12: { // HD textures: what loads from now on (the next room); the UI atlas at once
         v.hdTextures = !v.hdTextures;
         cr::Image wi;
-        if (app.rendererReady && loadImage(app, "window_hd.mct", wi)) {
+        if (app.rendererReady && loadImage(app, "window_hd.mct", wi, &app.androidWindow)) {
             app.renderer.destroy(app.windowTex);
             app.windowTex = app.renderer.upload(wi);
             noteWindowAtlas(app, wi);
@@ -3305,6 +3317,16 @@ constexpr float kOptBarX = 486, kOptBarW = 8;
 std::string sysLabel(const App& app, int id, const char* fallback) {
     const std::string t = sysText(app, id);
     return t.empty() ? fallback : t;
+}
+
+void saveImportAnswer(App& app, bool yes) {
+    const bool finished = app.saveImport.state == vitaimport::Session::Result && app.saveImport.succeeded;
+    app.saveImport.answer(yes, app.saveDirOverride.empty() ? cr::saveDir() : app.saveDirOverride);
+    if (finished) {
+        app.optionsOpen = false;
+        app.trackerArmed = false;
+        bootTitle(app);
+    }
 }
 
 std::vector<OptRow> optionRows(App& app, int page) {
@@ -3384,6 +3406,14 @@ std::vector<OptRow> optionRows(App& app, int page) {
         });
         onOff(sysLabel(app, 58108, "Environment Effects"), &app.environmentEffects, nullptr);
         onOff(sysLabel(app, 58109, "Lock Screen Orientation"), &app.lockOrientation, nullptr);
+        onOff("Control Hints", &app.showHud, nullptr);
+        rows.back().hint = "Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut.";
+        value("Import Vita Saves", "Choose Folder", [&app](int dir) {
+            if (dir == 0 && app.optionsFromTitle) app.saveImport.begin("cr1", app.window);
+        });
+        rows.back().enabled = app.optionsFromTitle;
+        rows.back().hint = app.optionsFromTitle ? "Choose your decrypted Vita save export. Existing saves will be backed up."
+                                               : "Import saves from the title screen's Options.";
         { // the Vita copy to take assets from (a folder dialog; Left / Right: none)
             std::string shown = "None";
             if (!app.vitaPath.empty()) {
@@ -3770,6 +3800,23 @@ void drawOptions(App& app, float, float) {
     }
     if (app.showHud) // (our key hints: off in a Release build, F3)
         m.text("Up/Down  Left/Right  Enter  Q/E or PgUp/PgDn: page  Esc: back", 20, 372, false, a * 0.8f, 9);
+    if (app.saveImport.active()) {
+        r.setOrigin(0);
+        r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
+        r.setOrigin(r.uiX());
+        m.picture(12, 0, 220, 1);
+        std::string message = app.saveImport.state == vitaimport::Session::Picking
+            ? "Choose the folder containing your decrypted Vita saves." : app.saveImport.message;
+        std::replace(message.begin(), message.end(), '\n', ' ');
+        const auto lines = wrapText(m, message, 455, 13, 8);
+        for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 24, 234 + 16 * float(l), false, 1, 13);
+        if (app.saveImport.state == vitaimport::Session::Confirm) {
+            m.plate(336, 104, 0, 0, app.saveImport.focus == 0, 1, false);
+            m.plate(336, 160, 1, 1, app.saveImport.focus == 1, 1, false);
+        } else if (app.saveImport.state == vitaimport::Session::Result) {
+            m.plate(336, 104, -1, -1, true, 1, false, "OK");
+        }
+    }
     if (app.resetAsk) { // OptionPrc 9 / 10: the message board (57078, then 57079), Yes / No at (336, 104 / 160)
         std::vector<std::vector<std::string>> pages;
         app.systemText.message(app.resetAsk == 1 ? 57078 : 57079, app.language, nullptr, pages, nullptr);
@@ -3787,6 +3834,7 @@ void drawOptions(App& app, float, float) {
 
 // One 20 Hz step: the slide-in and the Back arrows' bob (0..5 and back)
 void stepOptions(App& app) {
+    app.saveImport.poll();
     takeVitaFolder(app);
     takeAndroidFolder(app);
     if (!app.optionsOpen) return;
@@ -3815,6 +3863,17 @@ void resetAnswer(App& app, bool yes) {
 
 // Keys: Up/Down rows (then Back), Left/Right change, Enter activates, Q/E PgUp/PgDn pages
 void optionsKey(App& app, SDL_Keycode key) {
+    if (app.saveImport.active()) {
+        if (app.saveImport.state == vitaimport::Session::Picking) {
+            if (key == SDLK_ESCAPE || key == SDLK_BACKSPACE) app.saveImport.cancel();
+        } else if (key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_UP || key == SDLK_DOWN) {
+            app.saveImport.focus ^= 1;
+        } else if (key == SDLK_ESCAPE || key == SDLK_BACKSPACE) saveImportAnswer(app, false);
+        else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE)
+            saveImportAnswer(app, app.saveImport.focus == 0);
+        return;
+    }
+
     if (app.resetAsk) { // Reset Data's question: Yes / No
         switch (key) {
         case SDLK_UP: case SDLK_DOWN: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_W: case SDLK_S: case SDLK_A: case SDLK_D:
@@ -3869,6 +3928,16 @@ void optionsClick(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
     menuPointFit(app, lx, ly, mx, my);
+    if (app.saveImport.active()) {
+        if (app.saveImport.state == vitaimport::Session::Result) {
+            if (mx >= 336 && mx < 472 && my >= 104 && my < 144) saveImportAnswer(app, false);
+        } else if (app.saveImport.state == vitaimport::Session::Confirm && mx >= 336 && mx < 472) {
+            if (my >= 104 && my < 144) saveImportAnswer(app, true);
+            else if (my >= 160 && my < 200) saveImportAnswer(app, false);
+        }
+        return;
+    }
+
     if (app.resetAsk) { // the Yes / No plates (0x88 x 0x28)
         if (mx >= 336 && mx < 472 && my >= 104 && my < 144) resetAnswer(app, true);
         else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) resetAnswer(app, false);
@@ -9125,7 +9194,7 @@ void buildNpcDraws(App& app) {
         const cr::FieldNpc& n = app.npcs[i];
         if (n.model < 0 || n.model >= cr::kNumNpcModels || !npcDrawn(app, i)) continue;
         // Cutscene actor slots wait parked at y 995..1000 or at the origin until a scene places
-        // them (FrmSetc2)
+        // them (FrmSetc2) or explicitly shows them (Born).
         if ((n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) && !app.placedNpcs.count(n.id))
             continue;
         const std::string file = cr::kNpcModelFile[n.model];
@@ -9360,17 +9429,16 @@ void drawMessageLines(App& app, const std::vector<std::string>& page, float x, f
 }
 
 // The Android build's message strip for the screen's width (tex2d_setup_tex: window_cutin_480 ..
-// _1366, the first at least as wide; none wider) on a 720-tall phone of the screen's aspect, its
-// width in `wv`: window_cutin_<w> from the Android data, kept until the width changes
+// _1366, the first at least as wide). Width is in layout units, so the separate parchment
+// also works with Android art in the iPad / iPhone layouts. Wider screens stretch the largest.
 int androidCutinWidth(float wv) {
     static const int kWidths[] = {480, 800, 854, 960, 1024, 1280, 1366};
     const int* w = std::find_if(std::begin(kWidths), std::end(kWidths), [&](int k) { return int(wv) <= k; });
     return w == std::end(kWidths) ? 0 : *w;
 }
 
-const cr::Texture* androidCutin(App& app, float& wv) {
-    wv = 720.0f * app.renderer.screenW() / cr::Renderer::kLogicalH;
-    const int w = androidCutinWidth(wv);
+const cr::Texture* androidCutin(App& app, float width) {
+    const int w = androidCutinWidth(std::min(width, 1366.0f));
     if (w == 0 || !app.android.isOpen()) return nullptr;
     const std::string name = "window_cutin_" + std::to_string(w) + ".mct";
     if (name != app.cutinWideName) {
@@ -9380,6 +9448,15 @@ const cr::Texture* androidCutin(App& app, float& wv) {
         app.cutinWideName = name;
     }
     return app.cutinWideTex.id ? &app.cutinWideTex : nullptr;
+}
+
+bool drawAndroidMessagePanel(App& app, float x, float y, float w, float h, float nameX, float nameY) {
+    const cr::Texture* strip = androidCutin(app, w);
+    if (!strip) return false;
+    app.renderer.drawQuadUV(*strip, x, y, w, h, 0, 0, std::min(w, 1366.0f), h);
+    static const float kWinNamePhone[4] = {1024, 240, 392, 80};
+    drawWinPiece(app, kWinNamePhone, nameX, nameY, 392, 80);
+    return true;
 }
 
 void drawMessageBox(App& app, const std::vector<std::string>& page, const std::string& speaker, bool next,
@@ -9468,16 +9545,14 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         // lines at (36, y + text y) - no +18 - (the port's font offsets as for the iPad)
         static const float kWinParchmentPhone[4] = {1024, 240, 960, 256};
         const short* pr = kRect[app.msgLines == 1];
-        float wv = 0;
-        if (const cr::Texture* strip = r.androidScreen() ? androidCutin(app, wv) : nullptr) {
-            // Android (draw_win, read_window_flag): the strip's (0, 0, w, h - y) 1:1 from the
-            // screen's left edge at y 2 y + 20 (get_draw_win_point), then the parchment's name
-            // streak (512, 120, 196, 40) at (x, y + 16) (get_draw_namewin_point)
-            static const float kWinNamePhone[4] = {1024, 240, 392, 80};
-            const float y = 2.0f * pr[0] + 20;
-            app.renderer.drawQuadUV(*strip, 32 - (wv - 960) * 0.5f, y + 64, wv, 720 - y, 0, 0, wv, 720 - y);
-            drawWinPiece(app, kWinNamePhone, 32, 2.0f * (pr[0] + 16) + 64, 392, 80);
-        } else {
+        const float stripW = r.screenW() / r.layoutScale();
+        const float stripY = 2.0f * pr[0] + 20 + 64;
+        const float stripBottom = r.layoutTop() + cr::Renderer::kLogicalH / r.layoutScale();
+        // Android's atlas needs its separate full-width strip and overlaid name streak even
+        // when the selected layout is iPhone (including Auto), rather than Android.
+        if (!((app.androidWindow || r.androidScreen()) &&
+              drawAndroidMessagePanel(app, (W - stripW) / 2, stripY, stripW, stripBottom - stripY,
+                                      32, 2.0f * (pr[0] + 16) + 64))) {
             drawWinPiece(app, kWinParchmentPhone, 32, 2.0f * (pr[0] + 16) + 64, 960, 256);
         }
         if (!speaker.empty()) {
@@ -9488,7 +9563,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         textX = 2.0f * 36 + 32;
         textY = 2.0f * (pr[0] + pr[1]) + 64;
     } else if (true) { // the parchment (style 2, and the default)
-        drawWinPiece(app, kWinParchment, left, H - 280, width, 280);
+        if (!app.androidWindow || !drawAndroidMessagePanel(app, left, H - 280, width, 280, left, H - 280))
+            drawWinPiece(app, kWinParchment, left, H - 280, width, 280);
         if (!speaker.empty()) {
             app.nameHud.setTint(1, 1, 1);
             app.nameHud.drawAt(r, {speaker}, left + 44, H - 274, 2.0f, 0, 0, 0.0f); // on the streak (piece y 14..52)
@@ -12965,7 +13041,18 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 gbad += cr::levelGrowth(20, cr::kHp) != 0 || cr::levelGrowth(21, cr::kHp) != 10 ||
                         cr::levelGrowth(22, cr::kHp) != 30 || cr::levelGrowth(40, cr::kHp) != 2100 ||
                         cr::levelGrowth(99, cr::kHp) != 31600 || cr::levelGrowth(21, cr::kAttack) != 1 ||
-                        cr::levelGrowth(99, cr::kLuck) != 3160;
+                        cr::levelGrowth(99, cr::kLuck) != 3160 || cr::kMaxLevel != 100 ||
+                        cr::levelGrowth(100, cr::kHp) != 32400 || cr::levelGrowth(100, cr::kLuck) != 3240;
+                cr::GameState cap;
+                cap.party[0].level = 99;
+                cap.party[0].exp = cr::expForLevel(100) - 1;
+                cr::BattleRules capBattle;
+                capBattle.setupParty(cap, app.itemTable, 0);
+                capBattle.expGained = 1;
+                capBattle.applyRewards(cap); // no living enemies: a win's rewards
+                gbad += cap.party[0].level != 100 || cap.party[0].exp != cr::expForLevel(100);
+                capBattle.applyRewards(cap);
+                gbad += cap.party[0].level != 100;
                 cr::PartyMember pm;
                 pm.level = 99;
                 gbad += cr::seedRoom(pm, cr::kAttack) != 5000 - 3160;
@@ -13663,6 +13750,176 @@ void saveFrame(App& app, const char* path) {
     SDL_DestroySurface(surf);
 }
 
+int controlHintsSelfTest(App& app) {
+    const bool keepHud = app.showHud, keepPersist = app.persist;
+    const std::string keepDir = app.saveDirOverride;
+    app.saveDirOverride = userDir() + "selftest-control-hints/";
+    SDL_CreateDirectory(app.saveDirOverride.c_str());
+    app.persist = true; // an isolated settings file: exercise the same save / load as a restart
+    int problems = 0;
+    bool off = false, on = false, shortcut = false;
+    const auto rows = optionRows(app, 0);
+    const auto row = std::find_if(rows.begin(), rows.end(), [](const OptRow& r) { return r.label == "Control Hints"; });
+    if (row == rows.end() || !row->act) ++problems;
+    else {
+        row->act(1); // Off, as a tap on its settings button
+        const bool hidden = !app.showHud && !keyHints(app);
+        app.showHud = true;
+        loadMix(app);
+        off = hidden && !app.showHud && !keyHints(app);
+        problems += !off;
+        row->act(0); // On
+        const bool shown = app.showHud && keyHints(app);
+        app.showHud = false;
+        loadMix(app);
+        on = shown && app.showHud && keyHints(app);
+        problems += !on;
+        SDL_Event key{};
+        key.type = SDL_EVENT_KEY_DOWN;
+        key.key.key = SDLK_F3;
+        key.key.down = true;
+        SDL_AppEvent(&app, &key);
+        const bool toggled = !app.showHud;
+        app.showHud = true;
+        loadMix(app);
+        shortcut = toggled && !app.showHud;
+        problems += !shortcut;
+    }
+    SDL_RemovePath(settingsPath().c_str());
+    SDL_RemovePath(app.saveDirOverride.c_str());
+    app.showHud = keepHud;
+    app.persist = keepPersist;
+    app.saveDirOverride = keepDir;
+    std::printf("control hints: settings Off persists %s, On persists %s, F3 persists %s; %d problems\n",
+                off ? "yes" : "NO", on ? "yes" : "NO", shortcut ? "yes" : "NO", problems);
+    return problems;
+}
+
+int fieldPresentationSelfTest(App& app) {
+    const auto at = std::find(app.maps.begin(), app.maps.end(), "d0101_10.cmp");
+    if (at == app.maps.end()) return 1;
+    app.mode = Mode::Maps;
+    showMap(app, int(at - app.maps.begin()), 0, 2);
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.dialogue.clear();
+    const cr::FieldWalker start = app.walker;
+    int problems = 0, moving = 0;
+    // A pause left in the model viewer must not stop field animation. Exercise the actual
+    // player update with both touch-pad gaits, including each party member's loaded actions.
+    app.playing = false;
+    for (int c = 0; c < int(SDL_arraysize(kPartyModels)); ++c) {
+        app.playerChar = c;
+        placePlayer(app);
+        for (int gait = 1; gait <= 2; ++gait) {
+            app.walker = start;
+            app.walkClock = 0;
+            app.touchPad = App::TouchPad();
+            app.touchPad.down = true;
+            app.touchPad.dx = gait == 1 ? 20.0f : 40.0f;
+            updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+            const auto first = app.player.world;
+            updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+            bool changed = false;
+            for (size_t i = 0; i < first.size() && i < app.player.world.size(); ++i)
+                changed |= !same(first[i], app.player.world[i]);
+            const bool ok = app.havePlayer && int(app.walker.gait) == gait && app.player.action == gait &&
+                            app.player.time > 0 && changed;
+            moving += ok;
+            problems += !ok;
+        }
+    }
+    app.touchPad = App::TouchPad();
+    app.playing = true;
+    app.dialogue = {{"Confirm"}};
+    app.dialoguePage = 0;
+    SDL_Event confirm{};
+    confirm.type = SDL_EVENT_KEY_DOWN;
+    confirm.key.key = SDLK_SPACE;
+    confirm.key.down = true;
+    SDL_AppEvent(&app, &confirm);
+    const bool confirmed = app.dialogue.empty() && app.playing;
+    problems += !confirmed;
+    app.dialogue.clear();
+    app.playerChar = 0;
+    app.playing = true;
+    problems += app.renderer.takeErrors();
+    std::printf("field animation: %d/16 walk/run poses advance after viewer pause, Space confirms %s; %d problems\n",
+                moving, confirmed ? "yes" : "NO", problems);
+    // These scripts show a loaded backdrop at the origin without a separate Setc. Cover the
+    // Ark across all routes, the fourth gate and both affected tower backdrops.
+    struct Backdrop { int area, map, npc; const char* model; };
+    static const Backdrop backdrops[] = {
+        {7, 113, 501, "t0152bt.bin"}, {13, 113, 501, "t0152bt.bin"},
+        {19, 113, 501, "t0152bt.bin"}, {25, 113, 501, "t0152bt.bin"},
+        {5, 63, 508, "d0451bt.bin"}, {6, 88, 515, "d0555bt.bin"},
+        {18, 88, 511, "d0551bt.bin"}
+    };
+    for (const Backdrop& b : backdrops) {
+        const auto map = std::find(app.maps.begin(), app.maps.end(), cr::kMapCollisionFile[b.map]);
+        if (map == app.maps.end()) { ++problems; continue; }
+        showMap(app, int(map - app.maps.begin()), b.map, b.area);
+        app.runner.stop();
+        app.pendingEntry = App::Entry::None;
+        ViewerHost host(app);
+        host.loadNpc(b.npc);
+        host.showNpc(b.npc, false);
+        const bool hidden = host.npc(b.npc).empty();
+        host.showNpc(b.npc, true);
+        const auto draws = host.npc(b.npc);
+        const bool shown = draws.size() == 1 && draws[0]->model == b.model &&
+                           draws[0]->world.m[12] == 0 && draws[0]->world.m[13] == 0 && draws[0]->world.m[14] == 0;
+        host.showNpc(b.npc, false);
+        const bool killed = host.npc(b.npc).empty();
+        const int sceneProblems = !hidden + !shown + !killed + app.renderer.takeErrors();
+        std::printf("cutscene backdrop %s area %d: hidden on Kill %s, shown at origin on Born %s, hidden again %s; %d problems\n",
+                    b.model, b.area, hidden ? "yes" : "NO", shown ? "yes" : "NO", killed ? "yes" : "NO", sceneProblems);
+        problems += sceneProblems;
+    }
+    {
+        // Render the loaded atlas's panel over magenta and check both halves in every layout.
+        // This also guards the iOS / Vita art when changing Android's separate parchment path.
+        const char* source = app.androidWindow ? "Android" : app.vita.isOpen() ? "Vita" : "iOS";
+        const App::Video keepVideo = app.video;
+        const int keepStyle = app.msgStyle, keepLines = app.msgLines;
+        int panels = 0;
+        app.msgStyle = 2, app.msgLines = 2;
+        for (int layout = 0; layout < 5; ++layout) {
+            app.video.layout = layout % 4;
+            app.video.widescreen = layout == 4;
+            applyVideo(app);
+            // A smaller viewport exercises the wide aspect without resizing the GL surface.
+            int fw = 1024, fh = layout == 4 ? 448 : 768;
+            auto& r = app.renderer;
+            r.beginFrame(fw, fh);
+            r.setOrigin(r.uiX());
+            r.fillRect(-r.uiX(), 0, r.screenW(), cr::Renderer::kLogicalH, 1, 0, 1, 1);
+            drawMessageBox(app, {}, "Speaker", false, "");
+            r.endFrame(false);
+            std::vector<uint8_t> pixels;
+            bool paper = r.readPixels(pixels, fw, fh);
+            float x0, y0, x1, y1;
+            r.toLogical(0, 0, x0, y0);
+            r.toLogical(float(fw), float(fh), x1, y1);
+            for (float x : {200.0f, 800.0f}) {
+                const int px = int((x + r.uiX() - x0) * fw / (x1 - x0));
+                const int py = int((620 - y0) * fh / (y1 - y0));
+                if (!paper || px < 0 || px >= fw || py < 0 || py >= fh) { paper = false; break; }
+                paper = pixels[(size_t(py) * fw + px) * 4 + 1] > 100; // parchment, not magenta
+            }
+            panels += paper;
+            if (!paper) std::printf("%s dialogue: parchment missing in layout %d\n", source, layout);
+        }
+        const int panelProblems = 5 - panels + app.renderer.takeErrors();
+        std::printf("%s dialogue: parchment covers both halves in %d/5 layouts; %d problems\n", source, panels, panelProblems);
+        problems += panelProblems;
+        app.msgStyle = keepStyle, app.msgLines = keepLines;
+        app.video = keepVideo;
+        applyVideo(app);
+    }
+    return problems;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.typeOn = false; // pages whole (the typing has its own test)
@@ -13670,13 +13927,28 @@ int runSelfTest(App& app) {
     applyVideo(app);
     app.testNoTutorials = true; // the battles' tutorials only where a test asks for them
     app.renderer.setVSync(false); // as fast as it renders, not at the display's rate
+    if (const char* file = SDL_getenv("CR_SELFTEST_SAVE")) {
+        cr::SaveData save;
+        std::string error;
+        if (!cr::readSave(file, save, &error) || !applySave(app, save)) {
+            std::fprintf(stderr, "imported save: %s\n", error.c_str());
+            return 1;
+        }
+        for (int i = 0; i < 3; ++i) drawFrame(app, false);
+        const int problems = !app.havePlayer || app.mapNumber != save.map || app.renderer.takeErrors() != 0;
+        std::printf("imported save: area %d map %d, leader %d, level %d; %d problems\n", app.area, app.mapNumber,
+                    app.playerChar, app.game.party[size_t(app.playerChar)].level, problems);
+        return problems ? 1 : 0;
+    }
+    if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_BATTLES")) { // only the battle pass
         int frames = 0, glErrors = 0;
         setMode(app, Mode::Maps);
         return battleSelfTest(app, frames, glErrors) ? 1 : 0;
     }
+    int glErrors = controlHintsSelfTest(app) + fieldPresentationSelfTest(app), frames = 0, failedModels = 0;
     setMode(app, Mode::Models);
-    int glErrors = 0, frames = 0, failedModels = 0;
     for (size_t i = 0; i < app.models.size(); ++i) {
         showModel(app, int(i));
         int errs = 0;
@@ -14298,7 +14570,7 @@ int runSelfTest(App& app) {
         problems += !app.titleOpen;
         openOptions(app, 0);
         const std::vector<OptRow> titlePage = optionRows(app, 0);
-        problems += titlePage.size() != 11 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
+        problems += titlePage.size() != 13 || titlePage.back().label != sysLabel(app, 58122, "Reset Data");
         { // Reset Data: asked twice; No keeps the saves, Yes to both removes them (in a test folder)
             const std::string keepDir = app.saveDirOverride;
             app.saveDirOverride = userDir() + "selftest-reset/";
@@ -14353,8 +14625,8 @@ int runSelfTest(App& app) {
         startNewGame(app); // (the hall, for the in-game Options checks below)
         openOptions(app, 0);
         std::vector<OptRow> gamePage = optionRows(app, 0);
-        problems += gamePage.size() != 11 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
-        if (gamePage.size() == 11 && gamePage.back().act) gamePage.back().act(0);
+        problems += gamePage.size() != 13 || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
+        if (gamePage.size() == 13 && gamePage.back().act) gamePage.back().act(0);
         problems += !app.booting;
         app.runner.stop();
         std::printf("options: %d pages, %d rows; FSR 3.1 modes drawn: %d; title menu after %d frames; %d problems\n",
@@ -14805,7 +15077,10 @@ int runSelfTest(App& app) {
         problems += !cr::writeSave(path, sd) || !cr::readSave(path, back) || back.game.walkExp[0] != bank ||
                     back.game.noEncounters != sd.game.noEncounters;
         sd.game.noEncounters[3] = true;
-        problems += !cr::writeSave(path, sd) || !cr::readSave(path, back) || !back.game.noEncounters[3];
+        sd.game.party[0].level = 100;
+        sd.game.party[0].exp = cr::expForLevel(100);
+        problems += !cr::writeSave(path, sd) || !cr::readSave(path, back) || !back.game.noEncounters[3] ||
+                    back.game.party[0].level != 100 || back.game.party[0].exp != cr::expForLevel(100);
         SDL_RemovePath(path.c_str());
         // paid into a win, before the Apples double it
         int paid = -1;
@@ -17385,6 +17660,18 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             app.optionsRow = SDL_atoi(row);
             optionsScrollFix(app, int(optionRows(app, app.optionsPage).size()), true);
         }
+        // Exercise the actual native Options handlers in automated captures.
+        if (const char* keys = SDL_getenv("CR_CAPTURE_OPTIONS_KEYS")) {
+            std::istringstream sequence(keys);
+            for (std::string key; sequence >> key;) {
+                if (key == "enter") optionsKey(app, SDLK_RETURN);
+                else if (key == "left") optionsKey(app, SDLK_LEFT);
+                else if (key == "right") optionsKey(app, SDLK_RIGHT);
+                else if (key == "back") optionsKey(app, SDLK_ESCAPE);
+            }
+            std::printf("import UI: state %d, succeeded %d, options %d, title %d\n", int(app.saveImport.state),
+                        int(app.saveImport.succeeded), int(app.optionsOpen), int(app.titleOpen));
+        }
     }
     if (app.havePlayer && app.captureAt[0] == app.captureAt[0]) { // --at x z: put the player there
         float y;
@@ -17427,7 +17714,12 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     std::printf("%s %s -> %s (%dx%d)\n", ok ? "captured" : "FAILED", mapName, outPath, w, h);
     if (app.hdModelsLoaded) std::printf("hd models: %d replaced (%s)\n", app.hdModelsLoaded, app.modelsDir.c_str());
     if (app.battle.active) std::printf("battle: %d steps (speed %d)\n", app.battle.frames, app.battleSpeed);
-    if (app.havePlayer && !app.battle.active) std::printf("player: at %.1f %.1f (field speed %d)\n", app.walker.pos.x, app.walker.pos.z, app.fieldSpeed);
+    if (app.havePlayer && !app.battle.active) {
+        const int action = app.player.action;
+        const char* name = action >= 0 && action < int(app.player.actions.size()) ? app.player.actions[action].name.c_str() : "-";
+        std::printf("player: at %.1f %.1f (field speed %d), gait %d, action %s, frame %.2f\n", app.walker.pos.x,
+                    app.walker.pos.z, app.fieldSpeed, int(app.walker.gait), name, app.player.time);
+    }
     if (app.haveStageCam) {
         const cr::StageCamera& sc = app.stageCam;
         const cr::Mat4 vp = cr::Mat4::perspective(sc.fovDegrees * 3.14159265f / 180.0f, 1.0f, 10.0f, 4000.0f) *
@@ -17755,7 +18047,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     applyLanguage(*app);
     {
         cr::Image wi;
-        if (loadImage(*app, "window_hd.mct", wi)) app->windowTex = app->renderer.upload(wi), noteWindowAtlas(*app, wi);
+        if (loadImage(*app, "window_hd.mct", wi, &app->androidWindow)) app->windowTex = app->renderer.upload(wi), noteWindowAtlas(*app, wi);
     }
     std::sort(app->textures.begin(), app->textures.end());
     std::sort(app->models.begin(), app->models.end());
@@ -18044,7 +18336,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 app.vitaLogo.skip = true;
             break;
         }
-        if (event->key.key == SDLK_F3) { app.showHud = !app.showHud; break; } // the status / key help at the top
+        if (event->key.key == SDLK_F3) { app.showHud = !app.showHud; saveMix(app); break; } // the saved Control Hints setting
         if (event->key.key == SDLK_V && !app.manualOpen && !app.scenariosOpen) { // the Options screen
             if (app.optionsOpen) app.optionsOpen = false;
             else openOptions(app, 0);
@@ -18186,8 +18478,14 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             }
             break;
         case SDLK_P: if (app.mode == Mode::Maps) { app.showPlayer = !app.showPlayer; placePlayer(app); } break;
-        case SDLK_E: case SDLK_RETURN:
-            if (app.mode != Mode::Maps) break;
+        case SDLK_E: case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE:
+            if (app.mode != Mode::Maps) {
+                if (event->key.key == SDLK_SPACE && app.mode == Mode::Models) {
+                    app.playing = !app.playing;
+                    updateTitle(app);
+                }
+                break;
+            }
             if (app.choiceFlag >= 0) {
                 answerChoice(app, app.choiceCursor == 0);
             } else if (!app.dialogue.empty()) { // next page (or the rest of this one)
@@ -18219,7 +18517,6 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             if (app.mode == Mode::Models) selectAction(app, -1);
             else if (app.mode == Mode::Maps) { app.showBackground = !app.showBackground; updateTitle(app); }
             break;
-        case SDLK_SPACE: app.playing = !app.playing; updateTitle(app); break;
         case SDLK_MINUS: app.speed = std::max(0.125f, app.speed * 0.5f); updateTitle(app); break;
         case SDLK_EQUALS: app.speed = std::min(8.0f, app.speed * 2.0f); updateTitle(app); break;
         default: break;

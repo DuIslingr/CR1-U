@@ -1,17 +1,13 @@
-# CR1-U v0.4.0
+# CR1-U v0.4.1
 
 A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Easy first start:** with no game found, it asks for your copy (an iOS `.ipa`, an Android
-  APK + OBB, or a Vita / Vita3K folder) and copies what it needs next to the program. Vita
-  NoNpDrm dumps are decrypted, packed or not (`.rar`, `.7z`, `.zip`, `.vpk`), and the Prequel
-  Trilogy works too.
-- **Smooth Models** now smooths stages, props and battle backgrounds too, not just characters.
-- **HD Models:** export the models as glTF 2.0 and load your own replacements (off by default).
-- **Field Speed and Battle Speed:** 2x to 5x (Options, Game).
-- The Options pages scroll and are easier to read.
+- **Android-data fixes:** walking animations now play correctly on the field, dialogue boxes render correctly, and affected cutscenes retain their backgrounds. Shared rendering fixes also cover iOS and Vita data.
+- **Control Hints setting:** hide or show the on-screen keyboard and controller help from Options → Game. The choice is saved between sessions.
+- **Vita save importing:** import decrypted Vita saves directly from the native title-screen Options → Game → Import Vita Saves menu. Existing saves are backed up. The download also includes the optional command-line converter and instructions.
+- **Level cap raised to 100.**
 
 ## Downloads
 
