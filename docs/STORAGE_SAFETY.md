@@ -93,8 +93,8 @@ checksums recomputed: 70000 cases plus JSON nesting to 2 million. After the
 fixes all of these run with no sanitizer report.
 
 A later pass ran damaged CR2/CR3 saves through battles and CR3's native menus, the
-gene lab, the Space Port and VS mode: 3428 cases sampled across every save key,
-under the sanitizers. It found two number overflows in CR3 and no crash or hang.
+gene lab, the Space Port, VS mode, an ordinary shop and the world select: 3905 cases
+sampled across every save key, under the sanitizers. It found two number overflows
+in CR3 and no crash or hang.
 
-Limits: CR3's ordinary shops, world select and pub were not reached, and each save
-key was sampled, not tried in full.
+Limits: CR3's pub was not reached, and each save key was sampled, not tried in full.

@@ -109,3 +109,12 @@ Remaining device validation: background/resume with the OS actually discarding
 the EGL context, orientation changes on physical Android hardware, and the
 original report's exact save/route. No physical-device resume or EGL-loss trace
 is claimed by these desktop Mesa context-replacement tests.
+
+## Follow-up: a Windows PC with no Vulkan (2026-10-30)
+
+The executable linked `vulkan-1.dll` directly, so on a PC without the Vulkan loader
+Windows refused to start it (0xc0000135), before the code that falls back to OpenGL
+could run. The MSVC build now delay-loads the DLL. With no loader, SDL refuses the
+Vulkan window, no Vulkan call is made, and the game goes on to OpenGL. CI's Windows
+runners have no loader, so the CR2-U and CR3-U viewer tests there start only because
+of this. llvm-mingw builds, which are not released, still link it directly.
