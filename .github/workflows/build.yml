@@ -16,7 +16,7 @@ jobs:
         include:
           - { os: ubuntu-22.04, name: linux }
           - { os: windows-2022, name: windows }
-          - { os: macos-14, name: macos }
+          - { os: macos-15, name: macos }
           # DLSS: built and linked to prove it, never uploaded - NVIDIA's NGX library is proprietary and
           # these programs are GPL, so a DLSS build is for one's own use (THIRD_PARTY.md), not an artifact
           - { os: ubuntu-22.04, name: linux-dlss, dlss: true }
