@@ -29,6 +29,11 @@ std::string content(const fs::path &p) {
     const Bytes b = read(p);
     return {b.begin(), b.end()};
 }
+// a converted save without its `saved` line: each prepare stamps it with the second it ran in
+std::string unstamped(std::string s) {
+    const size_t at = s.find("\nsaved ");
+    return at == std::string::npos ? s : s.erase(at, s.find('\n', at + 1) - at);
+}
 std::string zip(const std::string &s) {
     std::string out(compressBound(uLong(s.size())), '\0');
     uLongf n = uLongf(out.size());
@@ -131,7 +136,7 @@ int main() {
                     backup = f.path();
             check(!backup.empty(), "Missing backup");
             for (const auto &[name, data] : plan.files) {
-                check(content(dest / name) == data, "Incorrect installed save");
+                check(unstamped(content(dest / name)) == unstamped(data), "Incorrect installed save");
                 check(content(backup / name) == "previous " + name, "Backup lost old save");
             }
             check(content(dest / "settings.ini") == "keep settings", "Unrelated profile file changed");
