@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include "platform/lifecycle_clock.hpp"
 
 struct SDL_AudioStream;
 
@@ -95,6 +96,7 @@ private:
     std::vector<Voice> voices_; // 16, like the original's OpenAL sources
     void loadLineTables(const std::string& dataDir);
     unsigned device_ = 0;
+    crtime::LifecycleClock clock_;
 };
 
 } // namespace cr

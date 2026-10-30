@@ -77,6 +77,9 @@ public:
     virtual uint64_t windowFlags() const = 0;
     virtual bool init(SDL_Window* window) = 0;
     virtual void shutdown() = 0;
+    // SDL_EVENT_RENDER_DEVICE_RESET: rebuild live GPU resources in SDL's new
+    // current GL context, preserving opaque client handles and scene state.
+    virtual bool restoreAfterContextLoss() { return false; }
     virtual std::string description() const = 0;
 
     virtual Texture upload(const Image& img) = 0;

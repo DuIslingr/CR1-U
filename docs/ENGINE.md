@@ -694,3 +694,44 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] Engine: 3D renderer (GLES1.1 fixed-function emulation in shaders), figure system, audio
 - [ ] Platform bring-up: Windows, macOS, Android packaging
 - [x] Game logic: field, battle, menus, saves
+
+## Field teardown regression check
+
+`CR_SELFTEST_LIFECYCLE=1 chaosrings --selftest` exercises Return to Title during a
+puzzle retry for each ability, a room change during an NPC scale animation, and
+loading a save during the leader's teleport fade. It uses real room data and the
+normal viewer/runtime paths; no player saves are written. Run with each data source
+and an isolated `XDG_DATA_HOME` and `CR_SAVE_DIR`.
+
+See [the transition audit](TRANSITION_AUDIT.md) for the original-code evidence,
+before/after results, and limits of the crash investigation.
+
+## Interrupted input checks
+
+`ctest --test-dir engine/build -R input-cancel --output-on-failure` checks focus,
+cancelled-touch and lifecycle-thread cancellation without game files. CR2/CR3
+include the viewer cleanup check in that selection. CR1/Omega additionally use
+`CR_SELFTEST_CANCEL=1 chaosrings --selftest` with local data to exercise their SDL
+event path and an interrupted psychokinesis drag. See
+[interrupted input handling](INPUT_CANCEL.md) for behavior and validation limits.
+
+OpenGL / Android resume recovery is documented in [GRAPHICS_RECOVERY.md](GRAPHICS_RECOVERY.md).
+The GL device retains live resource backups and rebuilds them in SDL's replacement
+context while preserving scene handles; `gl-context-recovery` exercises actual context loss.
+
+Mobile suspension timing is documented in [LIFECYCLE_TIMING.md](LIFECYCLE_TIMING.md).
+Lifecycle clocks exclude background time from scene updates and fades; the
+`lifecycle-clock` test checks long pauses, lifecycle threads and resuming.
+
+Scene-owned speech, delayed battle audio, title transitions and unavailable
+audio sources are covered by [SCENE_AUDIO.md](SCENE_AUDIO.md). CR2/CR3 include
+`audio-player` and `viewer-scene-audio` CTests; CR1/Omega also have
+`CR_SELFTEST_SCENE_AUDIO=1 chaosrings --selftest` with local game data.
+
+Title-entry cleanup and the pending-save regression are documented in
+[SESSION_UI.md](SESSION_UI.md).
+
+Save-position restoration and load-confirmation follow-up:
+[LOAD_STATE.md](LOAD_STATE.md).
+
+Checked save replacement and failure recovery: [STORAGE_SAFETY.md](STORAGE_SAFETY.md).

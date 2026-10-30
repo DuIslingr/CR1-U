@@ -1,4 +1,6 @@
 #include "game/save.hpp"
+#include "game/stage_tables.hpp"
+#include "platform/atomic_file.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -54,10 +56,7 @@ bool writeSave(const std::string& path, const SaveData& s) {
     }
     o << '\n';
     const std::string text = o.str();
-    // Written beside, then moved over: a crash mid-write never leaves a broken save
-    const std::string tmp = path + ".part";
-    if (!SDL_SaveFile(tmp.c_str(), text.data(), text.size())) return false;
-    return SDL_RenamePath(tmp.c_str(), path.c_str());
+    return crstorage::replaceFile(path, text);
 }
 
 bool readSave(const std::string& path, SaveData& s, std::string* error) {
@@ -68,6 +67,7 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
     size_t size = 0;
     char* data = static_cast<char*>(SDL_LoadFile(path.c_str(), &size));
     if (!data) return fail("no save");
+    const bool lastLineWhole = size > 0 && data[size - 1] == '\n';
     std::istringstream in(std::string(data, size));
     SDL_free(data);
     std::string magic;
@@ -77,10 +77,13 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
     SaveData out;
     std::string line;
     std::getline(in, line);
+    int parts = 0, partyLines = 0;
     while (std::getline(in, line)) {
         std::istringstream l(line);
         std::string key;
         l >> key;
+        parts += key == "flags" || key == "vars" || key == "items" || key == "oz" || key == "noencounters" || key == "walkexp";
+        partyLines += key == "party";
         if (key == "area") l >> out.area;
         else if (key == "map") l >> out.map;
         else if (key == "pos") l >> out.pos[0] >> out.pos[1] >> out.pos[2];
@@ -94,15 +97,22 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
             PartyMember m;
             if (l >> c >> m.level >> m.exp >> m.hp >> m.mp >> m.equip[0] >> m.equip[1] >> m.equip[2] && c >= 0 &&
                 c < kCharacters) {
+                // (far past any game's, so a damaged number can't overflow the sums it goes into)
                 m.level = std::clamp(m.level, 1, kMaxLevel);
+                m.exp = std::clamp(m.exp, 0, 99999999);
+                m.hp = std::clamp(m.hp, -1, 9999999), m.mp = std::clamp(m.mp, -1, 9999999); // (-1: full)
+                for (int& e : m.equip)
+                    if (e < 0 || e > 9999) e = 0;
                 for (int& sd : m.seeds) // seed points and gene plates (older saves end before them)
                     if (!(l >> sd)) sd = 0;
                     else sd = std::clamp(sd, 0, kMaxSeedPoints);
                 const PartyMember fresh = newParty()[size_t(c)];
                 for (int k = 0; k < 4; ++k)
                     if (!(l >> m.genes[k])) m.genes[k] = fresh.genes[k];
+                    else if (m.genes[k] < 0 || m.genes[k] > 9999) m.genes[k] = 0;
                 for (int& b : m.boosts)
                     if (!(l >> b)) b = 0;
+                    else b = std::clamp(b, -9999999, 9999999);
                 out.game.party[size_t(c)] = m;
             }
         }
@@ -139,7 +149,9 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
                 while (l >> id >> item) out.game.treasure[size_t(r)].push_back({id, item});
         }
     }
-    if (out.area < 0 || out.map < 0) return fail("incomplete save");
+    // (every line ends in a newline, and a save of any version has these six and all the party, in
+    // this file's order or the Vita import's: boxes and what follows it aren't in the import's)
+    if (out.area < 0 || out.area >= kNumAreas || out.map < 0 || out.map >= kNumMaps || !lastLineWhole || parts < 6 || partyLines < kCharacters) return fail("incomplete save");
     ensureStartingGenes(out.game); // saves from before genes were kept
     out.leader = std::clamp(out.leader, 0, 7);
     out.game.oz = std::clamp(out.game.oz, 0, 9999999);

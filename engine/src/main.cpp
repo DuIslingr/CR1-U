@@ -27,6 +27,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <bitset>
 #include <functional>
 #include <ctime>
@@ -74,6 +75,9 @@
 #include "gfx/renderer.hpp"
 #include "platform/paths.hpp"
 #include "platform/setup.hpp"
+#include "platform/input_cancel.hpp"
+#include "platform/atomic_file.hpp"
+#include "platform/lifecycle_clock.hpp"
 #include "scene/pose.hpp"
 
 namespace {
@@ -116,6 +120,11 @@ struct Effect {
 };
 
 struct App {
+    crinput::CancelWatch inputCancel;
+    crtime::LifecycleClock clock;
+    std::atomic<bool> graphicsReset{false};
+    SDL_ThreadID gameThread = 0;
+    bool pointerCancelled = false;
     SDL_Window* window = nullptr;
     bool rendererReady = false;
     cr::Renderer renderer;
@@ -428,6 +437,7 @@ struct App {
     int fieldSpeed = 1, battleSpeed = 1;
     int padHeld = -1;                      // the direction held for the menus' repeat (0 up 1 down 2 left 3 right)
     float padHeldFor = 0;
+    crinput::HeldOver padHeldOver;         // (dead after a cancel or a session's end, until let go)
     int itemWindowItem = 0;
     bool tapPending = false;               // action key while a script waits for a tap
     float fadeGrey = 0, fadeFrom = 0, fadeTo = 0; // Screen
@@ -673,6 +683,7 @@ struct App {
         std::vector<int> grid;             // [layer][row][col] -> objs index, -1 empty
         int tpState = 0, tpTimer = 0, tpTarget = -1; // Teleport: 1 vanishing, 2 appearing
         int pkState = 0, pkTarget = -1;    // Psychokinesis: 1 a block held, 2 waiting for it to land
+        bool pkPointerCancelled = false; // keep a held block, but require a fresh drag after interruption
         bool pkMoved = false;
         int pkEffect = 0;                  // effect 5 on the leader while a block is held
         float pkFromX = 0, pkFromY = 0;    // where the mouse took hold (screen pixels); -1e9 = by key
@@ -1253,7 +1264,8 @@ void storeSetting(const char* key, const std::string& value) {
         at = e + 1;
     }
     if (!set) out += key + value + "\n";
-    SDL_SaveFile(settingsPath().c_str(), out.data(), out.size());
+    std::string error;
+    if (!crstorage::replaceFile(settingsPath(), out, &error)) SDL_Log("settings: %s", error.c_str());
 }
 std::string storedSetting(const char* key) {
     size_t size = 0;
@@ -1429,6 +1441,8 @@ std::string itemName(const App& app, int item);
 void startNewGame(App& app);
 void bootTitle(App& app);
 void padButton(App& app, int b);
+void padStep(App& app, float dt);
+bool padLive(App& app);
 bool padMenus(const App& app);
 bool padField(const App& app);
 void offerResume(App& app);
@@ -1646,7 +1660,20 @@ void playBgm(App& app, uint32_t v) {
     app.music.command(v);
 }
 
+// FieldScene::onTerm -> PuzzleScene::term destroys the old room's puzzle objects;
+// npc_read_setup also clears its autoctl records. No task may retain an old NPC index.
+void endFieldTasks(App& app) {
+    app.moves.clear();
+    app.rescales.clear();
+    app.puzzle = App::Puzzle();
+    app.puzzleBanner = App::PuzzleBanner();
+    app.puzzleStartPending = false;
+    app.playerAlpha = app.playerAlphaFrom = app.playerAlphaTo = 1;
+    app.playerFadeFrames = app.playerFadeLeft = 0;
+}
+
 void enterMap(App& app) {
+    endFieldTasks(app);
     app.npcs.clear();
     app.fieldEffects.clear();
     app.frameEffects.clear();
@@ -1655,7 +1682,6 @@ void enterMap(App& app) {
     app.lastKick = 0;
     app.lastEvent.clear();
     app.npcShown.clear();
-    app.moves.clear();
     app.placedNpcs.clear();
     app.actorSlots.clear();
     app.cam = App::ScriptCam();
@@ -3071,7 +3097,8 @@ void saveMix(const App& app) {
                               (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
     const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video;
-    SDL_SaveFile(settingsPath().c_str(), all.data(), all.size());
+    std::string error;
+    if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());
 }
 
 
@@ -3920,6 +3947,7 @@ void resetAnswer(App& app, bool yes) {
     for (int pair = 1; pair <= 4; ++pair) SDL_RemovePath(slotPath(app, pair).c_str());
     SDL_RemovePath(savePath(app, "resume.dat").c_str());
     app.game = cr::GameState();
+    app.playSeconds = 0; // (prty_init_all: the play time is in the block it clears)
 }
 
 // Keys: Up/Down rows (then Back), Left/Right change, Enter activates, Q/E PgUp/PgDn pages
@@ -4191,7 +4219,14 @@ void saveScreenYes(App& app) {
     } else if (ss.pending == 2) {
         const cr::SaveData s = ss.data;
         ss.open = false;
-        if (applySave(app, s)) {
+        const bool loaded = applySave(app, s);
+        // applySave tears down the old session, including this menu. Rebuild only
+        // its result panel, without reviving the pending load confirmation.
+        ss.load = true;
+        ss.haveSave = true;
+        ss.data = s;
+        ss.kind = 4;
+        if (loaded) {
             ss.open = true;
             ss.message = 57083; // Load complete.
             menuSound(app, se::kLoaded);
@@ -7895,19 +7930,22 @@ float screenFadeAlpha(const App& app) {
 // Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e), one
 // after another; a new page's line replaces one still playing.
 void updateVoices(App& app) {
+    if (app.dialogue.empty()) {
+        app.voiceQueue.clear(); // a closed/replaced scene cannot restart its remaining clips
+        return;
+    }
     if (!app.sound.hasVoices()) return;
-    if (!app.dialogue.empty()) {
-        const int page = int(std::min(app.dialoguePage, app.dialogue.size() - 1));
-        if (app.dialogueSerial != app.voicedSerial || page != app.voicedPage) {
-            app.voicedSerial = app.dialogueSerial;
-            app.voicedPage = page;
-            app.voiceQueue.clear();
-            if (page < int(app.dialogueVoices.size()) && !app.dialogueVoices[page].empty()) {
-                const auto& clips = app.dialogueVoices[page];
-                app.sound.playLine(clips[0]);
-                ++app.voicesPlayed;
-                app.voiceQueue.assign(clips.begin() + 1, clips.end());
-            }
+    const int page = int(std::min(app.dialoguePage, app.dialogue.size() - 1));
+    if (app.dialogueSerial != app.voicedSerial || page != app.voicedPage) {
+        app.voicedSerial = app.dialogueSerial;
+        app.voicedPage = page;
+        app.voiceQueue.clear();
+        app.sound.stopLine(); // an unvoiced page replaces the previous page too
+        if (page < int(app.dialogueVoices.size()) && !app.dialogueVoices[page].empty()) {
+            const auto& clips = app.dialogueVoices[page];
+            app.sound.playLine(clips[0]);
+            ++app.voicesPlayed;
+            app.voiceQueue.assign(clips.begin() + 1, clips.end());
         }
     }
     if (!app.voiceQueue.empty() && !app.sound.linePlaying()) {
@@ -8380,6 +8418,7 @@ void pkGrab(App& app, int t, float sx = -1e9f, float sy = -1e9f) {
     pz.busy = true;
     o.pkMsg = 1;
     pz.pkState = 1, pz.pkTarget = t, pz.pkMoved = false, pz.pkFromX = sx, pz.pkFromY = sy;
+    pz.pkPointerCancelled = false;
     pz.pkEffect = npcEffect(app, 5, -1, true);
 }
 
@@ -8408,6 +8447,7 @@ void pkSend(App& app, int dir) {
         pz.pkMoved = true;
     }
     pz.pkState = 2;
+    pz.pkPointerCancelled = false;
 }
 
 // The mouse let go at (sx, sy): the drag's direction, or none inside the dead zone
@@ -9200,7 +9240,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
     float sx = talking ? 0.0f : float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]);
     float sy = talking ? 0.0f : float(keys[SDL_SCANCODE_S]) - float(keys[SDL_SCANCODE_W]);
     bool run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
-    if (app.pad && !talking && sx == 0 && sy == 0) { // a controller: the left stick (pushed far: runs) or the D-pad
+    if (padLive(app) && !talking && sx == 0 && sy == 0) { // a controller: the left stick (pushed far: runs) or the D-pad
         float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
         float ly = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
         const float mag = std::sqrt(lx * lx + ly * ly);
@@ -10286,6 +10326,8 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         app.unsupported.push_back("battle " + std::to_string(start.group) + " on map " + std::to_string(app.mapNumber));
         return;
     }
+    app.sound.stopDialogueVoices();
+    app.voiceQueue.clear();
     b.active = true;
     b.start = start;
     b.flags = flags;
@@ -12587,8 +12629,8 @@ void drawFrame(App& app, bool present = true) {
     r.beginFrame(w, h);
     // W: the game's 2D layout (1024); SW: the whole logical screen (wider in widescreen)
     const float W = cr::Renderer::kLogicalW, H = cr::Renderer::kLogicalH, SW = r.screenW();
-    const Uint64 now = SDL_GetTicksNS();
-    const float realDt = std::min(app.lastTicks ? float(double(now - app.lastTicks) * 1e-9) : 0.0f, 0.1f);
+    const Uint64 now = app.clock.ticksNS();
+    const float realDt = std::min(app.lastTicks && now >= app.lastTicks ? float(double(now - app.lastTicks) * 1e-9) : 0.0f, 0.1f);
     app.lastTicks = now;
     if (app.mode == Mode::Maps && !app.booting && !app.titleOpen && (app.havePlayer || app.battle.active))
         app.playSeconds += realDt;
@@ -13891,9 +13933,15 @@ void saveFrame(App& app, const char* path) {
 
 int controlHintsSelfTest(App& app) {
     const bool keepHud = app.showHud, keepPersist = app.persist;
-    const std::string keepDir = app.saveDirOverride;
-    app.saveDirOverride = userDir() + "selftest-control-hints/";
-    SDL_CreateDirectory(app.saveDirOverride.c_str());
+    // settingsPath uses CR_SAVE_DIR, not the game's saveDirOverride. Give this
+    // persistence test its own directory even when invoked in a real profile.
+    const char* oldEnv = SDL_getenv("CR_SAVE_DIR");
+    const bool hadEnv = oldEnv != nullptr;
+    const std::string keepEnv = oldEnv ? oldEnv : "";
+    const auto testDir = std::filesystem::temp_directory_path() /
+        ("cr-settings-test-" + std::to_string(SDL_GetTicksNS()));
+    if (!std::filesystem::create_directory(testDir)) return 1;
+    SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR", testDir.u8string().c_str(), true);
     app.persist = true; // an isolated settings file: exercise the same save / load as a restart
     int problems = 0;
     bool off = false, on = false, shortcut = false;
@@ -13925,10 +13973,11 @@ int controlHintsSelfTest(App& app) {
         problems += !shortcut;
     }
     SDL_RemovePath(settingsPath().c_str());
-    SDL_RemovePath(app.saveDirOverride.c_str());
+    std::filesystem::remove(testDir);
+    if (hadEnv) SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR", keepEnv.c_str(), true);
+    else SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR");
     app.showHud = keepHud;
     app.persist = keepPersist;
-    app.saveDirOverride = keepDir;
     std::printf("control hints: settings Off persists %s, On persists %s, F3 persists %s; %d problems\n",
                 off ? "yes" : "NO", on ? "yes" : "NO", shortcut ? "yes" : "NO", problems);
     return problems;
@@ -14195,6 +14244,165 @@ int mobileInputSelfTest(App& app) {
     return problems;
 }
 
+// Exercise teardown while native field tasks are still active. No player saves are written.
+int inputCancelSelfTest(App& app) {
+    int problems = 0;
+    for (Uint32 type : {Uint32(SDL_EVENT_WINDOW_FOCUS_LOST), Uint32(SDL_EVENT_FINGER_CANCELED), Uint32(SDL_EVENT_WILL_ENTER_BACKGROUND)}) {
+        app.touchPad.down = app.touchPad.shown = true;
+        app.campPointer.down = app.optionsBarDrag = app.dragging = true;
+        app.skipScene = app.tapPending = true;
+        SDL_Event e{};
+        e.type = type;
+        if (type == SDL_EVENT_FINGER_CANCELED) e.tfinger.windowID = SDL_GetWindowID(app.window);
+        else e.window.windowID = SDL_GetWindowID(app.window);
+        SDL_AppEvent(&app, &e);
+        e.type = SDL_EVENT_USER; // main-thread checkpoint after a lifecycle callback
+        SDL_AppEvent(&app, &e);
+        const bool clean = !app.touchPad.down && !app.touchPad.shown && !app.campPointer.down &&
+                           !app.optionsBarDrag && !app.dragging && !app.skipScene && !app.tapPending;
+        problems += !clean;
+        if (!clean) std::printf("input cancel FAILED: event %u retained an active gesture\n", type);
+        if (type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
+            e.type = SDL_EVENT_DID_ENTER_FOREGROUND;
+            SDL_AppEvent(&app, &e);
+        }
+    }
+    // Use a real psychokinesis room: cancellation keeps its lifted block and ESP;
+    // a fresh drag can then drop it in place, without sending it toward the old release.
+    int pkStage = -1;
+    for (int i = 0; i < cr::kPuzzleStages; ++i)
+        if (cr::kPuzzleStage[i].ability == cr::kAbilityPsychokinesis) { pkStage = i; break; }
+    app.mode = Mode::Maps;
+    app.runner.stop();
+    app.game = cr::GameState();
+    app.playerChar = 0, app.mapNumber = app.entryArea = -1;
+    cr::WarpRequest w;
+    w.valid = true, w.area = cr::kPuzzleArea, w.map = cr::kFirstPuzzleMap + pkStage;
+    const bool entered = pkStage >= 0 && performWarp(app, w, -1);
+    app.runner.stop(), app.pendingEntry = App::Entry::None;
+    int target = -1;
+    for (size_t i = 0; i < app.puzzle.objs.size(); ++i)
+        if (app.puzzle.objs[i].type == cr::kTypeNormal && app.puzzle.objs[i].shown) { target = int(i); break; }
+    if (!entered || target < 0) ++problems;
+    else {
+        const auto& at = app.puzzle.objs[size_t(target)];
+        const auto& layout = cr::kPuzzleStage[pkStage];
+        setActor(app, 0, puzzle::centre(app, at.row == 0 ? layout.rows - 1 : 0,
+                                       at.col == 0 ? layout.cols - 1 : 0), nullptr, false);
+        puzzle::pkGrab(app, target, 200, 200);
+        for (int i = 0; i < 4; ++i) stepEvents(app);
+        const auto& block = app.puzzle.objs[size_t(target)];
+        const int row = block.row, col = block.col, esp = app.puzzle.esp, uses = app.game.vars[13];
+        problems += app.puzzle.pkState != 1 || block.pk != 2;
+        SDL_Event e{};
+        e.type = SDL_EVENT_WINDOW_FOCUS_LOST, e.window.windowID = SDL_GetWindowID(app.window);
+        SDL_AppEvent(&app, &e);
+        e.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        e.button.x = 900, e.button.y = 100;
+        SDL_AppEvent(&app, &e);
+        for (int i = 0; i < 3; ++i) stepEvents(app);
+        const bool held = app.puzzle.pkState == 1 && app.puzzle.pkPointerCancelled && block.row == row && block.col == col;
+        problems += !held;
+        e.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        e.button.x = 100, e.button.y = 200;
+        SDL_AppEvent(&app, &e);
+        problems += app.puzzle.pkState != 1 || app.puzzle.pkPointerCancelled || app.puzzle.pkMoved;
+        e.type = SDL_EVENT_MOUSE_BUTTON_UP; // fresh press/release in place, not the old swipe
+        SDL_AppEvent(&app, &e);
+        for (int i = 0; i < 60; ++i) stepEvents(app);
+        const bool dropped = app.puzzle.pkState == 0 && block.row == row && block.col == col &&
+                             app.puzzle.esp == esp && app.game.vars[13] == uses;
+        problems += !dropped;
+        std::printf("puzzle input cancel: block held %s, fresh release drops in place without ESP %s\n",
+                    held ? "yes" : "NO", dropped ? "yes" : "NO");
+    }
+    app.trackerArmed = false;
+    std::printf("viewer input cancellation: %d problems\n", problems);
+    return problems;
+}
+
+int fieldLifecycleSelfTest(App& app) {
+    int problems = 0, titles = 0;
+    app.persist = false;
+    app.noEncounters = true;
+    auto enter = [&](int stage) {
+        app.runner.stop();
+        app.pendingEntry = App::Entry::None;
+        app.game = cr::GameState();
+        app.playerChar = 0;
+        app.mapNumber = app.entryArea = -1;
+        cr::WarpRequest w;
+        w.valid = true, w.area = cr::kPuzzleArea, w.map = cr::kFirstPuzzleMap + stage;
+        const bool ok = performWarp(app, w, -1) && app.puzzle.stage == stage;
+        app.pendingEntry = App::Entry::None;
+        return ok;
+    };
+    // Every ability owns different objects/timers. A pending Retry must not rebuild a puzzle
+    // from the title's event file after its old NPC list has been released.
+    int ability = -1;
+    for (int stage = 0; stage < cr::kPuzzleStages; ++stage) {
+        if (cr::kPuzzleStage[stage].ability == ability) continue;
+        ability = cr::kPuzzleStage[stage].ability;
+        if (!enter(stage)) { ++problems; continue; }
+        puzzle::reset(app);
+        bootTitle(app);
+        const bool clean = app.puzzle.stage == -1 && app.puzzle.objs.empty() && app.puzzle.grid.empty() &&
+                           !app.puzzleStartPending && app.moves.empty() && app.rescales.empty();
+        std::printf("field lifecycle: ability %d return to title %s (stage %d, %zu objects)\n",
+                    ability, clean ? "ok" : "FAILED", app.puzzle.stage, app.puzzle.objs.size());
+        problems += !clean;
+        // Keep stepping past the cancelled retry's eight-frame delay.
+        if (clean) {
+            for (int f = 0; f < 12; ++f) stepEvents(app);
+            problems += app.puzzle.stage != -1;
+        }
+        ++titles;
+    }
+    if (enter(0)) {
+        ViewerHost host(app);
+        auto n = std::find_if(app.npcs.begin(), app.npcs.end(), [](const cr::FieldNpc& n) { return n.id > 0; });
+        if (n == app.npcs.end()) ++problems;
+        else {
+            const int id = n->id;
+            const float scale[3] = {2, 2, 2};
+            host.scaleNpc(id, scale, 100);
+            const bool active = host.animBusy(id) && !app.rescales.empty();
+            cr::WarpRequest w;
+            w.valid = true, w.area = cr::kPuzzleArea, w.map = cr::kFirstPuzzleMap + 1;
+            const bool clean = performWarp(app, w, -1) && app.rescales.empty() && !host.animBusy(id);
+            std::printf("field lifecycle: NPC scale task active %d, next room %s\n", active, clean ? "ok" : "FAILED");
+            problems += !active + !clean;
+        }
+    } else ++problems;
+    // Interrupt an actual Teleport after its fade-out, then reload the captured room.
+    int tpStage = -1;
+    for (int stage = 0; stage < cr::kPuzzleStages; ++stage)
+        if (cr::kPuzzleStage[stage].ability == cr::kAbilityTeleport && cr::kPuzzleStage[stage].esp != 0) {
+            tpStage = stage; break;
+        }
+    if (tpStage >= 0 && enter(tpStage)) {
+        const auto saved = captureSave(app);
+        int target = -1;
+        for (size_t i = 0; i < app.puzzle.objs.size(); ++i)
+            if (puzzle::target(app, app.puzzle.objs[i])) { target = int(i); break; }
+        if (target < 0) ++problems;
+        else {
+            setActor(app, 0, puzzle::centre(app, 0, 0), nullptr, false);
+            puzzle::teleportTo(app, target);
+            for (int f = 0; f < 4; ++f) stepEvents(app);
+            const bool faded = app.puzzle.tpState != 0 && app.playerAlpha < 0.01f;
+            const bool loaded = applySave(app, saved);
+            const bool visible = loaded && app.playerAlpha == 1 && app.playerFadeLeft == 0 && !app.puzzle.tpState;
+            std::printf("field lifecycle: interrupted teleport faded %d, reload visible %s\n", faded, visible ? "ok" : "FAILED");
+            problems += !faded + !visible;
+        }
+    } else ++problems;
+    problems += app.renderer.takeErrors();
+    std::printf("field lifecycle: %d abilities, %d problems\n", titles, problems);
+    app.trackerArmed = false;
+    return problems;
+}
+
 // Real puzzle exit bytecode across area-file changes, both before and after loading a save.
 int mobileTransitionSelfTest(App& app) {
     int problems = 0;
@@ -14260,6 +14468,272 @@ int mobileTransitionSelfTest(App& app) {
     return problems;
 }
 
+int graphicsRecoverySelfTest(App& app) {
+    const auto at = std::find(app.maps.begin(), app.maps.end(), "d0101_10.cmp");
+    if (at == app.maps.end()) return 1;
+    app.mode = Mode::Maps;
+    showMap(app, int(at - app.maps.begin()), 0, 2);
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.showBackground = true;
+    app.fadeFrames = 0;
+    app.optionsOpen = app.charSelectOpen = app.saveScreen.open = false;
+    app.dialogue = {{"Graphics recovery"}};
+    app.dialoguePage = 0;
+    app.dialogueInfo.resize(1);
+    app.dialogueInfo[0].closeAfter = 0; // static panel, without the wall-clock "next" blink
+    app.showHud = false;
+    auto frame = [&] {
+        app.lastTicks = 0; // freeze the scene during pixel comparisons
+        drawFrame(app, false);
+        std::vector<uint8_t> pixels;
+        int w = 0, h = 0;
+        app.renderer.readPixels(pixels, w, h);
+        return pixels;
+    };
+    frame(); // populate lazy UI resources
+    const auto before = frame();
+    if (const char* file = SDL_getenv("CR_SELFTEST_GRAPHICS_CAPTURE")) saveFrame(app, file);
+    // Require visible field pixels above the dialogue, not just matching blank frames.
+    size_t visible = 0;
+    for (size_t i = 0; i + 3 < before.size() / 2; i += 4)
+        visible += int(before[i]) + before[i + 1] + before[i + 2] > 32;
+    int problems = app.renderer.takeErrors() + (visible < before.size() / 8 / 10);
+    std::printf("graphics recovery: visible field pixels %zu\n", visible);
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        SDL_GL_DestroyContext(SDL_GL_GetCurrentContext());
+        if (!SDL_GL_CreateContext(app.window)) return 1;
+        SDL_Event event{};
+        event.type = SDL_EVENT_RENDER_DEVICE_RESET;
+        event.render.windowID = SDL_GetWindowID(app.window);
+        if (SDL_AppEvent(&app, &event) != SDL_APP_CONTINUE) return 1;
+        event.type = SDL_EVENT_USER; // next game-thread event consumes the queued reset
+        if (SDL_AppEvent(&app, &event) != SDL_APP_CONTINUE) return 1;
+        const auto after = frame();
+        const bool sameFrame = !before.empty() && before == after;
+        problems += !sameFrame + app.renderer.takeErrors();
+        std::printf("graphics recovery: cycle %d, identical field/dialogue frame %s\n", cycle + 1, sameFrame ? "yes" : "NO");
+    }
+    std::printf("graphics recovery: %d problems\n", problems);
+    return problems;
+}
+
+int sceneAudioSelfTest(App& app) {
+    app.mode = Mode::Maps;
+    const auto at = std::find(app.maps.begin(), app.maps.end(), "d0101_10.cmp");
+    if (at == app.maps.end() || !startSound(app)) return 1;
+    vitaAudio(app);
+    showMap(app, int(at - app.maps.begin()), 0, 2);
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    int problems = 0, clip = -1;
+    auto check = [&](bool ok, const char* what) {
+        if (!ok) { ++problems; std::printf("scene audio FAILED: %s\n", what); }
+    };
+    if (app.sound.hasVoices()) {
+        for (int i = 0; i < app.sound.voiceClips(); ++i) {
+            app.sound.playLine(i);
+            if (app.sound.linePlaying()) { clip = i; break; }
+        }
+        check(clip >= 0, "a real story clip can play");
+        if (clip >= 0) {
+            app.dialogue = {{"Old page"}};
+            app.dialogueVoices = {{clip, clip}};
+            ++app.dialogueSerial;
+            app.dialoguePage = 0;
+            updateVoices(app);
+            check(app.voiceQueue.size() == 1, "a page queues its second clip");
+            app.dialogue.clear(); // a scene closes the window directly, without a page tap
+            app.sound.stopLine(); // the first clip has finished
+            const int played = app.voicesPlayed;
+            updateVoices(app);
+            check(app.voiceQueue.empty() && app.voicesPlayed == played && !app.sound.linePlaying(),
+                  "a closed page cannot restart its remaining clip");
+            app.sound.playLine(clip);
+            app.dialogue = {{"Silent replacement"}};
+            app.dialogueVoices = {{}};
+            ++app.dialogueSerial;
+            updateVoices(app);
+            check(!app.sound.linePlaying(), "an unvoiced replacement stops the previous page's line");
+            app.voiceQueue = {clip};
+        }
+    }
+    app.dialogue = {{"Interrupted by battle"}};
+    // The Android speech-in-effects path exists in every data variant too.
+    app.sound.play(0xc00000);
+    check(app.sound.dialogueVoiceCount() > 0, "speech-marked looping sample is playing before battle");
+    startBattle(app, {1, 0, -1, 0}, 0);
+    check(app.battle.active, "real battle starts");
+    app.sound.update(); // refill an old looping stream if battle entry failed to stop it
+    check(app.dialogue.empty() && app.voiceQueue.empty() && app.sound.dialogueVoiceCount() == 0,
+          "battle entry clears the field dialogue's audio and queued clips");
+    if (app.battle.active) endBattle(app, false);
+    app.runner.stop();
+    app.sound.stopAll();
+    bootTitle(app);
+    check(app.voiceQueue.empty() && app.sound.dialogueVoiceCount() == 0, "title cleanup remains silent");
+    problems += app.renderer.takeErrors();
+    std::printf("scene audio: story clip %d, battle entry and title; %d problems\n", clip, problems);
+    return problems;
+}
+
+int sessionUiSelfTest(App& app) {
+    int problems = 0;
+    auto check = [&](bool ok, const char* what) {
+        if (!ok) { ++problems; std::printf("session UI FAILED: %s\n", what); }
+    };
+    const auto at = std::find(app.maps.begin(), app.maps.end(), "d0101_10.cmp");
+    if (at == app.maps.end()) return 1;
+    auto field = [&] {
+        app.mode = Mode::Maps;
+        app.playerChar = 0;
+        showMap(app, int(at-app.maps.begin()), 0, 2);
+        app.booting = app.titleOpen = false;
+        app.game.setFlag(0x43, true); // Options tutorial already read in this fixture
+        app.runner.stop();
+        app.pendingEntry = App::Entry::None;
+    };
+    auto key = [&](SDL_Keycode code) {
+        SDL_Event event{};
+        event.type = SDL_EVENT_KEY_DOWN;
+        event.key.key = code;
+        SDL_AppEvent(&app, &event);
+    };
+    field();
+    openCamp(app);
+    campOpenPage(app, 4); // Camp -> Options, the real Return to Title path
+    app.playing = false;
+    key(SDLK_END); key(SDLK_RETURN);
+    check(app.booting && !app.campOpen && !app.optionsOpen, "Camp cannot cover or capture input on the title");
+    check(app.playing, "return to title resumes normal game updates");
+    // This directory contains only this test's synthetic save, never player progress.
+    const std::string keepDir = app.saveDirOverride;
+    app.saveDirOverride = userDir()+"session-ui-test-"+std::to_string(SDL_GetTicksNS())+"/";
+    SDL_CreateDirectory(app.saveDirOverride.c_str());
+    field();
+    cr::SaveData save = captureSave(app);
+    save.game.oz = 54321;
+    const std::string path = slotPath(app, 1);
+    check(cr::writeSave(path, save), "synthetic save created");
+    { // a save cut short is refused, here and in the Vita import's order (the party last, no boxes)
+        std::vector<uint8_t> whole;
+        cr::readFile(path, whole);
+        const std::string text(whole.begin(), whole.end());
+        const auto cutsRefused = [&](const std::string& file, const std::string& last) {
+            const size_t end = file.find('\n', file.rfind('\n' + last) + 1) + 1;
+            bool refused = file.rfind('\n' + last) != std::string::npos;
+            cr::SaveData got;
+            for (size_t cut = 0; cut < file.size(); ++cut) {
+                if (cut >= end && file[cut - 1] == '\n') continue; // (a save that ends here is an older one)
+                SDL_SaveFile(path.c_str(), file.data(), cut);
+                refused = refused && !cr::readSave(path, got);
+            }
+            return refused;
+        };
+        std::string imported, partyLines;
+        std::istringstream lines(text);
+        for (std::string line; std::getline(lines, line);) {
+            if (line.rfind("boxes", 0) == 0 || line.rfind("treasure", 0) == 0) continue;
+            (line.rfind("party", 0) == 0 ? partyLines : imported) += line + '\n';
+        }
+        imported += partyLines;
+        check(cutsRefused(text, "walkexp"), "a save cut short is refused");
+        check(cutsRefused(imported, "party"), "a Vita import cut short is refused");
+        cr::SaveData got;
+        const auto valueRefused = [&](const std::string& key, int value) { // a whole save, a place no game has
+            const size_t at = text.find('\n' + key + ' ') + 1 + key.size() + 1;
+            const std::string file = text.substr(0, at) + std::to_string(value) + text.substr(text.find('\n', at));
+            SDL_SaveFile(path.c_str(), file.data(), file.size());
+            return !cr::readSave(path, got);
+        };
+        check(valueRefused("area", cr::kNumAreas) && valueRefused("map", cr::kNumMaps), "a save's place out of range is refused");
+        SDL_SaveFile(path.c_str(), imported.data(), imported.size());
+        check(cr::readSave(path, got) && got.game.oz == 54321, "a whole Vita import reads");
+        SDL_SaveFile(path.c_str(), text.data(), text.size());
+        check(cr::readSave(path, got) && got.game.oz == 54321, "a whole save still reads");
+    }
+    std::vector<uint8_t> before, after;
+    cr::readFile(path, before);
+    openSaveScreen(app, false);
+    key(SDLK_V); key(SDLK_END); key(SDLK_RETURN);
+    check(app.booting && !app.saveScreen.open && app.saveScreen.pending == 0,
+          "return to title cancels a pending save confirmation");
+    key(SDLK_RETURN); // a late confirmation must not overwrite the test's existing file
+    cr::readFile(path, after);
+    check(!before.empty() && after == before, "late Enter cannot overwrite the previous save from the title");
+    // Clear broader overlays and detach an asynchronous picker from the old session.
+    app.campOpen = app.manualOpen = app.scenariosOpen = app.charSelectOpen = true;
+    app.itemWindowOpen = app.shop.open = app.shop.talkRunning = true;
+    app.mapScreen.open = app.mapScreen.closing = app.staffRoll.open = app.lastBattle.open = true;
+    app.resumePrompt = 1;
+    app.menuMask.to = 160;
+    app.touchPad.down = app.touchPad.shown = app.campPointer.down = true;
+    app.optionsBarDrag = app.dragging = app.tapPending = app.skipScene = true;
+    app.padHeld = 1;
+    app.heldPage = true, app.lastPage = {"Old page"};
+    app.saveImport.state = vitaimport::Session::Picking;
+    app.saveImport.choice = std::make_shared<vitaimport::Session::Choice>();
+    const auto oldPicker = app.saveImport.choice;
+    const int fieldSpeed = app.fieldSpeed, volume = app.mix.master;
+    bootTitle(app);
+    check(!app.campOpen && !app.manualOpen && !app.scenariosOpen && !app.charSelectOpen &&
+          !app.shop.open && !app.shop.talkRunning && !app.mapScreen.open && !app.mapScreen.closing &&
+          !app.staffRoll.open && !app.lastBattle.open && !app.itemWindowOpen && !app.resumePrompt,
+          "old overlays are closed at the title boundary");
+    check(!app.touchPad.down && !app.campPointer.down && !app.dragging && !app.optionsBarDrag &&
+          !app.tapPending && !app.skipScene && app.padHeld == -1 && !app.heldPage && app.lastPage.empty() && app.menuMask.to == 0,
+          "old gestures, pending dialogue and menu fade are cleared");
+    { std::lock_guard<std::mutex> lock(oldPicker->mutex); oldPicker->path = "/no-such-late-import-after-title"; oldPicker->ready = true; }
+    app.saveImport.poll();
+    check(!app.saveImport.active() && !app.saveImport.choice, "late folder-picker completion cannot reopen import over the title");
+    check(app.fieldSpeed == fieldSpeed && app.mix.master == volume, "user preferences survive the session boundary");
+    // Loading through the actual confirmation must retain the load-complete panel.
+    app.chosenPair = 1;
+    app.titleOpen = true;
+    openSaveScreen(app, true);
+    key(SDLK_RETURN); key(SDLK_RETURN);
+    check(app.game.oz == 54321, "confirmed load restores the synthetic save's progress");
+    check(app.saveScreen.open && app.saveScreen.phase == 2 && app.saveScreen.load &&
+          app.saveScreen.haveSave && app.saveScreen.data.game.oz == 54321,
+          "load-complete panel retains its mode and loaded save after session cleanup");
+    for (int i = 0; i < 40; ++i) stepSaveScreen(app);
+    check(!app.saveScreen.open && !app.titleOpen, "load-complete panel dismisses to the field");
+    app.playSeconds = 1234.5;
+    startNewGame(app);
+    check(app.playSeconds == 0, "a completely fresh game resets the previous session's playtime");
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.playSeconds = 4321.5;
+    app.resetAsk = 1;
+    resetAnswer(app, false);
+    check(app.playSeconds == 4321.5 && SDL_GetPathInfo(path.c_str(), nullptr), "declining reset keeps playtime and saves");
+    save.playSeconds = 777;
+    check(cr::writeSave(path, save), "synthetic save rewritten");
+    app.playSeconds = 9999;
+    bootTitle(app);
+    check(app.playSeconds == 777, "the title goes back to the newest save's playtime");
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.playSeconds = 4321.5;
+    app.resetAsk = 1;
+    resetAnswer(app, true);
+    check(app.resetAsk == 2 && app.playSeconds == 4321.5 && SDL_GetPathInfo(path.c_str(), nullptr), "first reset confirmation keeps playtime and saves");
+    resetAnswer(app, true);
+    check(app.playSeconds == 0 && !SDL_GetPathInfo(path.c_str(), nullptr), "confirmed data reset clears playtime with saved progress");
+    app.playSeconds = 55;
+    bootTitle(app);
+    check(app.playSeconds == 0, "the title with no save starts the playtime from zero");
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.saveImport.cancel();
+    SDL_RemovePath(path.c_str());
+    SDL_RemovePath(app.saveDirOverride.c_str());
+    app.saveDirOverride = keepDir;
+    problems += app.renderer.takeErrors();
+    std::printf("session UI: Camp/Options, save confirmation, late picker and title; %d problems\n", problems);
+    return problems;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.typeOn = false; // pages whole (the typing has its own test)
@@ -14276,10 +14750,36 @@ int runSelfTest(App& app) {
         }
         for (int i = 0; i < 3; ++i) drawFrame(app, false);
         const int problems = !app.havePlayer || app.mapNumber != save.map || app.renderer.takeErrors() != 0;
+        if (SDL_getenv("CR_SELFTEST_SAVE_DEEP")) { // the save's numbers in use: the Camp's pages, then a battle
+            const auto key = [&](SDL_Keycode k) {
+                SDL_Event e{};
+                e.type = SDL_EVENT_KEY_DOWN, e.key.key = k, e.key.down = true;
+                SDL_AppEvent(&app, &e);
+                drawFrame(app, false);
+            };
+            for (int plate = 0; plate < 4; ++plate) {
+                openCamp(app);
+                app.camp.cursor = plate;
+                key(SDLK_RETURN);
+                for (SDL_Keycode k : {SDLK_RIGHT, SDLK_DOWN, SDLK_RETURN, SDLK_DOWN, SDLK_RIGHT, SDLK_RETURN}) key(k);
+                for (int i = 0; i < 5 && app.campOpen; ++i) key(SDLK_ESCAPE); // (Esc on the field quits)
+            }
+            startBattle(app, {1, 0, -1, 0}, 0);
+            for (int f = 0; f < 400; ++f) {
+                drawFrame(app, false);
+                stepBattle(app);
+                if (f % 25 == 0) key(SDLK_RETURN);
+            }
+        }
         std::printf("imported save: area %d map %d, leader %d, level %d; %d problems\n", app.area, app.mapNumber,
                     app.playerChar, app.game.party[size_t(app.playerChar)].level, problems);
         return problems ? 1 : 0;
     }
+    if (SDL_getenv("CR_SELFTEST_SESSION_UI")) return sessionUiSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_SCENE_AUDIO")) return sceneAudioSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_GRAPHICS")) return graphicsRecoverySelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_CANCEL")) return inputCancelSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_LIFECYCLE")) return fieldLifecycleSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_MOBILE")) return mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
@@ -16468,6 +16968,7 @@ int runSelfTest(App& app) {
             const cr::GameState keepGame = app.game;
             SDL_Gamepad* keepPad = app.pad;
             app.pad = pad;
+            padLive(app); // (a frame with nothing held)
             app.game = cr::GameState();
             cr::giveStartingItems(app.game);
             showMap(app, 0, 0, 2);
@@ -16509,8 +17010,55 @@ int runSelfTest(App& app) {
             for (const OptRow& o : optionRows(app, 0))
                 if (o.label.rfind("Swap", 0) == 0 && o.act) o.act(1); // Off: as on the Vita
             app.padConfirmEast = true;
+            const auto held = [&](int button, bool down) { SDL_SetJoystickVirtualButton(js, button, down); SDL_UpdateJoysticks(); };
+            const auto repeats = [&] { // (half a second of a D-pad direction held in the Camp: the cursor's moves)
+                app.camp.cursor = 0;
+                for (int f = 0; f < 30; ++f) padStep(app, 1.0f / 60.0f);
+                return app.camp.cursor != 0;
+            };
+            const auto focusLost = [&] {
+                SDL_Event e{};
+                e.type = SDL_EVENT_WINDOW_FOCUS_LOST, e.window.windowID = SDL_GetWindowID(app.window);
+                SDL_AppEvent(&app, &e);
+                e.type = SDL_EVENT_USER; // (the next event finds it)
+                SDL_AppEvent(&app, &e);
+            };
+            app.camp.page = App::Camp::Main;
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true);
+            const bool repeated = repeats();
+            focusLost();
+            const bool repeatStopped = !repeats();
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false);
+            padStep(app, 1.0f / 60.0f);
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true);
+            const bool repeatFresh = repeats();
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false);
+            padStep(app, 1.0f / 60.0f);
+            app.camp.cursor = 0;
+            problems += !repeated || !repeatStopped || !repeatFresh;
+            std::printf("controller: a held direction repeats %s, stops with the focus %s, and repeats again once let go %s\n",
+                        repeated ? "yes" : "NO", repeatStopped ? "yes" : "NO", repeatFresh ? "yes" : "NO");
             padButton(app, SDL_GAMEPAD_BUTTON_NORTH); // △ again: closed, from any page
             const bool closed = !app.campOpen;
+            app.runner.stop();
+            app.dialogue.clear();
+            app.pendingEntry = App::Entry::None;
+            const cr::Vec3 heldFrom = app.walker.pos;
+            SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, 32767);
+            SDL_UpdateJoysticks();
+            focusLost();
+            for (int f = 0; f < 15; ++f) updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+            const cr::Vec3 heldMove = app.walker.pos - heldFrom;
+            const bool walkStopped = std::sqrt(cr::dot(heldMove, heldMove)) < 0.01f;
+            SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, 0);
+            SDL_UpdateJoysticks();
+            padStep(app, 1.0f / 60.0f);
+            app.walker.pos = heldFrom;
+            app.runner.stop();
+            app.dialogue.clear();
+            app.pendingEntry = App::Entry::None;
+            problems += !walkStopped;
+            std::printf("controller: a stick held through a lost focus stops walking %s\n", walkStopped ? "yes" : "NO");
             problems += !walked || !fieldQuiet || !opened || !moved || !confirmed || !backed || !swapped || !closed;
             std::printf("controller: the stick walks %s, △ opens / closes the Camp %s / %s, the D-pad moves %s, ○ confirms %s, × back %s "
                         "(on the field nothing %s), ×-confirm %s; %d problems\n", walked ? "yes" : "NO", opened ? "yes" : "NO",
@@ -16977,6 +17525,7 @@ int runSelfTest(App& app) {
 // script 0 plays the opening.
 void startNewGame(App& app) {
     app.game = cr::GameState();
+    app.playSeconds = 0;
     // Set by the title's new-game path: t01's script 0 tests it to play the opening (event 201's
     // scene, gosub 0x5f98) instead of treating the opening as seen
     app.game.setFlag(4089, true);
@@ -16988,10 +17537,26 @@ void startNewGame(App& app) {
     if (it != app.maps.end()) showMap(app, int(it - app.maps.begin()), map, area);
 }
 
+// __menuu_TitleClr's Load_SaveData: the title goes back to the saved block, and the play time is in
+// it - the one save the game keeps for all four pairs; here the newest of their slots (none:
+// prty_init_all's 0). A pair's new game (prty_init_new) leaves it, so it counts on across pairs
+double savedPlaySeconds(const App& app) {
+    double seconds = 0;
+    bool any = false;
+    int64_t newest = 0;
+    for (int pair = 1; pair <= 4; ++pair) {
+        cr::SaveData d;
+        if (cr::readSave(slotPath(app, pair), d) && (!any || d.savedAt >= newest)) any = true, newest = d.savedAt, seconds = d.playSeconds;
+    }
+    return seconds;
+}
+
 // The title, as the game boots: area 0 (j001_t99) and its EvrStart 0 - the logos, the title
 // picture and music, then the title menu. Also "Return to Title".
 void bootTitle(App& app) {
+    endFieldTasks(app); // stop puzzle/reset/actor timers before releasing their NPCs
     app.trackerArmed = false; // (SaveData_Load_init: a load or a new game starts it again)
+    app.playSeconds = savedPlaySeconds(app);
     endSceneEffects(app); // MuCom_PreReturnTitle: ScnEffectEnd
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.runner.stop();
@@ -17003,6 +17568,38 @@ void bootTitle(App& app) {
     unloadModel(app);
     if (app.battle.active) endBattle(app, false);
     app.runner.stop();
+    // Discard the previous session's UI without executing pending confirmations.
+    // In particular, a save prompt hidden behind Options must never survive this cut.
+    app.campOpen = app.manualOpen = app.scenariosOpen = app.charSelectOpen = false;
+    app.itemWindowOpen = app.optionsOpen = app.optionsFromTitle = false;
+    app.resetAsk = 0;
+    app.saveScreen = App::SaveScreen();
+    app.resumePrompt = app.resumeCursor = 0;
+    app.saveImport.cancel();
+    app.parkedRunner.stop();
+    app.renderer.destroy(app.shop.keeper);
+    app.shop = App::Shop();
+    app.renderer.destroy(app.mapScreen.tex);
+    app.mapScreen = App::MapScreen();
+    app.renderer.destroy(app.staffRoll.tex);
+    app.staffRoll = App::StaffRoll();
+    app.renderer.destroy(app.lastBattle.tex);
+    app.lastBattle = App::LastBattle();
+    app.fieldMenu = App::FieldMenu();
+    app.touchPad = App::TouchPad();
+    app.menuMask = App::MenuMask();
+    app.campPointer = App::CampPointer();
+    app.dragging = app.optionsBarDrag = app.tapPending = app.skipScene = false;
+    app.padHeld = -1;
+    app.padHeldFor = 0;
+    app.padHeldOver.cancel();
+    app.pointerCancelled = true;
+    app.heldPage = false;
+    app.lastPage.clear();
+    app.dialogueVoices.clear();
+    resetTyping(app);
+    app.playing = true;
+    app.lastTicks = 0;
     app.haveStageCam = false;
     app.havePlayer = false;
     app.npcs.clear();
@@ -18362,6 +18959,12 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "no renderer could start");
         return SDL_APP_FAILURE;
     }
+    if (!app->clock.start()) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "lifecycle clock: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    app->gameThread = SDL_GetCurrentThreadID();
+    app->inputCancel.start(SDL_GetWindowID(app->window));
     SDL_Log("renderer: %s", app->renderer.description().c_str());
     // Captures and tests start from the original presentation; the command line can change it
     videoArgs(*app, argc, argv);
@@ -18631,10 +19234,19 @@ void padButton(App& app, int b) {
     if (confirm) padKey(app, SDLK_RETURN);
     else if (cancel && (padMenus(app) || app.mapScreen.open || app.staffRoll.open)) padKey(app, SDLK_ESCAPE); // (not on the field: Esc quits)
 }
+bool padLive(App& app) {
+    if (!app.pad) return false;
+    const float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
+    const float ly = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
+    bool held = std::sqrt(lx * lx + ly * ly) >= 0.25f; // (the dead zone)
+    for (auto button : {SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT, SDL_GAMEPAD_BUTTON_DPAD_RIGHT})
+        held = held || SDL_GetGamepadButton(app.pad, button);
+    return app.padHeldOver.live(held);
+}
 // Each frame: the stick in the menus as the cursor keys, and either held repeating (after 0.35 s,
 // every 0.08 s)
 void padStep(App& app, float dt) {
-    if (!app.pad || !padMenus(app)) { app.padHeld = -1; return; }
+    if (!padLive(app) || !padMenus(app)) { app.padHeld = -1; return; }
     const float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
     const float ly = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
     int dir = -1;
@@ -18659,8 +19271,38 @@ void padStep(App& app, float dt) {
 }
 } // namespace
 
+// Called only on the game thread. Lifecycle-thread notifications merely set inputCancel.
+void consumeInputCancel(App& app) {
+    if (SDL_GetCurrentThreadID() != app.gameThread || !app.inputCancel.consume()) return;
+    app.dragging = app.optionsBarDrag = false;
+    app.campPointer = App::CampPointer();
+    app.touchPad = App::TouchPad();
+    app.tapPending = app.skipScene = false;
+    app.padHeld = -1, app.padHeldFor = 0;
+    app.padHeldOver.cancel();
+    app.pointerCancelled = true;
+    app.puzzle.tapX = app.puzzle.tapY = -1;
+    if (app.puzzle.pkState == 1 && app.puzzle.pkFromX > -1e8f) app.puzzle.pkPointerCancelled = true;
+}
+
+// SDL's mobile callbacks may arrive off-thread. Rebuild GL objects only on
+// the game thread, before another input event can upload or draw anything.
+bool consumeGraphicsReset(App& app) {
+    if (SDL_GetCurrentThreadID() != app.gameThread || !app.graphicsReset.exchange(false)) return true;
+    if (app.renderer.restoreAfterContextLoss()) return true;
+    SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Unable to restore the OpenGL context");
+    return false;
+}
+
 SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     auto& app = *static_cast<App*>(state);
+    if (event->type == SDL_EVENT_RENDER_DEVICE_RESET) {
+        if (event->render.windowID == SDL_GetWindowID(app.window)) app.graphicsReset.store(true);
+        return SDL_APP_CONTINUE;
+    }
+    if (!consumeGraphicsReset(app)) return SDL_APP_FAILURE;
+    if (app.inputCancel.note(*event)) return SDL_APP_CONTINUE;
+    consumeInputCancel(app);
     switch (event->type) {
     case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;
@@ -18870,6 +19512,16 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        app.pointerCancelled = false;
+        if (app.puzzle.pkPointerCancelled && app.puzzle.pkState == 1) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            app.renderer.toLogical(event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1),
+                                   event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1),
+                                   app.puzzle.pkFromX, app.puzzle.pkFromY);
+            app.puzzle.pkPointerCancelled = false;
+            break; // re-grab the held block without spending ESP or sending it anywhere
+        }
         if (app.vitaLogo.phase) { // (a tap: the same)
             if (app.vitaLogo.phase == 2) app.vitaLogo.skip = true;
             break;
@@ -18976,6 +19628,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (app.pointerCancelled) break; // cancellation is not a click or a puzzle release
         if (app.campPointer.down) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -19042,20 +19695,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
 }
 
 SDL_AppResult SDL_AppIterate(void* state) {
+    if (!consumeGraphicsReset(*static_cast<App*>(state))) return SDL_APP_FAILURE;
+    consumeInputCancel(*static_cast<App*>(state));
     static_cast<App*>(state)->sound.update();
-    {
-        static Uint64 padLast = SDL_GetTicksNS();
-        const Uint64 now = SDL_GetTicksNS();
-        padStep(*static_cast<App*>(state), float(double(now - padLast) * 1e-9));
-        padLast = now;
-    }
-    {
-        static Uint64 last = SDL_GetTicksNS();
-        const Uint64 now = SDL_GetTicksNS();
-        static_cast<App*>(state)->music.update(float(double(now - last) * 1e-9));
-        last = now;
-    }
     App& app = *static_cast<App*>(state);
+    const float activeDt = app.clock.step();
+    padStep(app, activeDt);
+    app.music.update(activeDt);
     // the frame rate's limit: each frame no sooner than its slot (vsync may hold it longer)
     if (app.video.frameLimit > 0) {
         static Uint64 next = 0;
@@ -19080,6 +19726,8 @@ SDL_AppResult SDL_AppIterate(void* state) {
 void SDL_AppQuit(void* state, SDL_AppResult) {
     auto* app = static_cast<App*>(state);
     if (!app) return;
+    app->clock.stop();
+    app->inputCancel.stop();
     writeResume(*app); // the Progress Tracker: left on the field, resumed from the title next time
     if (app->rendererReady) {
         app->renderer.destroy(app->currentTex);

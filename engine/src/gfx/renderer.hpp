@@ -16,7 +16,7 @@
 namespace cr {
 
 struct Texture {
-    unsigned id = 0;   // GL texture name, or the Vulkan device's handle (0 = none)
+    unsigned id = 0;   // opaque device handle (0 = none)
     int width = 0;     // the game's size for it (pixel rectangles are in these units)
     int height = 0;
     bool alphaOnly = false;
@@ -26,7 +26,7 @@ struct Texture {
 
 // A mesh uploaded to the GPU: interleaved position/uv plus a triangle index buffer.
 struct GpuMesh {
-    unsigned vao = 0, vbo = 0, ebo = 0; // GL objects; Vulkan keeps its handle in vao (0 = none)
+    unsigned vao = 0, vbo = 0, ebo = 0; // opaque mesh handle in vao (0 = none); vbo/ebo reserved
     int indexCount = 0;
     int texture = -1;
 };
@@ -45,6 +45,7 @@ public:
     static uint64_t windowFlags(Backend backend);
     bool init(SDL_Window* window, Backend backend);
     void shutdown();
+    bool restoreAfterContextLoss();
     Backend backend() const { return backend_; }
     std::string description() const;
 

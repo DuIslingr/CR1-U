@@ -80,6 +80,11 @@ bool SoundSystem::init(const std::string& dataDir, const std::string& vitaBank) 
         SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "no audio device: %s", SDL_GetError());
         return false;
     }
+    if (!clock_.start()) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "audio lifecycle clock: %s", SDL_GetError());
+        shutdown();
+        return false;
+    }
     voices_.resize(16);
     loadLineTables(dataDir);
     return true;
@@ -214,6 +219,7 @@ void SoundSystem::playLine(int clip, bool battle) {
 }
 
 void SoundSystem::shutdown() {
+    clock_.stop();
     stopLine();
     stopBattleLines();
     for (Voice& v : voices_)
@@ -247,7 +253,7 @@ void SoundSystem::play(uint32_t id) {
     if (fadeOut || fadeIn) { // (the original's frames, 20 a second)
         for (Voice& v : voices_)
             if (v.stream && v.entry == entry) {
-                v.fadeIn = fadeIn > 0, v.fadeAt = SDL_GetTicks(), v.fadeMs = (fadeOut + fadeIn) * 50;
+                v.fadeIn = fadeIn > 0, v.fadeAt = clock_.ticksMS(), v.fadeMs = (fadeOut + fadeIn) * 50;
                 if (v.fadeIn) SDL_SetAudioStreamGain(v.stream, 0.0f);
             }
         return;
@@ -298,7 +304,7 @@ void SoundSystem::update() {
     for (Voice& v : voices_) {
         if (!v.stream) continue;
         if (v.fadeMs > 0) {
-            const float t = std::min(1.0f, float(SDL_GetTicks() - v.fadeAt) / float(v.fadeMs));
+            const float t = std::min(1.0f, float(clock_.ticksMS() - v.fadeAt) / float(v.fadeMs));
             if (!v.fadeIn && t >= 1.0f) {
                 SDL_DestroyAudioStream(v.stream);
                 v = Voice();
