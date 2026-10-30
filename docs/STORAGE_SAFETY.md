@@ -97,4 +97,6 @@ gene lab, the Space Port, VS mode, an ordinary shop and the world select: 3905 c
 sampled across every save key, under the sanitizers. It found two number overflows
 in CR3 and no crash or hang.
 
-Limits: CR3's pub was not reached, and each save key was sampled, not tried in full.
+None of CR3's 388 scripts reserves the pub, so that menu is out of a player's reach.
+
+Limits: each save key was sampled, not tried in full.
