@@ -1,16 +1,16 @@
-# CR1-U v0.4.2
+# CR1-U v0.4.3
 
 A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Touch and mouse menus:** item, gene and equipment lists now support swiping, scrollbar dragging, arrow taps and wheel scrolling without accidentally selecting a row. Equipment touch targets match the drawn rows, including phone layouts.
-- **Field transitions:** restore the arrival fade after crystal/puzzle exits and clear stale fades and crystal-camera state when loading a save, fixing fields left covered by white.
-- **Dialogue audio:** advancing dialogue interrupts its speech and queued clips, preventing voices from overlapping during rapid taps.
-- **Orientation:** Lock Screen Orientation now applies on Android and remembers the selected landscape direction between sessions.
-- **Vita audio:** fix ATRAC9 bit operations and compressed-frame lookahead bounds. Added decoder regression tests.
+- **Saves:** written safely. A save cut short, or naming an area that doesn't exist, is refused instead of crashing, and damaged party numbers are held in range.
+- **Play time:** resets at the title, Reset Data and a new game.
+- **Controller:** a button held while the window loses focus, or as a session ends, does nothing until it's let go.
+- **Background:** sound and graphics survive the app going to the background.
+- **Windows:** a PC without Vulkan no longer refuses to start the game; it goes on to OpenGL.
 
-Checked with Android, iOS and Vita game data. Physical Android touch and rotation testing remains pending; the reported early crystal-room crash has not been confirmed.
+The game was played to its final ending by the built-in autoplayer. A real Windows PC without Vulkan and physical Android devices are still untested.
 
 ## Downloads
 
