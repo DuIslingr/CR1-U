@@ -17716,6 +17716,7 @@ int runExplore(App& app, int maxActions) {
             app.tapPending = true;
         }
         totalFrames += f;
+        if (SDL_getenv("CR_EXPLORE_DRAW")) drawFrame(app, false); // (a frame drawn: the device's deferred frees run, for measuring what a play holds)
         return f;
     };
     auto flagCount = [&] {

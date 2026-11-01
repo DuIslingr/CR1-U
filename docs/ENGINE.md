@@ -415,7 +415,10 @@ c101/c102/c104/m207a, 2026-10-12).
       next pair from the title, and with all four done the title's last battle to the final ending
       (flag 39): 3245 actions, 142 rooms, 66 battles (the puzzle rooms taken as solved - it doesn't
       play them). Its saves go to a new folder under the profile (`CR_SAVE_DIR`'s in tests);
-      `CR_EXPLORE_SAVES=<folder>` goes on from another run's. Debugging: `CR_EXPLORE_FLAGS`,
+      `CR_EXPLORE_SAVES=<folder>` goes on from another run's. It draws nothing, so the Vulkan
+      device's deferred frees wait (thousands of images, gigabytes, none of them leaks):
+      `CR_EXPLORE_DRAW=1` draws a frame after each action, for measuring what a play holds.
+      Debugging: `CR_EXPLORE_FLAGS`,
       `CR_EXPLORE_CANDS=<map>`, `CR_EXPLORE_TRACE=<step>`, `CR_EVENT_STARTS`; captures take
       `CR_CAPTURE_MAP=<n>` (maps sharing a file) and `CR_CAPTURE_NPCS`
 - [x] Random encounters as the original counts them (walked distance, rising chance, groups by
