@@ -89,7 +89,7 @@ jobs:
         run: |
           wget -q -O linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy
-          ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.svg --exclude-library "libvulkan.so*" --output appimage  # (the loader: the system's, with its drivers)
+          ./linuxdeploy --appdir AppDir -e build/chaosrings -d packaging/linux/chaosrings.desktop -i packaging/linux/chaosrings.png --exclude-library "libvulkan.so*" --output appimage  # (the loader: the system's, with its drivers)
           # (an AppImage runs on the oldest supported LTS too: nothing in it may need a newer glibc than 22.04's 2.35)
           need=$(find AppDir/usr -type f \( -name '*.so*' -o -path '*/bin/*' \) -exec objdump -T {} + 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
           echo "the AppImage needs $need"

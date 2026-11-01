@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""The Windows .ico and macOS .icns of the port's own icon (packaging/linux/<id>.svg - two rings,
+"""The Windows .ico, macOS .icns and AppImage .png of the port's own icon (packaging/linux/<id>.svg - two rings,
 not the game's art), with ImageMagick's `magick` for the pictures:
 
-  packaging/make_icons.py <id>      -> packaging/windows/<id>.ico, packaging/macos/<id>.icns
+  packaging/make_icons.py <id>      -> packaging/windows/<id>.ico, packaging/macos/<id>.icns,
+                                       packaging/linux/<id>.png
 """
 import os
 import struct
@@ -22,6 +23,7 @@ def main():
     svg = os.path.join(here, 'linux', ident + '.svg')
     os.makedirs(os.path.join(here, 'windows'), exist_ok=True)
     os.makedirs(os.path.join(here, 'macos'), exist_ok=True)
+    render(svg, 256, os.path.join(here, 'linux', ident + '.png')) # (appimagetool wants a PNG at the AppDir's top)
     with tempfile.TemporaryDirectory() as tmp:
         sizes = [16, 24, 32, 48, 64, 128, 256]
         pngs = []
