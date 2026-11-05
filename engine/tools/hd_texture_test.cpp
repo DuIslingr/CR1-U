@@ -37,8 +37,11 @@ int main() {
         for (int x = 0; x < 4; ++x) big.rgba.insert(big.rgba.end(), {uint8_t(r), uint8_t(x), 200, 255});
     const std::string name = cr::hashName(cr::imageHash(original));
     check(cr::savePngImage(dir + name + ".png", big), "a PNG written");
-    std::ifstream in(dir + name + ".png", std::ios::binary);
-    const std::vector<uint8_t> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<uint8_t> file;
+    { // (closed before the file is written again: Windows won't replace an open file)
+        std::ifstream in(dir + name + ".png", std::ios::binary);
+        file.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
     check(std::string(file.begin(), file.end()).find(std::string("cr-flags") + '\0') != std::string::npos, "the flags in a tEXt chunk");
     int w = 0, h = 0, n = 0;
     stbi_uc* px = file.empty() ? nullptr : stbi_load_from_memory(file.data(), int(file.size()), &w, &h, &n, 4);
