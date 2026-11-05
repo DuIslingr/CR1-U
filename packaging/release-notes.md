@@ -1,16 +1,13 @@
-# CR1-U v0.4.3
+# CR1-U v0.4.4
 
 A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **Saves:** written safely. A save cut short, or naming an area that doesn't exist, is refused instead of crashing, and damaged party numbers are held in range.
-- **Play time:** resets at the title, Reset Data and a new game.
-- **Controller:** a button held while the window loses focus, or as a session ends, does nothing until it's let go.
-- **Background:** sound and graphics survive the app going to the background.
-- **Windows:** a PC without Vulkan no longer refuses to start the game; it goes on to OpenGL.
+- **HD textures:** `--export-textures` now writes ordinary PNGs and the game reads PNG replacements, so any upscaler or editor works without a converter. A replacement that doesn't keep its picture's shape is skipped and named in the log, instead of breaking the menus.
+- **Vita boot:** the Square Enix and Media.Vision logos are centred, as the Vita draws them.
 
-The game was played to its final ending by the built-in autoplayer. A real Windows PC without Vulkan and physical Android devices are still untested.
+The boot logos were checked centred on the Vita's own data. Physical Android devices and a real Windows PC without Vulkan are still untested.
 
 ## Downloads
 
