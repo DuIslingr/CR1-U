@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """HD textures for the Chaos Rings ports - CR1:U, CRO-U, CR2-U and CR3-U, the same tool and files in
-each: upscales the pictures the game's --export-textures wrote (<hash>.crraw) with waifu2x
-(waifu2x-ncnn-vulkan) or Real-ESRGAN (realesrgan-ncnn-vulkan) into <hash>.crhd, which the game loads
-in place of the originals when HD Textures is on (Options; on by itself once textures/hd/ is there).
+each: upscales the pictures the game's --export-textures wrote (<hash>.png, upright; older exports
+<hash>.crraw) with waifu2x (waifu2x-ncnn-vulkan) or Real-ESRGAN (realesrgan-ncnn-vulkan) into
+<hash>.png (from a .crraw, <hash>.crhd), which the game loads in place of the originals when HD
+Textures is on (Options; on by itself once textures/hd/ is there).
+
+The exports are ordinary PNGs: any other upscaler or editor will do as well, saved under the same
+name in textures/hd/. Keep each picture's shape (one scale across and down, at least 1x): the game
+leaves out one that doesn't fit and says so in its log.
 
 Everything lives in the game folder (the folder holding the program - beside the .app on macOS,
 beside the .AppImage on Linux, Android/data/<package>/files/ on Android):
@@ -52,7 +57,13 @@ LOSSLESS, PVRTC, BITS16 = 1, 2, 3  # the .crraw's storage (imageStorage); 0 unkn
 STORAGE_NAME = {0: 'unknown', LOSSLESS: 'lossless', PVRTC: 'block-compressed', BITS16: '16-bit'}
 
 
-def read_raw(path):
+def read_export(path):
+    """An export's pixels (the rows as the file has them), alpha-only flag and storage"""
+    if path.endswith('.png'):
+        with Image.open(path) as im:
+            flags = int(im.info.get('cr-flags', '0') or 0)  # (the game's tEXt chunk: the .crraw's flags)
+            px = np.asarray(im.convert('RGBA'))
+        return px, bool(flags & 1), (flags >> 1) & 3
     with open(path, 'rb') as f:
         data = f.read()
     if data[:6] != b'CRRAW1':
@@ -60,6 +71,12 @@ def read_raw(path):
     w, h, flags = struct.unpack_from('<III', data, 6)
     px = np.frombuffer(data, np.uint8, w * h * 4, 18).reshape(h, w, 4)
     return px, bool(flags & 1), (flags >> 1) & 3
+
+
+def write_png(path, px):
+    tmp = path + '.part'
+    Image.fromarray(np.ascontiguousarray(px, np.uint8), 'RGBA').save(tmp, 'PNG', compress_level=6)
+    os.replace(tmp, path)
 
 
 def write_hd(path, px, orig_w, orig_h, alpha_only):
@@ -126,8 +143,8 @@ def choose(engine, storage, args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('game', nargs='?', default='.', help='the game folder (default: here): its textures/export/ in, textures/hd/ out')
-    ap.add_argument('--source', help='the .crraw folder (default: <game folder>/textures/export, the game\'s --export-textures)')
-    ap.add_argument('--out', help='where the .crhd files go (default: <game folder>/textures/hd, where the game looks)')
+    ap.add_argument('--source', help='the exports\' folder (default: <game folder>/textures/export, the game\'s --export-textures)')
+    ap.add_argument('--out', help='where the upscales go (default: <game folder>/textures/hd, where the game looks)')
     ap.add_argument('--engine', choices=('auto', 'waifu2x', 'esrgan'), default='auto',
                     help='auto (default): waifu2x for lossless and block-compressed pictures, Real-ESRGAN for 16-bit ones')
     ap.add_argument('--waifu2x', help='waifu2x-ncnn-vulkan: its executable or folder (default: the one on PATH)')
@@ -151,17 +168,27 @@ def main():
         return 2
 
     os.makedirs(args.out, exist_ok=True)
-    names = sorted(n[:-6] for n in os.listdir(args.source) if n.endswith('.crraw'))
+    # each export by its hash: <hash>.png, else an older <hash>.crraw
+    found = {}
+    for f in os.listdir(args.source):
+        for ext in ('.png', '.crraw'):
+            if f.endswith(ext) and not (ext == '.crraw' and f[:-len(ext)] in found):
+                found[f[:-len(ext)]] = ext
+    args.exports = found
+    names = sorted(found)
     if args.only:
         names = [n for n in names if n in set(args.only)]
-    todo = [n for n in names if args.force or not os.path.exists(os.path.join(args.out, n + '.crhd'))]
+    todo = [n for n in names if args.force or not any(os.path.exists(os.path.join(args.out, n + e)) for e in ('.png', '.crhd'))]
 
     # Each picture's network, grouped so each runs once a batch
     groups, counts = {}, {}
     for n in todo:
-        with open(os.path.join(args.source, n + '.crraw'), 'rb') as f:
-            head = f.read(18)
-        storage = (struct.unpack_from('<I', head, 14)[0] >> 1) & 3 if head[:6] == b'CRRAW1' else 0
+        if found[n] == '.png':
+            storage = read_export(os.path.join(args.source, n + '.png'))[2]
+        else:
+            with open(os.path.join(args.source, n + '.crraw'), 'rb') as f:
+                head = f.read(18)
+            storage = (struct.unpack_from('<I', head, 14)[0] >> 1) & 3 if head[:6] == b'CRRAW1' else 0
         how = choose(args.engine, storage, args)
         groups.setdefault(how, []).append(n)
         counts[(STORAGE_NAME[storage], how)] = counts.get((STORAGE_NAME[storage], how), 0) + 1
@@ -201,17 +228,18 @@ def main():
 
 
 def link_aliases(args):
-    """<ios hash>.cralias (an export with --vita): that hash's .crhd is the Vita picture's"""
+    """<ios hash>.cralias (an export with --vita): that hash's upscale (.png or .crhd) is the Vita picture's"""
     linked = missing = 0
     for n in sorted(os.listdir(args.source)):
         if not n.endswith('.cralias'):
             continue
         with open(os.path.join(args.source, n)) as f:
-            target = os.path.join(args.out, f.read().strip() + '.crhd')
-        dest = os.path.join(args.out, n[:-8] + '.crhd')
-        if not os.path.exists(target):
+            vita = f.read().strip()
+        ext = next((e for e in ('.png', '.crhd') if os.path.exists(os.path.join(args.out, vita + e))), None)
+        if not ext:
             missing += 1
             continue
+        target, dest = os.path.join(args.out, vita + ext), os.path.join(args.out, n[:-8] + ext)
         if os.path.exists(dest):
             if os.path.samefile(dest, target) or not args.force:
                 continue
@@ -232,7 +260,7 @@ def run_batch(args, engine, net, work, todo):
         os.makedirs(d)
     meta = {}
     for n in todo:
-        px, alpha_only, _ = read_raw(os.path.join(args.source, n + '.crraw'))
+        px, alpha_only, _ = read_export(os.path.join(args.source, n + args.exports[n]))
         feed = np.repeat(px[..., 3:4], 3, axis=2) if alpha_only else bleed(px[..., :3], px[..., 3])
         Image.fromarray(np.ascontiguousarray(feed)).save(os.path.join(src_dir, n + '.png'))
         meta[n] = (px, alpha_only)
@@ -269,7 +297,10 @@ def run_batch(args, engine, net, work, todo):
         else:
             out[..., :3] = net_px if net_px.shape[:2] == (oh, ow) else resize(net_px, ow, oh)
             out[..., 3] = resize(np.ascontiguousarray(px[..., 3]), ow, oh)
-        write_hd(os.path.join(args.out, n + '.crhd'), out, w, h, alpha_only)
+        if args.exports[n] == '.png':
+            write_png(os.path.join(args.out, n + '.png'), out)  # (upright, as its export)
+        else:
+            write_hd(os.path.join(args.out, n + '.crhd'), out, w, h, alpha_only)
         done += 1
     return done
 
