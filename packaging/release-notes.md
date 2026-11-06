@@ -1,13 +1,19 @@
-# CR1-U v0.4.4
+# CR1-U v0.4.5
 
 A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and Android.
 
 ## What's new
 
-- **HD textures:** `--export-textures` now writes ordinary PNGs and the game reads PNG replacements, so any upscaler or editor works without a converter. A replacement that doesn't keep its picture's shape is skipped and named in the log, instead of breaking the menus.
-- **Vita boot:** the Square Enix and Media.Vision logos are centred, as the Vita draws them.
+- **Skip:** the skip button skips while you hold it and stops when you let go, as in the original.
+- **Animation:** every change of motion blends over two frames, as the original does. The warp
+  crystals turn on their own again, and a few models (c109, c110, c117, c209, m206, m210) get
+  motions that were missing.
+- **Battles:** each monster's animation slots load as the original's table says; an empty slot
+  passes to the next one instead of standing still.
+- **Fixes contributed by [metastigma](https://github.com/metastigma):** the player stops walking while a scene runs; an item window
+  no longer answers the question before it; turning HD Textures on in settings.ini updates the menus.
 
-The boot logos were checked centred on the Vita's own data. Physical Android devices and a real Windows PC without Vulkan are still untested.
+Thanks to [metastigma](https://github.com/metastigma) for those fixes and for testing. All of it was checked against the original iPad code.
 
 ## Downloads
 
