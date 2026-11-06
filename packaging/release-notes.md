@@ -12,6 +12,8 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   passes to the next one instead of standing still.
 - **Fixes contributed by [metastigma](https://github.com/metastigma):** the player stops walking while a scene runs; an item window
   no longer answers the question before it; turning HD Textures on in settings.ini updates the menus.
+- **Windows** (hotfix, same version): the first-start setup can copy and unpack your game from a
+  folder whose name uses another alphabet - a Cyrillic user name on a Russian Windows, for example.
 
 Thanks to [metastigma](https://github.com/metastigma) for those fixes and for testing. All of it was checked against the original iPad code.
 
