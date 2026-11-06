@@ -97,6 +97,8 @@ struct LoadedModel {
     int action = -1;                     // -1 = rest pose
     float time = 0;
     int loopFrom = -1;                   // after its end, frames loopFrom.. again (mdl_set_act_motion_loop); -1 whole
+    cr::MotionBlend blend;               // the 2-frame cross-fade into a new action (the player's)
+    std::vector<char> slotOn;            // a battle model's package slots _btl_anm_load loads (empty: all)
     cr::Vec3 center;
     float radius = 1;
     int triangles = 0;
@@ -348,7 +350,11 @@ struct App {
     };
     Portrait portraits[16];
     bool itemWindowOpen = false;           // Uty_GetItem
-    bool skipScene = false;                // the skip button (X): pages turn by themselves until the scene ends
+    // The skip corner: _PrcMsg turns a page (and ends typing) on every frame _pad_chk_circle(476, -16, 20)
+    // finds a touch held there - pages turn while it's held and stop with the finger. skipHeld: 1 the X
+    // key, 2 the pad's square, 4 a pointer held on the corner; skipScene = any of them
+    unsigned skipHeld = 0;
+    bool skipScene = false;
     int msgStyle = 2, msgLines = 2;        // the script's last Open: the message window's style and lines
     double playSeconds = 0;                // TOTAL PLAYTIME: time on the field and in battles
     // The save / load screen (__menuu_SaveLoad*): from the Camp menu (save) or the title's Start
@@ -492,6 +498,7 @@ struct App {
             float scale = 1;               // the model's size (the pair's 1: btl_main's 0.5 at +0x540 is its yaw, half a turn)
             int fighter = -1;              // BattleRules::f index: 0, 1 the pair, 2..4 the enemies
             int then = -1;                 // the slot after this one ends (-1 loop, -2 hold the last frame)
+            cr::MotionBlend blend;         // mdl_set_act_motion_nextanm's 2-frame cross-fade into a new slot
             cr::Vec3 home, from, to;       // its place; a move (btlmove_setpos) from -> to
             float homeYaw = 0;
             int moveFrom = 0, moveTo = 0;  // the move's frames of the current slot
@@ -653,6 +660,7 @@ struct App {
         int loopFrom = 0, loopTo = 0; // Anim: loop frames a..b after the first play (0, 0 = whole)
         float alpha = 1, alphaFrom = 1, alphaTo = 1; // NpcFade / mdl_fadein / mdl_fadeout
         int fadeFrames = 0, fadeLeft = 0;
+        cr::MotionBlend blend; // the 2-frame cross-fade into a new action
     };
     std::vector<NpcDraw> npcDraws;         // this map's visible NPCs
     // A puzzle room (PuzzleManager, game/puzzle.hpp): its objects - the room's NPCs that have
@@ -836,7 +844,44 @@ struct App {
     bool smoothFilter = false;  // original uses nearest filtering
     float speed = 1.0f;
     Uint64 lastTicks = 0;
+    float drawFrames = 0;       // this frame's length in 20 Hz frames (the game's dt)
+    float texSpin = 0;          // _mdl_put's _vEuler z: texture 999's turn (0..1)
 };
+
+// The skip corner's sources (App::skipHeld): the scene skips while any is held
+constexpr unsigned kSkipKey = 1, kSkipPad = 2, kSkipPointer = 4;
+void holdSkip(App& app, unsigned source, bool held) {
+    app.skipHeld = held ? app.skipHeld | source : app.skipHeld & ~source;
+    app.skipScene = app.skipHeld != 0;
+}
+void clearSkip(App& app) {
+    app.skipHeld = 0;
+    app.skipScene = false;
+}
+// The skip button's corner, top right, in logical units
+bool skipCorner(const App& app, float lx, float ly) {
+    return lx >= app.renderer.layoutRight() - 76 && ly < app.renderer.layoutTop() + 72;
+}
+
+// _mdl_put: a texture of MCT id 999 (c105a's and m105a's) turns about the texture's origin -
+// mceAppearance_setRotateEuler(unit 0, XYZ, (0, 0, _vEuler z)) - and z takes 0.0036 turn off for
+// every model it draws, wrapping below 0 (so the more models are on screen, the faster it turns)
+constexpr int kSpinTexture = 999;
+bool spinsTexture(const cr::Model& m, size_t mesh) { // (its appearance's unit 0: _mceAppearance_getTexture(.., 0))
+    const int ap = mesh < m.meshes.size() ? m.meshes[mesh].appearance : -1;
+    return ap >= 0 && ap < int(m.materials.size()) && m.materials[size_t(ap)].textureRef == kSpinTexture;
+}
+void spinUvs(std::vector<float>& uv, float turns) {
+    const float a = turns * 6.28318530718f, c = std::cos(a), sn = std::sin(a);
+    for (size_t k = 0; k + 1 < uv.size(); k += 2) {
+        const float u = uv[k], v = uv[k + 1];
+        uv[k] = c * u - sn * v, uv[k + 1] = sn * u + c * v;
+    }
+}
+void modelDrawn(App& app) {
+    app.texSpin -= 0.0036f * app.drawFrames;
+    while (app.texSpin < 0) app.texSpin += 1;
+}
 
 // The menus' sounds: __effgo ids (sndeff.bin entries) as the original's *Prc functions use them
 namespace se {
@@ -1305,6 +1350,21 @@ void unloadModel(App& app) {
 }
 
 // Loads a model package (and its fitting animations) into `out`.
+// The package's actions a model keeps: those with one segment per node; a list's motion ("N.1") a few
+// segments short; and one with empty segments past the last node, segment i still on node i (c111's
+// warp crystal spin: 13 for 12 nodes, segment 3 the crystal). (m104's, m209's and m220's 149..150-
+// segment lists don't fit that way; their battle slots are ones _btlanmtbl never loads.)
+std::vector<bool> packageActionsKept(const cr::Model& m) {
+    std::vector<bool> keep(m.actions.size());
+    for (size_t i = 0; i < m.actions.size(); ++i) {
+        const cr::Action& a = m.actions[i];
+        const bool motion = a.name.size() > 2 && a.name.compare(a.name.size() - 2, 2, ".1") == 0;
+        keep[i] = cr::actionFits(m.skeleton, a) || (motion && cr::actionNearlyFits(m.skeleton, a)) ||
+                  cr::emptyTail(m.skeleton, a);
+    }
+    return keep;
+}
+
 void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool character) {
     std::vector<uint8_t> data;
     cr::Model m;
@@ -1374,9 +1434,10 @@ void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool cha
     // Animations: those stored in the package plus standalone <name>e*.mca files,
     // keeping only actions that animate this skeleton (one segment per node)
     // (or, for each list's motion - its first action, "N.1" - one a few segments off)
-    for (auto& a : m.actions) {
-        const bool motion = a.name.size() > 2 && a.name.compare(a.name.size() - 2, 2, ".1") == 0;
-        const bool fits = cr::actionFits(m.skeleton, a) || (motion && cr::actionNearlyFits(m.skeleton, a));
+    const std::vector<bool> keep = packageActionsKept(m);
+    for (size_t ai = 0; ai < m.actions.size(); ++ai) {
+        auto& a = m.actions[ai];
+        const bool fits = keep[ai];
         if (SDL_getenv("CR_FIT_DEBUG") && !cr::actionFits(m.skeleton, a)) {
             float lo[3] = {1e9f, 1e9f, 1e9f}, hi[3] = {-1e9f, -1e9f, -1e9f};
             if (fits) { // its pose halfway through: the bounds stay the model's size when the nodes line up
@@ -2089,18 +2150,29 @@ bool checkTriggers(App& app, bool instant) {
     return r.warp.valid && performWarp(app, r.warp, id);
 }
 
+// A model's node world matrices for `act` at `time`, under the old action while a change blends
+// (mdl_actctl_prc: two action controllers weighted 1 - k / 2 and k / 2)
+void poseWorld(const cr::Skeleton& skel, const std::vector<cr::Action>& actions, const cr::Action* act, float time,
+               const cr::MotionBlend& blend, std::vector<cr::Mat4>& world) {
+    if (const cr::Action* under = blend.under(actions))
+        cr::computeBlendedWorld(skel, under, blend.fromTime, act, time, blend.weight(), world);
+    else cr::computeWorld(skel, act, time, world);
+}
+
 // Advances a model's current animation and re-skins every mesh on the CPU.
 void animate(App& app, LoadedModel& lm, float dt) {
     const cr::Model& m = lm.cpu;
     if (m.skeleton.nodes.empty() || lm.meshes.size() != m.meshes.size()) return;
     const cr::Action* act = lm.action >= 0 && lm.action < int(lm.actions.size()) ? &lm.actions[lm.action] : nullptr;
     if (act && (app.mode != Mode::Models || app.playing)) {
-        lm.time += dt * kFramesPerSecond * app.speed;
+        if (app.mode == Mode::Models) lm.blend.reset(); // (the viewer shows a chosen action at once)
+        if (!lm.blend.step(lm.action, lm.time, dt * kFramesPerSecond * app.speed, lm.actions))
+            lm.time += dt * kFramesPerSecond * app.speed;
         if (lm.loopFrom > 0 && lm.loopFrom < act->duration && lm.time >= act->duration)
             lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), act->duration - float(lm.loopFrom));
         else if (act->duration > 0) lm.time = std::fmod(lm.time, act->duration);
     }
-    cr::computeWorld(m.skeleton, act, lm.time, lm.world);
+    poseWorld(m.skeleton, lm.actions, act, lm.time, lm.blend, lm.world);
     for (size_t i = 0; i < m.meshes.size(); ++i) {
         cr::skinMesh(m, m.meshes[i], lm.world, lm.skinned);
         app.renderer.updatePositions(lm.meshes[i], lm.skinned, m.meshes[i].uvs, m.meshes[i].colors);
@@ -8957,10 +9029,8 @@ void drawFx(App& app, const cr::Mat4& mvp) {
 } // namespace puzzle
 
 void stepEvents(App& app) {
-    if (app.skipScene) { // fast-forward: every page turns at once (choices still wait for an answer)
-        if (!app.runner.running()) app.skipScene = false;
-        else if (!app.dialogue.empty()) advanceDialogue(app);
-    }
+    // fast-forward while the skip is held: every page turns at once (choices still wait for an answer)
+    if (app.skipScene && app.runner.running() && !app.dialogue.empty()) advanceDialogue(app);
     stepTyping(app);
     if (app.titleOpen) ++app.titleAnim; // the title menu fades in
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
@@ -9474,6 +9544,7 @@ void animateNpcs(App& app, float dt) {
         }
         if (d.action < 0 || d.action >= int(lm.actions.size())) continue;
         const float dur = lm.actions[d.action].duration;
+        if (d.blend.step(d.action, d.time, dt * kFramesPerSecond, lm.actions)) continue; // (held at its first frame)
         d.time += dt * kFramesPerSecond;
         if (const char* tr = SDL_getenv("CR_NPC_TRACE"); tr && (SDL_atoi(tr) < 0 || d.id == SDL_atoi(tr))) // (debugging: an NPC's animation clock; -1 every one)
             std::printf("npc %d action %d time %.3f dur %.1f once %d loop %d..%d\n", d.id, d.action, d.time, dur, int(d.once), d.loopFrom, d.loopTo);
@@ -9506,21 +9577,23 @@ void drawNpcs(App& app, const cr::Mat4& vp) {
         const bool posed = !m.skeleton.nodes.empty() && lm.meshes.size() == m.meshes.size();
         if (posed || (matAnim && lm.meshes.size() == m.meshes.size())) { // skin this instance; scroll its textures
             const cr::Action* act = d.action >= 0 && d.action < int(lm.actions.size()) ? &lm.actions[d.action] : nullptr;
-            if (posed) cr::computeWorld(m.skeleton, act, d.time, lm.world);
+            if (posed) poseWorld(m.skeleton, lm.actions, act, d.time, d.blend, lm.world);
             for (size_t i = 0; i < m.meshes.size(); ++i) {
                 float shift[2] = {0, 0}, scale[2] = {1, 1};
                 const bool moves = matAnim && effectUvMotion(lm, matOf(i), d.time, shift, scale);
-                if (!posed && !moves) continue;
+                const bool spins = spinsTexture(m, i);
+                if (!posed && !moves && !spins) continue;
                 if (posed) cr::skinMesh(m, m.meshes[i], lm.world, lm.skinned);
                 const std::vector<float>& pos = posed ? lm.skinned : m.meshes[i].positions;
-                if (moves) { // uv * scale + offset (texture unit 0's: the material action's segment 6)
+                if (moves || spins) { // uv * scale + offset (texture unit 0's: the material action's segment 6)
                     lm.uvScratch = m.meshes[i].uvs;
-                    for (size_t k = 0; k + 1 < lm.uvScratch.size(); k += 2) {
+                    for (size_t k = 0; moves && k + 1 < lm.uvScratch.size(); k += 2) {
                         lm.uvScratch[k] = lm.uvScratch[k] * scale[0] + shift[0];
                         lm.uvScratch[k + 1] = lm.uvScratch[k + 1] * scale[1] + shift[1];
                     }
+                    if (spins) spinUvs(lm.uvScratch, app.texSpin);
                 }
-                app.renderer.updatePositions(lm.meshes[i], pos, moves ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
+                app.renderer.updatePositions(lm.meshes[i], pos, moves || spins ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
             }
         }
         if (matAnim) ++app.matAnimDraws[d.model];
@@ -9528,6 +9601,7 @@ void drawNpcs(App& app, const cr::Mat4& vp) {
         float alpha;
         shownNpc(app, d, world, alpha);
         drawLoaded(app, lm, vp * world, nullptr, alpha, matAnim ? d.time : -1.0f);
+        modelDrawn(app);
     }
 }
 
@@ -9812,7 +9886,44 @@ std::string sysText(const App& app, int id, const std::string& name) {
 
 // The package action for battle action slot `slot`: the built-in action numbered slot + 1
 // (named "built-in <n>.<m>"); -1 if the package has none
+int battleAction(const LoadedModel& lm, int slot);
+
+// _btl_anm_load: the package slots a battle fighter's model has - those _btlanmtbl marks
+// (_read_mdl_mem_mca2: model * 15 + slot, flat, so past the row's end the next model's), the party's
+// 1, 4, 6 and 7 always (_read_mdl_set3); the rest stay empty
+void battleSlotsLoaded(LoadedModel& lm, int modelId, bool party, bool six) {
+    int count = 0; // (the package's slots: its built-in actions' numbers)
+    for (int i = 0; i < lm.builtin && i < int(lm.actions.size()); ++i) {
+        const std::string& n = lm.actions[size_t(i)].name;
+        if (n.rfind("built-in ", 0) == 0) count = std::max(count, SDL_atoi(n.c_str() + 9));
+    }
+    lm.slotOn.assign(size_t(std::max(count, 1)), 0);
+    const signed char* table = &cr::kBattleAnimTable[0][0];
+    const int total = cr::kNumBattleModels * cr::kBattleAnimTableWidth;
+    for (int s = 0; s < int(lm.slotOn.size()); ++s) {
+        const int at = modelId * cr::kBattleAnimTableWidth + s;
+        lm.slotOn[size_t(s)] = (modelId >= 0 && at < total && table[at] != 0) || (party && (s == 1 || s == 4 || s == 6 || s == 7)) ||
+                               (six && s == 6);
+    }
+}
+
+// _mdl_set_act_motion_nextanm: a slot whose motion is 3 frames or less (an empty one, or a 1-frame
+// stand-in) passes to the next, round the model's slots, until one has more
+int realSlot(const LoadedModel& lm, int slot) {
+    int count = 0;
+    for (int i = 0; i < lm.builtin && i < int(lm.actions.size()); ++i) {
+        const std::string& n = lm.actions[size_t(i)].name;
+        if (n.rfind("built-in ", 0) == 0) count = std::max(count, SDL_atoi(n.c_str() + 9));
+    }
+    for (int k = 0; k < count; ++k) {
+        const int s = (slot + k) % count, i = battleAction(lm, s);
+        if (i >= 0 && lm.actions[size_t(i)].duration > 3) return s;
+    }
+    return slot;
+}
+
 int battleAction(const LoadedModel& lm, int slot) {
+    if (!lm.slotOn.empty() && (slot < 0 || slot >= int(lm.slotOn.size()) || !lm.slotOn[size_t(slot)])) return -1; // (not loaded)
     const std::string want = "built-in " + std::to_string(slot + 1) + ".";
     for (int i = 0; i < lm.builtin && i < int(lm.actions.size()); ++i)
         if (lm.actions[size_t(i)].name.rfind(want, 0) == 0) return i;
@@ -9853,6 +9964,7 @@ App::Battle::Actor* battleActor(App& app, int fighter) {
 // Plays action slot `slot` from its start; `then` >= 0 follows it once it ends (else it loops)
 void playSlot(App& app, App::Battle::Actor& a, int slot, int then = -1) {
     const LoadedModel& lm = app.battle.models[a.model];
+    slot = realSlot(lm, slot);
     a.slot = slot;
     a.action = battleAction(lm, slot);
     if (a.action < 0) { // the model hasn't that one: stand
@@ -10040,7 +10152,7 @@ cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user) {
                     if (obj == t.id) node = n;
     if (node < 0 || m.skeleton.nodes.empty()) return a.pos;
     const cr::Action* act = a.action >= 0 && a.action < int(lm.actions.size()) ? &lm.actions[size_t(a.action)] : nullptr;
-    cr::computeWorld(m.skeleton, act, a.time, lm.world);
+    poseWorld(m.skeleton, lm.actions, act, a.time, a.blend, lm.world);
     if (node >= int(lm.world.size())) return a.pos;
     const float* w = lm.world[size_t(node)].m;
     const float c = std::cos(a.yaw), sn = std::sin(a.yaw);
@@ -10332,7 +10444,6 @@ void step(App& app) {
     if (!app.runner.running()) { app.game.setFlag(kFlag, false); return; }
     stepEvents(app);
     if (app.game.flag(kFlag)) return;
-    app.skipScene = false; // (the skip button ends with the talk)
     if (!app.battle.eventBattle) app.runner.stop();
 }
 } // namespace battletalk
@@ -10389,6 +10500,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         a.modelId = modelId;
         a.model = cr::kBattleModelFile[modelId];
         if (!b.models.count(a.model)) loadModelFile(app, a.model, b.models[a.model], true);
+        if (fighter >= 0 && fighter < 5) battleSlotsLoaded(b.models[a.model], modelId, fighter < 2, false);
         a.pos = a.home = {float(place[0]), 0.0f, float(place[1])};
         a.yaw = a.homeYaw = yaw;
         a.fighter = fighter;
@@ -11719,7 +11831,9 @@ void stepBattle(App& app) {
     for (App::Battle::Actor& a : b.actors) {
         const float dur = actorDuration(app, a);
         const cr::BattleAnim an = app.battleData.anim(a.modelId, a.slot);
-        a.time += 1.0f;
+        // (a new slot: its first frame held through the cross-fade - the model's frame lags the change
+        // by it, the move along its window doesn't: btlmove_prc counts on its own)
+        if (!a.blend.step(a.action, a.time, 1.0f, b.models[a.model].actions)) a.time += 1.0f;
         if (a.then == -2) { // held on its last frame (a fallen monster)
             a.time = std::max(dur - 1, 0.0f);
         } else if (a.then == -3) { // played once, then held (mdl_set_act_motion_loop mode 2: a boss's end)
@@ -11748,7 +11862,7 @@ void stepBattle(App& app) {
         else if (dur > 0 && a.time >= dur)
             a.time = std::fmod(a.time, dur);
         if (a.moveTo > a.moveFrom) {
-            const float t = std::clamp((a.time - float(a.moveFrom)) / float(a.moveTo - a.moveFrom), 0.0f, 1.0f);
+            const float t = std::clamp((a.time + a.blend.lag() - float(a.moveFrom)) / float(a.moveTo - a.moveFrom), 0.0f, 1.0f);
             a.pos = a.from + (a.to - a.from) * t;
         }
         if (a.fading) a.alpha = std::max(0.0f, a.alpha - 1.0f / 20.0f);
@@ -11954,12 +12068,15 @@ void drawBattle(App& app, float dt) {
         const cr::Model& m = lm.cpu;
         if (!m.skeleton.nodes.empty() && lm.meshes.size() == m.meshes.size()) { // skin this instance
             const cr::Action* act = a.action >= 0 && a.action < int(lm.actions.size()) ? &lm.actions[size_t(a.action)] : nullptr;
-            cr::computeWorld(m.skeleton, act, a.time, lm.world);
+            poseWorld(m.skeleton, lm.actions, act, a.time, a.blend, lm.world);
             for (size_t i = 0; i < m.meshes.size(); ++i) {
                 cr::skinMesh(m, m.meshes[i], lm.world, lm.skinned);
-                r.updatePositions(lm.meshes[i], lm.skinned, m.meshes[i].uvs, m.meshes[i].colors);
+                const bool spins = spinsTexture(m, i);
+                if (spins) lm.uvScratch = m.meshes[i].uvs, spinUvs(lm.uvScratch, app.texSpin);
+                r.updatePositions(lm.meshes[i], lm.skinned, spins ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
             }
         }
+        modelDrawn(app);
         cr::Mat4 world;
         const float c = std::cos(a.yaw), sn = std::sin(a.yaw);
         world.m[0] = c * a.scale; world.m[2] = -sn * a.scale; world.m[5] = a.scale;
@@ -12439,7 +12556,7 @@ void battleClick(App& app, float px, float py) {
     const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
     const float cx = (lx - uiX) / 2, rx = (lx - rightX) / 2, my = ly / 2;
     if (battletalk::on(app)) { // a talk: the skip corner, else the next page
-        if (lx >= app.renderer.layoutRight() - 76 && ly < app.renderer.layoutTop() + 72) app.skipScene = true;
+        if (skipCorner(app, lx, ly)) holdSkip(app, kSkipPointer, true);
         else if (!app.dialogue.empty()) tapDialogue(app);
         else app.tapPending = true;
         return;
@@ -12657,6 +12774,7 @@ void drawFrame(App& app, bool present = true) {
     const float dt = realDt * float(app.mode == Mode::Maps && app.battle.active && !app.optionsOpen && !app.manualOpen ? app.battleSpeed
                                          : padField(app)                                                           ? app.fieldSpeed
                                                                                                                    : 1);
+    app.drawFrames = dt * kFramesPerSecond;
 
     if (app.mode == Mode::Textures) {
         drawCheckerboard(r);
@@ -12742,7 +12860,7 @@ void drawFrame(App& app, bool present = true) {
             if (app.showProps) drawLoaded(app, app.model, mvp);
             r.setColorWrite(true);
             drawNpcs(app, mvp);
-            if (app.havePlayer && playerShown(app)) drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
+            if (app.havePlayer && playerShown(app)) drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app)), modelDrawn(app);
             if (app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
             drawEffects(app, app.fieldEffects, mvp, &eye, &tgt);
             if (app.showCollision && app.collision.vao) {
@@ -12798,7 +12916,7 @@ void drawFrame(App& app, bool present = true) {
             drawLoaded(app, m, mvp);
         }
         if (app.mode == Mode::Maps && app.havePlayer && playerShown(app))
-            drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app));
+            drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app)), modelDrawn(app);
         if (app.mode == Mode::Maps && app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
         if (app.mode == Mode::Maps) drawEffects(app, app.fieldEffects, mvp, &eye, &c);
         if (app.mode == Mode::Maps && app.collision.vao && app.showCollision) {
@@ -14025,6 +14143,7 @@ int fieldPresentationSelfTest(App& app) {
             app.touchPad.down = true;
             app.touchPad.dx = gait == 1 ? 20.0f : 40.0f;
             updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+            updatePlayer(app, 1.0f / kFramesPerSecond, 0); // (the gait's change: its 2-frame cross-fade)
             const auto first = app.player.world;
             updatePlayer(app, 1.0f / kFramesPerSecond, 0);
             bool changed = false;
@@ -14269,7 +14388,7 @@ int inputCancelSelfTest(App& app) {
     for (Uint32 type : {Uint32(SDL_EVENT_WINDOW_FOCUS_LOST), Uint32(SDL_EVENT_FINGER_CANCELED), Uint32(SDL_EVENT_WILL_ENTER_BACKGROUND)}) {
         app.touchPad.down = app.touchPad.shown = true;
         app.campPointer.down = app.optionsBarDrag = app.dragging = true;
-        app.skipScene = app.tapPending = true;
+        holdSkip(app, kSkipPointer, true), app.tapPending = true;
         SDL_Event e{};
         e.type = type;
         if (type == SDL_EVENT_FINGER_CANCELED) e.tfinger.windowID = SDL_GetWindowID(app.window);
@@ -14687,7 +14806,8 @@ int sessionUiSelfTest(App& app) {
     app.resumePrompt = 1;
     app.menuMask.to = 160;
     app.touchPad.down = app.touchPad.shown = app.campPointer.down = true;
-    app.optionsBarDrag = app.dragging = app.tapPending = app.skipScene = true;
+    app.optionsBarDrag = app.dragging = app.tapPending = true;
+    holdSkip(app, kSkipKey, true);
     app.padHeld = 1;
     app.heldPage = true, app.lastPage = {"Old page"};
     app.saveImport.state = vitaimport::Session::Picking;
@@ -17641,7 +17761,8 @@ void bootTitle(App& app) {
     app.touchPad = App::TouchPad();
     app.menuMask = App::MenuMask();
     app.campPointer = App::CampPointer();
-    app.dragging = app.optionsBarDrag = app.tapPending = app.skipScene = false;
+    app.dragging = app.optionsBarDrag = app.tapPending = false;
+    clearSkip(app);
     app.padHeld = -1;
     app.padHeldFor = 0;
     app.padHeldOver.cancel();
@@ -18046,10 +18167,9 @@ int runExportModels(App& app, const char* dirArg) {
             continue;
         }
         std::vector<cr::Action> actions; // (as loadModelFile keeps them)
-        for (auto& a : m.actions) {
-            const bool motion = a.name.size() > 2 && a.name.compare(a.name.size() - 2, 2, ".1") == 0;
-            if (cr::actionFits(m.skeleton, a) || (motion && cr::actionNearlyFits(m.skeleton, a))) actions.push_back(a);
-        }
+        const std::vector<bool> kept = packageActionsKept(m);
+        for (size_t k = 0; k < m.actions.size(); ++k)
+            if (kept[k]) actions.push_back(m.actions[k]);
         const std::string stem = name.substr(0, name.size() - 4);
         for (const auto& file : app.animFiles) {
             if (file.rfind(stem + "e", 0) != 0) continue;
@@ -19281,7 +19401,7 @@ void padButton(App& app, int b) {
         return;
     case SDL_GAMEPAD_BUTTON_WEST: // □: text skipped; in a puzzle room, the ability
         if (padField(app) && puzzle) padKey(app, SDLK_T);
-        else if (app.mode == Mode::Maps && app.runner.running()) padKey(app, SDLK_X);
+        else if (app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipPad, true); // (up: SDL_EVENT_GAMEPAD_BUTTON_UP)
         return;
     case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: padKey(app, SDLK_PAGEUP); return;   // L: a page back
     case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: padKey(app, SDLK_PAGEDOWN); return; // R: a page on
@@ -19341,7 +19461,8 @@ void consumeInputCancel(App& app) {
     app.dragging = app.optionsBarDrag = false;
     app.campPointer = App::CampPointer();
     app.touchPad = App::TouchPad();
-    app.tapPending = app.skipScene = false;
+    app.tapPending = false;
+    clearSkip(app);
     app.padHeld = -1, app.padHeldFor = 0;
     app.padHeldOver.cancel();
     app.pointerCancelled = true;
@@ -19377,10 +19498,20 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_GAMEPAD_REMOVED:
-        if (app.pad && SDL_GetGamepadID(app.pad) == event->gdevice.which) SDL_CloseGamepad(app.pad), app.pad = nullptr;
+        if (app.pad && SDL_GetGamepadID(app.pad) == event->gdevice.which) {
+            holdSkip(app, kSkipPad, false);
+            SDL_CloseGamepad(app.pad), app.pad = nullptr;
+        }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which) padButton(app, event->gbutton.button);
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_UP: // the square let go: the skip stops
+        if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which && event->gbutton.button == SDL_GAMEPAD_BUTTON_WEST)
+            holdSkip(app, kSkipPad, false);
+        break;
+    case SDL_EVENT_KEY_UP:
+        if (event->key.key == SDLK_X) holdSkip(app, kSkipKey, false);
         break;
     case SDL_EVENT_KEY_DOWN:
         if (app.vitaLogo.phase) { // the Vita's logos: confirm cuts the hold short
@@ -19561,7 +19692,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             break;
         case SDLK_U: app.zUp = !app.zUp; updateTitle(app); break;
         case SDLK_F: app.smoothFilter = !app.smoothFilter; updateTitle(app); break;
-        case SDLK_X: if (app.mode == Mode::Maps && app.runner.running()) app.skipScene = true; break;
+        case SDLK_X: if (app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true); break; // (up: SDL_EVENT_KEY_UP)
         case SDLK_N:
             if (app.mode == Mode::Models) selectAction(app, 1);
             else if (app.mode == Mode::Maps) { app.showNpcs = !app.showNpcs; buildNpcDraws(app); updateTitle(app); }
@@ -19665,8 +19796,8 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
             float lx, ly;
             app.renderer.toLogical(event->button.x * kx, event->button.y * ky, lx, ly);
-            if (lx >= app.renderer.layoutRight() - 76 && ly < app.renderer.layoutTop() + 72) {
-                app.skipScene = true;
+            if (skipCorner(app, lx, ly)) {
+                holdSkip(app, kSkipPointer, true);
                 break;
             }
             if (app.choiceFlag >= 0) { // the Yes / No plates (0x88 x 0x28)
@@ -19692,6 +19823,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        holdSkip(app, kSkipPointer, false); // the finger off the skip corner
         if (app.pointerCancelled) break; // cancellation is not a click or a puzzle release
         if (app.campPointer.down) {
             int ww = 0, wh = 0;
@@ -19712,6 +19844,16 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (app.mode == Mode::Maps && app.runner.running() && (event->motion.state & SDL_BUTTON_LMASK)) {
+            // (pad_chk_circle tests where the held touch is now: one slid off the corner stops the
+            // skip, one slid onto it starts it)
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            float lx, ly;
+            app.renderer.toLogical(event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f),
+                                   event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f), lx, ly);
+            holdSkip(app, kSkipPointer, skipCorner(app, lx, ly));
+        }
         if (app.campPointer.down) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);

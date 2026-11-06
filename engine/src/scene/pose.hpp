@@ -19,15 +19,47 @@ struct NodePose {
 // Every node's local transform for `action` at `time` (frames); a null action gives the rest pose
 void computeLocalPoses(const Skeleton& skel, const Action* action, float time, std::vector<NodePose>& out);
 
+// _mdl_set_act_motion's cross-fade: every motion change runs both actions for kFrames (2 at every
+// call site) with the new one weighted k / kFrames: one frame half and half - the old motion running
+// on, the new held at its first frame - then one of the new alone at its first frame; then it runs.
+struct MotionBlend {
+    static constexpr float kFrames = 2;
+    int lastAction = -1;
+    float lastTime = 0;
+    int from = -1;          // the old action while it blends, else -1
+    float fromTime = 0;     // its frame
+    float since = kFrames;  // frames since the last change (kFrames: none in progress)
+    bool changed = false;   // the current action came in through a change (and lags it)
+    // Once per update, before `time` advances by `frames`: notes a change of `action` (its time reset to
+    // 0), runs the old motion on, holds `time` at 0 through the change. True while held (don't advance).
+    bool step(int action, float& time, float frames, const std::vector<Action>& actions);
+    // The old action to blend under the current one now (the change's first frame), else null
+    const Action* under(const std::vector<Action>& actions) const {
+        return from >= 0 && from < int(actions.size()) && since < 1 ? &actions[size_t(from)] : nullptr;
+    }
+    float weight() const { return 1.0f / kFrames; } // the new action's, while under() is set
+    float lag() const { return !changed ? 0 : since < kFrames ? since : kFrames; } // frames its clock lags the change
+    void reset() { *this = MotionBlend(); }
+};
+
+// Local poses / world matrices for `from` at `fromTime` and `to` at `toTime` blended with `to` weighted
+// `toWeight` (__mceActionSegment_calcBlendTransform)
+void computeBlendedLocalPoses(const Skeleton& skel, const Action* from, float fromTime, const Action* to, float toTime,
+                              float toWeight, std::vector<NodePose>& out);
+void computeBlendedWorld(const Skeleton& skel, const Action* from, float fromTime, const Action* to, float toTime, float toWeight,
+                         std::vector<Mat4>& world);
+
 // World matrices of every skeleton node for `action` at `time` (frames).
 // A null action gives the rest pose; an action animates its first segments' nodes.
 void computeWorld(const Skeleton& skel, const Action* action, float time, std::vector<Mat4>& world);
 
+// True if `action` has more segments than the skeleton has nodes and those past the last node are empty.
+bool emptyTail(const Skeleton& skel, const Action& action);
 // True if `action` animates this skeleton (one segment per node).
 bool actionFits(const Skeleton& skel, const Action& action);
 // One to four segments short of it: a package's motions that leave a model's last nodes at rest
 // (Escher's gene casts 56 of 58, m103's staged attack 148 of 149). Motions with more segments
-// than nodes (m104's 150 of 148, c109 / c111) stay out: their mapping isn't known.
+// than nodes stay out unless the extra ones are empty (emptyTail; segment i is node i).
 bool actionNearlyFits(const Skeleton& skel, const Action& action);
 
 // Deforms `mesh` into world space using node world matrices `world`.

@@ -20,6 +20,8 @@ extern const char* const kActionFile[kNumActionFiles];  // LoadAct action number
 // Battles: encounter stage number -> stage model; monster model number -> battle model package
 extern const char* const kBattleStageFile[kNumBattleStages];
 extern const char* const kBattleModelFile[kNumBattleModels];
+constexpr int kBattleAnimTableWidth = 15;
+extern const signed char kBattleAnimTable[kNumBattleModels][kBattleAnimTableWidth]; // _btlanmtbl
 // read_btlcpl: the enemies' size classes as decimal digits (first enemy = ones) -> index / 3 is
 // the formation; positions [formation][slot][x, z]: 0-2 enemies, 3-5 where attackers stand to
 // hit them, 6-11 the party; rows 0 and 1 (no line-up's) hold the pair's own places, 0-1 solo and

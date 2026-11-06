@@ -184,9 +184,27 @@ exactly); actions whose segment count differs from the node count animate other
 objects (9-segment actions: mostly keyType 12 scalars). Exception: a list's first action
 ("N.1", the motion) can be a segment or a few short of the node count — Escher's gene casts
 (lists 10, 11: 56 of 58), m103's staged attack (list 14: 148 of 149): they drive the first
-nodes in order and the rest stay at rest. Some have more segments than nodes (m104's lists
-2, 4, 5, 8, 9, 11, 13: 150 of 148; c109, c111: one more); neither head- nor tail-aligned
-mapping poses those convincingly, so they're left out (the slot stands).
+nodes in order and the rest stay at rest. Some have more segments than nodes; where the extra
+segments key nothing, segment *i* is still node *i* (`__mceTransformTree_execActionBlend` walks
+the tree's nodes and an action's segments together): c111's warp crystal (13 for 12 nodes: segment
+3, the crystal, translation (0, 11, 0) = node 3's rest, turns once about Y in 80 frames), c109, c110, c117, c209a..c, m206, m210.
+CR1's m104 (150 of 148), m209 and m220 (149 of 127) lists 2, 4, 5, 8, 9, 11, 13 are one shared clip
+that keeps none of their bones (0 of 44 for m220) - and `_btlanmtbl` never loads them: their slots
+are empty in battle, and the original passes over them (`_mdl_set_act_motion*`: a slot of 3 frames
+or less goes to the next).
+
+Battle slots (`_btl_anm_load`): a battle model's package action loads into the slot of its number
+only where `_btlanmtbl` (iPad 0xd3280, 15 bytes a model, read flat: model * 15 + slot) is set; the
+party's slots 1, 4, 6 and 7 always load (`_read_mdl_set3`). The rest stay empty (`kBattleAnimTable`,
+`battleSlotsLoaded`).
+
+A change of motion (`_mdl_set_act_motion*`, every call site with 2 frames) cross-fades: for 2 frames
+two action controllers run, the new one weighted k / 2 (`_mdl_actctl_prc`) - one frame half and
+half, the old motion running on, the new held at its first frame; then the new alone from its
+first frame. `__mceActionSegment_calcBlendTransform` blends per node: keyed translations and scales
+summed by weight (an unkeyed scale counts as 1), rotations as quaternions (the first action's, then
+each later one slerped in by its weight); what no action keys stays at rest (scene/pose.hpp
+`MotionBlend`).
 
 | keyType | used kind | applied by | meaning |
 |---|---|---|---|
