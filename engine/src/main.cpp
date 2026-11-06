@@ -19514,6 +19514,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         if (event->key.key == SDLK_X) holdSkip(app, kSkipKey, false);
         break;
     case SDL_EVENT_KEY_DOWN:
+        // X holds the skip corner wherever a scene runs - a battle's talk too, whose key handler
+        // takes every key before the switch below (seen in metastigma's fork, 8a3aa5d)
+        if (event->key.key == SDLK_X && app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true);
         if (app.vitaLogo.phase) { // the Vita's logos: confirm cuts the hold short
             const SDL_Keycode k = event->key.key;
             if (app.vitaLogo.phase == 2 && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE || k == SDLK_E || k == SDLK_ESCAPE))
@@ -19692,7 +19695,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             break;
         case SDLK_U: app.zUp = !app.zUp; updateTitle(app); break;
         case SDLK_F: app.smoothFilter = !app.smoothFilter; updateTitle(app); break;
-        case SDLK_X: if (app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true); break; // (up: SDL_EVENT_KEY_UP)
+        case SDLK_X: break; // (held at the top of SDL_EVENT_KEY_DOWN; up: SDL_EVENT_KEY_UP)
         case SDLK_N:
             if (app.mode == Mode::Models) selectAction(app, 1);
             else if (app.mode == Mode::Maps) { app.showNpcs = !app.showNpcs; buildNpcDraws(app); updateTitle(app); }
