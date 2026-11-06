@@ -19048,6 +19048,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (SDL_strcmp(argv[i], "--language") == 0) languageArg = SDL_atoi(argv[i + 1]);
     if (languageArg >= 0) app->language = languageArg;
     applyLanguage(*app);
+    const bool hdTexturesAtFirstUpload = app->video.hdTextures; // (the UI atlas', reloaded after loadMix if it changes)
     {
         cr::Image wi;
         if (loadImage(*app, "window_hd.mct", wi, &app->androidWindow)) app->windowTex = app->renderer.upload(wi), noteWindowAtlas(*app, wi);
@@ -19214,6 +19215,16 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (SDL_strcmp(argv[i], "--battle-speed") == 0) app->battleSpeed = std::clamp(SDL_atoi(argv[i + 1]), 1, 5);
     }
     applyVideo(*app);
+    // The UI atlas was uploaded before settings.ini restored hd_textures (hdBundled, loadMix): when
+    // that changed it, again, else the HD replacement stayed out until HD Textures was toggled
+    if (app->video.hdTextures != hdTexturesAtFirstUpload) {
+        cr::Image wi;
+        if (loadImage(*app, "window_hd.mct", wi, &app->androidWindow)) {
+            app->renderer.destroy(app->windowTex);
+            app->windowTex = app->renderer.upload(wi);
+            noteWindowAtlas(*app, wi);
+        }
+    }
     if (languageArg >= 0) { // the command line wins over settings.ini
         app->language = languageArg;
         applyLanguage(*app);
