@@ -1,6 +1,7 @@
 package local.preservation.chaosrings;
 
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 import android.content.pm.ActivityInfo;
 import android.app.AlertDialog;
 import android.content.Context;
@@ -27,6 +28,16 @@ public class GameActivity extends SDLActivity {
     }
 
     // SDL3 is linked into libmain.so (static), so that is the one library to load
+    // The game's surface without Android's focus highlight: a controller's or a keyboard's keys put
+    // Android in its keyboard-navigation mode, and the surface - the focused view - had a coloured
+    // frame drawn round the whole screen from then on
+    @Override
+    protected SDLSurface createSDLSurface(Context context) {
+        SDLSurface surface = super.createSDLSurface(context);
+        if (android.os.Build.VERSION.SDK_INT >= 26) surface.setDefaultFocusHighlightEnabled(false);
+        return surface;
+    }
+
     @Override
     protected String[] getLibraries() {
         return new String[] {"main"};
