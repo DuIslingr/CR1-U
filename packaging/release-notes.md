@@ -27,8 +27,9 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   view's corner is rounded after the shake is added); `CameraPlayer` leaves a room without a painting
   on its last shot; a scene's own effects face the camera and the room's don't, as the original flags them.
 - **Battles started by a scene** (checked against the iOS code's `btl_main` and battle menu): Escape is
-  dimmed and refused while a scene runs, as the original's menu has it; a random battle's track
-  follows the pair's level band (8, or 9 from band 5) and a scene's the track it names in var 58;
+  dimmed and refused while a scene runs, as the original's menu has it; monsters without a level of their
+  own take the route's World Select band (the dungeon's number stood in for it) and a random
+  battle's track follows that band (8, or 9 from band 5) and a scene's the track it names in var 58;
   the music after a battle follows the scene's var 60 (silence after the deck's and the first
   dungeon's fights, as the original); the battle comes in out of white over the original's 20
   frames; a lost battle fades its music out over 10 frames before the defeat tune, a lost scene

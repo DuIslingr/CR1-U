@@ -10645,8 +10645,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         playSlot(app, b.actors.back(), btlui::kSlotIdle);
         return b.actors.back();
     };
-    // The rules: the pair from the party, the monsters grown to their level (the band: the
-    // dungeon number, as the treasure boxes use it - the original keeps a per-route byte)
+    // The rules: the pair from the party, the monsters grown to their level
     const int route = std::clamp(app.playerChar / 2, 0, 3);
     cr::BattleRules& rules = b.rules;
     rules = cr::BattleRules();
@@ -10657,10 +10656,11 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     rules.escapeBlocked = app.runner.running();
     (void)flags;
     rules.setupParty(app.game, app.itemTable, route);
-    const std::string ev = app.area >= 0 && app.area < cr::kNumAreas ? cr::kAreaEventFile[app.area] : "";
-    const int band = ev.size() > 7 && ev[5] == 'd' && ev[6] == '0' ? ev[7] - '1' : 0;
+    // btl_enemy_init_lv: a monster without a level of its own takes the route's World Select band
+    // (prty+0xc10[pair], 0..9: levels band x 10 + 1..10, kept near the pair's)
+    const int worldBand = app.game.bands[size_t(route)];
     rules.setupSpecial(app.game, app.itemTable, start.group, route); // the story battles' line-ups
-    rules.setupEnemies(app.battleData, ids, band);
+    rules.setupEnemies(app.battleData, ids, worldBand);
     for (int k = 0; k < 2; ++k) // Uty_Btl_ParamUp01 / 02 called before this battle began
         if (app.paramUp[k]) {
             for (int st = cr::kStatusAttackUp; st <= cr::kStatusLuckUp; ++st) rules.f[size_t(k)].status[st] = 6;
@@ -10688,10 +10688,10 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         b.shownMp[i] = rules.f[size_t(i)].mp;
     }
     setBattleCamera(app, std::max(0, b.formation - 2)); // btl_main 200: the opening turn
-    // btl_main 100: var 58 under 29 names the battle's track; else the pair's level band picks 8, or 9
-    // from band 5 (prty+0xc10[pair] < 5, the byte btl_enemy_init_lv levels the monsters by)
+    // btl_main 100: var 58 under 29 names the battle's track; else the route's World Select band
+    // (prty+0xc10[pair], the byte btl_enemy_init_lv levels the monsters by) picks 8, or 9 from band 5
     const auto v58 = app.game.vars.find(58);
-    const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : band < 5 ? 8 : 9;
+    const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : worldBand < 5 ? 8 : 9;
     b.fieldTrack = app.music.current();
     playBgm(app, uint32_t(track));
     app.dialogue.clear();
