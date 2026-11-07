@@ -169,6 +169,7 @@ void Renderer::beginFrame(int windowW, int windowH) {
     frameW_ = std::clamp(int(windowW * k + 0.5f), 1, 8192);
     frameH_ = std::clamp(int(windowH * k + 0.5f), 1, 8192);
     windowAspect_ = float(windowW) / float(std::max(windowH, 1));
+    windowW_ = std::max(windowW, 1);
     dev_->beginFrame(frameW_, frameH_);
     originX_ = 0;
     // The scene first: the frame's size, or smaller while an upscaler is on
@@ -207,6 +208,14 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
         -(r + l) / (r - l), -(t + b) / (t - b), 0, 1,
     };
     std::memcpy(proj_, proj, sizeof proj);
+}
+
+float Renderer::safeEdge(float insetPx) const {
+    if (insetPx <= 0 || scale_ <= 0) return 0;
+    // (the inset in the frame's pixels, less the bars beside the logical screen, in its units)
+    const float k = float(frameW_) / float(windowW_);
+    const float bar = (float(frameW_) - screenW_ * scale_) * 0.5f;
+    return std::clamp((insetPx * k - bar) / scale_, 0.0f, screenW_ * 0.25f);
 }
 
 void Renderer::endScene() {

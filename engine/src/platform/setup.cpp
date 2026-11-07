@@ -1138,14 +1138,15 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
     for (;;) {
         std::string text = std::string(g.port) + " plays your own copy of " + g.title +
                            ". Choose where it is - any one of them; the files it needs are copied into its folder:\n\n";
+        const bool obb = endsWith(g.obbHint, ".obb"); // (CR3: no OBB - its .apks, or the APK and its asset packs)
+        const std::string androidLine = obb ? "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
+                                            : std::string("  Android - the .apks (or the APK and its asset packs, all at once)\n");
         if (phone())
-            text += "  iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)\n"
-                    "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
+            text += "  iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)\n" + androidLine +
                     "  Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB\n\n"
                     "What is copied into its folder over USB is found with Look again.\n\n";
         else
-            text += "  iOS - the .ipa (or a file in its unpacked .app)\n"
-                    "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
+            text += "  iOS - the .ipa (or a file in its unpacked .app)\n" + androidLine +
                     "  Vita - Vita3K's folder with the game installed (or the game's " + std::string(g.vitaId) + " folder)\n\n";
         text += "Its folder: " + roots[0];
         const bool any = !out.ios.empty() || !out.android.empty() || !out.vita.empty();
@@ -1157,7 +1158,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             if (!out.patch.empty()) text += "\n  Its fan translation: " + out.patch;
             if (!g.oneRelease) text += "\n\nMore of them add to it (the Vita's voices and music, Android's art); or Start.";
         }
-        std::vector<std::pair<int, const char*>> buttons = {{1, "iOS (.ipa)..."}, {2, "Android (APK + OBB)..."}, {3, "Vita / Vita3K..."}};
+        std::vector<std::pair<int, const char*>> buttons = {{1, "iOS (.ipa)..."}, {2, obb ? "Android (APK + OBB)..." : "Android (.apks)..."}, {3, phone() ? "Vita..." : "Vita / Vita3K..."}};
         if (any) buttons.push_back({4, "Start"});
         else if (phone()) buttons.push_back({5, "Look again"}); // (copied in over USB meanwhile: found as on any start)
         buttons.push_back({0, "Quit"});

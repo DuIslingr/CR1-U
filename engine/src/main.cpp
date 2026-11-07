@@ -230,7 +230,11 @@ struct App {
     struct Video {
         int width = 1024, height = 768;    // window size (windowed) or display mode (fullscreen)
         int display = 0;                   // 0 windowed, 1 fullscreen (that mode), 2 borderless (the desktop's)
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+        bool widescreen = true;            // the screen widens to the window (up to 21:9); else 4:3 (a phone's: wide, filling it)
+#else
         bool widescreen = false;           // the screen widens to the window (up to 21:9); else 4:3
+#endif
         int paintings = 0;                 // painted rooms: 0 the original's (2x, a screen-sized window following
                                            // the player), 1 the whole painting at the screen's height, 2 at its width
         int renderScale = 100;             // % of the window's pixels (Vulkan)
@@ -3296,7 +3300,12 @@ void applyVideo(App& app) {
     tf.lodBias = up.mode != cr::Upscaler::Off ? -std::log2(up.ratio) : 0.0f;
     r.setFiltering(tf);
     if (!app.window) return;
-    if (v.display == 0) {
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    constexpr bool kPhone = true; // (a phone's or tablet's: the whole screen, the system's bars hidden - SDL's immersive mode)
+#else
+    constexpr bool kPhone = false;
+#endif
+    if (v.display == 0 && !kPhone) {
         SDL_SetWindowFullscreen(app.window, false);
         // The size in pixels: the window's in points, so divide by the display's density
         const float density = std::max(SDL_GetWindowPixelDensity(app.window), 0.25f);
@@ -3876,8 +3885,15 @@ void phoneMenuPoint(const App& app, float& mx, float& my) {
 // Widescreen (the iPad layout): the origins of a screen's left- and right-hand groups - kept to
 // the screen's edges, as the later widescreen release does (and the shop and the battle here),
 // the rest centred (uiX). The iPhone layout's one 480-wide screen doesn't spread
-float wideLeft(const App& app) { return app.renderer.phoneLayout() ? app.renderer.uiX() : 0.0f; }
-float wideRight(const App& app) { return app.renderer.phoneLayout() ? app.renderer.uiX() : 2 * app.renderer.uiX(); }
+// (inside the display's safe area: off a camera hole)
+float wideLeft(const App& app) {
+    const cr::Renderer& r = app.renderer;
+    return r.phoneLayout() ? r.uiX() : std::min(r.uiX(), r.safeLeft());
+}
+float wideRight(const App& app) {
+    const cr::Renderer& r = app.renderer;
+    return r.phoneLayout() ? r.uiX() : std::max(r.uiX(), 2 * r.uiX() - r.safeRight());
+}
 // A logical point in menu units of the group drawn from `origin`
 void menuPointAt(const App& app, float lx, float ly, float origin, float& mx, float& my) {
     mx = (lx - origin) / 2, my = ly / 2;
@@ -4911,7 +4927,7 @@ void drawShop(App& app) {
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     const float a = std::min(1.0f, float(s.anim + 1) / 6.0f), slide = (1 - a) * (1 - a);
     const bool phone = r.phoneLayout(); // the iPhone layout: one 480-wide screen, no spreading
-    const float leftEdge = phone ? r.uiX() : 0, centre = r.uiX(), rightEdge = phone ? r.uiX() : 2 * r.uiX(); // origins
+    const float leftEdge = wideLeft(app), centre = r.uiX(), rightEdge = wideRight(app); // origins (the screen's edges inside the safe area)
     const bool list = s.phase == App::Shop::List;
     const bool asking = s.phase == App::Shop::Count || s.phase == App::Shop::EquipAsk;
     const bool board = list && shopEquipment(app);
@@ -12326,7 +12342,7 @@ void drawBattleHud(App& app, float W, float H) {
     // The iPhone layout (2.2.0's __menub_mainPut): the badge and the rows into its screen's
     // corners - (+16, +32) / (+16, -32) - the banner 32 lower, the menus where they are
     const bool phone = r.phoneLayout();
-    const float edge = phone ? r.uiX() : 0.0f; // the left-hand pieces' origin
+    const float edge = wideLeft(app); // the left-hand pieces' origin (the screen's edge inside the safe area)
 
     // Damage numbers (__dmg_prc): over their targets, projected from the 3D across the screen
     r.setOrigin(0);
@@ -12404,7 +12420,7 @@ void drawBattleHud(App& app, float W, float H) {
     }
 
     // Right: the menus
-    r.setOrigin(phone ? r.uiX() : 2 * r.uiX());
+    r.setOrigin(wideRight(app));
     if (b.phase == App::Battle::Command && !app.optionsOpen) { // (Options covers them while it's up)
         // the HELP board across the top (ComUty_HelpWindowDraw): the item's or gene's target and effect
         auto helpBoard = [&](int item) {
@@ -12765,7 +12781,26 @@ void drawFrame(App& app, bool present = true) {
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(app.window, &w, &h);
     auto& r = app.renderer;
+    { // the display's safe area, in the window's pixels (CR_SAFE_INSETS "l,t,r,b": tests)
+        float l = 0, t = 0, rr = 0, b = 0;
+        int ww = 0, wh = 0;
+        SDL_Rect safe;
+        if (const char* e = SDL_getenv("CR_SAFE_INSETS"); e && std::sscanf(e, "%f,%f,%f,%f", &l, &t, &rr, &b) == 4) {
+        } else if (SDL_GetWindowSafeArea(app.window, &safe) && SDL_GetWindowSize(app.window, &ww, &wh) && ww > 0 && wh > 0) {
+            const float sx = float(w) / float(ww), sy = float(h) / float(wh);
+            l = float(safe.x) * sx, t = float(safe.y) * sy, rr = float(ww - safe.x - safe.w) * sx, b = float(wh - safe.y - safe.h) * sy;
+        }
+        r.setSafeInsets(l, t, rr, b);
+    }
     r.beginFrame(w, h);
+    // the examine prompt ("!" over what can be checked): placed through the scene's camera, drawn
+    // with the UI once the scene is done - not upscaled with it (FSR / DLSS / MetalFX)
+    struct {
+        bool on = false;
+        cr::Mat4 vp;
+        float x = 0, y = 0, w = 0, h = 0;
+    } prompt;
+    auto promptLater = [&](const cr::Mat4& vp, float x, float y, float pw, float ph) { prompt.on = true, prompt.vp = vp, prompt.x = x, prompt.y = y, prompt.w = pw, prompt.h = ph; };
     // W: the game's 2D layout (1024); SW: the whole logical screen (wider in widescreen)
     const float W = cr::Renderer::kLogicalW, H = cr::Renderer::kLogicalH, SW = r.screenW();
     const Uint64 now = app.clock.ticksNS();
@@ -12878,8 +12913,8 @@ void drawFrame(App& app, bool present = true) {
                 if (app.triggerMesh.vao) r.drawMesh(app.triggerMesh, nullptr, mvp, colMat);
             }
             r.end3D();
-            if (scriptCam) drawPrompt(app, mvp, 0, 0, SW, H);
-            else drawPrompt(app, mvp, vx, vy, vw, vh);
+            if (scriptCam) promptLater(mvp, 0, 0, SW, H);
+            else promptLater(mvp, vx, vy, vw, vh);
         }
         if (app.foreground.id) drawLayer(app.foreground);
         drawSceneEffects(app);
@@ -12931,7 +12966,7 @@ void drawFrame(App& app, bool present = true) {
             if (app.triggerMesh.vao) r.drawMesh(app.triggerMesh, nullptr, mvp, colMat);
         }
         r.end3D();
-        if (app.mode == Mode::Maps) drawPrompt(app, mvp, 0, 0, SW, H);
+        if (app.mode == Mode::Maps) promptLater(mvp, 0, 0, SW, H);
     }
     // On-screen status: window title bars are unreliable (Wayland) or absent (Android)
     std::vector<std::string> lines{app.status};
@@ -12945,6 +12980,10 @@ void drawFrame(App& app, bool present = true) {
     else
         lines.push_back("Left/Right texture  Tab models");
     r.endScene(); // the scene is complete: upscaled to the frame (when on); the UI over it at full size
+    if (prompt.on) {
+        r.setOrigin(0);
+        drawPrompt(app, prompt.vp, prompt.x, prompt.y, prompt.w, prompt.h);
+    }
     if (app.mode == Mode::Maps) {
         const float a = screenFadeAlpha(app); // Screen: fades to / from a grey level
         if (a > 0.001f) r.fillRect(0, 0, SW, H, app.fadeGrey, app.fadeGrey, app.fadeGrey, a);
@@ -12978,7 +13017,7 @@ void drawFrame(App& app, bool present = true) {
                 const float w = float(p.tex.width) * p.scale, h = float(p.tex.height) * p.scale; // zooms about its centre
                 // Widescreen: side portraits keep to the screen's edges (as the later widescreen
                 // release does), centre images to the middle
-                const float edge = p.side < 0 ? -r.uiX() : p.side > 0 ? r.uiX() : 0.0f;
+                const float edge = p.side < 0 ? wideLeft(app) - r.uiX() : p.side > 0 ? wideRight(app) - r.uiX() : 0.0f; // (inside the safe area)
                 const float x = edge + p.x - (w - float(p.tex.width)) / 2, y = p.y - (h - float(p.tex.height)) / 2;
                 r.drawQuadUV(p.tex, x, y, w, h, p.side == 1 ? float(p.tex.width) : 0, 0,
                              p.side == 1 ? -float(p.tex.width) : float(p.tex.width), float(p.tex.height), p.shade,
@@ -19198,7 +19237,11 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         const uint64_t flags = cr::Renderer::windowFlags(b);
         if (!flags) continue; // not built in
         app->window = SDL_CreateWindow("Chaos Rings", 1024, 768,
-                                       SDL_WindowFlags(flags) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+                                       SDL_WindowFlags(flags) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+                                           | SDL_WINDOW_FULLSCREEN // (the system's bars hidden from the start)
+#endif
+                                       );
         if (!app->window) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow: %s", SDL_GetError());
             continue;

@@ -97,6 +97,13 @@ public:
     float uiX() const { return (screenW_ - kLogicalW) * 0.5f; } // where the 1024-wide layout starts
     void setOrigin(float x) { originX_ = x; }          // added to every 2D quad's x
     void setWidescreen(bool on) { widescreen_ = on; }
+    // The display's safe area (a camera hole's, the system's edges): its insets in the window's
+    // pixels. 3D and fades keep the whole screen; safeLeft / safeRight are how far in from the
+    // logical screen's left / right edge it starts - where the groups kept to the screen's edges
+    // go instead (wideLeft / wideRight)
+    void setSafeInsets(float l, float t, float r, float b) { safeL_ = l, safeT_ = t, safeR_ = r, safeB_ = b; }
+    float safeLeft() const { return safeEdge(safeL_); }
+    float safeRight() const { return safeEdge(safeR_); }
     // The iPhone layout (2.2.0's): the screen is 3:2 (wider in widescreen) and the 2D layout's
     // safe area - tex2d (0, 0)..(480, 320), the 1024 layout's (32, 64)..(992, 704) - fills its
     // height (x 1.2, centred); the iPad layout's margins fall outside. 2D draws and toLogical
@@ -142,6 +149,7 @@ public:
 
 private:
     void mapScreen(int w, int h); // logical screen -> the current target's pixels
+    float safeEdge(float insetPx) const; // a window-pixel inset, in logical units in from the screen's edge
 
     std::unique_ptr<RenderDevice> dev_;
     Backend backend_ = Backend::OpenGL;
@@ -156,6 +164,8 @@ private:
     bool widescreen_ = false, inScene_ = false, phone_ = false;
     int frameW_ = 0, frameH_ = 0; // the full frame (drawableW_/H_ is the scene's while in it)
     float windowAspect_ = 4.0f / 3.0f;
+    int windowW_ = 1;
+    float safeL_ = 0, safeT_ = 0, safeR_ = 0, safeB_ = 0;
 };
 
 } // namespace cr
