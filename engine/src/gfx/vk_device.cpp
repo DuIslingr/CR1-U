@@ -23,6 +23,7 @@
 #include "gfx/vk_metalfx.hpp"
 #endif
 #include "gfx/vk_fsr3.hpp"
+#include "gfx/vk_fsr4.hpp"
 
 #include <algorithm>
 #include <array>
@@ -224,6 +225,7 @@ public:
         destroySceneTarget();
         fsr_.shutdown();
         dlss_.shutdown();
+        fsr4_.shutdown();
 #ifdef __APPLE__
         metalfx_.shutdown();
 #endif
@@ -596,6 +598,27 @@ public:
 #ifdef __APPLE__
             done = metalFxEncode();
 #endif
+        } else if (active_ == Upscaler::Fsr4) {
+            Fsr4Inputs in;
+            const VkImageUsageFlags scene = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            in.color = {sceneColor_, sceneColorView_, kColorFormat, scene | VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
+            in.depth = {sceneDepth_, sceneDepthView_, VK_FORMAT_D32_SFLOAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+            in.motion = {sceneMotion_, sceneMotionView_, kMotionFormat, scene};
+            in.reactive = {sceneReactive_, sceneReactiveView_, kReactiveFormat, scene};
+            in.output = {colorImage_, colorView_, kColorFormat, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+            in.renderW = sceneW_;
+            in.renderH = sceneH_;
+            in.outW = targetW_;
+            in.outH = targetH_;
+            in.jitterX = jitter_[0];
+            in.jitterY = jitter_[1];
+            in.deltaMs = frameMs_;
+            in.cameraNear = cameraNear_;
+            in.cameraFar = cameraFar_;
+            in.fovY = cameraFovY_;
+            in.sharpness = std::clamp(upscale_.sharpness, 0.0f, 1.0f);
+            in.reset = historyReset_;
+            done = fsr4_.evaluate(cmd_, in);
         } else if (active_ == Upscaler::Dlss) {
             DlssInputs in;
             in.color = {sceneColor_, sceneColorView_, kColorFormat};
@@ -656,6 +679,7 @@ public:
             return "MetalFX is Apple's: macOS only";
 #endif
         }
+        if (m == Upscaler::Fsr4) return fsr4_.problem();
         return dlss_.problem();
     }
 
@@ -1087,6 +1111,7 @@ private:
             ext.push_back(Fsr3::extension());
         }
         if (upscaleCaps_) dlss_.deviceRequirements(instance_, gpu_, ext, f12); // NGX's, on NVIDIA RTX
+        if (upscaleCaps_) fsr4_.deviceRequirements(gpu_, ext, f2, f12, f13); // AMD's FSR 4: with its files, on AMD
         VkDeviceCreateInfo ci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         ci.pNext = &f2;
         ci.queueCreateInfoCount = 1;
@@ -1096,6 +1121,7 @@ private:
         if (!ok(vkCreateDevice(gpu_, &ci, nullptr, &device_))) return false;
         if (fsrSupported_ && !fsr_.init(device_, gpu_, kFrames)) fsrSupported_ = false;
         if (upscaleCaps_) dlss_.init(instance_, gpu_, device_);
+        if (upscaleCaps_) fsr4_.init(instance_, gpu_, device_);
         vkGetDeviceQueue(device_, family_, 0, &queue_);
 #ifdef __APPLE__
         if (upscaleCaps_ && metalObjects_) metalfx_.init(instance_, device_, queue_);
@@ -1829,6 +1855,7 @@ private:
     bool fsrSupported_ = false, upscaleCaps_ = false;
     Fsr3 fsr_;
     Dlss dlss_;
+    Fsr4 fsr4_;
 #ifdef __APPLE__
     MetalFx metalfx_;
     bool metalObjects_ = false; // VK_EXT_metal_objects on

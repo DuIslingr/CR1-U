@@ -687,7 +687,7 @@ c101/c102/c104/m207a, 2026-10-12).
         exactly on the originals
       - Command line: `--original`, `--resolution 1920x1080`, `--windowed` / `--fullscreen` /
         `--borderless`, `--widescreen`, `--whole-paintings`, `--zoom-paintings`, `--render-scale 150`, `--msaa 4`,
-        `--upscaler off|fsr|dlss`, `--upscale-mode native|quality|balanced|performance|ultra`,
+        `--upscaler off|fsr|fsr4|dlss|metalfx` (FSR 4: AMD's files in `fsr4/` - the README's Platforms; `CR_FSR4_DIR` elsewhere), `--upscale-mode native|quality|balanced|performance|ultra`,
         `--sharpness 0-100`, `--hd-textures`, `--smooth-models 2|3`, `--no-vsync`, `--fps n` (the frame rate's
         limit, 0 none); captures and the self-test start from the original
         presentation. `--capture … --settle n` draws the captured moment n times first (the

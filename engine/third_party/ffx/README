@@ -1,0 +1,7 @@
+AMD FSR SDK v2.4.0's public FSR API headers (github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK:
+Kits/FidelityFX/api/include and upscalers/include, unmodified; MIT, each file's header) - the
+interface of AMD's Vulkan DLLs (amd_fidelityfx_loader_vk.dll, amd_fidelityfx_upscaler_vk.dll: FSR
+Upscaling 4.1.2, 3.1.6 and 2.3.4), which src/gfx/vk_fsr4.cpp loads at run time from fsr4/ in the
+game folder. The DLLs themselves are not here and never ship with the game: AMD's licence allows
+them in binary form under its own terms. Linux maps them through ffx-vk-linux (MIT,
+github.com/DuIslingr/ffx-vk-linux) put beside them.

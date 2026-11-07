@@ -74,6 +74,8 @@ the program - it finds it by itself. The game folder is:
 │   └── <the 1.1.1 APK>.apk             (or its classes.dex: the OBB's table is in it)
 ├── vita/
 │   └── PCSG00497/                      the installed title: CR1/resources/cr1.psarc, CR1/sound/*.psarc
+├── fsr4/                            AMD FSR 4 (optional; Linux and Windows, an AMD GPU): AMD's two SDK DLLs, the driver's
+│                                    amdvkffx64.dll, and on Linux ffx-vk-linux's libffx_vk_linux.so - see Platforms
 └── textures/
     ├── export/                         written by --export-textures: the pictures to upscale (<hash>.png)
     └── hd/                             read by the game: the upscaled pictures (<hash>.png or .crhd)
@@ -169,8 +171,8 @@ MetalFX, in particular, is compiled but untested.
 
 | Platform | Build | Renderer | The game folder (its `ios/`, `android/`, `vita/`, `textures/`) |
 |---|---|---|---|
-| Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (with the SDK) | the folder holding `chaosrings`, or the AppImage |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, DLSS (MSVC, with the SDK) | the folder holding `chaosrings.exe` |
+| Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (with the SDK) | the folder holding `chaosrings`, or the AppImage |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (MSVC, with the SDK) | the folder holding `chaosrings.exe` |
 | macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the folder holding `chaosrings.app` (or its `Contents/Resources/`) |
 | Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings/files/` on the shared storage (copy your files there over USB) |
 
@@ -182,6 +184,18 @@ DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NV
 (`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
 game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
 is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
+
+FSR 4 (Linux and Windows, an AMD GPU of the RX 6000 series or later): AMD's machine-learning
+upscaler, FSR Upscaling 4.1.2, is an Upscaler choice too (`--upscaler fsr4`) once its files are in
+`fsr4/` in the game folder. AMD ships it for Vulkan only as its own signed Windows DLLs, whose
+licence allows them to be passed on in that form under AMD's terms alone, so they aren't included:
+`amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from AMD's
+[FSR SDK 2.4](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/tag/v2.4.0)
+(`Kits/FidelityFX/signedbin/`), `amdvkffx64.dll` - FSR 4 itself - from AMD Software: Adrenalin
+Edition 26.10.1 or later (the Windows driver package), and on Linux `libffx_vk_linux.so` from
+[ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux) (MIT), which maps AMD's DLLs natively, no
+Wine. The game's log says which FSR AMD's SDK picked; without the driver DLL it offers only FSR 3.1
+and the game says so. `CR_FSR4_DIR` points at the files elsewhere.
 
 ## Controls
 

@@ -3204,13 +3204,17 @@ struct UpscaleMode {
 };
 constexpr UpscaleMode kUpscaleModes[] = {
     {"Native AA", 1.0f}, {"Quality", 1.5f}, {"Balanced", 1.7f}, {"Performance", 2.0f}, {"Ultra Perf.", 3.0f}};
-constexpr const char* kUpscalerName[] = {"Off", "FSR 3.1", "DLSS", "MetalFX"};
-constexpr cr::Upscaler kUpscaler[] = {cr::Upscaler::Off, cr::Upscaler::Fsr3, cr::Upscaler::Dlss, cr::Upscaler::MetalFx};
+constexpr const char* kUpscalerName[] = {"Off", "FSR 3.1", "DLSS", "MetalFX", "FSR 4"};
+constexpr cr::Upscaler kUpscaler[] = {cr::Upscaler::Off, cr::Upscaler::Fsr3, cr::Upscaler::Dlss, cr::Upscaler::MetalFx, cr::Upscaler::Fsr4};
+constexpr int kUpscalers = 5;
+// (MetalFX is Apple's own, FSR 4 - AMD's DLLs in fsr4/ - Linux's and Windows': the options step over the other's slot)
+constexpr bool upscalerHere(int u) {
 #ifdef __APPLE__
-constexpr int kUpscalers = 4; // (MetalFX: Apple's own)
+    return u != 4;
 #else
-constexpr int kUpscalers = 3;
+    return u != 3;
 #endif
+}
 
 int keyValue(const char* text, const char* key, int fallback) {
     const char* at = SDL_strstr(text, key);
@@ -3414,7 +3418,10 @@ void adjustVideo(App& app, int row, int dir) {
         }
         break;
     }
-    case 9: v.upscaler = (v.upscaler + dir + kUpscalers) % kUpscalers; break;
+    case 9:
+        do v.upscaler = (v.upscaler + dir + kUpscalers) % kUpscalers;
+        while (!upscalerHere(v.upscaler));
+        break;
     case 10: v.upscaleMode = (v.upscaleMode + dir + 5) % 5; break;
     case 11: v.sharpness = std::clamp(v.sharpness + dir * 5, 0, 100); break;
     case 14: v.layout = (v.layout + dir + 4) % 4; break;
@@ -3790,9 +3797,9 @@ std::vector<OptRow> optionRows(App& app, int page) {
             rows.back().hint = h;
         }
         value("Sharpness", std::to_string(v.sharpness) + "%", [&app](int dir) {
-            if (app.video.upscaler == 1) adjustVideo(app, 11, dir ? dir : 1);
+            if (app.video.upscaler == 1 || app.video.upscaler == 4) adjustVideo(app, 11, dir ? dir : 1);
         });
-        rows.back().enabled = scalable && v.upscaler == 1;
+        rows.back().enabled = scalable && (v.upscaler == 1 || v.upscaler == 4);
         rows.back().hint = "FSR's sharpening pass (RCAS); DLSS has none";
         break;
     }
@@ -19003,8 +19010,9 @@ void videoArgs(App& app, int argc, char** argv) {
         else if (SDL_strcmp(a, "--msaa") == 0 && next) v.msaa = std::clamp(SDL_atoi(next), 1, 8);
         else if (SDL_strcmp(a, "--no-vsync") == 0) v.vsync = false;
         else if (SDL_strcmp(a, "--fps") == 0 && next) v.frameLimit = std::clamp(SDL_atoi(next), 0, 1000); // 0: unlimited
-        else if (SDL_strcmp(a, "--upscaler") == 0 && next) // off | fsr | dlss
-            v.upscaler = SDL_strcmp(next, "fsr") == 0 ? 1 : SDL_strcmp(next, "dlss") == 0 ? 2 : 0;
+        else if (SDL_strcmp(a, "--upscaler") == 0 && next) // off | fsr | fsr4 | dlss | metalfx
+            v.upscaler = SDL_strcmp(next, "fsr") == 0 || SDL_strcmp(next, "fsr3") == 0 ? 1 : SDL_strcmp(next, "dlss") == 0 ? 2
+                       : SDL_strcmp(next, "metalfx") == 0 ? 3 : SDL_strcmp(next, "fsr4") == 0 ? 4 : 0;
         else if (SDL_strcmp(a, "--upscale-mode") == 0 && next) { // native | quality | balanced | performance | ultra
             static const char* const kModes[] = {"native", "quality", "balanced", "performance", "ultra"};
             for (int k = 0; k < 5; ++k)
@@ -19246,6 +19254,15 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_CreateWindow: %s", SDL_GetError());
             continue;
         }
+#ifdef CR_HAVE_VULKAN
+        { // FSR 4's files (AMD's DLLs, Linux's ffx-vk-linux): fsr4/ in the game folder, beside the executable, CR_FSR4_DIR
+            std::vector<std::string> dirs;
+            if (const char* env = SDL_getenv("CR_FSR4_DIR"); env && *env) dirs.push_back(env);
+            for (const std::string& g : cr::gameFolders()) dirs.push_back(g + (g.empty() || g.back() == '/' || g.back() == '\\' ? "" : "/") + "fsr4/");
+            if (const char* base = SDL_GetBasePath()) dirs.push_back(std::string(base) + "fsr4/");
+            cr::setFsr4Dirs(dirs);
+        }
+#endif
         if (app->renderer.init(app->window, b)) {
             app->rendererReady = true;
             break;

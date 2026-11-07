@@ -47,7 +47,9 @@ struct MeshShading {
 // Temporal upscalers (Vulkan): the scene renders smaller (or at the same size: Native AA /
 // DLAA) with sub-pixel jitter, motion vectors and a reactive mask, then is resolved at the
 // frame's size before the UI draws over it
-enum class Upscaler { Off, Fsr3, Dlss, MetalFx }; // (MetalFX: Apple's, macOS 13+)
+enum class Upscaler { Off, Fsr3, Dlss, MetalFx, Fsr4 }; // (MetalFX: Apple's, macOS 13+; FSR 4: AMD's DLLs in fsr4/, Linux and Windows)
+// where FSR 4's files are looked for (gfx/vk_fsr4.cpp: the Vulkan build's)
+void setFsr4Dirs(std::vector<std::string> dirs);
 struct UpscaleSettings {
     Upscaler mode = Upscaler::Off;
     float ratio = 1.0f;     // output / render size per axis (1 = native AA)
