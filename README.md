@@ -85,7 +85,8 @@ installed; the names of the folders below `ios/`, `android/` and `vita/` don't m
 is the installed, decrypted title - or a NoNpDrm dump's folder as it was dumped, still encrypted (its
 `app/`, and `addcont/` beside it for the Prequel Trilogy's add-on): the next start decrypts it into
 `vita/` (on a phone too; it needs the space for the decrypted copy), and the dump can be deleted then.
-A dump packed in an archive has to be unpacked first there (the first start's setup on a PC does both).
+A dump packed in an archive (.zip, .rar, .7z, .vpk) is chosen in the first start's setup instead - a
+phone's too, which shows when there's no copy yet and picks files (folders are copied in over USB).
 The release downloads come with these folders made, each with a `README.txt` saying what
 goes in it.
 

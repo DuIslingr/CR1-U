@@ -19144,9 +19144,9 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (!g.empty()) // (the folders made, to be seen over USB)
             for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((g.front() + f).c_str());
 #endif
-#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+#if !defined(SDL_PLATFORM_IOS)
         // The first start without a copy: where is it? (platform/setup.hpp - what's chosen copied into
-        // the game folder's ios/, android/, vita/: found as on any start)
+        // the game folder's ios/, android/, vita/: found as on any start - a phone's too)
         static bool setupAsked = false;
         bool plain = true; // (not a test's or a tool's run)
         for (int i = 1; i < argc; ++i)
@@ -19156,7 +19156,12 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             setupAsked = true;
             const cr::SetupGame setup = crSetupGame();
             cr::SetupResult got;
-            if (!cr::runSetup(setup, g.empty() ? cr::saveDir() : g.front(), cr::saveDir(), got)) return SDL_APP_SUCCESS; // (Quit)
+#ifdef SDL_PLATFORM_ANDROID
+            const std::string fallback; // (a phone's game folder is always its own: no other)
+#else
+            const std::string fallback = cr::saveDir();
+#endif
+            if (!cr::runSetup(setup, g.empty() ? cr::saveDir() : g.front(), fallback, got)) return SDL_APP_SUCCESS; // (Quit)
             SDL_Log("setup: iOS %s, Android %s, Vita %s", got.ios.c_str(), got.android.c_str(), got.vita.c_str());
             if (cr::setupScripted()) { // (a test's: the setup alone - whether a start finds the copy now)
                 const char* noArgs[] = {argv[0]};

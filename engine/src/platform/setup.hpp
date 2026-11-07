@@ -38,8 +38,9 @@ struct SetupGame {
     bool vitaProgram = false;    // (CR2-U: the Vita program read too - an encrypted one decrypted beside it, <name>.elf)
     // whether a folder holds the release (the .app's / its data folder; an Android folder or OBB; a Vita game folder)
     std::function<bool(const std::string&)> iosOk, androidOk, vitaOk;
-    // (CR3-U: the Vita release's fan translation - a folder that reads over it; none: not asked)
-    std::function<bool(const std::string&)> patchOk;
+    // (CR3-U: the Vita release's fan translation - a folder that reads over it; none: not asked - and
+    // whether a Vita copy wants it, its text the release's Japanese: asked for over that alone)
+    std::function<bool(const std::string&)> patchOk, untranslated;
 };
 
 struct SetupResult {
@@ -51,7 +52,9 @@ struct SetupResult {
 
 // Asks (message boxes and the system's file / folder dialogs) until one copy at least is in place
 // and Start chosen; false: Quit. `folder`: the game folder; `fallback`: the profile folder, where
-// the game folder can't be written
+// the game folder can't be written. On a phone (Android) the same, but files alone are picked -
+// copied in from the picker first, told apart by what is in them -, a folder is copied in over USB
+// (then Continue), and Look again takes what was copied in meanwhile (CRU_SETUP_PHONE: that on a PC)
 bool runSetup(const SetupGame& game, const std::string& folder, const std::string& fallback, SetupResult& out);
 
 // A NoNpDrm dump copied by hand into the game folder's vita/ (a phone's way: no dialogs there) - its
@@ -60,6 +63,11 @@ bool runSetup(const SetupGame& game, const std::string& folder, const std::strin
 // window; what went wrong said in a message (`quiet`: logged alone). Nothing to do - no dump there,
 // or one decrypted already -: false at once. `out.vita`: this game's folder in it
 bool installDroppedVita(const SetupGame& game, const std::string& folder, SetupResult& out, bool quiet = false);
+
+// (CR3-U) The fan translation's archive - the .rar or .zip it comes in - copied by hand into the
+// game folder's translation/: unpacked into translation/<id>/, with a progress window. Nothing to do
+// (no archive there, or a translation unpacked already; a game without one): false at once
+bool installDroppedPatch(const SetupGame& game, const std::string& folder, bool quiet = false);
 
 // whether CRU_SETUP_ANSWERS answers it (a test's run: no windows)
 bool setupScripted();

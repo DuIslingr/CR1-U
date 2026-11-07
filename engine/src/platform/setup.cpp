@@ -62,6 +62,27 @@ bool endsWith(const std::string& s, const char* tail) {
     return true;
 }
 
+bool exists(const std::string& p) { return SDL_GetPathInfo(p.c_str(), nullptr); }
+std::filesystem::path fsPath(const std::string& s) { // (UTF-8, as SDL's paths are)
+#if defined(__cpp_char8_t)
+    return std::filesystem::path(std::u8string(s.begin(), s.end()));
+#else
+    return std::filesystem::u8path(s);
+#endif
+}
+
+// A phone (Android): no folder dialog - a folder is copied in over USB, then found where it was
+// put -, and the picker's files are content:// URIs, copied into the game folder before they're
+// read. (CRU_SETUP_PHONE: a test's, on a PC)
+bool phone() {
+#ifdef SDL_PLATFORM_ANDROID
+    return true;
+#else
+    static const bool on = SDL_getenv("CRU_SETUP_PHONE") != nullptr;
+    return on;
+#endif
+}
+
 // the folder and what's under it, gone (the port's own unpacking, when it turns out not the game)
 void removeTree(const std::string& dir) {
     SDL_EnumerateDirectory(
@@ -197,7 +218,8 @@ std::vector<std::string> waitFor(Answer& a) {
     std::lock_guard<std::mutex> lock(a.m);
     return a.paths;
 }
-std::vector<std::string> pickFiles(const SDL_DialogFileFilter* filters, int n, bool many) {
+std::vector<std::string> localize(const SetupGame& g, const std::vector<std::string>& picked); // (below)
+std::vector<std::string> pickFiles(const SetupGame& g, const SDL_DialogFileFilter* filters, int n, bool many) {
     if (script().on) {
         std::vector<std::string> out;
         const std::string a = answer("files");
@@ -206,11 +228,15 @@ std::vector<std::string> pickFiles(const SDL_DialogFileFilter* filters, int n, b
             if (e > at) out.push_back(a.substr(at, e - at));
             at = e + 1;
         }
-        return out;
+        return localize(g, out);
+    }
+    if (phone()) { // (Android's picker filters by MIME type, and an .ipa, an .obb, an .apks have none: every file shown)
+        static const SDL_DialogFileFilter kAny[] = {{"Any file", "*"}};
+        filters = kAny, n = 1;
     }
     Answer a;
     SDL_ShowOpenFileDialog(answered, &a, nullptr, filters, n, nullptr, many);
-    return waitFor(a);
+    return localize(g, waitFor(a));
 }
 std::string pickFolder() {
     if (script().on) return answer("a folder");
@@ -391,6 +417,109 @@ struct Progress {
     }
 };
 
+// a message: shown, or (`quiet`, a test's) logged alone
+void note(const SetupGame& g, const std::string& text, bool quiet) {
+    SDL_Log("setup: %s", text.c_str());
+    if (script().on) tell(g, text);
+    else if (!quiet) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, g.title, text.c_str(), nullptr);
+}
+
+// ---- a picked file the system hands over as a content:// URI (Android's document picker): copied
+// into the game folder's .picked/ first - the unpacking reads files -, named by what it is, as the
+// URI has no name of its own: an .ipa (its app's name), an .apks, an APK (the package's name), a
+// .rar / .7z / .zip, an asset pack (.android.mvgl), else the OBB (its name, setup.obbHint)
+
+std::string& staging() { // (runSetup's: <game folder>/.picked/)
+    static std::string s;
+    return s;
+}
+bool staged(const std::string& p) { return !staging().empty() && p.compare(0, staging().size(), staging()) == 0; }
+
+std::string kindName(const SetupGame& g, const std::string& path, int index) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    uint8_t head[8] = {};
+    const size_t got = std::fread(head, 1, sizeof head, f);
+    std::string name = "picked" + std::to_string(index);
+    if (got >= 6 && std::memcmp(head, "Rar!\x1a\x07", 6) == 0) name += ".rar";
+    else if (got >= 6 && std::memcmp(head, "7z\xbc\xaf\x27\x1c", 6) == 0) name += ".7z";
+    else if (got >= 4 && std::memcmp(head, "MDB1", 4) == 0) // (an archive: CR2's OBB is one; CR3's asset packs, which have no OBB)
+        name = endsWith(g.obbHint, ".obb") ? std::string(g.obbHint) : name + ".android.mvgl";
+    else if (got >= 4 && std::memcmp(head, "PK\x03\x04", 4) == 0) {
+        std::vector<ZipEntry> all;
+        std::string why, app;
+        zipEntries(f, fileBytes(path), all, &why);
+        bool apks = false, apk = false;
+        for (const ZipEntry& e : all) {
+            if (app.empty() && e.name.compare(0, 8, "Payload/") == 0)
+                if (const size_t at = e.name.find('/', 8); at != std::string::npos && endsWith(e.name.substr(0, at), ".app")) app = e.name.substr(8, at - 12);
+            if (e.name.find('/') == std::string::npos && endsWith(e.name, ".apk")) apks = true;
+            if (e.name == "AndroidManifest.xml") apk = true;
+        }
+        const std::string pkg = *g.package ? g.package : "game";
+        name = !app.empty() ? app + ".ipa" : apks ? pkg + ".apks" : apk ? pkg + ".apk" : name + ".zip";
+    } else name = endsWith(g.obbHint, ".obb") ? std::string(g.obbHint) : name + ".bin";
+    std::fclose(f);
+    return name;
+}
+
+// the picks as files: a URI (content://; a test's copy:<path>) copied into staging(), the rest as they are
+std::vector<std::string> localize(const SetupGame& g, const std::vector<std::string>& picked) {
+    std::vector<std::string> out;
+    int index = 0;
+    for (const std::string& p : picked) {
+        const bool uri = p.compare(0, 10, "content://") == 0, test = script().on && p.compare(0, 5, "copy:") == 0;
+        if (!uri && !test) {
+            out.push_back(p);
+            continue;
+        }
+        const std::string from = test ? p.substr(5) : p;
+        SDL_IOStream* in = SDL_IOFromFile(from.c_str(), "rb");
+        if (!in) {
+            tell(g, "A file picked can't be read (" + std::string(SDL_GetError()) + ").");
+            continue;
+        }
+        const Sint64 size = SDL_GetIOSize(in);
+        SDL_CreateDirectory(staging().c_str());
+        std::error_code ec;
+        const std::filesystem::space_info room = std::filesystem::space(fsPath(staging()), ec);
+        if (!ec && size > 0 && room.available < uint64_t(size) * 2 + (64u << 20)) { // (the copy, and what it unpacks to)
+            SDL_CloseIO(in);
+            char text[200];
+            std::snprintf(text, sizeof text, "A file picked (%.1f GB) needs about %.1f GB free in %s - the copy and what it unpacks to -, and there is %.1f GB.",
+                          double(size) / 1e9, double(size) * 2 / 1e9, staging().c_str(), double(room.available) / 1e9);
+            tell(g, text);
+            continue;
+        }
+        const std::string part = staging() + "picking" + std::to_string(++index);
+        std::FILE* o = std::fopen(part.c_str(), "wb");
+        bool ok = o != nullptr;
+        {
+            Progress bar(g.title, "Copying the file picked" + (picked.size() > 1 ? " (" + std::to_string(index) + " of " + std::to_string(picked.size()) + ")" : std::string()) + " ...");
+            std::vector<uint8_t> buf(1 << 20);
+            uint64_t done = 0;
+            for (size_t n; ok && (n = SDL_ReadIO(in, buf.data(), buf.size())) > 0;) {
+                ok = std::fwrite(buf.data(), 1, n, o) == n;
+                done += n;
+                if (size > 0) bar.show(double(done) / double(size));
+            }
+            ok = ok && SDL_GetIOStatus(in) != SDL_IO_STATUS_ERROR;
+        }
+        SDL_CloseIO(in);
+        if (o) ok = std::fclose(o) == 0 && ok;
+        const std::string name = ok ? kindName(g, part, index) : std::string();
+        const std::string to = staging() + name;
+        if (!ok || name.empty() || (exists(to) && !SDL_RemovePath(to.c_str())) || !SDL_RenamePath(part.c_str(), to.c_str())) {
+            SDL_RemovePath(part.c_str());
+            tell(g, "A file picked can't be copied into " + staging());
+            continue;
+        }
+        SDL_Log("setup: picked %s - %s", from.c_str(), name.c_str());
+        out.push_back(to);
+    }
+    return out;
+}
+
 } // namespace
 
 bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& app, std::string* error,
@@ -477,14 +606,6 @@ namespace {
 // key in sce_sys/package/work.bin (+0x50: the klicensee) - decrypted as Vita3K's install does
 // (psvpfsparser), or such a dump packed in an archive (libarchive)
 
-bool exists(const std::string& p) { return SDL_GetPathInfo(p.c_str(), nullptr); }
-std::filesystem::path fsPath(const std::string& s) { // (UTF-8, as SDL's paths are)
-#if defined(__cpp_char8_t)
-    return std::filesystem::path(std::u8string(s.begin(), s.end()));
-#else
-    return std::filesystem::u8path(s);
-#endif
-}
 
 // the fan translation's own folder - rePatch's <id>/ - wherever it is in what was chosen (a download's
 // folder: its .rar beside an extracted/rePatch/<id>/), not the folders around it nor the archive
@@ -592,6 +713,23 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
     (void)path, (void)to, (void)want, (void)progress;
     return fail(error, "this build can't open archives - unpack it first, then choose its folder");
 #endif
+}
+
+// a fan translation's archive (the .rar / .zip it comes in) unpacked, its <id>/ kept as `t`<id>/ (`t`:
+// the game folder's translation/): that folder; "" not (`error` why)
+std::string unpackPatch(const SetupGame& g, const std::string& archive, const std::string& t, std::string* error,
+                        const std::function<void(double)>& progress) {
+    const std::string u = t + ".unpack/", done = t + g.vitaId + "/";
+    if ((!isDir(t) && !SDL_CreateDirectory(t.c_str())) || (isDir(u) && (removeTree(u), false)) || !SDL_CreateDirectory(u.c_str()))
+        return fail(error, t + ": can't be written"), std::string();
+    if (!unpackArchive(archive, u, [](const std::string&) { return true; }, error, progress)) return removeTree(u), std::string();
+    const std::string own = patchFolder(u, g.vitaId);
+    if (!g.patchOk(own)) return removeTree(u), fail(error, std::string("no fan translation in it (its rePatch/") + g.vitaId + "/)"), std::string();
+    if (isDir(done)) removeTree(done);
+    const bool moved = SDL_RenamePath(own.c_str(), done.c_str());
+    if (isDir(u)) removeTree(u);
+    if (!moved) return fail(error, done + ": can't be made"), std::string();
+    return done;
 }
 
 // a folder's entries moved into another, their folders merged (an add-on's into its game's)
@@ -914,7 +1052,8 @@ int installVita(const SetupGame& g, const VitaInstall& in, const std::string& r,
         size_t size = 0;
         std::vector<uint8_t> self;
         if (void* d = SDL_LoadFile((part + program).c_str(), &size)) self.assign(static_cast<uint8_t*>(d), static_cast<uint8_t*>(d) + size), SDL_free(d);
-        if (selfEncrypted(self)) {
+        const std::string elfName = part + program.substr(0, program.rfind('.')) + ".elf";
+        if (selfEncrypted(self) && !exists(elfName)) { // (a copy an earlier setup made has it decrypted beside it already)
             uint8_t klic[16];
             std::vector<uint8_t> elf;
             if (!klicenseeOf(in.root, name, klic)) why = program + ": no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)";
@@ -990,13 +1129,25 @@ std::vector<std::string> androidFiles(const SetupGame& g, const std::vector<std:
 bool runSetup(const SetupGame& g, const std::string& folder, const std::string& fallback, SetupResult& out) {
     std::vector<std::string> roots{withSlash(folder)};
     if (!fallback.empty() && withSlash(fallback) != roots[0]) roots.push_back(withSlash(fallback));
+    staging() = roots[0] + ".picked/"; // (the picks handed over as URIs, copied in: gone when this ends)
+    struct Tidy {
+        ~Tidy() {
+            if (isDir(staging())) removeTree(staging());
+        }
+    } tidy;
     for (;;) {
         std::string text = std::string(g.port) + " plays your own copy of " + g.title +
-                           ". Choose where it is - any one of them; the files it needs are copied into its folder:\n\n"
-                           "  iOS - the .ipa (or a file in its unpacked .app)\n"
-                           "  Android - the APK and its " + g.obbHint + " (both at once)\n"
-                           "  Vita - Vita3K's folder with the game installed (or the game's " + g.vitaId + " folder)\n\n"
-                           "Its folder: " + roots[0];
+                           ". Choose where it is - any one of them; the files it needs are copied into its folder:\n\n";
+        if (phone())
+            text += "  iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)\n"
+                    "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
+                    "  Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB\n\n"
+                    "What is copied into its folder over USB is found with Look again.\n\n";
+        else
+            text += "  iOS - the .ipa (or a file in its unpacked .app)\n"
+                    "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
+                    "  Vita - Vita3K's folder with the game installed (or the game's " + std::string(g.vitaId) + " folder)\n\n";
+        text += "Its folder: " + roots[0];
         const bool any = !out.ios.empty() || !out.android.empty() || !out.vita.empty();
         if (any) {
             text += "\n\nIn place:";
@@ -1008,15 +1159,20 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
         }
         std::vector<std::pair<int, const char*>> buttons = {{1, "iOS (.ipa)..."}, {2, "Android (APK + OBB)..."}, {3, "Vita / Vita3K..."}};
         if (any) buttons.push_back({4, "Start"});
+        else if (phone()) buttons.push_back({5, "Look again"}); // (copied in over USB meanwhile: found as on any start)
         buttons.push_back({0, "Quit"});
         const int choice = ask(g, text, buttons, SDL_MESSAGEBOX_INFORMATION);
         if (choice <= 0) return false;
-        if (choice == 4) return true;
+        if (choice == 4 || choice == 5) return true;
         if (choice == 1) { // (the .ipa unpacked into ios/; an unpacked .app copied there)
             static const SDL_DialogFileFilter kIpa[] = {{"iOS app (.ipa)", "ipa"}, {"Any file (one in an unpacked .app)", "*"}};
-            const std::vector<std::string> picked = pickFiles(kIpa, 2, false);
+            const std::vector<std::string> picked = pickFiles(g, kIpa, 2, false);
             if (picked.empty()) continue;
             const std::string& f = picked.front();
+            if (phone() && !endsWith(f, ".ipa")) {
+                tell(g, "That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into " + roots[0] + "ios/ over USB, then Look again.");
+                continue;
+            }
             std::string app, why;
             bool ok;
             if (endsWith(f, ".ipa") || endsWith(f, ".zip")) {
@@ -1060,7 +1216,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             out.ios = app;
         } else if (choice == 2) { // (the APK and the OBB - or the .apks - copied into android/)
             static const SDL_DialogFileFilter kAndroid[] = {{"Android (.apk, .obb, .apks)", "apk;obb;apks;xapk"}, {"Any file", "*"}};
-            const std::vector<std::string> picked = pickFiles(kAndroid, 2, true);
+            const std::vector<std::string> picked = pickFiles(g, kAndroid, 2, true);
             if (picked.empty()) continue;
             const std::vector<std::string> files = androidFiles(g, picked);
             if (files.empty()) {
@@ -1080,7 +1236,8 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                 std::vector<std::string> made;
                 for (const std::string& f : files) {
                     const std::string to = a + baseName(f);
-                    if (!copy.file(f, to + ".part") || (SDL_RemovePath(to.c_str()), !SDL_RenamePath((to + ".part").c_str(), to.c_str()))) {
+                    const bool placed = staged(f) ? SDL_RenamePath(f.c_str(), (to + ".part").c_str()) : copy.file(f, to + ".part"); // (a pick copied in: moved)
+                    if (!placed || (SDL_RemovePath(to.c_str()), !SDL_RenamePath((to + ".part").c_str(), to.c_str()))) {
                         SDL_RemovePath((to + ".part").c_str());
                         for (const std::string& m : made) SDL_RemovePath(m.c_str());
                         return 0;
@@ -1120,7 +1277,16 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             out.android = dest;
         } else if (choice == 3) { // (the Vita release copied - a NoNpDrm dump's decrypted - into vita/<id>/)
             int how = 1;
-            if (kArchives)
+            if (phone())
+                how = ask(g,
+                          "Where is the Vita release?\n\n"
+                          "  A folder - copied into " + roots[0] + "vita/ over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the "
+                          "Prequel Trilogy), Vita3K's ux0, or the game's own folder\n"
+                          "  An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)",
+                          kArchives ? std::vector<std::pair<int, const char*>>{{1, "Copied in..."}, {2, "An archive..."}, {0, "Back"}}
+                                    : std::vector<std::pair<int, const char*>>{{1, "Copied in..."}, {0, "Back"}},
+                          SDL_MESSAGEBOX_INFORMATION);
+            else if (kArchives)
                 how = ask(g,
                           "Where is the Vita release?\n\n"
                           "  A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's\n"
@@ -1130,7 +1296,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             std::string picked, unpacked; // (an archive's: unpacked into vita/.unpack/, gone after)
             if (how == 2) {
                 static const SDL_DialogFileFilter kDump[] = {{"A Vita dump (.rar, .7z, .zip, .vpk)", "rar;7z;zip;vpk"}, {"Any file", "*"}};
-                const std::vector<std::string> files = pickFiles(kDump, 2, false);
+                const std::vector<std::string> files = pickFiles(g, kDump, 2, false);
                 if (files.empty()) continue;
                 // (this game's parts alone: those under its title id - the trilogy's PCSG00457 and its add-on, not the other games')
                 const std::string id = g.vitaId, addon = g.trilogyAddon;
@@ -1156,6 +1322,14 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     continue;
                 }
                 picked = unpacked;
+            } else if (phone()) { // (no folder dialog: the folder it was copied into)
+                const std::string v = roots[0] + "vita/";
+                SDL_CreateDirectory(v.c_str());
+                if (ask(g, "Copy the Vita release's folder into\n  " + v + "\nover USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ "
+                           "for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue.",
+                        {{1, "Continue"}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION) != 1)
+                    continue;
+                picked = v;
             } else {
                 picked = pickFolder();
                 if (picked.empty()) continue;
@@ -1176,7 +1350,12 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             const std::string tri = g.trilogyDir;
             std::string dest, why;
             bool notGame = false;
-            const bool ok = inGameFolder(roots, [&](const std::string& r) { return installVita(g, in, r, dest, why, notGame); });
+            // (copied in decrypted, already where the install would put it: read where it is)
+            const std::string placed = roots[0] + "vita/" + (in.trilogy ? std::string("PCSG00457") : std::string(g.vitaId)) + "/",
+                              placedGame = in.trilogy ? placed + tri + "/" : placed;
+            const bool inPlace = withSlash(in.root) == placed && !encryptedVita(in.root) && in.addon.empty() && g.vitaOk(placedGame);
+            const bool ok = inPlace ? (dest = placedGame, true)
+                                    : inGameFolder(roots, [&](const std::string& r) { return installVita(g, in, r, dest, why, notGame); });
             if (!ok) {
                 if (!unpacked.empty()) removeTree(unpacked);
                 if (notGame && !why.empty()) tell(g, std::string("The Vita release in ") + in.root + ": " + why);
@@ -1189,26 +1368,58 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             }
             out.vita = dest;
             const std::string game = in.trilogy ? in.root + tri + "/" : in.root; // (where its fan translation is looked for)
-            if (g.patchOk) { // (the fan translation: Vita3K's ux0/rePatch/<id> by itself, else asked for - copied into translation/<id>/)
+            if (g.patchOk && (!g.untranslated || g.untranslated(dest))) { // (the fan translation, over an untranslated copy: Vita3K's ux0/rePatch/<id> by itself, else asked for - into translation/<id>/)
                 out.patch.clear();
                 std::string from;
+                const std::string t0 = roots[0] + "translation/";
                 const std::string up2 = parentOf(parentOf(game)), up3 = parentOf(up2); // (<ux0>/app/<id>/ - or the trilogy's <id>/CR3/: one more)
                 for (const std::string& t : {up2 + "rePatch/" + g.vitaId + "/", up3 + "rePatch/" + g.vitaId + "/"})
                     if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
-                while (from.empty()) {
+                while (from.empty() && out.patch.empty()) {
+                    std::vector<std::pair<int, const char*>> b = {{1, phone() ? "Copied in..." : "Choose its folder..."}};
+                    if (kArchives) b.push_back({2, "Its archive..."});
+                    b.push_back({0, "Without it"});
                     const int a = ask(g,
-                                      std::string("The Vita release is in Japanese. Its fan translation (the rePatch folder, ") + g.vitaId +
-                                          ", from gbatemp) puts the English iOS text over it - is it here too?",
-                                      {{1, "Choose its folder..."}, {0, "Without it"}}, SDL_MESSAGEBOX_INFORMATION);
+                                      std::string("This Vita release is in Japanese. Its fan translation (gbatemp's: the rePatch folder, ") + g.vitaId +
+                                          ", or the .rar / .zip it comes in) puts the English iOS text over it - is it here too?",
+                                      b, SDL_MESSAGEBOX_INFORMATION);
+                    if (a == 2) { // (its archive: unpacked, its <id>/ kept as translation/<id>/)
+                        static const SDL_DialogFileFilter kPatch[] = {{"The fan translation (.rar, .zip, .7z)", "rar;zip;7z"}, {"Any file", "*"}};
+                        const std::vector<std::string> files = pickFiles(g, kPatch, 2, false);
+                        if (files.empty()) continue;
+                        std::string got, why2;
+                        {
+                            Progress pbar(g.title, "Unpacking the fan translation ...");
+                            got = unpackPatch(g, files.front(), t0, &why2, [&](double v) { pbar.show(v); });
+                        }
+                        if (got.empty()) tell(g, baseName(files.front()) + ": " + why2);
+                        else out.patch = got;
+                        continue;
+                    }
                     if (a != 1) break;
-                    const std::string chosen = pickFolder();
-                    if (chosen.empty()) continue;
+                    std::string chosen;
+                    if (phone()) {
+                        SDL_CreateDirectory(t0.c_str());
+                        if (ask(g, "Copy the fan translation's rePatch folder (or the " + std::string(g.vitaId) + " in it) into\n  " + t0 +
+                                       "\nover USB from a PC, then Continue.",
+                                {{1, "Continue"}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION) != 1)
+                            continue;
+                        chosen = t0;
+                    } else if ((chosen = pickFolder()).empty()) continue;
                     for (const std::string& t : {withSlash(chosen), withSlash(chosen) + g.vitaId + "/", withSlash(chosen) + "rePatch/" + g.vitaId + "/"})
                         if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
-                    if (from.empty()) tell(g, "No fan translation in " + chosen + " - choose its rePatch folder (or the " + g.vitaId + " in it).");
+                    if (from.empty()) tell(g, "No fan translation in " + chosen + " - " + (phone() ? "copy" : "choose") + " its rePatch folder (or the " + g.vitaId + " in it).");
                 }
                 if (!from.empty()) { // (its <id>/ alone, where that is the translation)
                     if (const std::string own = patchFolder(from, g.vitaId); own != from && g.patchOk(own)) from = own;
+                }
+                if (!from.empty() && withSlash(from) == t0 + g.vitaId + "/") out.patch = withSlash(from); // (copied in where it belongs)
+                else if (!from.empty() && !staged(from) && from.compare(0, t0.size(), t0) == 0) { // (copied in elsewhere in translation/: moved to translation/<id>/)
+                    const std::string done = t0 + g.vitaId + "/";
+                    if (isDir(done)) removeTree(done);
+                    if (SDL_RenamePath(from.c_str(), done.c_str())) out.patch = done;
+                    else tell(g, "The fan translation can't be moved to " + done);
+                } else if (!from.empty()) {
                     Progress pbar(g.title, "Copying the fan translation ...");
                     Copier pc{[&](double v) { pbar.show(v); }, treeBytes(from)};
                     std::string to;
@@ -1244,11 +1455,7 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     std::string dest, why;
     bool notGame = false;
     const int got = installVita(g, in, withSlash(folder), dest, why, notGame);
-    auto say = [&](const std::string& text) {
-        SDL_Log("setup: %s", text.c_str());
-        if (!quiet && !script().on) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, g.title, text.c_str(), nullptr);
-        else if (script().on) tell(g, text);
-    };
+    auto say = [&](const std::string& text) { note(g, text, quiet); };
     if (got > 0) {
         out.vita = dest;
         if (withSlash(in.root) != withSlash(v + (in.trilogy ? "PCSG00457" : g.vitaId)))
@@ -1266,6 +1473,39 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     }
     if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return got > 0;
+}
+
+bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool quiet) {
+    if (!g.patchOk) return false;
+    const std::string t = withSlash(folder) + "translation/";
+    if (!isDir(t)) return false;
+    std::string archive;
+    bool placed = false;
+    int count = 0;
+    char** names = SDL_GlobDirectory(t.c_str(), "*", 0, &count);
+    for (int k = 0; names && k < count && !placed; ++k) {
+        const std::string n = names[k], p = t + n;
+        if (n.empty() || n[0] == '.') continue;
+        if (isDir(p)) placed = g.patchOk(withSlash(p)); // (unpacked already: read where it is)
+        else if (archive.empty() && (endsWith(n, ".rar") || endsWith(n, ".zip") || endsWith(n, ".7z"))) archive = p;
+    }
+    SDL_free(names);
+    if (placed || archive.empty()) return false;
+    if (!kArchives) {
+        note(g, baseName(archive) + " can't be opened by this build - unpack it into " + t + " first.", quiet);
+        return false;
+    }
+    const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO);
+    SDL_Log("setup: the fan translation's %s in %s, unpacking it", baseName(archive).c_str(), t.c_str());
+    std::string why, got;
+    {
+        Progress bar(g.title, "Unpacking the fan translation ...");
+        got = unpackPatch(g, archive, t, &why, [&](double v) { bar.show(v); });
+    }
+    if (got.empty()) note(g, baseName(archive) + " can't be unpacked: " + why, quiet);
+    else note(g, "The fan translation is unpacked into " + got + " - " + baseName(archive) + " isn't needed any more: delete it to get the space back.", quiet);
+    if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return !got.empty();
 }
 
 } // namespace cr
