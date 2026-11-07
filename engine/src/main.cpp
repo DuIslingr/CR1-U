@@ -11899,13 +11899,13 @@ void battleWon(App& app) {
     const auto v58 = app.game.vars.find(58), v59 = app.game.vars.find(59);
     const int battleTune = v58 != app.game.vars.end() ? v58->second : 999, tune = v59 != app.game.vars.end() ? v59->second : 10;
     if (battleTune != tune) playBgm(app, 1u << 26); // (__bgmgo(0x4000000): out over 10 frames)
-    int& bank = app.game.walkExp[size_t(fieldRoute(app))]; // skill 174's walking EXP joins the battle's
-    if (!b.settled) b.rules.expGained += bank, bank = 0;   // (before the Apples double it)
-    settleBattle(app);
 }
 void victoryShown(App& app) {
     App::Battle& b = app.battle;
     btlvoice::victory(app); // btl_main 0x3e9
+    int& bank = app.game.walkExp[size_t(fieldRoute(app))]; // skill 174's walking EXP joins the battle's
+    if (!b.settled) b.rules.expGained += bank, bank = 0;   // (before the Apples double it)
+    settleBattle(app);
     { // var 59: the victory tune (10 for random encounters) - none when it's the battle's own (var 58)
         // or 998, the battle's music played on (btl_main 0x3e9)
         const auto v58 = app.game.vars.find(58), v59 = app.game.vars.find(59);
@@ -12192,7 +12192,7 @@ void stepBattle(App& app) {
         break;
     case App::Battle::Won: // 0x3e8's ten frames, then 0x3e9 (the poses, tune and banner) and 1099's 140 or a tap
         if (b.phaseFrames == 10) victoryShown(app);
-        if (b.phaseFrames < 10) break;
+        if (b.phaseFrames < 10) { b.wonTap = false; break; } // (a tap in the fade counts for nothing)
         if (b.phaseFrames >= 150 || b.wonTap) {
             b.wonTap = false;
             b.phase = App::Battle::Results;
