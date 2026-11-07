@@ -372,6 +372,8 @@ struct App {
         bool open = false, load = false, haveSave = false;
         int cursor = 0, phase = 0, confirm = 0, message = 0, timer = 0, anim = 0;
         int pending = 0;                   // what Yes does: 1 save, 2 load, 3 new game
+        bool toTitle = false;              // Util 6's (SetModeSaveLoadMenu 3 / 4): the title follows, saved or not (SaveLoadClr)
+        bool askLeave = false;             // ... its "return to the title without saving?" (0x3c) after a No
         int kind = 0;                      // the title's choice, var 1 on the way out (SaveLoadClr):
                                            // 1 the last battle, 2 new, 3 new with the clear data, 4 load
         int lines[3] = {};                 // the message board's further lines (system message ids)
@@ -547,6 +549,8 @@ struct App {
         bool wonTap = false; // a tap in the victory's hold (state 1099: 140 frames or pad_chk_trg_up)
         bool lostTap = false;    // a tap on the defeat (0x513: at once, or after 40 frames of an event battle's game over picture)
         cr::Texture gameOver;    // btl_main 0x4b0: gameover.mct, drawn fading in over 20 frames for a lost event battle
+        bool ending = false;     // btl_main 9000 -> 0x238b: the mask to black over 10 frames (SetMask(0): 500 ms), the music out, 12 frames, then the way out
+        int endFrames = 0, pendingExit = 0;
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
         int member = 0;                    // solo: the member choosing
@@ -3212,6 +3216,10 @@ struct ViewerHost : cr::EventHost {
         }
         if (n == 5 || n == 6) { // SetSaveLoadMenu: at the title, the chosen pair's Load / New; else "Save data?"
             openSaveScreen(app, app.booting);
+            // Util 6 off the title (__EvtUtil: SetModeSaveLoadMenu(3), 4 with flag 0 - both set the menu's title mark):
+            // "Save data?" on the way to the title - saved or not, SaveLoadClr returns there (MuCom_ReturnTitle);
+            // a No asks about leaving unsaved (SaveLoadPrc 8 -> 0xc)
+            if (n == 6 && !app.booting) app.saveScreen.toTitle = true;
             return true;
         }
         static const char* const kMenu[] = {"title", "world choice", "shop", "yes/no", "start", "save/load", "save/load",
@@ -4431,9 +4439,27 @@ void openSaveScreen(App& app, bool load) {
 
 void closeSaveScreen(App& app) { app.saveScreen.open = false; }
 
+// Util 6's save menu: SaveLoadClr with its title mark set (SaveLoadPrc 0xb / 0xc) - MuCom_PreReturnTitle
+// (__bgmgo(0x8000000): the music out over 20 frames, the scene's effects ended), SetFade black, and
+// MuCom_ReturnTitle: the field torn down and the boot script from the start
+void saveScreenToTitle(App& app) {
+    app.saveScreen.open = false;
+    playBgm(app, 1u << 27);
+    bootTitle(app);
+}
+// SaveLoadPrc 8 -> No with the title mark: message 0x3c, "return to the title without saving?" (0xc: its Yes
+// the title, its No back to "Save data?"); the menu never closes into the field
+void saveScreenNoToTitle(App& app) {
+    App::SaveScreen& ss = app.saveScreen;
+    ss.askLeave = !ss.askLeave;
+    ss.message = ss.askLeave ? 57060 : 57012;
+    ss.confirm = 0;
+}
+
 // Yes in the confirmation: do it
 void saveScreenYes(App& app) {
     App::SaveScreen& ss = app.saveScreen;
+    if (ss.toTitle && ss.askLeave) { saveScreenToTitle(app); return; } // leaving unsaved (SaveLoadPrc 0xc -> Yes)
     if (ss.pending == 1) {
         const cr::SaveData s = captureSave(app);
         if (cr::writeSave(slotPath(app, currentPair(app)), s)) {
@@ -4637,9 +4663,10 @@ void stepSaveScreen(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     if (!ss.open) return;
     ++ss.anim;
-    if (ss.phase == 2 && ++ss.timer >= 40) {
+    if (ss.phase == 2 && ++ss.timer >= 20) { // SaveLoadPrc 4 / 8: 0x14 frames of "Save complete." or the load's message
         ss.open = false;
         if (ss.load && ss.message > 0) app.titleOpen = false; // loaded: on with the game
+        if (ss.toTitle) saveScreenToTitle(app); // (SaveLoadPrc 0xb: PreReturnTitle, then SaveLoadClr's ReturnTitle)
     }
 }
 
@@ -4656,7 +4683,8 @@ void saveScreenKey(App& app, SDL_Keycode key) {
         else if (enter && ss.confirm == 0) saveScreenYes(app);
         else if (enter || back) { // No
             menuSound(app, se::kChoose);
-            if (ss.load && ss.kind == 3) { // then a plain new game? (57089..57091)
+            if (ss.toTitle) saveScreenNoToTitle(app);
+            else if (ss.load && ss.kind == 3) { // then a plain new game? (57089..57091)
                 ss.kind = 2;
                 ss.message = 57089, ss.lines[0] = 57090, ss.lines[1] = 57091;
                 ss.confirm = 0;
@@ -4922,7 +4950,7 @@ void shopEquip(App& app) {
 
 void shopBack(App& app) {
     App::Shop& s = app.shop;
-    menuSound(app, se::kBack);
+    menuSound(app, s.selling && s.phase == App::Shop::Count ? se::kChoose : se::kBack); // (ShopPrc: a sale's No is SE 2, a purchase's 3)
     switch (s.phase) {
     case App::Shop::Main: closeShop(app); break;
     case App::Shop::Category: s.phase = App::Shop::Main; s.anim = 0; break;
@@ -7015,7 +7043,12 @@ void touchPadMove(App& app, float px, float py) {
     t.dx = (lx - app.renderer.uiX()) / 2 - 16 - t.ox, t.dy = ly / 2 - 32 - t.oy;
 }
 
-void touchPadUp(App& app) { app.touchPad = App::TouchPad(); }
+void touchPadUp(App& app) { // CheckTap: a touch let go within 5 frames (state 2) examines what the "!" stands over
+    App::TouchPad& t = app.touchPad; // (FollowWindow::update: TouchFollowWindowUtil on the nearest, not while a script or a message runs)
+    const bool tap = t.down && t.hold >= 0;
+    t = App::TouchPad();
+    if (tap && !fieldSceneRunning(app) && app.dialogue.empty() && interactTarget(app)) interact(app);
+}
 
 // The pad's stick for this step: false standing (or no finger)
 bool touchPadStick(const App& app, float& sx, float& sy, bool& run) {
@@ -9492,6 +9525,15 @@ void updatePlayer(App& app, float dt, float camYaw) {
         if (fieldSceneRunning(app) || !app.havePlayer) continue;
         const cr::Vec3 before = app.walker.pos;
         cr::stepWalker(app.walker, app.walkCollision, sx, sy, run, camYaw);
+        if (sx == 0 && sy == 0) // FieldPCCtrl::operate's state 3 (FollowWindow::update's receiveMessage 3): standing in reach,
+            if (const cr::FieldNpc* n = interactTarget(app)) { // the leader turns to the target by 0.35 of the angle left each frame
+                const float k = n->model <= 1 ? 1.0f : 0.0f;
+                const float cx = n->pos[0] + k * n->offset[0] + n->offset[0], cz = n->pos[2] + k * n->offset[2] + n->offset[2];
+                float d = std::atan2(cx - app.walker.pos.x, cz - app.walker.pos.z) - app.walker.heading;
+                while (d > 3.14159265f) d -= 2 * 3.14159265f;
+                while (d < -3.14159265f) d += 2 * 3.14159265f;
+                app.walker.heading += 0.35f * d;
+            }
         const cr::Vec3 moved = app.walker.pos - before;
         fieldWalked(app, std::sqrt(cr::dot(moved, moved)));
         checkTriggers(app);
@@ -9805,7 +9847,7 @@ extern const float kWinSmallPanel[4] = {0, 1600, 512, 96}; // dark small window
 constexpr float kWinParchment[4] = {1024, 248, 1024, 280};
 constexpr float kWinSkip[4] = {680, 1700, 50, 50};
 constexpr float kWinNext[4] = {672, 1750, 62, 30};
-constexpr float kWinBadge[4] = {936, 399, 81, 83};         // round "!" badge
+constexpr float kWinBadge[4] = {936, 880, 88, 96};         // the "!" bubble over an NPC in reach (menuf_mainPut's FollowWindow type 0: tex2d (468, 440) 44 x 48)
 
 // A message page in the game's message window, across the whole screen's width: the parchment
 // while portraits are up, else the grey band; `next`: the page waits for a tap (the diamond)
@@ -10780,7 +10822,9 @@ void endBattle(App& app, bool won) {
     // other the room's entry script (EvrStart 5) runs again, as the field reloads
     app.runner.setGate(-1);
     app.game.setFlag(battletalk::kFlag, false);
-    app.fadeFrom = app.fadeTo = 0, app.fadeT = app.fadeFrames; // (the battle's fade doesn't follow it out)
+    // FieldScene::onLoading's SetMask2(1): the field revealed out of the battle's black over 10 frames
+    app.fadeGrey = 0, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0;
+    b.ending = false, b.endFrames = b.pendingExit = 0;
     if (b.eventBattle) {
         b.eventBattle = false;
     } else {
@@ -11845,15 +11889,23 @@ void drawBreakFx(App& app, cr::MenuPainter& m) {
 }
 
 // The enemies are down (btl_main 1000): the victory pose and tune, then the results
+// btl_main 1000 / 0x3e8: ten frames first, the battle's music fading out over them unless the
+// victory tune (var 59) is the battle's own (var 58); then 0x3e9 - victoryShown
 void battleWon(App& app) {
     App::Battle& b = app.battle;
     b.phase = App::Battle::Won;
     b.phaseFrames = 0;
     b.wonTap = false;
-    btlvoice::victory(app); // btl_main 0x3e9
+    const auto v58 = app.game.vars.find(58), v59 = app.game.vars.find(59);
+    const int battleTune = v58 != app.game.vars.end() ? v58->second : 999, tune = v59 != app.game.vars.end() ? v59->second : 10;
+    if (battleTune != tune) playBgm(app, 1u << 26); // (__bgmgo(0x4000000): out over 10 frames)
     int& bank = app.game.walkExp[size_t(fieldRoute(app))]; // skill 174's walking EXP joins the battle's
     if (!b.settled) b.rules.expGained += bank, bank = 0;   // (before the Apples double it)
     settleBattle(app);
+}
+void victoryShown(App& app) {
+    App::Battle& b = app.battle;
+    btlvoice::victory(app); // btl_main 0x3e9
     { // var 59: the victory tune (10 for random encounters) - none when it's the battle's own (var 58)
         // or 998, the battle's music played on (btl_main 0x3e9)
         const auto v58 = app.game.vars.find(58), v59 = app.game.vars.find(59);
@@ -11952,8 +12004,6 @@ void endRound(App& app) {
         setBattleCamera(app, 0x48);
         for (App::Battle::Actor& a : b.actors) // the monsters still standing out of sight (+0x55c)
             if (a.fighter >= 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
-        const App::Battle::Actor* lead = battleActor(app, 0);
-        setBanner(app, sysText(app, 57016, lead ? lead->name : std::string()), 1 << 20);
         break;
     }
     case 1:
@@ -12047,13 +12097,16 @@ void stepBattle(App& app) {
     }
     if (app.fadeT < app.fadeFrames) ++app.fadeT; // the screen's fade (stepEvents' while a talk runs)
     switch (b.phase) {
-    case App::Battle::Intro: // the fade and the opening camera (btl_main 200 / 300)
-        if (b.phaseFrames >= 30) {
+    case App::Battle::Intro: // the fade and the opening camera (btl_main 200 / 300): 30 frames, a boss's (formation 2) 60
+        // with its camera 0x21b from the second; a strike's or ambush's announcement (sys texts 0x36 / 0x37,
+        // font_set_utf16(0xb, 6, strike + 0x35, 60)) from the first
+        if (b.phaseFrames == 1 && (b.start.strike == 1 || b.start.strike == 2)) setBanner(app, sysText(app, 57053 + b.start.strike), 60);
+        if (b.phaseFrames == 2 && b.formation == 2) setBattleCamera(app, 0x21b);
+        if (b.phaseFrames >= (b.formation == 2 ? 60 : 30)) {
             b.phase = App::Battle::Command;
             b.phaseFrames = 0;
             battleMenu(app, App::Battle::Top);
             if (b.start.strike == 2) battleStartRound(app); // ambushed: the enemies' round first
-            else if (b.start.strike == 1) setBanner(app, "First strike!");
             battletalk::first(app); // btl_main 300 -> 400
         }
         break;
@@ -12137,8 +12190,10 @@ void stepBattle(App& app) {
             }
         }
         break;
-    case App::Battle::Won:
-        if (b.phaseFrames >= 140 || b.wonTap) {
+    case App::Battle::Won: // 0x3e8's ten frames, then 0x3e9 (the poses, tune and banner) and 1099's 140 or a tap
+        if (b.phaseFrames == 10) victoryShown(app);
+        if (b.phaseFrames < 10) break;
+        if (b.phaseFrames >= 150 || b.wonTap) {
             b.wonTap = false;
             b.phase = App::Battle::Results;
             b.phaseFrames = 0;
@@ -12150,22 +12205,36 @@ void stepBattle(App& app) {
         // battle starts over from the title, any other goes back to the pair's Ark (drawFrame does either,
         // between frames). An event battle's: gameover.mct read at 0x4b0, fading in over 20 frames from
         // 0x4b1, the tap taken after 40; any other's tap at once (the port goes on by itself after 120)
-        if (b.phaseFrames == 10) {
+        if (b.phaseFrames == 10) { // 0x4b1: the tune, "... lost the battle" for 60 frames (font_set_utf16(0xb, 6, 0x10, 0x3c))
             playBgm(app, 0x1a);
+            const App::Battle::Actor* lead = battleActor(app, 0);
+            setBanner(app, sysText(app, 57016, lead ? lead->name : std::string()), 60);
             if (b.eventBattle && !b.gameOver.id) {
                 cr::Image img;
                 if (loadImage(app, "gameover.mct", img)) b.gameOver = app.renderer.upload(img);
             }
         }
-        if (b.eventBattle) {
-            if (b.phaseFrames >= 50 && b.lostTap) b.exit = 2;
-        } else if (b.phaseFrames >= 120 || (b.phaseFrames >= 10 && b.lostTap)) b.exit = 3;
+        // 0x513: a tap (pad_chk_trg_up) once +0xa46 reads 40 - at once for any battle but an event's, whose count
+        // starts at 0 with the picture; nothing else ends it
+        if (b.phaseFrames >= (b.eventBattle ? 50 : 10) && b.lostTap) b.exit = b.eventBattle ? 2 : 3;
         b.lostTap = false;
         break;
     case App::Battle::Fled:
         if (b.phaseFrames >= 30) b.exit = 1;
         break;
     default: break;
+    }
+    // btl_main 9000: every way out (the results done, a flight, a defeat) first masks the screen to
+    // black over 10 frames (_SetMask(0): 500 ms) with the music fading out, and 0x238b leaves 12 frames
+    // later - the field then comes back out of the black (FieldScene::onLoading's SetMask2(1), endBattle)
+    if (b.exit && !b.ending) {
+        b.pendingExit = b.exit, b.exit = 0;
+        b.ending = true, b.endFrames = 0;
+        app.fadeGrey = 0, app.fadeFrom = screenFadeAlpha(app), app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
+        playBgm(app, 1u << 26);
+    } else if (b.ending && ++b.endFrames >= 12) {
+        b.exit = b.pendingExit;
+        b.ending = false, b.endFrames = b.pendingExit = 0;
     }
     stepQuake(app); // gameapp_prc: UpdateQuake and PutMask after the battle's frame
     stepFlash(app);
@@ -12809,15 +12878,16 @@ void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, floa
     const cr::FieldNpc* n = interactTarget(app);
     if (!n) return;
     const float k = n->model <= 1 ? 1.0f : 0.0f;
-    const float p[3] = {n->pos[0] + k * n->offset[0] + n->offset[0], n->pos[1] + std::max(n->box[1], 6.0f) + 4,
+    // FollowWindow::update: the bubble's point is the box's top, pos + offset + (0, sizeY, 0)
+    const float p[3] = {n->pos[0] + k * n->offset[0] + n->offset[0], n->pos[1] + (k + 1) * n->offset[1] + n->box[1],
                         n->pos[2] + k * n->offset[2] + n->offset[2]};
     const float* m = vp.m;
     const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
     if (cw <= 0) return;
     const float sx = rx + ((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * 0.5f + 0.5f) * rw;
     const float sy = ry + (0.5f - (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * 0.5f) * rh;
-    app.promptX = sx, app.promptY = sy - 20.5f; // (a tap there examines it: touchPadDown)
-    if (app.windowTex.id) drawWinPiece(app, kWinBadge, sx - 20, sy - 41, 40, 41); // the "!" badge
+    app.promptX = sx, app.promptY = sy; // (a tap within 30 of it examines: touchPadDown, as FollowWindow::update's 900)
+    if (app.windowTex.id) drawWinPiece(app, kWinBadge, sx - 48, sy - 44, 88, 96); // the piece (468, 440) 44 x 48 at (x - 24, y - 22)
     else app.promptHud.drawAt(app.renderer, {"[E]"}, sx - 24, sy - 16, 2.0f, 0, 0, 0.8f);
 }
 
@@ -16375,6 +16445,7 @@ int runSelfTest(App& app) {
             b.turnOn = false;
             const int before = b.rules.expGained;
             endRound(app);
+            for (int f = 0; f < 10 && b.phase == App::Battle::Won; ++f) stepBattle(app); // (1000: ten frames, then 0x3e9 settles the win)
             paid = b.rules.expGained - before;
             endBattle(app, true);
             app.runner.stop();

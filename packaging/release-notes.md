@@ -34,8 +34,21 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   dungeon's fights, as the original); the battle comes in out of white over the original's 20
   frames; a lost battle fades its music out over 10 frames before the defeat tune, a lost scene
   battle shows `gameover` fading in and waits for a tap before the title, and any defeat goes on
-  with a tap. (Omega's "skip off" scene command, its `battle_start` tutorial picture and its
+  with a tap; a victory holds ten frames while the battle's music fades before the poses and the
+  tune (`btl_main` 0x3e8 / 0x3e9); every way out of a battle masks to black over ten frames with the
+  music fading and leaves twelve frames later, and the field comes back out of that black over ten
+  (`btl_main` 9000 / 0x238b, `FieldScene::onLoading`). (Omega's "skip off" scene command, its `battle_start` tutorial picture and its
   100 ms tutorial dim don't exist in Chaos Rings: its tutorial dim is 400 ms, as the port has it.)
+- **On the field and in the Ark** (checked against the iOS code's `CheckTap`, `FieldPCCtrl`, `FollowWindow`,
+  `SaveLoadPrc` and `ShopPrc`): a quick tap anywhere (let go within 5 frames) examines or talks, as the
+  original's CheckTap; standing by something, the leader turns to face it (0.35 of the way each frame);
+  the "!" bubble is the original's piece, set over the object's top; a scene's "Save data?" (`Util 6`)
+  leads to the title whether you save or not, asking "return to the title without saving?" on a No,
+  as the original - it no longer dropped you back on the field - and "Save complete." stands its 20
+  frames; a sale's No in the shop plays the original's sound. (Omega's eased camera, turned trigger
+  boxes, puzzle-room radius, one-at-a-time shop stock and World Select discount pair don't exist in
+  Chaos Rings: its camera is bolted to the player, its trigger boxes are tested upright, and its shop
+  sells any count and reads the route's own pair.)
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.
