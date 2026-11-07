@@ -10,6 +10,19 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   `amdvkffx64.dll` and (on Linux) ffx-vk-linux's `libffx_vk_linux.so` into `fsr4/` in the game
   folder - its `README.txt` says where each comes from. On Linux the DLLs run natively through
   ffx-vk-linux, no Wine. Without the files FSR 3.1 stays as it is.
+- **Cutscenes closer to the original** (the opening checked opcode by opcode against the iOS code):
+  message windows fade in over 4 frames before their text and out over 5 after it, with the
+  original's open / close sounds, and a script's `Open` / `Close` / fade waits / swap-ins take the
+  frames the original spends on them; line breaks and page turns type at the original's pace; the
+  "next" mark no longer blinks and the page counter is gone (the original has neither); `Anim2`
+  starts its action over from the frame the script names; a hidden portrait leaves at once and
+  fades from full; the movement tutorial's pad art shows in the phone layout too (2.2.0 draws it);
+  a hidden-field `Screen` is no longer mistaken for a 255-frame fade; a script's warp within its
+  area no longer runs the room's entry script a second time; a script waiting for a tap with
+  `Rept` isn't cut off after 45 s.
+- **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
+  saved point?" put you on that cutscene's painting with nothing running. The resume point is only
+  what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.
 - **Skip:** the skip button skips while you hold it and stops when you let go, as in the original.
 - **Animation:** every change of motion blends over two frames, as the original does. The warp
   crystals turn on their own again, and a few models (c109, c110, c117, c209, m206, m210) get

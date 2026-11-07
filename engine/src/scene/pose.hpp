@@ -28,17 +28,27 @@ struct MotionBlend {
     float lastTime = 0;
     int from = -1;          // the old action while it blends, else -1
     float fromTime = 0;     // its frame
-    float since = kFrames;  // frames since the last change (kFrames: none in progress)
+    float since = kFrames;  // frames since the last change (length: none in progress)
+    float length = kFrames; // the change's frames (a script's Anim2 names its own)
+    float holdTime = 0;     // the frame the new action holds through the change (Anim2's start frame)
     bool changed = false;   // the current action came in through a change (and lags it)
     // Once per update, before `time` advances by `frames`: notes a change of `action` (its time reset to
     // 0), runs the old motion on, holds `time` at 0 through the change. True while held (don't advance).
     bool step(int action, float& time, float frames, const std::vector<Action>& actions);
-    // The old action to blend under the current one now (the change's first frame), else null
-    const Action* under(const std::vector<Action>& actions) const {
-        return from >= 0 && from < int(actions.size()) && since < 1 ? &actions[size_t(from)] : nullptr;
+    // A change made on purpose (mdl_set_act_motion_loop_frm): `action` from frame `start`, the one
+    // before blended under it over `frames` (0: a cut), the same action started over too
+    void restart(int action, float start, float frames, const std::vector<Action>& actions) {
+        const bool blend = frames > 0 && lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 && action < int(actions.size());
+        from = blend ? lastAction : -1, fromTime = lastTime, changed = blend;
+        length = blend ? frames : kFrames, holdTime = blend ? start : 0, since = blend ? 0 : length;
+        lastAction = action, lastTime = start;
     }
-    float weight() const { return 1.0f / kFrames; } // the new action's, while under() is set
-    float lag() const { return !changed ? 0 : since < kFrames ? since : kFrames; } // frames its clock lags the change
+    // The old action to blend under the current one now (the change's frames but the last), else null
+    const Action* under(const std::vector<Action>& actions) const {
+        return from >= 0 && from < int(actions.size()) && since < length - 1 ? &actions[size_t(from)] : nullptr;
+    }
+    float weight() const { return std::min(1.0f, (since + 1) / length); } // the new action's, while under() is set
+    float lag() const { return !changed ? 0 : since < length ? since : length; } // frames its clock lags the change
     void reset() { *this = MotionBlend(); }
 };
 

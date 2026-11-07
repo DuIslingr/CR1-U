@@ -360,6 +360,10 @@ struct App {
     unsigned skipHeld = 0;
     bool skipScene = false;
     int msgStyle = 2, msgLines = 2;        // the script's last Open: the message window's style and lines
+    // The window itself (PrcWin: _SetWin / _ClrWin): 0 none yet, 1 / 2 fading in over 4 frames
+    // (the text waits), 3 up, 4 / 5 fading out over 5 frames, 6 gone
+    struct MsgWin { int state = 0, t = 0; float alpha = 0; } msgWin;
+    bool fieldHidden = false;              // Screen's toggle (gac + 0x39c3e): the field not drawn
     double playSeconds = 0;                // TOTAL PLAYTIME: time on the field and in battles
     // The save / load screen (__menuu_SaveLoad*): from the Camp menu (save) or the title's Start
     // (load / new game). phase 0 choose, 1 confirm (Yes / No), 2 done (a message, then it closes)
@@ -895,6 +899,7 @@ constexpr uint32_t kBack = 3;    // the Back bar (ComUty_BackButtonProc); Option
 constexpr uint32_t kBuzzer = 4;  // refused: nothing to sell (BuySell_CommandProc), a count past its end
                                  // (ComUty_NumCountProc), a pair-only command alone (menub_mainPrc)
 constexpr uint32_t kPage = 5;    // the Back bar's < > arrows (StartPrc, MuCamp_NextProc), a list flicked a page
+constexpr uint32_t kWinOpen = 6, kWinClose = 7; // a script's message window opening / closing (__EvtOpen / __EvtClose)
 constexpr uint32_t kCampOpen = 8, kCampClose = 9; // menuf_mainPrc's Camp button, CampMainPrc's Back bar
 constexpr uint32_t kSaved = 11;  // SaveLoadPrc, after SaveData_Save
 constexpr uint32_t kLoaded = 12; // SaveLoadPrc: Yes to Load / New
@@ -1865,6 +1870,10 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
         // colour and reveal the loaded field over 500 ms. Area-changing scripts
         // end at Warp and rely on this, notably puzzle crystals' white-out.
         app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0;
+        // A script's warp within its area goes on with the script, and no room entry script
+        // (EvrStart 5) follows it: fldread_prc runs that only on the load flag's bit 3, which
+        // __EvtWarp never sets (0x22 / 1 / 4) - the lost battle's return does (prc: | 0xd)
+        if (fromEvent >= 0 && app.pendingEntry == App::Entry::Room) app.pendingEntry = App::Entry::None;
     }
     if (!app.havePlayer) return false;
     cr::Vec3 p{w.pos[0], w.pos[1], w.pos[2]};
@@ -1989,6 +1998,26 @@ void resetTyping(App& app) {
     app.dialogueClosing = false;
 }
 
+// PrcWin a frame: __WinOpen / __WinOpen2 take the window's alpha 0 -> 255 over 4 frames (t 4..0),
+// __WinClose / __WinClose2 255 -> 0 over 5 (t 0..4), then it is gone
+void stepMsgWin(App& app) {
+    App::MsgWin& w = app.msgWin;
+    switch (w.state) {
+    case 1: w.t = 4, w.state = 2; break;
+    case 2:
+        --w.t;
+        w.alpha = float(4 - w.t) / 4.0f;
+        if (w.t <= 0) w.state = 3, w.alpha = 1;
+        break;
+    case 4: w.t = 0, w.state = 5; break;
+    case 5:
+        w.alpha = float(4 - w.t) / 4.0f;
+        if (++w.t > 4) w.state = 6, w.alpha = 0;
+        break;
+    default: break;
+    }
+}
+
 // `tapped`: the reader's tap turned it (PrcMsg's 0x12 / its last page's wait); a page the window
 // clears or closes by itself (0x1a then 0x10 / 0x14) sets no flag
 void advanceDialogue(App& app, bool tapped = true) {
@@ -1997,25 +2026,30 @@ void advanceDialogue(App& app, bool tapped = true) {
     app.voiceQueue.clear();
     if (tapped) app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
     resetTyping(app);
-    if (++app.dialoguePage < app.dialogue.size()) return;
+    if (++app.dialoguePage < app.dialogue.size()) {
+        app.dialogueHold = 2; // (PrcMsg: the 0x12's frame, then the 0x10's, then the next page's first character)
+        return;
+    }
     app.lastPage = app.dialogue.back();
     app.lastPageInfo = app.dialogueInfo.size() == app.dialogue.size() ? app.dialogueInfo.back() : cr::MessageInfo();
     app.dialogue.clear();
     app.dialoguePage = 0;
 }
 
-// A page's characters, as PrcMsg types them (UTF-8 lead bytes; not the lines' \x01 marks)
+// A page's characters, as PrcMsg types them (UTF-8 lead bytes; not the lines' \x01 marks), and its
+// line breaks: each 0x11 takes PrcMsg a frame of its own, typing or not
 int pageChars(const std::vector<std::string>& page) {
-    int n = 0;
+    int n = page.size() > 1 ? int(page.size()) - 1 : 0;
     for (const std::string& l : page)
         for (unsigned char ch : l) n += (ch & 0xC0) != 0x80 && ch != 0x01;
     return n;
 }
 
-// The page cut to its first `limit` characters (the \x01 marks kept)
+// The page cut to its first `limit` characters (the \x01 marks kept; a line break counts as one)
 std::vector<std::string> typedPage(const std::vector<std::string>& page, int limit) {
     std::vector<std::string> out;
     for (const std::string& l : page) {
+        if (!out.empty() && limit-- <= 0) break;
         std::string t;
         for (char c : l) {
             const unsigned char ch = static_cast<unsigned char>(c);
@@ -2041,6 +2075,7 @@ bool pageTyped(const App& app) {
 // closes by itself once out
 void stepTyping(App& app) {
     if (app.dialogue.empty()) return;
+    if (app.msgWin.state == 1 || app.msgWin.state == 2) return; // PrcMsg: nothing until the window is up (state 3)
     const cr::MessageInfo* info = pageInfo(app);
     const int total = pageChars(app.dialogue[std::min(app.dialoguePage, app.dialogue.size() - 1)]);
     if (!app.typeOn) app.dialogueTyped = total;
@@ -2653,6 +2688,22 @@ struct ViewerHost : cr::EventHost {
             d->loopTo = loopTo;
         }
     }
+    // Anim2 (mdl_set_act_motion_loop_frm): started over from `start` whatever plays, the pose before
+    // blended under it over `blend` frames - a cut when 0, as the opening's are
+    void playAnim2(int id, int slot, int loopFrom, int loopTo, int start, int blend) override {
+        int action = slot;
+        if (auto a = app.actorSlots.find(id); a != app.actorSlots.end())
+            if (auto it = a->second.find(slot); it != a->second.end()) action = it->second;
+        for (auto* d : npc(id)) {
+            const LoadedModel& lm = app.npcModels[d->model];
+            d->action = action;
+            d->time = float(std::max(start, 0));
+            d->once = loopFrom < 0;
+            d->loopFrom = loopFrom;
+            d->loopTo = loopTo;
+            d->blend.restart(action, d->time, float(std::max(blend, 0)), lm.actions);
+        }
+    }
     void loadAction(int id, int action, int slot) override {
         const cr::FieldNpc* n = findNpc(app, id);
         if (!n || n->model < 0 || n->model >= cr::kNumNpcModels || action < 0 || action >= cr::kNumActionFiles) return;
@@ -2682,8 +2733,13 @@ struct ViewerHost : cr::EventHost {
         }
         if (known->second >= 0) app.actorSlots[id][slot] = known->second;
     }
-    void unloadAction(int id, int slot) override {
+    void unloadAction(int id, int slot) override { // (__EvtUnloadAct: the slot freed and the model put on its action 0)
         if (auto a = app.actorSlots.find(id); a != app.actorSlots.end()) a->second.erase(slot);
+        for (auto* d : npc(id)) {
+            if (d->action == 0) continue;
+            d->action = 0, d->time = 0, d->once = false, d->loopFrom = d->loopTo = 0;
+            d->blend.restart(0, 0, 0, app.npcModels[d->model].actions);
+        }
     }
     // Wait 0xFFFD (npc_autoctl_chk): only a scripted move keeps it waiting, not an animation
     bool animBusy(int id) override {
@@ -2816,6 +2872,8 @@ struct ViewerHost : cr::EventHost {
         // __EvtTex2d: the flags stay in the slot (placement bits replaced); every animation is a
         // straight blend over a few 20 Hz frames (tex2d_img_prc)
         p.flags = uint16_t((p.flags & ~0x3000) | f);
+        // (the HD binary's __EvtTex2d homes 0x1000 at (-32, 0), 0x2000 at (512, 0), 0x4000 at (176, 96) - no
+        // iPad branch of its own, unlike 2.2.0's)
         if (f & 0x1000) p.home = -32, p.y = 0, p.side = -1;
         if (f & 0x2000) p.home = 512, p.y = 0, p.side = 1; // drawn mirrored (+0xbd0e)
         if (f & 0x4000) {
@@ -2823,16 +2881,19 @@ struct ViewerHost : cr::EventHost {
             if (f & 0x40) { p.scale = 2; p.zoomT = 0; p.zoomFrames = 4; } // 200% -> 100%
         }
         if (f & 0x7000) { p.x = p.xFrom = p.xTo = p.home; p.yFrom = p.yTo = p.y; p.frames = p.t = 0; }
-        if (f & 0xC00) { // show / hide: 3 frames of fade and a 32 px slide from (show) / to (hide) its side
+        if (f & 0xC00) { // show: 3 frames of fade in and a 32 px slide in from its side; hide: a 32 px jump out
+                         // at once (the slide's home moved to its start) and 3 frames of fade out; either
+                         // puts the grey level back to 255
             const bool show = f & 0x400;
             const float out = 32.0f * float(p.side);
-            p.aFrom = show ? 0 : p.alpha;
+            p.aFrom = show ? 0 : 1;
             p.aTo = show ? 1 : 0;
-            p.xFrom = show ? p.home + out : p.x;
+            p.xFrom = show ? p.home + out : p.home + out;
             p.xTo = show ? p.home : p.home + out;
             p.yFrom = p.yTo = p.y;
             p.x = p.xFrom;
             p.alpha = p.aFrom;
+            p.shade = p.gFrom = p.gTo = 1, p.gT = p.gFrames = 0;
             p.frames = p.aFrames = 3;
             p.t = p.aT = 0;
         }
@@ -3002,8 +3063,21 @@ struct ViewerHost : cr::EventHost {
         ++app.tutoCalls;
     }
     void exclamationMark() override { app.exclamation = true; ++app.exclamationCalls; }
-    void openWindow(int style, int lines) override { app.msgStyle = style, app.msgLines = lines, app.heldPage = false; }
-    void closeWindow() override { app.heldPage = false; } // Close: a page that ended itself goes with its window
+    void openWindow(int style, int lines) override { // __EvtOpen -> _SetWin: fading in (at once for style 0x10), SE 6 but for 0x30
+        app.msgStyle = style, app.msgLines = lines, app.heldPage = false;
+        app.msgWin.state = style & 0x10 ? 3 : 1, app.msgWin.t = 0, app.msgWin.alpha = style & 0x10 ? 1.0f : 0.0f;
+        if (!(style & 0x30)) app.sound.play(se::kWinOpen);
+        stepMsgWin(app); // (PrcWin runs after PrcEvnt in the original's frame; ours ran before the script)
+    }
+    void closeWindow() override { // __EvtClose -> _ClrWin: fading out (at once for 0x110), SE 7 but for 0x30
+        app.heldPage = false; // Close: a page that ended itself goes with its window
+        app.msgWin.state = app.msgStyle & 0x110 ? 6 : 4, app.msgWin.t = 0;
+        if (app.msgWin.state == 6) app.msgWin.alpha = 0;
+        if (!(app.msgStyle & 0x30)) app.sound.play(se::kWinClose);
+        stepMsgWin(app);
+    }
+    bool windowClosed() override { return app.msgWin.state == 0 || app.msgWin.state == 6; }
+    void toggleFieldHidden() override { app.fieldHidden = !app.fieldHidden; }
     bool logoSeen() override { const bool seen = app.logoSeen; app.logoSeen = true; return seen; }
     void padArt() override { app.padArt = true; }
     // Uty_Btl_ParamUp01 / 02: battle fighter 1 / 0's attack, defense, speed and luck up for 6 rounds
@@ -3114,7 +3188,7 @@ struct ViewerHost : cr::EventHost {
 
 extern const float kWinMessagePanel[4];
 extern const float kWinSmallPanel[4];
-void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h);
+void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h, float alpha = 1);
 
 // Mixer: master scales the three channels; saved to settings.ini in the user's save folder
 void applyMix(App& app) {
@@ -6643,15 +6717,22 @@ void drawTutoTex(App& app) {
 
 // Uty_DrawController_Put: the cross key (1864, 1584, 144 x 144 of window_hd's pixels) at (64, 384)
 // and its centre (1864, 1448, 96 x 96) at (88, 408) of the HD frame - the screen's (x + 32, y + 64)
-// - until the script clears flag 0
+// - until the script clears flag 0. 2.2.0's draws too (FUN_00025ab8): tex2d_add(0x30, 32, 192, (928,
+// 796) 96 x 96) - the grey ring - and (48, 208, (944, 724) 64 x 64) - the black button - of its
+// sheet, window_hd's at twice that: the screen's (96, 448) and (128, 480)
 void drawPadArt(App& app) {
     if (!app.padArt) return;
     if (!app.game.flag(0)) { app.padArt = false; return; }
-    if (!app.windowTex.id || app.renderer.phoneLayout()) return; // (2.2.0's Uty_DrawController_Put draws nothing)
+    if (!app.windowTex.id) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
     r.setOrigin(r.uiX());
+    if (r.phoneLayout()) {
+        m.pieceTo(48, 224, 96, 96, 928, 796, 96, 96, 1); // menu units: logical / 2
+        m.pieceTo(64, 240, 64, 64, 944, 724, 64, 64, 1);
+        return;
+    }
     m.pieceTo((64 + 32) / 2.0f, (384 + 64) / 2.0f, 72, 72, 932, 792, 72, 72, 1); // menu units: logical / 2
     m.pieceTo((88 + 32) / 2.0f, (408 + 64) / 2.0f, 48, 48, 932, 724, 48, 48, 1);
 }
@@ -9066,6 +9147,7 @@ void stepEvents(App& app) {
     stepTexDisp(app);
     stepVitaLogo(app);
     stepTutoTex(app);
+    stepMsgWin(app);
     if (app.fadeT < app.fadeFrames) ++app.fadeT;
     for (auto& d : app.npcDraws)
         if (d.fadeLeft > 0) {
@@ -9769,6 +9851,11 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
     const float left = phone ? 32.0f : -r.uiX(), width = phone ? 960.0f : r.screenW();
     bool portraits = false;
     for (const App::Portrait& p : app.portraits) portraits = portraits || (p.tex.id && p.alpha > 0.5f);
+    // PrcWin / PutWin: the window fades in and out (its alpha); PutMsg draws the text, the name and
+    // the mark only while it is up (state 3) - a window never opened by a script draws as is
+    const int ws = app.msgWin.state;
+    const bool fading = ws == 1 || ws == 2 || ws == 4 || ws == 5, textOn = !fading;
+    const float wa = fading ? app.msgWin.alpha : 1.0f;
     if (!app.windowTex.id) { // no window art: a plain box
         app.dialogueHud.setTint(1, 1, 1);
         app.dialogueHud.drawAt(r, typedPage(page, app.textLimit), 60, H - 210, 2.0f, W - 120, 170);
@@ -9789,8 +9876,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (style & 0x80 || style & 0x210) { // no window: the text alone (0x10: outlined in black)
             outline = (style & 0x10) != 0;
         } else if (style & 0x20) { // a black band across the bottom (tex2d y 252..352), the name on its edge
-            r.fillRect(left, 2.0f * 252 + 64, width, 768 - (2.0f * 252 + 64), 0, 0, 0, 1);
-            if (!speaker.empty()) { // PutMsg: drawfont_l at tex2d (16, 236), just above the band
+            r.fillRect(left, 2.0f * 252 + 64, width, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
+            if (!speaker.empty() && textOn) { // PutMsg: drawfont_l at tex2d (16, 236), just above the band
                 const float nx = 2.0f * 16 + 32, ny = 2.0f * 236 + 64;
                 app.nameHud.setTint(0, 0, 0); // (an outline, so it reads over a bright scene too)
                 for (int k = 0; k < 4; ++k) app.nameHud.drawAt(r, {speaker}, nx + (k & 1 ? 2 : -2), ny + (k & 2 ? 2 : -2), 2.2f, 0, 0, 0.0f);
@@ -9798,7 +9885,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                 app.nameHud.drawAt(r, {speaker}, nx, ny, 2.2f, 0, 0, 0.0f);
             }
         } else if (style & 8) { // a tutorial's band: dark, its edges soft (8 / 88 / 8 tex2d), the text further left
-            const float a = 0.75f, y1 = wy + 16, y2 = wy + 192;
+            const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192;
             for (int k = 0; k < 8; ++k) { // the 2D path has no per-vertex colour: the edges in strips
                 const float t = (float(k) + 0.5f) / 8.0f;
                 r.fillRect(left, wy + 2.0f * float(k), width, 2.0f, 0, 0, 0, a * t);
@@ -9807,15 +9894,15 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
             r.fillRect(left, y1, width, y2 - y1, 0, 0, 0, a);
             if (app.language == 1) tx = 2.0f * 8 + 32;
         } else if (style & 0x40) { // the grey panel (960 x 192 at its rect)
-            drawWinPiece(app, kWinMessagePanel, 32, wy, 960, 192);
-            if (!speaker.empty()) {
+            drawWinPiece(app, kWinMessagePanel, 32, wy, 960, 192, wa);
+            if (!speaker.empty() && textOn) {
                 drawWinPiece(app, kWinSmallPanel, 32, wy - 36, 300, 40);
                 app.nameHud.setTint(1, 1, 1);
                 app.nameHud.drawAt(r, {speaker}, 62, wy - 34, 1.9f, 0, 0, 0.0f);
             }
         }
         const bool centreAll = (style & 0x10) != 0;
-        if (outline) {
+        if (outline && textOn) {
             app.dialogueHud.setTint(0, 0, 0);
             for (int k = 0; k < 8; ++k) {
                 static const float d[8][2] = {{-2, -2}, {0, -2}, {2, -2}, {-2, 0}, {2, 0}, {-2, 2}, {0, 2}, {2, 2}};
@@ -9823,15 +9910,12 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
             }
         }
         app.dialogueHud.setTint(1, 1, 1);
-        drawMessageLines(app, page, tx, ty, 2.2f, centreAll);
-        if (!pageNo.empty()) {
-            app.pageHud.setTint(1, 1, 1);
-            app.pageHud.drawAt(r, {pageNo}, right - 140, H - 48, 1.5f, 0, 0, 0.0f);
-        }
+        if (textOn) drawMessageLines(app, page, tx, ty, 2.2f, centreAll);
+        (void)pageNo; // (PutMsg draws no page count)
         // PutMsg's "next" mark: tex2d x 452, at y 328 - beside a tutorial's band 84 below its
-        // top; none on the grey panel
+        // top; none on the grey panel - drawn steadily, no blink
         const float markY = style & 8 ? 2.0f * (rect[0] + 84) + 64 : H - 44;
-        if (next && !(style & 0x40) && (SDL_GetTicks() / 400) % 2 == 0) drawWinPiece(app, kWinNext, right - 76, markY, 46, 22);
+        if (next && textOn && !(style & 0x40)) drawWinPiece(app, kWinNext, right - 76, markY, 46, 22);
         if (app.runner.running()) drawWinPiece(app, kWinSkip, right - 66, top + 12, 50, 50);
         return;
     }
@@ -9848,12 +9932,12 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         const float stripBottom = r.layoutTop() + cr::Renderer::kLogicalH / r.layoutScale();
         // Android's atlas needs its separate full-width strip and overlaid name streak even
         // when the selected layout is iPhone (including Auto), rather than Android.
-        if (!((app.androidWindow || r.androidScreen()) &&
+        if (!((app.androidWindow || r.androidScreen()) && !fading &&
               drawAndroidMessagePanel(app, (W - stripW) / 2, stripY, stripW, stripBottom - stripY,
                                       32, 2.0f * (pr[0] + 16) + 64))) {
-            drawWinPiece(app, kWinParchmentPhone, 32, 2.0f * (pr[0] + 16) + 64, 960, 256);
+            drawWinPiece(app, kWinParchmentPhone, 32, 2.0f * (pr[0] + 16) + 64, 960, 256, wa);
         }
-        if (!speaker.empty()) {
+        if (!speaker.empty() && textOn) {
             app.nameHud.setTint(1, 1, 1);
             app.nameHud.drawAt(r, {speaker}, 2.0f * 24 + 32, 2.0f * 206 + 64 - 14, 2.0f, 0, 0, 0.0f);
         }
@@ -9861,9 +9945,9 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         textX = 2.0f * 36 + 32;
         textY = 2.0f * (pr[0] + pr[1]) + 64;
     } else if (true) { // the parchment (style 2, and the default)
-        if (!app.androidWindow || !drawAndroidMessagePanel(app, left, H - 280, width, 280, left, H - 280))
-            drawWinPiece(app, kWinParchment, left, H - 280, width, 280);
-        if (!speaker.empty()) {
+        if (!app.androidWindow || fading || !drawAndroidMessagePanel(app, left, H - 280, width, 280, left, H - 280))
+            drawWinPiece(app, kWinParchment, left, H - 280, width, 280, wa);
+        if (!speaker.empty() && textOn) {
             app.nameHud.setTint(1, 1, 1);
             app.nameHud.drawAt(r, {speaker}, left + 44, H - 274, 2.0f, 0, 0, 0.0f); // on the streak (piece y 14..52)
         }
@@ -9879,17 +9963,13 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         app.dialogueHud.setTint(1, 1, 1);
         textY = H - 140;
     }
-    drawMessageLines(app, page, textX, textY, 2.2f, false); // text and name from the screen's left
-    if (!pageNo.empty()) {
-        app.pageHud.setTint(0.12f, 0.10f, 0.08f);
-        app.pageHud.drawAt(r, {pageNo}, right - 140, H - 48, 1.5f, 0, 0, 0.0f);
-    }
-    if (next && (SDL_GetTicks() / 400) % 2 == 0) drawWinPiece(app, kWinNext, right - 76, H - 44, 46, 22);
+    if (textOn) drawMessageLines(app, page, textX, textY, 2.2f, false); // text and name from the screen's left
+    if (next && textOn) drawWinPiece(app, kWinNext, right - 76, H - 44, 46, 22); // (steady: PutMsg doesn't blink it)
     if (app.runner.running()) drawWinPiece(app, kWinSkip, right - 66, top + 12, 50, 50); // a scene is playing
 }
 
-void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h) {
-    app.renderer.drawQuadUV(app.windowTex, x, y, w, h, piece[0], piece[1], piece[2], piece[3]);
+void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h, float alpha) {
+    app.renderer.drawQuadUV(app.windowTex, x, y, w, h, piece[0], piece[1], piece[2], piece[3], 1, 1, 1, alpha);
 }
 
 // ---- Battles (btl_main) ----
@@ -12992,6 +13072,7 @@ void drawFrame(App& app, bool present = true) {
         drawPrompt(app, prompt.vp, prompt.x, prompt.y, prompt.w, prompt.h);
     }
     if (app.mode == Mode::Maps) {
+        if (app.fieldHidden && !app.booting) r.fillRect(0, 0, SW, H, 0, 0, 0, 1); // Screen's toggle: the field not drawn (drawBack / mdl_put skipped)
         const float a = screenFadeAlpha(app); // Screen: fades to / from a grey level
         if (a > 0.001f) r.fillRect(0, 0, SW, H, app.fadeGrey, app.fadeGrey, app.fadeGrey, a);
         for (app.menuMask.clock += dt; app.menuMask.clock >= 1.0f / kFramesPerSecond; app.menuMask.clock -= 1.0f / kFramesPerSecond)
@@ -13120,10 +13201,12 @@ void drawFrame(App& app, bool present = true) {
         }
         const cr::MessageInfo* info = pageInfo(app);
         if (app.typeOn) app.textLimit = app.dialogueTyped;
-        drawMessageBox(app, app.dialogue[pi], speaker, pageTyped(app) && !(info && info->closeAfter >= 0),
-                       app.dialogue.size() > 1 ? std::to_string(app.dialoguePage + 1) + "/" + std::to_string(app.dialogue.size())
-                                               : std::string());
+        drawMessageBox(app, app.dialogue[pi], speaker, pageTyped(app) && !(info && info->closeAfter >= 0), std::string());
         app.textLimit = 1 << 30;
+    } else if (app.mode == Mode::Maps && !app.heldPage && app.choiceFlag < 0 && app.msgWin.state != 0 && app.msgWin.state != 6) {
+        // The window alone (PutWin draws it in every state but 6): fading in before its text, up
+        // without any (the opening's black band stands 600 frames before its first line), or fading out
+        drawMessageBox(app, {}, "", false, "");
     }
     // The menus over everything else (Options draws above them)
     if (app.charSelectOpen) {
@@ -17895,6 +17978,8 @@ void bootTitle(App& app) {
     app.entryArea = 0;
     app.pendingEntry = App::Entry::None;
     app.musicArea = -1;
+    app.fieldHidden = false; // (the boot script toggles it on at its start and off before the warp out)
+    app.msgWin = App::MsgWin();
     playBgm(app, 1u << 29); // the script starts the title music
     std::string err;
     if (!app.events.load(app.dataDir, 0, &err)) {
@@ -20081,7 +20166,10 @@ void SDL_AppQuit(void* state, SDL_AppResult) {
     if (!app) return;
     app->clock.stop();
     app->inputCancel.stop();
-    writeResume(*app); // the Progress Tracker: left on the field, resumed from the title next time
+    // (the Progress Tracker: nothing new is written here - the original's ContData_Save, on
+    // leaving, writes only the snapshot a scene's end or an encounter took (_ContData_Save_set's
+    // pending mark 0x3f6), never the live state, so a game left mid-cutscene resumes at the last
+    // scene's end; ours writes those snapshots as they are taken, the Vita's way)
     if (app->rendererReady) {
         app->renderer.destroy(app->currentTex);
         unloadModel(*app);

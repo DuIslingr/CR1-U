@@ -738,7 +738,7 @@ for a scene and `Born 0` shows it again.
 |---|---|
 | `LoadAct npc, a, slot` | load action file a (table of 205 `.mca` names at 0xd4a00, `kActionFile`) into the actor's slot (`read_act_set`); a negative npc picks the other loader. A model's own actions fill slots 0… (stand, walk, run); event actions go in 4 and up |
 | `UnloadAct npc, slot` | free the slot |
-| `Anim npc, slot, a, b` | `mdl_set_act_motion_loop`: play the slot's action, then loop frames a..b; a = −1 plays it once and holds the last frame (chest lids), a = b = 0 loops it whole. The action already playing isn't restarted. `Anim2` has the same first four operands |
+| `Anim npc, slot, a, b` | `mdl_set_act_motion_loop`: play the slot's action, then loop frames a..b; a = −1 plays it once and holds the last frame (chest lids), a = b = 0 loops it whole. The action already playing isn't restarted. `Anim2 npc, slot, a, b, start, blend` (`mdl_set_act_motion_loop_frm`) has the same first four operands, then the frame it starts from and the cross-fade's frames (0: a cut) - and always starts the action over, the one playing too |
 | `NpcMdlRead npc` | load an NPC from the NPC table even if the room's list lacks it (e.g. 501 = `t0152bt.bin`, the 3D hall the opening is filmed in): `__EvtNpcMdlRead` puts it at the origin, facing 0, scale from row +0x26, hidden (+0x8c bit 0) when its create flags fail or its id is 400 or more - a `Born` shows it. A negative npc re-reads the model of one already there, at its list entry's place |
 | `Setc npc, x, y, z, dir` | place at world coordinates (shorts); `dir` as for `FrmSetc` |
 | `CameraFree` / `CameraPlayer` | a script drives the camera / the stage camera again (`SetFreeCamera`, `SetPlayerCamera`) |

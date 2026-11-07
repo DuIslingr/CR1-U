@@ -215,27 +215,28 @@ bool MotionBlend::step(int action, float& time, float frames, const std::vector<
     if (action != lastAction) {
         const bool blend = lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 && action < int(actions.size());
         from = blend ? lastAction : -1, fromTime = lastTime, since = blend ? 0 : kFrames, changed = blend;
+        length = kFrames, holdTime = 0;
         lastAction = action;
         if (blend) time = 0;
         lastTime = time;
         return blend;
     }
-    if (since >= kFrames) {
+    if (since >= length) {
         lastTime = time;
         return false;
     }
     // mdl_actctl_prc: the change's frame (k = 1) the old motion under the new, which holds its first
-    // frame; the next (k = kFrames) the new alone, still at its first frame; then it runs
+    // frame; the next (k = length) the new alone, still at its first frame; then it runs
     const float d = from >= 0 && from < int(actions.size()) ? actions[size_t(from)].duration : 0;
     fromTime += frames;
     if (d > 0 && fromTime >= d) fromTime = std::fmod(fromTime, d);
     since += frames;
-    if (since >= kFrames) {
+    if (since >= length) {
         from = -1;
         lastTime = time;
         return false;
     }
-    time = 0;
+    time = holdTime;
     lastTime = time;
     return true;
 }

@@ -298,8 +298,10 @@ c101/c102/c104/m207a, 2026-10-12).
       gene plates and the bag, less the story's items; `ResetFieldFlag_NewGame` clears the pair's
       field flags (its four blocks of 3000..3063, and 3300..3363). The chara2 sheet (the third and
       fourth pairs) opens once a first story is done (flag 32 or 34). The
-      **Progress Tracker**: leaving the game on the field writes a resume point; the next title
-      offers "You have save data from your last session. Resume game from last saved point?".
+      **Progress Tracker**: a resume point is written at every scene's end on the field and as an
+      encounter starts (the snapshot iOS's `_ContData_Save_set` takes and writes only when the game
+      is left - so leaving mid-cutscene keeps the last scene's end); the next title offers "You have
+      save data from your last session. Resume game from last saved point?".
       Saved: flags, variables, items, opened boxes, area / map / position / facing, the leader,
       play time, the date. Loading arrives as a warp would (the room's entry scripts run).
       `CR_SAVE_DIR` puts the files elsewhere; `--camp`, `--save-screen save|load`, `--char-select`,
@@ -379,8 +381,10 @@ c101/c102/c104/m207a, 2026-10-12).
       bundled LibAtrac9 (`engine/third_party/libatrac9`, MIT); `crtool vitaaudio <folder> [2.2.0
       data]` decodes it all and checks the voices against 2.2.0's
 - [x] The Progress Tracker as the Vita keeps it: written as you go - at every scene's end on the field
-      (but the first after a load or new game) and as an encounter starts - besides when the game is
-      left (iOS's only moment)
+      (but the first after a load or new game) and as an encounter starts. Leaving the game writes
+      nothing of its own: iOS's `_ContData_Save` only writes the snapshot those moments took
+      (`_ContData_Save_set`'s pending mark 0x3f6), never the live state - a game left during a
+      cutscene resumes at the last scene's end, not on the cutscene's painting
 - [x] The Vita's boot when its scripts are used (also over iOS data, so every script's text is the
       Vita's): the health warning, Square Enix and Media.Vision logos (opcodes 0x47..0x4a: faded in,
       held - a tap or confirm cuts it short - and out)
