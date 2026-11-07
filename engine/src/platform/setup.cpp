@@ -372,11 +372,17 @@ struct Progress {
         if (!now && t - last < 50) return;
         last = t;
         SDL_PumpEvents();
+        // (520 x 120, centred and scaled up to the window: a phone's is the whole screen)
+        int ow = 520, oh = 120;
+        SDL_GetCurrentRenderOutputSize(r, &ow, &oh);
+        const float k = std::max(1.0f, std::min(float(ow) / 560.0f, float(oh) / 160.0f));
+        SDL_SetRenderScale(r, k, k);
+        const float x = std::max(0.0f, (float(ow) / k - 520) / 2), y = std::max(0.0f, (float(oh) / k - 120) / 2);
         SDL_SetRenderDrawColor(r, 18, 22, 30, 255);
         SDL_RenderClear(r);
         SDL_SetRenderDrawColor(r, 220, 230, 240, 255);
-        SDL_RenderDebugText(r, 20, 24, label.c_str());
-        const SDL_FRect track{20, 60, 480, 22}, bar{20, 60, float(480 * std::clamp(f, 0.0, 1.0)), 22};
+        SDL_RenderDebugText(r, x + 20, y + 24, label.c_str());
+        const SDL_FRect track{x + 20, y + 60, 480, 22}, bar{x + 20, y + 60, float(480 * std::clamp(f, 0.0, 1.0)), 22};
         SDL_SetRenderDrawColor(r, 50, 60, 72, 255);
         SDL_RenderFillRect(r, &track);
         SDL_SetRenderDrawColor(r, 90, 200, 200, 255);
@@ -828,6 +834,108 @@ bool findVitaInstall(const std::string& picked, const SetupGame& g, VitaInstall&
     return false;
 }
 
+// The Vita release found (`in`) installed into <r>vita/<id>/ - the trilogy's PCSG00457/: a dump's
+// decrypted, else copied (the trilogy's own files and this game's folder, not the other games'), the
+// trilogy's add-on (this game's data) merged into this game's folder, its program decrypted beside it
+// (vitaProgram). 1 done (`dest` this game's folder), 0 can't be written there, -1 not usable (`why`
+// says, else `notGame`: not the game as the port reads it)
+int installVita(const SetupGame& g, const VitaInstall& in, const std::string& r, std::string& dest, std::string& why, bool& notGame) {
+    const std::string tri = g.trilogyDir, name = in.trilogy ? "PCSG00457" : g.vitaId;
+    static const char* const kGames[] = {"CR1", "CRO", "CR2", "CR3"}; // (the Prequel Trilogy's - CR3 itself too)
+    const std::string v = r + "vita/", part = v + name + ".part/", done = v + name + "/";
+    if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
+    if (isDir(part)) removeTree(part);
+    { // (room for it: the decrypted copy - the add-on's too - beside what it is decrypted from)
+        const uint64_t need = treeBytes(in.root) + (in.addon.empty() ? 0 : treeBytes(in.addon));
+        std::error_code ec;
+        const std::filesystem::space_info room = std::filesystem::space(fsPath(v), ec);
+        if (!ec && room.available < need + (64u << 20)) {
+            char text[160];
+            std::snprintf(text, sizeof text, "it needs about %.1f GB free in %s, and there is %.1f GB", double(need) / 1e9, v.c_str(),
+                          double(room.available) / 1e9);
+            why = text;
+            return notGame = true, -1;
+        }
+    }
+    bool good;
+    if (encryptedVita(in.root)) {
+        {
+            Progress bar(g.title, "Decrypting the Vita release ...");
+            good = decryptVita(in.root, part, &why, [&](double x) { bar.show(x); });
+        }
+        if (!good) return removeTree(part), why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+        if (in.trilogy)
+            for (const char* other : kGames)
+                if (tri != other) removeTree(part + other + "/"), SDL_RemovePath((part + other + ".self").c_str());
+    } else {
+        Progress bar(g.title, "Copying the Vita release ...");
+        Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.root)}; // (the trilogy's other games left: the bar ends short)
+        good = SDL_CreateDirectory(part.c_str());
+        struct Ctx {
+            Copier* c;
+            std::string part, only;
+            bool ok = true;
+        } ctx{&copy, part, in.trilogy ? tri : std::string()};
+        if (good)
+            SDL_EnumerateDirectory(
+                in.root.c_str(),
+                [](void* user, const char* parent, const char* n) -> SDL_EnumerationResult {
+                    Ctx& x = *static_cast<Ctx*>(user);
+                    const std::string p = std::string(parent) + n, s = n;
+                    if (!x.only.empty())
+                        for (const char* other : kGames)
+                            if (x.only != other && (s == other || s == std::string(other) + ".self")) return SDL_ENUM_CONTINUE;
+                    x.ok = isDir(p) ? x.c->tree(withSlash(p), x.part + s) : x.c->file(p, x.part + s);
+                    return x.ok ? SDL_ENUM_CONTINUE : SDL_ENUM_FAILURE;
+                },
+                &ctx);
+        good = good && ctx.ok;
+        if (!good) return removeTree(part), 0;
+    }
+    if (!in.addon.empty()) { // (the trilogy's add-on: this game's data, into its folder)
+        const std::string a = v + ".addon.part/";
+        if (isDir(a)) removeTree(a);
+        if (encryptedVita(in.addon)) {
+            {
+                Progress bar(g.title, "Decrypting the game's add-on ...");
+                good = decryptVita(in.addon, a, &why, [&](double x) { bar.show(x); });
+            }
+            good = good && mergeInto(a + tri + "/", part + tri + "/");
+        } else {
+            Progress bar(g.title, "Copying the game's add-on ...");
+            Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.addon + tri + "/")};
+            good = copy.tree(in.addon + tri + "/", part + tri);
+        }
+        removeTree(a);
+        if (!good) return removeTree(part), why.empty() || why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+    }
+    if (g.vitaProgram) { // (its program, encrypted: decrypted beside it - <name>.elf)
+        const std::string program = in.trilogy ? tri + ".self" : std::string("eboot.bin");
+        size_t size = 0;
+        std::vector<uint8_t> self;
+        if (void* d = SDL_LoadFile((part + program).c_str(), &size)) self.assign(static_cast<uint8_t*>(d), static_cast<uint8_t*>(d) + size), SDL_free(d);
+        if (selfEncrypted(self)) {
+            uint8_t klic[16];
+            std::vector<uint8_t> elf;
+            if (!klicenseeOf(in.root, name, klic)) why = program + ": no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)";
+            else if (decryptSelf(self, klic, elf, &why)) {
+                const std::string to = part + program.substr(0, program.rfind('.')) + ".elf";
+                SDL_IOStream* o = SDL_IOFromFile(to.c_str(), "wb");
+                const bool wrote = o && SDL_WriteIO(o, elf.data(), elf.size()) == elf.size();
+                if (o) SDL_CloseIO(o);
+                if (!wrote) return removeTree(part), 0;
+            } else why = program + ": " + why;
+            if (!why.empty()) return removeTree(part), notGame = true, -1;
+        }
+    }
+    if (isDir(done)) removeTree(done);
+    if (!SDL_RenamePath(part.c_str(), done.c_str())) return removeTree(part), 0;
+    const std::string gameDir = in.trilogy ? done + tri + "/" : done;
+    if (!g.vitaOk(gameDir) && !g.vitaOk(done)) return removeTree(done), notGame = true, -1;
+    dest = gameDir;
+    return 1;
+}
+
 // a job done in the game folder, else - it can't be written there - in the profile folder: `job`
 // returns 1 done, 0 not (the next folder tried), -1 not and no use trying again
 bool inGameFolder(const std::vector<std::string>& roots, const std::function<int(const std::string&)>& job) {
@@ -1065,92 +1173,10 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             // the install, into vita/<id>/: a dump's decrypted, else copied - the trilogy's own files
             // and this game's folder, not the other games' -, then the trilogy's add-on (this game's
             // data) merged into this game's folder
-            const std::string tri = g.trilogyDir, name = in.trilogy ? "PCSG00457" : g.vitaId;
-            static const char* const kGames[] = {"CR1", "CRO", "CR2", "CR3"}; // (the Prequel Trilogy's - CR3 itself too)
+            const std::string tri = g.trilogyDir;
             std::string dest, why;
             bool notGame = false;
-            const bool ok = inGameFolder(roots, [&](const std::string& r) {
-                const std::string v = r + "vita/", part = v + name + ".part/", done = v + name + "/";
-                if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
-                if (isDir(part)) removeTree(part);
-                bool good;
-                if (encryptedVita(in.root)) {
-                    {
-                        Progress bar(g.title, "Decrypting the Vita release ...");
-                        good = decryptVita(in.root, part, &why, [&](double x) { bar.show(x); });
-                    }
-                    if (!good) return removeTree(part), why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
-                    if (in.trilogy)
-                        for (const char* other : kGames)
-                            if (tri != other) removeTree(part + other + "/"), SDL_RemovePath((part + other + ".self").c_str());
-                } else {
-                    Progress bar(g.title, "Copying the Vita release ...");
-                    Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.root)}; // (the trilogy's other games left: the bar ends short)
-                    good = SDL_CreateDirectory(part.c_str());
-                    struct Ctx {
-                        Copier* c;
-                        std::string part, only;
-                        bool ok = true;
-                    } ctx{&copy, part, in.trilogy ? tri : std::string()};
-                    if (good)
-                        SDL_EnumerateDirectory(
-                            in.root.c_str(),
-                            [](void* user, const char* parent, const char* n) -> SDL_EnumerationResult {
-                                Ctx& x = *static_cast<Ctx*>(user);
-                                const std::string p = std::string(parent) + n, s = n;
-                                if (!x.only.empty())
-                                    for (const char* other : kGames)
-                                        if (x.only != other && (s == other || s == std::string(other) + ".self")) return SDL_ENUM_CONTINUE;
-                                x.ok = isDir(p) ? x.c->tree(withSlash(p), x.part + s) : x.c->file(p, x.part + s);
-                                return x.ok ? SDL_ENUM_CONTINUE : SDL_ENUM_FAILURE;
-                            },
-                            &ctx);
-                    good = good && ctx.ok;
-                    if (!good) return removeTree(part), 0;
-                }
-                if (!in.addon.empty()) { // (the trilogy's add-on: this game's data, into its folder)
-                    const std::string a = v + ".addon.part/";
-                    if (isDir(a)) removeTree(a);
-                    if (encryptedVita(in.addon)) {
-                        {
-                            Progress bar(g.title, "Decrypting the game's add-on ...");
-                            good = decryptVita(in.addon, a, &why, [&](double x) { bar.show(x); });
-                        }
-                        good = good && mergeInto(a + tri + "/", part + tri + "/");
-                    } else {
-                        Progress bar(g.title, "Copying the game's add-on ...");
-                        Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.addon + tri + "/")};
-                        good = copy.tree(in.addon + tri + "/", part + tri);
-                    }
-                    removeTree(a);
-                    if (!good) return removeTree(part), why.empty() || why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
-                }
-                if (g.vitaProgram) { // (its program, encrypted: decrypted beside it - <name>.elf)
-                    const std::string program = in.trilogy ? tri + ".self" : std::string("eboot.bin");
-                    size_t size = 0;
-                    std::vector<uint8_t> self;
-                    if (void* d = SDL_LoadFile((part + program).c_str(), &size)) self.assign(static_cast<uint8_t*>(d), static_cast<uint8_t*>(d) + size), SDL_free(d);
-                    if (selfEncrypted(self)) {
-                        uint8_t klic[16];
-                        std::vector<uint8_t> elf;
-                        if (!klicenseeOf(in.root, name, klic)) why = program + ": no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)";
-                        else if (decryptSelf(self, klic, elf, &why)) {
-                            const std::string to = part + program.substr(0, program.rfind('.')) + ".elf";
-                            SDL_IOStream* o = SDL_IOFromFile(to.c_str(), "wb");
-                            const bool wrote = o && SDL_WriteIO(o, elf.data(), elf.size()) == elf.size();
-                            if (o) SDL_CloseIO(o);
-                            if (!wrote) return removeTree(part), 0;
-                        } else why = program + ": " + why;
-                        if (!why.empty()) return removeTree(part), notGame = true, -1;
-                    }
-                }
-                if (isDir(done)) removeTree(done);
-                if (!SDL_RenamePath(part.c_str(), done.c_str())) return removeTree(part), 0;
-                const std::string gameDir = in.trilogy ? done + tri + "/" : done;
-                if (!g.vitaOk(gameDir) && !g.vitaOk(done)) return removeTree(done), notGame = true, -1;
-                dest = gameDir;
-                return 1;
-            });
+            const bool ok = inGameFolder(roots, [&](const std::string& r) { return installVita(g, in, r, dest, why, notGame); });
             if (!ok) {
                 if (!unpacked.empty()) removeTree(unpacked);
                 if (notGame && !why.empty()) tell(g, std::string("The Vita release in ") + in.root + ": " + why);
@@ -1205,6 +1231,41 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
         }
         if (g.oneRelease && (!out.ios.empty() || !out.android.empty() || !out.vita.empty())) return true;
     }
+}
+
+bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResult& out, bool quiet) {
+    const std::string v = withSlash(folder) + "vita/";
+    if (!isDir(v)) return false;
+    VitaInstall in;
+    if (!findVitaInstall(v, g, in)) return false; // (none; the trilogy without this game's add-on: the message where no copy is found)
+    if (!encryptedVita(in.root) && (in.addon.empty() || !encryptedVita(in.addon))) return false; // (installed, or put there decrypted: read as it is)
+    const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO); // (the progress window, the messages)
+    SDL_Log("setup: a Vita dump in %s, decrypting it into %s", in.root.c_str(), v.c_str());
+    std::string dest, why;
+    bool notGame = false;
+    const int got = installVita(g, in, withSlash(folder), dest, why, notGame);
+    auto say = [&](const std::string& text) {
+        SDL_Log("setup: %s", text.c_str());
+        if (!quiet && !script().on) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, g.title, text.c_str(), nullptr);
+        else if (script().on) tell(g, text);
+    };
+    if (got > 0) {
+        out.vita = dest;
+        if (withSlash(in.root) != withSlash(v + (in.trilogy ? "PCSG00457" : g.vitaId)))
+            say(std::string("The Vita release is decrypted into ") + v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/.\n\nThe dump you copied in (" + in.root +
+                (in.addon.empty() ? std::string() : " and " + in.addon) + ") isn't needed any more - delete it to get the space back.");
+    } else if (notGame && !why.empty()) {
+        say(std::string("The Vita dump in ") + in.root + " can't be decrypted: " + why);
+    } else if (notGame && in.trilogy && in.addon.empty()) {
+        say(std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon + "), and it isn't beside " +
+            in.root + " - copy the dump's addcont folder in too, beside its app folder.");
+    } else if (notGame) {
+        say(in.root + " isn't " + g.title + "'s Vita release as the port reads it.");
+    } else {
+        say(std::string("The Vita dump can't be decrypted into ") + v + " - it can't be written there.");
+    }
+    if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return got > 0;
 }
 
 } // namespace cr

@@ -54,6 +54,13 @@ struct SetupResult {
 // the game folder can't be written
 bool runSetup(const SetupGame& game, const std::string& folder, const std::string& fallback, SetupResult& out);
 
+// A NoNpDrm dump copied by hand into the game folder's vita/ (a phone's way: no dialogs there) - its
+// folder as it was dumped (app/, addcont/ beside it), the app folder or ux0 -, its files still
+// encrypted: decrypted into vita/<id>/ (the trilogy's PCSG00457/) as runSetup would, with a progress
+// window; what went wrong said in a message (`quiet`: logged alone). Nothing to do - no dump there,
+// or one decrypted already -: false at once. `out.vita`: this game's folder in it
+bool installDroppedVita(const SetupGame& game, const std::string& folder, SetupResult& out, bool quiet = false);
+
 // whether CRU_SETUP_ANSWERS answers it (a test's run: no windows)
 bool setupScripted();
 
