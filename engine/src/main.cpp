@@ -545,6 +545,8 @@ struct App {
         enum Phase { Intro, Command, Acting, WinTalk, BossDown, Won, Results, Lost, Fled } phase = Intro;
         int phaseFrames = 0;
         bool wonTap = false; // a tap in the victory's hold (state 1099: 140 frames or pad_chk_trg_up)
+        bool lostTap = false;    // a tap on the defeat (0x513: at once, or after 40 frames of an event battle's game over picture)
+        cr::Texture gameOver;    // btl_main 0x4b0: gameover.mct, drawn fading in over 20 frames for a lost event battle
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
         int member = 0;                    // solo: the member choosing
@@ -10601,7 +10603,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     app.runner.setGate(battletalk::kFlag); // PrcEvnt in battle mode
     // CRView::prc: SetFade(white, 255, 255) as the field goes; btl_main 200: SetFade(white, 255, 0,
     // 1000 ms) - the battle comes in out of white over its opening (whatever the field's fade was)
-    app.fadeGrey = 1, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 30, app.fadeT = 0;
+    app.fadeGrey = 1, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 20, app.fadeT = 0; // (btl_main 200: 1000 ms)
     b.frames = 0;
     b.clock = 0;
     b.formation = std::max(0, app.battleData.formation(ids));
@@ -10650,7 +10652,10 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     rules = cr::BattleRules();
     rules.useRandom(&app.rng); // the one stream, as the original's
     rules.strike = start.strike;
-    rules.escapeBlocked = flags != 0;
+    // __menub_mainPrc / __menub_mainPut: Escape is dimmed and refused while a script runs (gac+0x2c0
+    // bit 0 - a scene's battle); the opcode's flags byte (gac+0x354c6) is never read
+    rules.escapeBlocked = app.runner.running();
+    (void)flags;
     rules.setupParty(app.game, app.itemTable, route);
     const std::string ev = app.area >= 0 && app.area < cr::kNumAreas ? cr::kAreaEventFile[app.area] : "";
     const int band = ev.size() > 7 && ev[5] == 'd' && ev[6] == '0' ? ev[7] - '1' : 0;
@@ -10683,8 +10688,10 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         b.shownMp[i] = rules.f[size_t(i)].mp;
     }
     setBattleCamera(app, std::max(0, b.formation - 2)); // btl_main 200: the opening turn
+    // btl_main 100: var 58 under 29 names the battle's track; else the pair's level band picks 8, or 9
+    // from band 5 (prty+0xc10[pair] < 5, the byte btl_enemy_init_lv levels the monsters by)
     const auto v58 = app.game.vars.find(58);
-    const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second <= 28 ? v58->second : 8;
+    const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : band < 5 ? 8 : 9;
     b.fieldTrack = app.music.current();
     playBgm(app, uint32_t(track));
     app.dialogue.clear();
@@ -10739,6 +10746,7 @@ void endBattle(App& app, bool won) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.sound.stopBattleLines(); // _btlvoice_stop_all
     App::Battle& b = app.battle;
+    const bool wasEvent = b.eventBattle;
     settleBattle(app);
     std::string names;
     for (const auto& a : b.actors)
@@ -10752,7 +10760,18 @@ void endBattle(App& app, bool won) {
     app.fieldEffects.clear();
     b.actors.clear();
     b.active = false;
-    playBgm(app, b.fieldTrack >= 0 ? uint32_t(b.fieldTrack) : 1u << 29);
+    app.renderer.destroy(b.gameOver);
+    b.lostTap = false;
+    { // fldread_prc's return from a battle (the load flag's bit 3): var 60 says what plays - 998 nothing
+      // (the battle's music faded out at its end), under 29 that track, else the field's last (gac+0x35530,
+      // which __EvtBattle zeroes: a scene's battle without a var 60 gets track 0)
+        const auto v60 = app.game.vars.find(60);
+        const int after = v60 != app.game.vars.end() ? v60->second : 999;
+        if (after == 998) playBgm(app, 1u << 29);
+        else if (after >= 0 && after < 29) playBgm(app, uint32_t(after));
+        else if (wasEvent) playBgm(app, 0);
+        else playBgm(app, b.fieldTrack >= 0 ? uint32_t(b.fieldTrack) : 1u << 29);
+    }
     cr::EncounterTable table;
     const bool have = cr::encounterTable(app.events, app.mapNumber, table);
     app.encounters.enterMap(have ? &table : nullptr);
@@ -11924,10 +11943,11 @@ void endRound(App& app) {
         if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
         else battleVictory(app);
         break;
-    case 3: { // lost (0x4b1): the defeat tune and "... lost the battle"
+    case 3: { // lost (0x4b0): the battle's music out over 10 frames, then (0x4b1) the defeat tune and "... lost the battle"
         b.phase = App::Battle::Lost;
         b.phaseFrames = 0;
-        playBgm(app, 0x1a);
+        b.lostTap = false;
+        playBgm(app, 1u << 26); // (btl_main 0x4b0: __bgmgo(0x4000000); 0x4b1 plays 0x1a)
         btlvoice::playSide(app, 99, 0x1f, 0x20, 0x21); // btl_main 0x4b0 (as for a pair)
         setBattleCamera(app, 0x48);
         for (App::Battle::Actor& a : b.actors) // the monsters still standing out of sight (+0x55c)
@@ -12126,9 +12146,21 @@ void stepBattle(App& app) {
         }
         break;
     case App::Battle::Results: stepResults(app); break;
-    case App::Battle::Lost: // 0x513, then (9000) btl_lose: a story battle starts over from the title,
-        // any other goes back to the pair's Ark (drawFrame does either, between frames)
-        if (b.phaseFrames >= 120) b.exit = b.eventBattle ? 2 : 3;
+    case App::Battle::Lost: // 0x4b0 ten frames, 0x4b1 the defeat tune, 0x513 a tap, then (9000) btl_lose: a story
+        // battle starts over from the title, any other goes back to the pair's Ark (drawFrame does either,
+        // between frames). An event battle's: gameover.mct read at 0x4b0, fading in over 20 frames from
+        // 0x4b1, the tap taken after 40; any other's tap at once (the port goes on by itself after 120)
+        if (b.phaseFrames == 10) {
+            playBgm(app, 0x1a);
+            if (b.eventBattle && !b.gameOver.id) {
+                cr::Image img;
+                if (loadImage(app, "gameover.mct", img)) b.gameOver = app.renderer.upload(img);
+            }
+        }
+        if (b.eventBattle) {
+            if (b.phaseFrames >= 50 && b.lostTap) b.exit = 2;
+        } else if (b.phaseFrames >= 120 || (b.phaseFrames >= 10 && b.lostTap)) b.exit = 3;
+        b.lostTap = false;
         break;
     case App::Battle::Fled:
         if (b.phaseFrames >= 30) b.exit = 1;
@@ -12454,6 +12486,15 @@ void drawBattleHud(App& app, float W, float H) {
         r.setOrigin(r.uiX());
         return;
     }
+    if (b.phase == App::Battle::Lost && b.eventBattle && b.gameOver.id && b.phaseFrames >= 10) {
+        // btl_main's put: tex2d_add(1, 112, 32, -10, 0, 0, 256, 256) - the screen's (256, 128), 512 x 512 -
+        // at (frames x 255 / 20) alpha, full from the 20th
+        r.setOrigin(r.uiX());
+        const float ga = std::min(1.0f, float(b.phaseFrames - 10) / 20.0f);
+        const float gw = float(b.gameOver.width), gh = float(b.gameOver.height);
+        r.drawQuadUV(b.gameOver, 2.0f * 112 + 32, 2.0f * 32 + 64, 512, 512, 0, 0, gw, gh, 1, 1, 1, ga);
+        return;
+    }
     const float a = std::min(1.0f, float(b.frames) / 10.0f);
     // The iPhone layout (2.2.0's __menub_mainPut): the badge and the rows into its screen's
     // corners - (+16, +32) / (+16, -32) - the banner 32 lower, the menus where they are
@@ -12646,6 +12687,10 @@ void battleKey(App& app, SDL_Keycode key) {
         if (enter || back) b.wonTap = true;
         return;
     }
+    if (b.phase == App::Battle::Lost) {
+        if (enter || back) b.lostTap = true;
+        return;
+    }
     if (b.phase != App::Battle::Command) return;
     switch (b.menu) {
     case App::Battle::Top:
@@ -12698,6 +12743,10 @@ void battleClick(App& app, float px, float py) {
     }
     if (b.phase == App::Battle::Results) { // __MbResult_IsTouchChack: (0, 0, 480, 320)
         resultsTap(app);
+        return;
+    }
+    if (b.phase == App::Battle::Lost) { // (anywhere: the defeat goes on with a tap)
+        b.lostTap = true;
         return;
     }
     if (b.phase == App::Battle::Won) { // (anywhere ends the victory's hold)

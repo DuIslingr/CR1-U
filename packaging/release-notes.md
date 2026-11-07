@@ -26,6 +26,15 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   (the original runs the script before the field's steps); the original's one-pixel tremors show (the
   view's corner is rounded after the shake is added); `CameraPlayer` leaves a room without a painting
   on its last shot; a scene's own effects face the camera and the room's don't, as the original flags them.
+- **Battles started by a scene** (checked against the iOS code's `btl_main` and battle menu): Escape is
+  dimmed and refused while a scene runs, as the original's menu has it; a random battle's track
+  follows the pair's level band (8, or 9 from band 5) and a scene's the track it names in var 58;
+  the music after a battle follows the scene's var 60 (silence after the deck's and the first
+  dungeon's fights, as the original); the battle comes in out of white over the original's 20
+  frames; a lost battle fades its music out over 10 frames before the defeat tune, a lost scene
+  battle shows `gameover` fading in and waits for a tap before the title, and any defeat goes on
+  with a tap. (Omega's "skip off" scene command, its `battle_start` tutorial picture and its
+  100 ms tutorial dim don't exist in Chaos Rings: its tutorial dim is 400 ms, as the port has it.)
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.
