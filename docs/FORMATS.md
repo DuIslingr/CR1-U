@@ -751,8 +751,12 @@ require a preceding `Setc` / `FrmSetc`. The Ark's `t0152bt`, fourth gate's `d045
 `d0551bt` / `d0555bt` backdrops have scenes that rely on this. Treating the origin as an unused
 actor slot even after `Born` hides their scenery behind the characters.
 
-`FrmSetCam` moves the 3D camera only in rooms filmed in 3D: maps 13, 29, 46, 88 and 113,
-maps 63–87, or while +0x2c0 bit 6 is set. Elsewhere it scrolls the painted background
+`FrmSetCam` moves the 3D camera only in rooms filmed in 3D - maps 13, 29, 46, 63, 88 and 113
+(`__EvtFrmSetCam`'s list: 0xd, 0x1d, 0x2e, 0x3f, 0x58, 0x71) - or while +0x2c0 bit 6 ("field
+running") is set, so on the field always; `FrmAdjCam` the other way round: on the field it slides
+the 3D camera on those maps and scrolls the painting elsewhere. `CameraPlayer` only switches the
+mode and clears the three auto flags (+0x120, +0x140, +0x16c): a room without a painting keeps
+showing the last shot until the map is loaded again. Off the field `FrmSetCam` scrolls the painted background
 (`SetScroll`, `SetScroll2D`). Room 113 (`t0150`, j001_t01) has no painting and a zero
 camera: the opening (event 201, script 0's gosub 0x5f98) is shot there.
 

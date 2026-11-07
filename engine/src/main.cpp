@@ -117,6 +117,7 @@ struct Effect {
     bool loop = false;
     float scale = 1, yaw = 0;
     float pitch = 0, roll = 0; // FrmPlayEff2: the record's X and Z angles (radians)
+    bool faceCamera = false;   // FrmPlayEff at a record's point: turned to the camera each frame (mdl + 0xfc7, as a battle's)
     int handle = 0;  // for stopping it
     int key = 0;     // FrmPlayEff's (effect + 1) x (actor + 1)
 };
@@ -2626,6 +2627,34 @@ void stepFieldScroll(App& app) {
 }
 
 // The scripts' shots on a painted field: jump (frames 0) or slide to offset (x, y)
+// A script's move (npc_autoctl_prc), a frame: true once it has arrived
+bool stepMove(App& app, App::Move& m) {
+    ++m.t;
+    const float t = float(m.t) / float(m.frames);
+    const cr::Vec3 p{m.from.x + (m.to.x - m.from.x) * t, m.from.y + (m.to.y - m.from.y) * t, m.from.z + (m.to.z - m.from.z) * t};
+    const float yaw = m.yawFrom + (m.yawTo - m.yawFrom) * t;
+    setActor(app, m.npc, p, m.turn ? &yaw : nullptr, m.mode == 2);
+    return m.t >= m.frames;
+}
+bool stepRescale(App& app, App::Rescale& r) { // (npc_autoctl_prc mode 3: the scale in a straight line)
+    ++r.t;
+    const float t = float(r.t) / float(r.frames);
+    if (cr::FieldNpc* n = findNpc(app, r.npc)) {
+        for (int k = 0; k < 3; ++k) n->axes[k] = r.from[k] + (r.to[k] - r.from[k]) * t;
+        for (auto& d : app.npcDraws)
+            if (d.id == r.npc) d.world = npcWorld(*n);
+    }
+    return r.t >= r.frames;
+}
+void stepScriptCam(App& app) { // (EvAutoCtl / CvAutoCtl: camera moves are straight lines)
+    if (app.cam.t >= app.cam.frames) return;
+    App::ScriptCam& c = app.cam;
+    ++c.t;
+    const float t = float(c.t) / float(c.frames);
+    c.eye = c.eyeFrom + (c.eyeTo - c.eyeFrom) * t;
+    c.target = c.tgtFrom + (c.tgtTo - c.tgtFrom) * t;
+}
+
 void scriptFieldScroll(App& app, float x, float y, int frames) {
     App::FieldScroll& fs = app.scroll;
     x *= fieldViewScale(app), y *= fieldViewScale(app); // (the device's pixels of the doubled view)
@@ -2644,6 +2673,7 @@ void scriptFieldScroll(App& app, float x, float y, int frames) {
     fs.t = 0;
     fs.frames = frames;
     fs.sliding = true;
+    stepFieldScroll(app); // (ScrollAutoCtl's first step: this frame's, after the script - see stepEvents)
 }
 
 void openStaffRoll(App& app, int mode);
@@ -2767,6 +2797,7 @@ struct ViewerHost : cr::EventHost {
         r.npc = id, r.frames = frames;
         for (int k = 0; k < 3; ++k) r.from[k] = n->axes[0] >= 0 ? n->axes[k] : n->scale, r.to[k] = s[k];
         app.rescales.push_back(r);
+        if (stepRescale(app, app.rescales.back())) app.rescales.pop_back(); // (the first step this frame's)
     }
     // Autoadj (npc_autoctl_set / prty_autoctl_set): a straight move to (x, its y, z) at `speed` a frame -
     // dist / speed frames, truncated (FPToFixed) - facing kept
@@ -2858,6 +2889,7 @@ struct ViewerHost : cr::EventHost {
         app.rescales.erase(std::remove_if(app.rescales.begin(), app.rescales.end(), [&](const App::Rescale& o) { return o.npc == id; }),
                            app.rescales.end());
         app.moves.push_back(m);
+        if (stepMove(app, app.moves.back())) app.moves.pop_back(); // (its first step is this frame's: npc_autoctl_prc runs after PrcEvnt)
     }
     void tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3]) override {
         if (SDL_getenv("CR_TEXDISP_DEBUG")) std::printf("tex2d: slot %d flags %04x image %d\n", slot, f, image);
@@ -2959,7 +2991,10 @@ struct ViewerHost : cr::EventHost {
         app.npcs.push_back(n);
         app.npcWarps.push_back(false);
     }
-    void freeCamera(bool on) override { app.cam.free = on; if (!on) app.cam.set = false; }
+    void freeCamera(bool on) override { // __EvtCameraPlayer: the mode and the auto flags only - the eye stays where the last shot put it
+        app.cam.free = on;
+        if (!on) app.cam.t = app.cam.frames = 0;
+    }
     void setCamera(const float* eye, const float* target, int frames) override {
         if (scrollingField(app)) { // a painted field: FrmAdjCam slides the painting to the shot's (x, y);
             // FrmSetCam on the field (flag word bit 64) takes the 3D path, which starts with SetScroll(0, 0)
@@ -2980,6 +3015,7 @@ struct ViewerHost : cr::EventHost {
         if (frames <= 0 || !c.set) { c.eye = e; c.target = t; c.frames = c.t = 0; }
         else { c.eyeFrom = c.eye; c.tgtFrom = c.target; c.eyeTo = e; c.tgtTo = t; c.frames = frames; c.t = 0; }
         c.set = true;
+        stepScriptCam(app); // (the slide's first step is this frame's: updateCamera runs after PrcEvnt)
     }
     void panCamera(const float* d, int frames) override {
         if (scrollingField(app)) { // FrmPanCam's 2D path: twice the deltas on the iPad
@@ -3014,6 +3050,7 @@ struct ViewerHost : cr::EventHost {
         ++app.scriptQuakes;
         if (frames < 0) startQuake(app.fieldQuake, float(amp), float(from), float(to), 1, true);
         else endQuake(app.fieldQuake, float(amp), float(from), float(to), frames);
+        if (!app.battle.active) stepQuake(app.fieldQuake); // (UpdateQuake runs after the script in the same frame)
     }
     void vitaLogo(int slot, int picture) override { // read_img_set(the table at 0x811122b0 [picture])
         static const char* const kLogo[8] = {"sqex", "mve", "mclogo", "title1", "title2", "chara3", "chara1", "chara2"};
@@ -3109,13 +3146,15 @@ struct ViewerHost : cr::EventHost {
             if (!v) return;
             p = {v[0], v[1], v[2]};
             // FrmPlayEff2 (eff3d_set_with_pos_and_ang) takes its angles too: X and Z stand; the Y
-            // one gives way to the camera, as every field effect's does (drawEffects)
+            // one gives way to the camera (eff3d_set_with_pos and the _and_ang variant both set the
+            // model's camera-facing byte, +0x56f - an NPC's effect goes through eff3d_set to the same;
+            // the scene's own eff3d_set_fld effects don't: drawEffects)
             if (angled) pitch = v[3] * kDeg, roll = v[5] * kDeg;
         }
         const int h = startEffect(app, app.fieldEffects, effect, p, true, float(scale) / 100.0f, 0.0f);
         if (h)
             for (Effect& fx : app.fieldEffects)
-                if (fx.handle == h) fx.pitch = pitch, fx.roll = roll;
+                if (fx.handle == h) fx.pitch = pitch, fx.roll = roll, fx.faceCamera = true;
         if (h && app.frameEffects.size() < 16) app.frameEffects.push_back({(effect + 1) * (actor + 1), effect, h});
     }
     void stopFrameEffect(int effect, int actor) override {
@@ -3128,7 +3167,11 @@ struct ViewerHost : cr::EventHost {
     void npcEffect(int effect, int npc, int dy) override {
         ++app.scriptEffectCalls;
         cr::Vec3 p;
-        if (actorPos(app, npc, p)) startEffect(app, app.fieldEffects, effect, p + cr::Vec3{0, float(dy), 0}, false, 1.0f, 0.0f);
+        if (!actorPos(app, npc, p)) return;
+        const int h = startEffect(app, app.fieldEffects, effect, p + cr::Vec3{0, float(dy), 0}, false, 1.0f, 0.0f);
+        if (h) // (Uty_eff3d_set_fld goes through eff3d_set_with_pos: the camera-facing byte set)
+            for (Effect& fx : app.fieldEffects)
+                if (fx.handle == h) fx.faceCamera = true;
     }
     void mapScroll(int npc, float x, float y, float rate) override {
         ++app.scroll.mapScrolls;
@@ -9166,39 +9209,20 @@ void stepEvents(App& app) {
     puzzle::step(app);
     puzzle::stepCrystalCam(app);
     puzzle::stepBanner(app);
-    // Script moves (npc_autoctl_prc): straight lines, y on the floor unless mode 2
+    // Script moves (npc_autoctl_prc): straight lines, y on the floor unless mode 2. (The original's
+    // frame runs the script first, then Field_Main's steps: a move, scale, scroll or camera slide a
+    // script starts takes its first step on that same frame - the starters step once themselves)
     for (size_t i = 0; i < app.moves.size();) {
-        App::Move& m = app.moves[i];
-        ++m.t;
-        const float t = float(m.t) / float(m.frames);
-        const cr::Vec3 p{m.from.x + (m.to.x - m.from.x) * t, m.from.y + (m.to.y - m.from.y) * t,
-                         m.from.z + (m.to.z - m.from.z) * t};
-        const float yaw = m.yawFrom + (m.yawTo - m.yawFrom) * t;
-        setActor(app, m.npc, p, m.turn ? &yaw : nullptr, m.mode == 2);
-        if (m.t >= m.frames) app.moves.erase(app.moves.begin() + long(i));
+        if (stepMove(app, app.moves[i])) app.moves.erase(app.moves.begin() + long(i));
         else ++i;
     }
     for (size_t i = 0; i < app.rescales.size();) { // (npc_autoctl_prc mode 3: the scale in a straight line)
-        App::Rescale& r = app.rescales[i];
-        ++r.t;
-        const float t = float(r.t) / float(r.frames);
-        if (cr::FieldNpc* n = findNpc(app, r.npc)) {
-            for (int k = 0; k < 3; ++k) n->axes[k] = r.from[k] + (r.to[k] - r.from[k]) * t;
-            for (auto& d : app.npcDraws)
-                if (d.id == r.npc) d.world = npcWorld(*n);
-        }
-        if (r.t >= r.frames) app.rescales.erase(app.rescales.begin() + long(i));
+        if (stepRescale(app, app.rescales[i])) app.rescales.erase(app.rescales.begin() + long(i));
         else ++i;
     }
     stepFieldScroll(app);
     stepSceneEffects(app);
-    if (app.cam.t < app.cam.frames) { // camera moves are straight lines
-        App::ScriptCam& c = app.cam;
-        ++c.t;
-        const float t = float(c.t) / float(c.frames);
-        c.eye = c.eyeFrom + (c.eyeTo - c.eyeFrom) * t;
-        c.target = c.tgtFrom + (c.tgtTo - c.tgtFrom) * t;
-    }
+    stepScriptCam(app);
     for (App::Portrait& p : app.portraits) // Tex2d slides and fades (tex2d_img_prc)
     {
         if (p.t < p.frames) {
@@ -10398,7 +10422,9 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp, 
             }
         }
         // scaled, turned (Euler XYZ, mdl_put: R = Rz Ry Rx), at its point
-        const float yaw = eye && target ? std::atan2(eye->x - target->x, eye->z - target->z) : e.yaw;
+        // (a battle's effects all face the camera; a field's only those FrmPlayEff flagged)
+        const bool face = eye && target && (&list == &app.battle.effects || e.faceCamera);
+        const float yaw = face ? std::atan2(eye->x - target->x, eye->z - target->z) : e.yaw;
         const float cx = std::cos(e.pitch), sx = std::sin(e.pitch), cy = std::cos(yaw), sy = std::sin(yaw);
         const float cz = std::cos(e.roll), sz = std::sin(e.roll), k = e.scale;
         cr::Mat4 world;
@@ -12772,8 +12798,12 @@ cr::Mat4 scriptCameraView(const App& app, const cr::Vec3& eye, const cr::Vec3& t
     const cr::StageCamera& sc = app.stageCam;
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
     const float w = fieldViewW(app), h = fieldViewH(app);
-    const float qx = std::trunc(app.fieldQuake.off[0]), qy = std::trunc(app.fieldQuake.off[1]);
-    const float rx = app.renderer.uiX() + (cr::Renderer::kLogicalW - w) / 2 + qx, ry = (H - h) / 2 + qy;
+    // (setCamera3D casts the corner's sum to int: a corner left of the screen moves a pixel on a
+    // positive fraction - the shake's whole pixels taken against the corner, the layout's own
+    // centring left as it is)
+    const float cx0 = (cr::Renderer::kLogicalW - w) / 2, cy0 = (H - h) / 2;
+    const float rx = app.renderer.uiX() + cx0 + (std::trunc(cx0 + app.fieldQuake.off[0]) - std::trunc(cx0));
+    const float ry = cy0 + (std::trunc(cy0 + app.fieldQuake.off[1]) - std::trunc(cy0));
     cr::Mat4 toScreen;
     toScreen.m[0] = w / SW, toScreen.m[5] = h / H;
     toScreen.m[12] = (2 * rx + w) / SW - 1, toScreen.m[13] = 1 - (2 * ry + h) / H;
@@ -12928,7 +12958,9 @@ void drawFrame(App& app, bool present = true) {
         // screen's height (wider screens get bars at the sides) or its width (top and bottom cut).
         r.fillRect(0, 0, SW, H, 0, 0, 0, 1);
         // A room without a painting is fully 3D: there a script's free camera films the whole screen
-        const bool scriptCam = app.cam.free && app.cam.set && !app.background.id;
+        // (CameraPlayer leaves the live eye / target as the last shot set them, until the map is
+        // loaded again - FieldCamera keeps them; only fldread_prc copies the stage record back)
+        const bool scriptCam = app.cam.set && !app.background.id;
         cr::Vec3 eye, tgt;
         cr::Mat4 mvp;
         const bool have3D = app.haveStageCam || scriptCam;
@@ -12964,9 +12996,9 @@ void drawFrame(App& app, bool present = true) {
             vy = (H - vh) / 2;
         }
         // FieldCamera::setCameraBack / setCamera3D: the viewport moves by the quake's offset
-        // (whole pixels: it's set in ints)
-        const float qx = std::trunc(app.fieldQuake.off[0]), qy = std::trunc(app.fieldQuake.off[1]);
-        vx += qx, vy += qy;
+        // (whole pixels: the corner's sum is cast to int - toward zero, so a corner left of the
+        // screen moves a pixel on any positive fraction, as the original's 1-pixel tremors do)
+        vx += std::trunc(vx + app.fieldQuake.off[0]) - std::trunc(vx), vy += std::trunc(vy + app.fieldQuake.off[1]) - std::trunc(vy);
         // Layers are drawn at native pixel size, centred in the stage view (viewW x viewH:
         // 1024 for most fields, 512 for d0108/d0117/d0208/d0219). 512x1024 backgrounds such
         // as d0501/d0507/d0511 occupy the middle strip x 256..768
@@ -12979,7 +13011,10 @@ void drawFrame(App& app, bool present = true) {
         drawSpaceBackdrop(app, false); // the tower's scrolling backdrop, behind the 3D
         r.setOrigin(0);
         if (have3D) {
-            if (scriptCam) r.begin3DRect(app.haveStageCam && app.stageCam.viewWidth > 0 ? 0 : qx, app.haveStageCam && app.stageCam.viewWidth > 0 ? 0 : qy, SW, H);
+            if (scriptCam) {
+                const bool whole = app.haveStageCam && app.stageCam.viewWidth > 0; // (scriptCameraView places the view, quake and all)
+                r.begin3DRect(whole ? 0 : std::trunc(app.fieldQuake.off[0]), whole ? 0 : std::trunc(app.fieldQuake.off[1]), SW, H);
+            }
             else r.begin3DRect(vx, vy, vw, vh);
             // Field props are occlusion geometry: all their materials are untextured / solid-alpha
             // and black-diffuse, placed over pillars and door frames of the painting. They only
@@ -16792,8 +16827,8 @@ int runSelfTest(App& app) {
         host.freeCamera(true);
         const float startY = app.scroll.offY;
         const float pan[3] = {0, -100, 0};
-        host.panCamera(pan, 10);
-        for (int f = 0; f < 5; ++f) stepFieldScroll(app);
+        host.panCamera(pan, 10); // (its first step is the pan's own frame: ScrollAutoCtl runs after PrcEvnt)
+        for (int f = 0; f < 4; ++f) stepFieldScroll(app);
         const float halfway = app.scroll.offY;
         for (int f = 0; f < 10; ++f) stepFieldScroll(app);
         const float wantY = std::clamp(startY + 200, -(fieldViewH(app) - H) / 2, (fieldViewH(app) - H) / 2);

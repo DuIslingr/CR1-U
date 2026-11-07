@@ -21,7 +21,11 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   area no longer runs the room's entry script a second time; a script waiting for a tap with
   `Rept` isn't cut off after 45 s; a `Util` menu call takes its frame, and `FrmAdjc2` with mode 0 turns
   the actor to the record's facing before it moves (the sailor's turn on the deck) and mode 2 moves
-  without a turn, as `__EvtFrmAdjc2` and `npc_autoctl_set_fream` have them.
+  without a turn, as `__EvtFrmAdjc2` and `npc_autoctl_set_fream` have them. On the deck and after: a
+  camera slide, a move, a scroll and a quake take their first step on the frame the script starts them
+  (the original runs the script before the field's steps); the original's one-pixel tremors show (the
+  view's corner is rounded after the shake is added); `CameraPlayer` leaves a room without a painting
+  on its last shot; a scene's own effects face the camera and the room's don't, as the original flags them.
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.
