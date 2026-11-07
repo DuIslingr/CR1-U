@@ -42,6 +42,10 @@ The README's "Your copy" section lists exactly which files each release needs.
 
 ## Good to know
 
+- **Android, updating:** from this version on, each release installs over the one before it. Every
+  earlier version was signed with a different key, so coming from one, uninstall it first - one
+  last time. That deletes the game files you copied in and your saves: keep a copy of the game
+  files to copy back.
 - **No game data is included.** You need your own copy; the port reads it at run time.
 - **Tested on:** Linux (played), Windows (under Wine). The macOS and Android builds are made by CI
   but haven't been run on real hardware yet. Reports are welcome.

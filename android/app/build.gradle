@@ -26,10 +26,22 @@ android {
             }
         }
     }
+    // The ports' release key (CI: the repository's ANDROID_KEYSTORE_* secrets), so each build installs
+    // over the one before it; without it - a fork's build, one's own - the debug key
+    signingConfigs {
+        if (System.getenv('ANDROID_KEYSTORE_FILE')) {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_FILE'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD') // (PKCS12: the store's)
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug // (for one's own device)
+            signingConfig signingConfigs.findByName('release') ?: signingConfigs.debug
         }
     }
     externalNativeBuild {
