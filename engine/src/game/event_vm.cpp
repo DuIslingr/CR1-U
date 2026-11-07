@@ -523,8 +523,12 @@ bool EventRunner::step(EventHost* host) {
             float v[6];
             if (!host || !vm.scene(s) || !vm.actor(s, vm.record(s, frame), n, v)) break;
             if (op == 52) {
-                host->moveNpc(n, v, v[4], last == 1 && s.words == 6 ? EventHost::Facing::Yaw : EventHost::Facing::Keep,
-                              frames, last == 2 ? 2 : last == 1 ? 1 : 0);
+                // __EvtFrmAdjc2's mode: 0 turns the actor to the record's angles at once and moves
+                // it (npc_autoctl mode 1); 2 moves it in y too, no turn (mode 4); anything else (the
+                // scripts' 1, 10 and 20) turns it to them over the move (mode 2). (A 3-word scene has no angles)
+                const bool rot = s.words == 6;
+                if (last == 2) host->moveNpc(n, v, v[4], EventHost::Facing::Keep, frames, 2);
+                else host->moveNpc(n, v, v[4], !rot ? EventHost::Facing::Keep : last == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw, frames, 0);
             } else {
                 float yaw; const auto f = facingFor(last, yaw);
                 host->moveNpc(n, v, yaw, f, frames, 0);
@@ -583,6 +587,7 @@ bool EventRunner::step(EventHost* host) {
             const int n = vm.u8();
             if (n == 3 && host) { host->askYesNo(vm.var(0)); return yield(Vm::Wait::Choice); } // answer in flag var(0)
             if (host && host->menu(n)) return yield(Vm::Wait::Choice);
+            if (host) { vm.waitFrames = 1; return yield(Vm::Wait::Frames); } // (__EvtUtil returns -1 whatever it set up: the tick ends)
             break;
         }
         case 23: { // Eff: sound effect id | flags << 16 (bit 23 loop, bit 29 stop)

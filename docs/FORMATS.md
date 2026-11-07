@@ -727,7 +727,7 @@ NPC scripts play).
 | `FrmSetc2 npc, flag` | place the actor from the current record (position, Y rotation), y snapped to the floor (`get_floor`) |
 | `FrmSetc npc, dir` | place from the current record; `dir` −4499…999 = degrees, 1000 keep the facing, 2000 face the way it moved, else 0 |
 | `FrmAdjc npc, f, n, dir` | walk to record f's position over n frames in a straight line (`npc_autoctl_set_fream`), facing per `dir` |
-| `FrmAdjc2 npc, f, n, mode` | the same; mode 0 position, 1 position and rotation, 2 position including y |
+| `FrmAdjc2 npc, f, n, mode` | the same; mode 0 turns to the record's angles at once and moves (`__EvtFrmAdjc2` writes the rotation, `npc_autoctl_set_fream` mode 1), 2 moves in y too without turning (mode 4), anything else (1, 10 / 20) turns to them over the move (mode 2) |
 | `SetDir a, b` | a turns to face b |
 | `Wait 0xFFFD, npc` | wait until the actor's move ends (`npc_autoctl_chk`; animations don't count) |
 
@@ -958,7 +958,7 @@ track 0x13; `ShopClr` plays the kept track back unless `SetShopBgmNoRecovery` wa
 their arguments; `CR_TEX2D_FLAGS=1` the Tex2d flags). 2035 (a battle animation preload) is a
 no-op: the port loads animations as they're needed.
 
-**Menus (`Util n`):** 0 title, 1 world choice, 2 shop, 3 yes/no, 4 start, 5 / 6 save and load, 7 staff roll (var 0), 8 last
+**Menus (`Util n`):** (`__EvtUtil` returns -1 whichever it sets up: the tick ends there) 0 title, 1 world choice, 2 shop, 3 yes/no, 4 start, 5 / 6 save and load, 7 staff roll (var 0), 8 last
 battle.
 - **Yes/no** (`_menuu_Event*`, `ComUty_YesNoChoiceProc`): the left button returns 2, the right 1;
   on close 2 sets flag var(0) and 1 clears it, so Yes sets the flag. `__menuu_EventPut`:

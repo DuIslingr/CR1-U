@@ -19,7 +19,9 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   fades from full; the movement tutorial's pad art shows in the phone layout too (2.2.0 draws it);
   a hidden-field `Screen` is no longer mistaken for a 255-frame fade; a script's warp within its
   area no longer runs the room's entry script a second time; a script waiting for a tap with
-  `Rept` isn't cut off after 45 s.
+  `Rept` isn't cut off after 45 s; a `Util` menu call takes its frame, and `FrmAdjc2` with mode 0 turns
+  the actor to the record's facing before it moves (the sailor's turn on the deck) and mode 2 moves
+  without a turn, as `__EvtFrmAdjc2` and `npc_autoctl_set_fream` have them.
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.

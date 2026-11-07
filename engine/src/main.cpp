@@ -2849,6 +2849,9 @@ struct ViewerHost : cr::EventHost {
             m.turn = true;
             m.yawFrom = yawNow;
             m.yawTo = yawDeg * kDeg;
+        } else if (facing == Facing::Snap) { // (FrmAdjc2 mode 0: the rotation set before the move starts)
+            const float yaw = yawDeg * kDeg;
+            setActor(app, id, m.from, &yaw, true);
         }
         app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }),
                         app.moves.end());

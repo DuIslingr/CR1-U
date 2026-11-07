@@ -106,7 +106,7 @@ public:
     // Cutscene staging (EvtFrmSetc / FrmSetc2 / FrmAdjc / FrmAdjc2 / SetDir); npc 0 is the party
     // leader. Positions are world units; the y is snapped to the floor unless `mode` is 2.
     // Facing: Yaw turns to `yawDegrees`, Keep leaves it, Travel faces the way it moves.
-    enum class Facing { Yaw, Keep, Travel };
+    enum class Facing { Yaw, Keep, Travel, Snap }; // Snap: the yaw set at once, before a move (FrmAdjc2 mode 0)
     virtual void placeNpc(int /*npc*/, const float* /*pos*/, float /*yawDegrees*/, Facing /*facing*/) {}
     // Moves in a straight line over `frames` (npc_autoctl_set_fream); mode 0 position, 1 position
     // and turn, 2 position including y. Wait 0xFFFD waits for it (animBusy).
