@@ -232,7 +232,7 @@ if(Vulkan_FOUND AND GLSLC AND NOT ANDROID) # (Android: GLES 3)
             COMMENT "glslc ${s} (scene)")
         list(APPEND SHADER_INCS ${SHADER_OUT}/scene_${s}.inc)
     endforeach()
-    # AMD FidelityFX FSR 3.1 upscaler passes (third_party/fidelityfx, MIT), as AMD's Vulkan
+    # AMD FidelityFX FSR 3.1.6 upscaler passes (third_party/fidelityfx, MIT), as AMD's Vulkan
     # back end builds them: 32-bit maths, Lanczos approximation, render-size motion vectors
     set(FFX_DIR ${THIRD_PARTY_DIR}/fidelityfx)
     file(GLOB FFX_HEADERS ${FFX_DIR}/gpu/*.h ${FFX_DIR}/gpu/*/*.h)
