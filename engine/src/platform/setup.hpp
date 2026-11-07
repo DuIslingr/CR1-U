@@ -41,6 +41,8 @@ struct SetupGame {
     // (CR3-U: the Vita release's fan translation - a folder that reads over it; none: not asked - and
     // whether a Vita copy wants it, its text the release's Japanese: asked for over that alone)
     std::function<bool(const std::string&)> patchOk, untranslated;
+    // a fan translation's folder in translation/ (its language: "en", "es" - so each is kept); "" the Vita id
+    std::function<std::string(const std::string&)> patchName;
 };
 
 struct SetupResult {

@@ -717,15 +717,24 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
 
 // a fan translation's archive (the .rar / .zip it comes in) unpacked, its <id>/ kept as `t`<id>/ (`t`:
 // the game folder's translation/): that folder; "" not (`error` why)
+// a fan translation's own folder in translation/: its language's (en/, es/ - the English one and the
+// Spanish one both kept), else the Vita id's
+std::string patchDir(const SetupGame& g, const std::string& patch) {
+    const std::string n = g.patchName ? g.patchName(patch) : std::string();
+    return n.empty() ? std::string(g.vitaId) : n;
+}
+
 std::string unpackPatch(const SetupGame& g, const std::string& archive, const std::string& t, std::string* error,
                         const std::function<void(double)>& progress) {
-    const std::string u = t + ".unpack/", done = t + g.vitaId + "/";
+    const std::string u = t + ".unpack/";
     if ((!isDir(t) && !SDL_CreateDirectory(t.c_str())) || (isDir(u) && (removeTree(u), false)) || !SDL_CreateDirectory(u.c_str()))
         return fail(error, t + ": can't be written"), std::string();
     if (!unpackArchive(archive, u, [](const std::string&) { return true; }, error, progress)) return removeTree(u), std::string();
     const std::string own = patchFolder(u, g.vitaId);
     if (!g.patchOk(own)) return removeTree(u), fail(error, std::string("no fan translation in it (its rePatch/") + g.vitaId + "/)"), std::string();
+    const std::string named = patchDir(g, own), done = t + named + "/", older = t + g.vitaId + "/";
     if (isDir(done)) removeTree(done);
+    if (named != g.vitaId && isDir(older) && patchDir(g, older) == named) removeTree(older); // (an earlier version's translation/<id>/ of this one's language)
     const bool moved = SDL_RenamePath(own.c_str(), done.c_str());
     if (isDir(u)) removeTree(u);
     if (!moved) return fail(error, done + ": can't be made"), std::string();
@@ -1381,8 +1390,8 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     if (kArchives) b.push_back({2, "Its archive..."});
                     b.push_back({0, "Without it"});
                     const int a = ask(g,
-                                      std::string("This Vita release is in Japanese. Its fan translation (gbatemp's: the rePatch folder, ") + g.vitaId +
-                                          ", or the .rar / .zip it comes in) puts the English iOS text over it - is it here too?",
+                                      std::string("This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or "
+                                                  "Joseas's Spanish one: its rePatch folder (") + g.vitaId + "), or the .rar / .zip it comes in. Is one here too?",
                                       b, SDL_MESSAGEBOX_INFORMATION);
                     if (a == 2) { // (its archive: unpacked, its <id>/ kept as translation/<id>/)
                         static const SDL_DialogFileFilter kPatch[] = {{"The fan translation (.rar, .zip, .7z)", "rar;zip;7z"}, {"Any file", "*"}};
@@ -1407,16 +1416,17 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                             continue;
                         chosen = t0;
                     } else if ((chosen = pickFolder()).empty()) continue;
-                    for (const std::string& t : {withSlash(chosen), withSlash(chosen) + g.vitaId + "/", withSlash(chosen) + "rePatch/" + g.vitaId + "/"})
+                    for (const std::string& t : {withSlash(chosen) + g.vitaId + "/", withSlash(chosen) + "rePatch/" + g.vitaId + "/", withSlash(chosen)}) // (its own first: translation/ may hold another already)
                         if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
                     if (from.empty()) tell(g, "No fan translation in " + chosen + " - " + (phone() ? "copy" : "choose") + " its rePatch folder (or the " + g.vitaId + " in it).");
                 }
                 if (!from.empty()) { // (its <id>/ alone, where that is the translation)
                     if (const std::string own = patchFolder(from, g.vitaId); own != from && g.patchOk(own)) from = own;
                 }
-                if (!from.empty() && withSlash(from) == t0 + g.vitaId + "/") out.patch = withSlash(from); // (copied in where it belongs)
+                const std::string named = from.empty() ? std::string() : patchDir(g, from);
+                if (!from.empty() && withSlash(from) == t0 + named + "/") out.patch = withSlash(from); // (copied in where it belongs)
                 else if (!from.empty() && !staged(from) && from.compare(0, t0.size(), t0) == 0) { // (copied in elsewhere in translation/: moved to translation/<id>/)
-                    const std::string done = t0 + g.vitaId + "/";
+                    const std::string done = t0 + named + "/";
                     if (isDir(done)) removeTree(done);
                     if (SDL_RenamePath(from.c_str(), done.c_str())) out.patch = done;
                     else tell(g, "The fan translation can't be moved to " + done);
@@ -1425,7 +1435,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     Copier pc{[&](double v) { pbar.show(v); }, treeBytes(from)};
                     std::string to;
                     inGameFolder(roots, [&](const std::string& r) {
-                        const std::string t = r + "translation/", part = t + g.vitaId + ".part/", done = t + g.vitaId + "/";
+                        const std::string t = r + "translation/", part = t + named + ".part/", done = t + named + "/";
                         if (!isDir(t) && !SDL_CreateDirectory(t.c_str())) return 0;
                         if (isDir(part)) removeTree(part);
                         pc.done = 0;
@@ -1480,33 +1490,53 @@ bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool qui
     if (!g.patchOk) return false;
     const std::string t = withSlash(folder) + "translation/";
     if (!isDir(t)) return false;
-    std::string archive;
-    bool placed = false;
+    // each .rar / .zip / .7z there unpacked once - translation/.unpacked lists those done (name and
+    // size): the English one's and the Spanish one's both, one dropped in after the other too
+    const std::string listPath = t + ".unpacked";
+    std::string list;
+    if (std::FILE* f = std::fopen(listPath.c_str(), "rb")) {
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) list.append(buf, n);
+        std::fclose(f);
+    }
+    std::vector<std::string> archives;
     int count = 0;
     char** names = SDL_GlobDirectory(t.c_str(), "*", 0, &count);
-    for (int k = 0; names && k < count && !placed; ++k) {
+    for (int k = 0; names && k < count; ++k) {
         const std::string n = names[k], p = t + n;
-        if (n.empty() || n[0] == '.') continue;
-        if (isDir(p)) placed = g.patchOk(withSlash(p)); // (unpacked already: read where it is)
-        else if (archive.empty() && (endsWith(n, ".rar") || endsWith(n, ".zip") || endsWith(n, ".7z"))) archive = p;
+        if (n.empty() || n[0] == '.' || isDir(p)) continue;
+        if (!(endsWith(n, ".rar") || endsWith(n, ".zip") || endsWith(n, ".7z"))) continue;
+        SDL_PathInfo info;
+        const std::string line = n + " " + std::to_string(SDL_GetPathInfo(p.c_str(), &info) ? info.size : 0) + "\n";
+        if (list.find(line) == std::string::npos) archives.push_back(p);
     }
     SDL_free(names);
-    if (placed || archive.empty()) return false;
+    if (archives.empty()) return false;
     if (!kArchives) {
-        note(g, baseName(archive) + " can't be opened by this build - unpack it into " + t + " first.", quiet);
+        note(g, baseName(archives.front()) + " can't be opened by this build - unpack it into " + t + " first.", quiet);
         return false;
     }
     const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO);
-    SDL_Log("setup: the fan translation's %s in %s, unpacking it", baseName(archive).c_str(), t.c_str());
-    std::string why, got;
-    {
-        Progress bar(g.title, "Unpacking the fan translation ...");
-        got = unpackPatch(g, archive, t, &why, [&](double v) { bar.show(v); });
+    bool any = false;
+    for (const std::string& archive : archives) {
+        SDL_Log("setup: the fan translation's %s in %s, unpacking it", baseName(archive).c_str(), t.c_str());
+        std::string why, got;
+        {
+            Progress bar(g.title, "Unpacking the fan translation ...");
+            got = unpackPatch(g, archive, t, &why, [&](double v) { bar.show(v); });
+        }
+        if (got.empty()) note(g, baseName(archive) + " can't be unpacked: " + why, quiet);
+        else note(g, "The fan translation is unpacked into " + got + " - " + baseName(archive) + " isn't needed any more: delete it to get the space back.", quiet);
+        any = any || !got.empty();
+        SDL_PathInfo info; // (listed either way: said once, not at every start)
+        list += baseName(archive) + " " + std::to_string(SDL_GetPathInfo(archive.c_str(), &info) ? info.size : 0) + "\n";
     }
-    if (got.empty()) note(g, baseName(archive) + " can't be unpacked: " + why, quiet);
-    else note(g, "The fan translation is unpacked into " + got + " - " + baseName(archive) + " isn't needed any more: delete it to get the space back.", quiet);
+    if (std::FILE* f = std::fopen(listPath.c_str(), "wb")) {
+        std::fwrite(list.data(), 1, list.size(), f);
+        std::fclose(f);
+    }
     if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
-    return !got.empty();
+    return any;
 }
 
 } // namespace cr
