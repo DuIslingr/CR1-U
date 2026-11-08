@@ -485,6 +485,10 @@ struct App {
     } campPointer;
     float saveClock = 0;
     int resumePrompt = 0;                  // 1: "You have save data from your last session" (Yes / No)
+    // Prompts seen outside a save ("Option", OptionSet's flag 0x43): 2.2.0 sets it in the flags in
+    // memory, which only a later save keeps - with no save written after it, it came back each launch.
+    // Kept in settings.ini (seen_flags=) too and read as the saves' (allPairsFlags)
+    std::vector<int> seenFlags;
     int resumeCursor = 0;
     cr::SaveData resumeData;
     vitaimport::Session saveImport;
@@ -3433,6 +3437,14 @@ void loadMix(App& app) {
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
         // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
         if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
+        app.seenFlags.clear();
+        if (const char* at = SDL_strstr(text, "seen_flags="))
+            for (const char* q = at + 11; *q && *q != '\n' && *q != '\r';) {
+                const int f = SDL_atoi(q);
+                if (f > 0) app.seenFlags.push_back(f);
+                while (*q && *q != ',' && *q != '\n') ++q;
+                if (*q == ',') ++q;
+            }
         applyLanguage(app);
         loadVideo(app, text);
         app.voiceEntries.clear();
@@ -3450,6 +3462,13 @@ void loadMix(App& app) {
             app.mix.effects, app.mix.voice, app.voiceEntries.size(), settingsPath().c_str());
     app.sound.setVoiceEntries(app.voiceEntries);
     applyMix(app);
+}
+
+bool seenFlag(const App& app, int f) { return std::find(app.seenFlags.begin(), app.seenFlags.end(), f) != app.seenFlags.end(); }
+void markSeen(App& app, int f) {
+    if (seenFlag(app, f)) return;
+    app.seenFlags.push_back(f);
+    saveMix(app);
 }
 
 void saveMix(const App& app) {
@@ -3476,7 +3495,9 @@ void saveMix(const App& app) {
                               std::to_string(int(app.lockLandscapeFlipped)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
                               (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
-    const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video +
+    std::string seen;
+    for (int f : app.seenFlags) seen += (seen.empty() ? "" : ",") + std::to_string(f);
+    const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
                             "trophies=" + app.trophy.flags.hex() + "\n";
     std::string error;
     if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());
@@ -4121,8 +4142,11 @@ void openOptions(App& app, int page) {
     // "Option" in the manual's message window (no picture: _mwin[5]) - alone: no menu mask, the page
     // held back until the window has shut (then MuCom_MenuSetMask(1) and OptionPrc 3's slide-in).
     // (The title's flags are the saves', as the Progress Tracker's: allPairsFlags)
-    if (first && !app.game.flag(0x43) && !(app.titleOpen && allPairsFlags(app).flag(0x43))) {
+    // (and settings.ini's seen_flags: seen once, it stays seen across launches without a save - the
+    // owner's choice, as Omega's port)
+    if (first && !app.game.flag(0x43) && !seenFlag(app, 0x43) && !(app.titleOpen && allPairsFlags(app).flag(0x43))) {
         app.game.setFlag(0x43, true);
+        markSeen(app, 0x43);
         openManual(app, kOptionIntroPage);
     }
 }
@@ -8632,6 +8656,7 @@ cr::GameState allPairsFlags(const App& app) {
     cr::SaveData d;
     if (cr::readSave(savePath(app, "resume.dat"), d)) take(d.game);
     if (!app.booting) take(app.game);
+    for (int f : app.seenFlags) g.setFlag(f, true); // (the prompts seen outside a save)
     return g;
 }
 
@@ -17114,6 +17139,7 @@ int clearDataNewGameSelfTest(App& app, const cr::SaveData& base) {
 int runSelfTest(App& app) {
     app.persist = false;
     app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
+    app.seenFlags.clear(); // (the prompts seen: none - the tests expect each first showing)
     app.typeOn = false; // pages whole (the typing has its own test)
     app.video.layout = 1; // the iPad layout the tests measure (the iPhone one has its own)
     applyVideo(app);
@@ -18116,6 +18142,8 @@ int runSelfTest(App& app) {
             for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items.erase(item);
             for (int item : {439, 440, 441, 448, 451, 473}) app.game.items[item] = 1;
             app.game.setFlag(0x43, false);
+            const std::vector<int> keepSeen = app.seenFlags;
+            app.seenFlags.clear();
             app.titleOpen = false;
             App::ManualMsg& mm = app.manualMsg;
             openOptions(app, 0);
@@ -18141,6 +18169,12 @@ int runSelfTest(App& app) {
             problems += app.manualOpen;
             app.optionsOpen = false;
             app.game.setFlag(0x43, false);
+            // seen once, it stays seen: a game without the flag (a new launch, another save) opens on the page
+            problems += !seenFlag(app, 0x43);
+            openOptions(app, 0);
+            problems += app.manualOpen;
+            app.optionsOpen = false;
+            app.seenFlags.clear(); // (a fresh install's title)
             app.titleOpen = true;
             openOptions(app, 0);
             aboutHeld += app.manualOpen && app.manualIntro == kOptionIntroPage && mm.state == 2;
@@ -18151,6 +18185,7 @@ int runSelfTest(App& app) {
             aboutHeld += !app.manualOpen && app.game.flag(0x43);
             app.optionsOpen = false;
             app.titleOpen = false;
+            app.seenFlags = keepSeen;
             problems += aboutHeld != 5;
             std::printf("options: \"Option\" (56035) alone in the message window, the page after it, from the field and "
                         "the title: %d/5\n", aboutHeld);
