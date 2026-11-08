@@ -768,6 +768,7 @@ struct App {
     bool captureWinBattles = false;        // --win-battles: a battle the scripts start is won at once
     bool testNoTutorials = false;          // self-test: battles don't stop for their tutorials (EvrStart 2)
     int captureTalk = -1;                  // --talk-portrait n: (new game) the n-th hall conversation showing a portrait
+    int lastMessageId = -1;                // the last message a script showed (CR_CAPTURE_UNTIL_MSG)
     int captureMenu = 0;                   // --camp (1), --save-screen (2: save, 3: the title's load / new, 7: cleared), --char-select (4), --scenarios (5), --manual (6), --world-select (8), --last-battle (9)
     std::string captureCampView;           // --camp-view items|use|equip|slots|wear|status
     std::string captureFieldMenu;          // --field-menu closed|open|known|off|map[step]
@@ -2410,6 +2411,7 @@ void answerWorldChoice(App& app, int pos) {
 // Queues the messages an event showed (English text) for the dialogue box.
 void showMessages(App& app, const std::vector<int>& ids) {
     app.heldPage = false;
+    if (!ids.empty()) app.lastMessageId = ids.back();
     if (app.dialogue.empty()) {
         app.dialogueInfo.clear(), app.dialogueVoices.clear(), app.dialoguePage = 0;
         ++app.dialogueSerial;
@@ -3212,12 +3214,15 @@ struct ViewerHost : cr::EventHost {
         // __EvtTex2d: the flags stay in the slot (placement bits replaced); every animation is a
         // straight blend over a few 20 Hz frames (tex2d_img_prc)
         p.flags = uint16_t((p.flags & ~0x3000) | f);
-        // (the HD binary's __EvtTex2d homes 0x1000 at (-32, 0), 0x2000 at (512, 0), 0x4000 at (176, 96) - no
-        // iPad branch of its own, unlike 2.2.0's)
-        if (f & 0x1000) p.home = -32, p.y = 0, p.side = -1;
-        if (f & 0x2000) p.home = 512, p.y = 0, p.side = 1; // drawn mirrored (+0xbd0e)
+        // (the HD binary's __EvtTex2d homes 0x1000 at (-32, 0), 0x2000 at (512, 0), 0x4000 at (176, 96).
+        // 2.2.0's (0x20dec) put 0x1000 at tex2d (0, 0), 0x2000 at (224, 0) and 0x4000 at (176, 96) on
+        // the 480 x 320 screen: in the phone layouts (logical = 2 tex2d + (32, 64)) (32, 64), (480, 64)
+        // and (384, 256) - the iPad layout keeps the HD homes)
+        const bool phone = app.renderer.phoneLayout();
+        if (f & 0x1000) p.home = phone ? 32 : -32, p.y = phone ? 64 : 0, p.side = -1;
+        if (f & 0x2000) p.home = phone ? 480 : 512, p.y = phone ? 64 : 0, p.side = 1; // drawn mirrored (+0xbd0e)
         if (f & 0x4000) {
-            p.home = 176, p.y = 96, p.side = 0;
+            p.home = phone ? 384 : 176, p.y = phone ? 256 : 96, p.side = 0;
             if (f & 0x40) { p.scale = 2; p.zoomT = 0; p.zoomFrames = 4; } // 200% -> 100%
         }
         if (f & 0x7000) { p.x = p.xFrom = p.xTo = p.home; p.yFrom = p.yTo = p.y; p.frames = p.t = 0; }
@@ -22031,7 +22036,21 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     }
     const bool traceRunner = SDL_getenv("CR_CAPTURE_TRACE") != nullptr; // the script's state each frame it changes
     std::string lastWhere;
+    int lastMsgShown = -1;
+    // CR_CAPTURE_UNTIL_MSG="id[:n[:p[:area]]]": stop the --frames run n frames (60 if not given) after
+    // message id comes up, with no other taps meanwhile (p of its pages turned first, 45 frames apart;
+    // only in that area - ids repeat across the areas' files)
+    int untilMsg = -1, untilAfter = 60, untilPages = 0, untilArea = -1, untilLeft = -1;
+    if (const char* um = SDL_getenv("CR_CAPTURE_UNTIL_MSG"))
+        std::sscanf(um, "%d:%d:%d:%d", &untilMsg, &untilAfter, &untilPages, &untilArea);
     for (int f = 0; f < app.captureFrames; ++f) { // --frames: play the scripts, reading each page for 45 frames
+        if (untilMsg >= 0 && untilLeft < 0 && app.lastMessageId == untilMsg && !app.dialogue.empty() &&
+            (untilArea < 0 || app.area == untilArea)) {
+            untilLeft = untilAfter + 45 * untilPages;
+            std::printf("frame %d: message %d up\n", f, untilMsg);
+        }
+        if (untilLeft > untilAfter && (untilLeft - untilAfter) % 45 == 0 && !app.dialogue.empty()) advanceDialogue(app);
+        if (untilLeft >= 0 && untilLeft-- == 0) break;
         if (app.battle.active && app.captureWinBattles) { // its talks play; then it's won
             stepBattle(app);
             if (traceRunner && f % 100 == 0)
@@ -22061,11 +22080,13 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                                                          : std::string()) +
                                       " gate " + std::to_string(app.runner.gate());
             if (where != lastWhere) std::printf("frame %d: %s\n", f, where.c_str());
+            if (app.lastMessageId != lastMsgShown) std::printf("frame %d: message %d (area %d)\n", f, app.lastMessageId, app.area);
+            lastMsgShown = app.lastMessageId;
             lastWhere = where;
         }
         animateNpcs(app, 1.0f / kFramesPerSecond);
         followPlayerScroll(app); // (drawFrame's, every frame the game shows: a capture draws only its last)
-        if (f % 45 == 44 && f + 1 < app.captureFrames && !SDL_getenv("CR_CAPTURE_NOTAP")) { // (CR_CAPTURE_NOTAP: no taps)
+        if (f % 45 == 44 && f + 1 < app.captureFrames && !SDL_getenv("CR_CAPTURE_NOTAP") && untilLeft < 0) { // (CR_CAPTURE_NOTAP: no taps)
             if (app.choiceFlag >= 0) answerChoice(app, true);
             else if (app.worldChoiceOpen) answerWorldChoice(app, 0);
             else advanceDialogue(app);

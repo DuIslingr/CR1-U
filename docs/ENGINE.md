@@ -341,12 +341,12 @@ c101/c102/c104/m207a, 2026-10-12).
       frame (a centred line from where the whole line starts); a tap brings the rest out at once,
       the next turns the page; code 0x1a pauses the typing, and a message ending in 0x14 closes by
       itself (after the 0x1a before it). `CR_CAPTURE_TYPED=n` captures a page n frames into its
-      typing (tests and other captures show pages whole). The page's "next" diamond, and the skip button (top right, or X) that turns the
+      typing (tests and other captures show pages whole). The page's "next" mark (an olive arrow over a bar on the parchment, white on the bands), and the skip button (top right, or X) that turns the
       scene's pages by itself until it ends (choices still wait); a click turns the page.
       `--capture … --talk-portrait n` captures the n-th hall conversation moment with a portrait
       up, `--event n` starts the room's script n (`--area n` picks the event file where routes
       share a map, `--set-flags a,b` sets story flags first, `--win-battles` wins the battles it
-      starts, `CR_CAPTURE_TRACE=1` prints the script's state as it changes, `CR_CAPTURE_SIZE=WxH` sets the window's size first (e.g. 1280x720 for a phone's 16:9; the logical screen is fitted before any step); `CR_CAPTURE_VARS=k:v,...`
+      starts, `CR_CAPTURE_TRACE=1` prints the script's state as it changes, `CR_CAPTURE_UNTIL_MSG=id[:n[:p[:area]]]` ends a `--frames` run n frames (60) after message id comes up, with no taps meanwhile but p of its pages turned (45 frames apart) and only in that area (ids repeat across the areas' files); `CR_CAPTURE_SIZE=WxH` sets the window's size first (e.g. 1280x720 for a phone's 16:9; the logical screen is fitted before any step); `CR_CAPTURE_VARS=k:v,...`
       sets script variables before the map's entry and before `--event`'s script; `CR_CAPTURE_AT=<address>`
       starts `--event`'s script at that address of the area's file instead)
 - [x] New game: the opening plays as the original's script stages it (a 3D room filmed by the
