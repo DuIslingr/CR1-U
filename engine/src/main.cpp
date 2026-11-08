@@ -4435,6 +4435,16 @@ void optionsKey(App& app, SDL_Keycode key) {
     menuSound(app, se::kCursor);
 }
 
+// Which part of Options' < Back > bar a point (menu units) is on: -1 the left arrow, 0 Back, 1 the
+// right arrow, 3 the bar between them, 2 off the bar (__ComUty_BackButtonProc 0x49e64, type 2: Back
+// at 0xf8 (0x78 wide), the arrows at 0xc0 and 0x175 (0x33 wide) - __menuu_OptionPrc 0x6fdbc's -1 / -3 / -2)
+int optionsBackPart(float mx, float my) {
+    if (my < kOptBackY - 4 || my >= kOptBackY + 30 || mx < 0xc0 || mx >= 0x175 + 0x33) return 2;
+    if (mx < 0xc0 + 0x33) return -1;
+    if (mx >= 0x175) return 1;
+    return mx >= 0xf8 && mx < 0xf8 + 0x78 ? 0 : 3;
+}
+
 // A click at frame pixel (px, py): menu units, then the control there
 void optionsClick(App& app, float px, float py) {
     float lx, ly;
@@ -4456,7 +4466,13 @@ void optionsClick(App& app, float px, float py) {
         else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) resetAnswer(app, false);
         return;
     }
-    if (my >= kOptBackY && my < kOptBackY + 24 && mx >= 192 && mx < 424) { app.optionsOpen = false; menuSound(app, se::kBack); return; }
+    // ComUty_CmdBack 2's three parts: the left arrow the page before, Back closes, the right arrow the
+    // page after (the whole bar used to close Options)
+    if (const int part = optionsBackPart(mx, my); part != 2) {
+        if (part == -1 || part == 1) { openOptions(app, app.optionsPage + part); menuSound(app, se::kBack); }
+        else if (part == 0) { app.optionsOpen = false; menuSound(app, se::kBack); }
+        return;
+    }
     if (my >= kOptPageY - 4 && my < kOptPageY + 18 && mx >= 16 && mx < 66) { // "n / m": the next page
         openOptions(app, app.optionsPage + 1);
         menuSound(app, se::kBack);
@@ -17677,6 +17693,12 @@ int runSelfTest(App& app) {
         optionsKey(app, SDLK_LEFT);
         problems += app.mix.effects != std::max(0, effects - 5);
         problems += expectSounds("options gauges", {4, 4, 40}); // the BGM's is silent
+        { // the < Back > bar's parts: the arrows turn the page, Back alone closes (ComUty_CmdBack 2)
+            const bool parts = optionsBackPart(200, kOptBackY + 12) == -1 && optionsBackPart(300, kOptBackY + 12) == 0 &&
+                               optionsBackPart(400, kOptBackY + 12) == 1 && optionsBackPart(300, kOptBackY - 40) == 2;
+            if (!parts) std::printf("  options: the Back bar's arrows don't turn the page\n");
+            problems += !parts;
+        }
         openOptions(app, 0);         // Game: Language
         optionsKey(app, SDLK_LEFT);  // Japanese
         problems += app.language != 0;
