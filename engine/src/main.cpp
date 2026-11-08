@@ -11777,6 +11777,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                                        {0, 44},   {0, 0},    {0, 264}, {0, 0},  {8, 16},  {216, 16}};
     const short* rect = kRect[base | (app.msgLines == 1)];
     const float right = left + width;
+    const float ex = 2 * androidEdgeX(app); // (Android: how far the phone's edges lie outside the centred screen)
     if (base != 0 || style & 0x80 || style & 0x200) {
         const float wy = 2.0f * rect[0] + 64, ty = 2.0f * (rect[0] + rect[1]) + 64;
         float tx = 2.0f * 36 + 32;
@@ -11784,7 +11785,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (style & 0x80 || style & 0x210) { // no window: the text alone (0x10: outlined in black)
             outline = (style & 0x10) != 0;
         } else if (style & 0x20) { // a black band across the bottom (tex2d y 252..352), the name on its edge
-            r.fillRect(left, 2.0f * 252 + 64, width, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
+            // (draw_vista; Android 1.1.1 0x7d678: x - ox / scale - 1 .. 480 + ox / scale + 1, the phone's whole width)
+            r.fillRect(left - ex, 2.0f * 252 + 64, width + 2 * ex, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
             if (!speaker.empty() && textOn) { // PutMsg: drawfont_l at tex2d (16, 236), just above the band
                 // draw_vista2 (2.2.0 0x1c640): the grey streak under the name - window (612, 14)
                 // 140 x 22 at tex2d (0, 238) (the HD binary's iPad at (-16, 238))
@@ -11798,13 +11800,15 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                 app.nameHud.drawAt(r, {speaker}, nx - namePad, ny, 2.2f, 0, 0, 0.0f);
             }
         } else if (style & 8) { // a tutorial's band: dark, its edges soft (8 / 88 / 8 tex2d), the text further left
-            const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192;
+            // (draw_abeblack: 0xc0 at the window's alpha; Android 1.1.1 0x7d48c: x - ox / scale .. the
+            // phone's right edge - its whole width)
+            const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192, bl = left - ex, bw = width + 2 * ex;
             for (int k = 0; k < 8; ++k) { // the 2D path has no per-vertex colour: the edges in strips
                 const float t = (float(k) + 0.5f) / 8.0f;
-                r.fillRect(left, wy + 2.0f * float(k), width, 2.0f, 0, 0, 0, a * t);
-                r.fillRect(left, y2 + 2.0f * float(k), width, 2.0f, 0, 0, 0, a * (1 - t));
+                r.fillRect(bl, wy + 2.0f * float(k), bw, 2.0f, 0, 0, 0, a * t);
+                r.fillRect(bl, y2 + 2.0f * float(k), bw, 2.0f, 0, 0, 0, a * (1 - t));
             }
-            r.fillRect(left, y1, width, y2 - y1, 0, 0, 0, a);
+            r.fillRect(bl, y1, bw, y2 - y1, 0, 0, 0, a);
             if (app.language == 1) tx = 2.0f * 8 + 32;
         } else if (style & 0x40) { // the grey panel (960 x 192 at its rect)
             drawWinPiece(app, kWinMessagePanel, 32, wy, 960, 192, wa);
