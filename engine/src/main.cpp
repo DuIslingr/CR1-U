@@ -15408,10 +15408,13 @@ void drawFrame(App& app, bool present = true) {
                 r.setColorWrite(false);
                 if (app.showProps) drawLoaded(app, app.model, mvp);
                 r.setColorWrite(true);
-                drawNpcs(app, mvp);
+                // mdl_put (2.2.0 0x14a70): slot 0 (the alpha model) drawn at once, then every other slot
+                // into the draw queue (FUN_000948a0) in slot order - the player's (1, gac + 0x83c) before
+                // the NPCs' -: a blended NPC with depth writes no longer hides the player behind it
                 if (app.havePlayer && playerShown(app))
                     drawLoaded(app, app.player, mvp * playerWorld(shownWalker(app)), nullptr, shownPlayerAlpha(app), -1.0f, app.playerFaded),
                         modelDrawn(app);
+                drawNpcs(app, mvp);
             }
             drawFieldShadows(app, mvp); // (draw order 990: after the models)
             if (app.puzzle.stage >= 0) puzzle::drawFx(app, mvp);
