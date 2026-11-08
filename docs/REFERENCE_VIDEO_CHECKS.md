@@ -106,3 +106,17 @@ colours (|percent| x 255 / 100) << 24 at the centre and 0 at the rim. Port captu
 | A quake (Omega's j001_d01 row) | - | Not applicable as such (Omega's scene); CR1's quakes not compared (open) |
 | The 1024-px column after a map load (Omega's Android 1.1.6) | 01 300 s, 1225 s: the painted rooms fill the frame | Not applicable: an Android artifact; the reference is the Vita |
 | Options' single Language row and the boards' names from window_char (2.2.0) | - | Not on video (the Vita's Options are its own); 2.2.0's code only |
+
+## Puzzle rooms (backport of CRO-U's 90a9652 puzzle touches and 34ef8ad clouds)
+
+The Vita's puzzle code is 2.2.0's (re/vita/decomp.c has the same `_ArrowOff`, `CheckTap::update`,
+`PsychokinesisDetector::update`), so its timing and content compare; positions don't (Vita layout).
+
+| Behaviour (source) | Video, time | Result |
+|---|---|---|
+| Psychokinesis' arrows (2.2.0 `NormalBlockPK::onRise` 0x54734 ShowArrows, `_ArrowOn` FUN_00036fd4, `_s_Arrows` 0xc7430): one each way the lifted block could go, once it has risen | 09 1319.85 s (one arrow, the other ways blocked) and 1322.80-1323.85 s (left, up and down; right off the grid) | Confirmed: arrows only for the empty in-grid neighbours, from the frame the block is up (self-test `puzzle touches: ... arrows on at their points`) |
+| A slide: the chosen arrow flickers out over 10 frames (`__menuf_mainPut` 0x366bc: alpha byte - 0x50 a frame, wrapping), the others at once (`onWaitSlide` 0x54250) | 09 1319.85-1320.35 s at 60 fps, orange pixels in the arrow per game frame: 2105 (0xff), 13, 4, 4, 136, 3, 0, 651, 0, 0, then gone | Confirmed: the bright frames are the wrapped 0xbf and 0xcf (4th and 7th steps), 10 frames in all, as the port's (self-test: 0xaf, then 0xbf after 4, gone after 10) |
+| A let-go: every arrow over 5 frames (- 0x33) | 09 1323.85-1324.0 s: 1548 (0xcc), 52 (0x99), then the background's 4 | Confirmed (self-test: 0xcc after one step, 5 frames) |
+| Retry (`PuzzleScene::reset` 0x5353c: `_SetMask`, 500 ms, the pad lock 24; FieldPCCtrl::reset) | 10 626.55-627.55 s, mean brightness per game frame: 10 steps down to black, 1 black, 10 steps up; at 627.6 s the leader stands at the room's entry facing in, the count back to the room's 4 (5 after the first gem, 629 s) | Confirmed: the port's 10 + 10 frame fades, the leader back where and as it came in, standing, the room rebuilt |
+| The pad lock (gac + 0x3cde6), CheckTap's 5 frames, the windows, ScrollCamera's second finger | - | Code reading only (2.2.0 0x45700 / 0x7b514 / 0x6c364 / 0x453a8 / 0x7b7c4); not visible on video |
+| The clouds (p0001_fog: 2.2.0 `_ScnEffectProc` 0x63424 draws the band from tex2d y 64; Android 1.1.1 64 + oy / scale; 1.0.1 HD's iPad 128) | 10 600-630 s (Vita layout): the clouds densest along the screen's bottom | Consistent: the port's phone layouts now draw from 64 (`--layout iphone --scene-fx 5 11 40 --capture p0001_10.cmp`: dense at the screen's bottom, as the iPad layout's 128 was already); not position-compared (Vita layout) |

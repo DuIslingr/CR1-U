@@ -400,6 +400,7 @@ bool EventRunner::step(EventHost* host) {
                 host->texDisp(g);
             }
             else if (id == 2003 && host) host->puzzleStart();                               // Uty_PuzzleStart_Init
+            else if (id == 2038 && host) host->puzzlePadLock(vm.var(9));                    // (2.2.0's 2038: _ChkVar(9) into gac + 0x3cde6)
             else if (id == 2018 && host) host->recoverPair();                               // Uty_HpMpRecovery
             else if (id == 2024 && host) state.vars[a0] = host->bgmNo();                    // Uty_GetBgmNo: var a0
             else if (id == 2025 && host) host->endMenu(a0);                                 // Uty_EndMenu

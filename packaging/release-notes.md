@@ -4,6 +4,13 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
 
 ## What's new
 
+- **Puzzle rooms' touches as the original's (iOS 2.2.0):** a lifted block shows arrows the ways it can
+  go (the chosen one flickers out as it slides, the rest fade on a let-go); a swipe is decided as soon
+  as the finger leaves the dead zone; teleport / toughness / pyrokinesis taps are taps (let go within
+  5 frames, not while the leader moves) with the original's per-object windows; a second finger
+  scrolls the view; Retry / Help and the field menu's Camp / Save wait out the original's pad lock;
+  a Retry puts the leader back facing as it came in; a cleared room has no objects or buttons; the
+  clouds sit at the screen's bottom in the phone layouts.
 - **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured here: about 6.5 ms of pipeline compiling the first time, 0.1 ms the next;

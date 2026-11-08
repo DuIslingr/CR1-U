@@ -143,6 +143,7 @@ public:
     // 1 it showed, the script sets 2, 3 back at the leader)
     virtual void quake(int /*amp*/, int /*from*/, int /*to*/, int /*frames*/) {} // EvtQuake
     virtual void puzzleStart() {}
+    virtual void puzzlePadLock(int) {} // Util 2038 (2.2.0 FUN_00026d1c): var 9 into the puzzle pad lock
     // Uty_TexDisp: GetXmpStkData 0..10 = Tex2d slot, x, y, u, v, w, h, fade-in, hold, fade-out, ?
     virtual void texDisp(const int32_t* /*g*/) {}
     // Uty_TutoTexDisp: GetXmpStkData 0..11 = slot, pages, then (row, frames) for pages 0..3, x, y;
