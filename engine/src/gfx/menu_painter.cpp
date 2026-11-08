@@ -133,8 +133,9 @@ float MenuPainter::textWidth(const std::string& s, float size) {
 
 void MenuPainter::rowBar(float x, float y, const std::string& label, float alpha, bool highlight) {
     const float a = std::min(alpha, 179.0f / 255.0f);
-    // Keyboard cursor: the lime the game lights pressed controls with (0xEBFF4B)
-    const float r = highlight ? 0xEB / 255.0f : 1, g = 1, b = highlight ? 0x4B / 255.0f : 1;
+    // Keyboard cursor: the cyan the game lights pressed controls with (tex2d colour 0xEBFF4B, A B G R:
+    // R 0x4B, G 0xFF, B 0xEB - ComUty_CmdBack 0x4d4d0's pressed colour)
+    const float r = highlight ? 0x4B / 255.0f : 1, g = 1, b = highlight ? 0xEB / 255.0f : 1;
     const float solid[4] = {r, g, b, a}, clear[4] = {r, g, b, 0};
     quad(x, y, 100, 24, solid, solid);
     quad(x + 100, y, 123, 24, solid, clear);
@@ -147,7 +148,7 @@ void MenuPainter::button(float x, float y, int word, const std::string& label, b
     for (int k = 0; k < 14; ++k) piece(x + 28 + 4 * k, y, 28, 184, 4, 40, alpha);
     piece(x + 84, y, 28, 184, 24, 40, alpha);
     // Face: normal or selected strip
-    const float r = highlight ? 0xEB / 255.0f : 1, b = highlight ? 0x4B / 255.0f : 1;
+    const float r = highlight ? 0x4B / 255.0f : 1, b = highlight ? 0xEB / 255.0f : 1;
     piece(x, y + 4, 996, selected ? 932.0f : 900.0f, 16, 32, alpha, r, 1, b);
     for (int k = 0; k < 20; ++k) piece(x + 16 + 4 * k, y + 4, selected ? 120.0f : 76.0f, 188, 4, 32, alpha, r, 1, b);
     piece(x + 96, y + 4, selected ? 124.0f : 80.0f, 188, 16, 32, alpha, r, 1, b);
@@ -155,7 +156,7 @@ void MenuPainter::button(float x, float y, int word, const std::string& label, b
         piece(x + 10, y + 8, float(word % 5) * 88, 512 + float(word / 5) * 24, 88, 24, alpha);
     } else if (!label.empty()) { // our labels: the game's font, centred on the face
         const float size = textWidth(label, 13) > 84 ? 11.0f : 13.0f;
-        // light like the game's words; dark on the lime cursor face
+        // light like the game's words; dark on the cyan cursor face
         textCentred(label, x + 56 - textWidth(label, size) / 2, y + 20, highlight, alpha, size);
     }
 }
@@ -190,15 +191,15 @@ void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight
         quad(x + 13, y + 6, 1, 2, red, red);
         quad(x + 14, y + 5, fill, 4, red, red);
     }
-    const float r = highlight ? 0xEB / 255.0f : 1, b = highlight ? 0x4B / 255.0f : 1;
+    const float r = highlight ? 0x4B / 255.0f : 1, b = highlight ? 0xEB / 255.0f : 1;
     const short* p = kMenuPicture[106];
     piece(knob, y - 16, p[0], p[1], p[2], p[3], alpha, r, 1, b);
 }
 
 void MenuPainter::backButton(float x, float y, bool pressed, int bob, float alpha) {
-    const float lime[4] = {0xEB / 255.0f, 1, 0x4B / 255.0f, alpha};
+    const float cyan[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, alpha}; // (tex2d's 0xEBFF4B is A B G R: cyan)
     const float white[4] = {1, 1, 1, alpha};
-    const float* c = pressed ? lime : white;
+    const float* c = pressed ? cyan : white;
     const float clear[4] = {white[0], white[1], white[2], 0};
     // ComUty_CmdBack mode 2: the left arrow's box (24..51, faded in over 0..24), Back (56..176), the
     // right arrow's box (181..208, fading out to 232); the arrows bob inward (0..5)
@@ -213,9 +214,9 @@ void MenuPainter::backButton(float x, float y, bool pressed, int bob, float alph
 }
 
 void MenuPainter::backBar(float x, float y, bool pressed, float alpha) {
-    const float lime[4] = {0xEB / 255.0f, 1, 0x4B / 255.0f, alpha};
+    const float cyan[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, alpha}; // (tex2d's 0xEBFF4B is A B G R: cyan)
     const float white[4] = {1, 1, 1, alpha};
-    const float* c = pressed ? lime : white;
+    const float* c = pressed ? cyan : white;
     const float clear[4] = {c[0], c[1], c[2], 0};
     quad(x, y, 24, 24, clear, c);
     quad(x + 24, y, 184, 24, c, c);
