@@ -88,3 +88,21 @@ The reference parts are the Vita release running in Vita3K (960 x 544 scaled to 
 | The battle's command plates lit (2.2.0 `__menub_mainPut` 0x19728: `pad_chk_box0` of each box - only under a finger; the Vita's 0x81043646: a cursor kept in DAT_81120298 / DAT_8112029c[member], a touch moves it) | Part 1 1498.6-1500.1 s at 30 fps: Pair lit from the frame the page slides in until it goes; 1700-1760 s at 2 fps: Attack lit as the commands page arrives, Genes the next half second, Solo for 1.5 s | Consistent with the Vita's code (a cursor). The port: the Vita copy as the game keeps the cursor lit; elsewhere after a click or touch (`App::pointerLast`) no plate is lit, as iOS (not on video), and keys and pads keep the cursor's |
 | The event / shop Yes / No lit (2.2.0 `__menuu_EventPrc` 0x76e24 clears it every frame; the Vita's 0x81052a0a keeps DAT_81121cc8) | Part 2 135.5 s, the shop's "Equip Favorite Black Tunic?": Yes lit with nothing touched | Consistent with the Vita's cursor; the port's Vita copy keeps it lit, the iOS rule (dark after a touch, `CR_CAPTURE_CHOICE=touch`) isn't on video |
 | A pressed control's colour (0xEBFF4B, A B G R: cyan) | Part 1 scanned at 60 fps for a cyan or lime Back bar (x 700..1200, y 662..692): none - the Back bar isn't seen pressed in Part 1 | Not checkable on this part; the port follows the code (and Omega's video of the same engine's colour) |
+
+## Field rendering (backport of CRO-U's 8e8c370 and 0c027e0)
+
+The Vita's npc_shodow (0x8103cfca) and mdl_shadow (0x81007088) are 2.2.0's (0x3b3fc / 0x138ac): the
+leader's 3 / 3 at 80 %, the NPC table's +0x12 bit 15 with +0x1e..+0x24, tex2d slot 0x51 (2.2.0 0x4e),
+colours (|percent| x 255 / 100) << 24 at the centre and 0 at the rim. Port captures:
+`--capture t0101_10.cmp out.bmp --frames 10`, `--capture d0101_10.cmp out.bmp --area 2 --frames 40 [--at 85 80]`.
+
+| Behaviour (source) | Video, time | Result |
+|---|---|---|
+| The leader's shadow: a black fan under the head node, 80 % at its centre, clear at its rim (mdl_shadow 0x13a90..0x13afc: tex2d_add_tri's colours alpha << 24, 0, 0) | 01 300 s, the hall: a soft dark blob under Escher's feet, about 40 px across; on the light tile under him (row 455) 184 at the tile's edge, 123 at the blob | Consistent after the fix: the port's t0101 capture shows a soft blob between the feet (a light tile 197 falling to about 150 at its edge). Drawn as CRO's port does it - every vertex at 80 % - it was a hard black disk as wide as the character is tall (d0101 capture): fixed for the field and the battle (both through mdl_shadow) |
+| The shadow's alpha does not follow the model's (2.2.0 / Vita: 255 x percent, Omega's: x the model's alpha) | - | Code only (no faded leader on video found) |
+| The field side of an encounter (CRView::prc 0x4274: SetFade(white, 255, 255, 1 ms)) | 01 1228.10 -> 1228.15 s: the field, then solid white the next frame; white held to 1228.55 s, the battle out of white by about 1229.45 s | Confirmed: the port's startBattle cuts to white the same way |
+| The warp crystal (c111, read_mdl: unlit, colour 1) | 01 1225 s: the green crystal on its pedestal | Same colour in the port (`--at 85 80`): c111 replaces its texture (texture blend 0), so the loader's colour leaves it as it was |
+| Effect-type NPC models (ee* / be* / fe*) and eff.bin effects drawn with colour 1 alone (906 of the 1418 NPC-table materials darker than the old emission + ambient + diffuse) | - | Open: no moment compared yet |
+| A quake (Omega's j001_d01 row) | - | Not applicable as such (Omega's scene); CR1's quakes not compared (open) |
+| The 1024-px column after a map load (Omega's Android 1.1.6) | 01 300 s, 1225 s: the painted rooms fill the frame | Not applicable: an Android artifact; the reference is the Vita |
+| Options' single Language row and the boards' names from window_char (2.2.0) | - | Not on video (the Vita's Options are its own); 2.2.0's code only |

@@ -20680,6 +20680,18 @@ int runSelfTest(App& app) {
 
 // A new game (route 1): the Ark's hall (j001_t01, map 97) with only the new-game flag set; its
 // script 0 plays the opening.
+// CR_CAPTURE_VARS="k:v,...": script variables a capture sets (before the map's entry, and before --event's script)
+void captureVars(App& app) {
+    if (const char* cv = SDL_getenv("CR_CAPTURE_VARS"))
+        for (const char* p = cv; *p;) {
+            int k = 0, v = 0, used = 0;
+            if (std::sscanf(p, "%d:%d%n", &k, &v, &used) != 2) break;
+            app.game.vars[k] = v;
+            p += used;
+            if (*p == ',') ++p;
+        }
+}
+
 void startNewGame(App& app) {
     app.game = cr::GameState();
     app.playSeconds = 0;
@@ -21320,6 +21332,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     else if (app.newGame) startNewGame(app);
     else {
         for (int f : app.captureFlags) app.game.setFlag(f, true);
+        captureVars(app);
         std::vector<int> numbers = cr::mapNumbersFor(mapName);
         if (const char* cm = SDL_getenv("CR_CAPTURE_MAP")) numbers.insert(numbers.begin(), SDL_atoi(cm)); // (maps sharing a file)
         if (app.captureArea >= 0 && !numbers.empty()) showMap(app, idx, numbers[0], app.captureArea);
@@ -21330,7 +21343,11 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     if (app.captureEvent >= 0) { // --event n: as if something in the room had started it
         app.pendingEntry = App::Entry::None;
         app.runner.stop();
-        if (!app.runner.start(app.events, app.captureEvent, app.game, app.area, app.mapNumber))
+        captureVars(app); // (again: the map's own entry may have used them as counters)
+        if (const char* at = SDL_getenv("CR_CAPTURE_AT")) { // (an address in the area's file instead: a branch reached by state)
+            if (!app.runner.startAt(app.events, uint32_t(std::strtoul(at, nullptr, 0)), app.captureEvent, app.game, app.area, app.mapNumber))
+                std::printf("area %d: no code at %s\n", app.area, at);
+        } else if (!app.runner.start(app.events, app.captureEvent, app.game, app.area, app.mapNumber))
             std::printf("area %d has no script %d\n", app.area, app.captureEvent);
     }
     const bool traceRunner = SDL_getenv("CR_CAPTURE_TRACE") != nullptr; // the script's state each frame it changes
