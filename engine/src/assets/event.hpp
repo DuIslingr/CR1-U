@@ -59,10 +59,13 @@ struct FieldNpc {
     bool mdlRead = false;        // its model read by a script (__EvtNpcMdlRead: npc ctl +0x98)
 
     bool touchTrigger() const { return (kind & 1) && (kind & 0x8000); }
-    // Box centre as RectWrapper::checkEventKick computes it (the offset is applied twice
-    // for model-less NPCs: once in npc_setup, once in the check)
-    float boxCenterX() const { return pos[0] + offset[0] * (model <= 1 ? 2.0f : 1.0f); }
-    float boxCenterZ() const { return pos[2] + offset[2] * (model <= 1 ? 2.0f : 1.0f); }
+    // npc_setup's position (2.2.0 0x3b6a4, npc ctl +0x14): the record's, plus the offset for models
+    // 0 and 1 - a model-less NPC (-1) and the others stand at the record's alone
+    float base(int i) const { return pos[i] + (model == 0 || model == 1 ? offset[i] : 0.0f); }
+    // Box centre as RectWrapper::checkEventKick (2.2.0 0x3dcfc) has it: the base plus the offset
+    // (the box's sides along x and z, not turned)
+    float boxCenterX() const { return base(0) + offset[0]; }
+    float boxCenterZ() const { return base(2) + offset[2]; }
 };
 
 // Section 4: destinations for Warp 0xFFFD, keyed by the running event's number.

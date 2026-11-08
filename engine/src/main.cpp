@@ -205,7 +205,9 @@ struct App {
     cr::GpuMesh puzzleBeams;               // the candle switches' beams (CandleSwitch::draw3D)
     cr::GpuMesh battleShadows;             // the fighters' floor shadows (_btl_shadow's fans)
     cr::GameState game;                    // flags / variables the scripts use (new game)
-    int lastKick = 0;                      // trigger the player is standing in (fires once)
+    int lastKick = 0;                      // G+0x358e4: the touch box last kicked - kept across warps and loads,
+                                           // 0 once the leader stands in none (RectWrapper::checkEventKick, 2.2.0 0x3dcfc)
+    std::map<int, int> examineLinger;      // FollowWindow / FlagWindow: an NPC's window, frames left after leaving reach (10)
     std::string lastWarp;                  // shown in the status line
     std::string lastEvent;                 // last examined object / items, for the status line
     cr::Hud dialogueHud, promptHud, itemHud;
@@ -1933,11 +1935,43 @@ bool playerShown(const App& app) {
     return it == app.npcShown.end() || it->second;
 }
 
-bool npcActive(const App& app, const cr::FieldNpc& n) {
-    // Born / Kill override the flags until the room reloads
-    if (auto it = app.npcShown.find(n.id); it != app.npcShown.end()) return it->second;
-    // npc_setup hides an NPC whose show-flag is clear (guess for the hide flag: hidden once set)
+// _ChkNpcCreateFlag: the row's show flag (if any) set and its hide flag (if any) clear
+bool npcCreateFlags(const App& app, const cr::FieldNpc& n) {
     return (n.flagShow < 0 || app.game.flag(n.flagShow)) && (n.flagHide < 0 || !app.game.flag(n.flagHide));
+}
+
+// npc_setup's story actors (2.2.0 0x3b6a4: id - 400 < 50), killed as a room loads whatever their
+// flags - not in the puzzle rooms (area 1)
+bool npcStoryActor(const App& app, int id) { return app.area != 1 && id >= 400 && id < 450; }
+
+// npc_setup (2.2.0 0x3b6a4, at every field load - a battle's end too: prc's load flags | 0xd): each
+// NPC of the room shown (npc ctl +0x8c bit 0 clear) when its create flags pass and it isn't a story
+// actor. Only Born / Kill change that until the next load - a flag set mid-room shows or hides
+// nothing (_ChkNpcDisp reads the bit alone)
+void npcSetup(App& app) {
+    app.npcShown.clear();
+    for (const cr::FieldNpc& n : app.npcs) app.npcShown[n.id] = npcCreateFlags(app, n) && !npcStoryActor(app, n.id);
+    app.examineLinger.clear();
+}
+
+bool npcActive(const App& app, const cr::FieldNpc& n) { // _ChkNpcDisp
+    if (auto it = app.npcShown.find(n.id); it != app.npcShown.end()) return it->second;
+    return npcCreateFlags(app, n); // (an NPC npc_setup never saw)
+}
+
+void buildNpcDraws(App& app);
+
+// After a battle (prc: the field read back with load flags | 0xd - npc_read_setup clears the npc
+// records, then npc_setup): every Born / Kill of the room undone, the NPCs a script read in
+// (NpcMdlRead) gone
+void resetFieldNpcs(App& app) {
+    std::set<int> room;
+    if (app.mapNumber >= 0 && app.area >= 0)
+        for (const cr::FieldNpc& n : app.events.npcs(app.mapNumber)) room.insert(n.id);
+    npcSetup(app);
+    for (const cr::FieldNpc& n : app.npcs)
+        if (!room.count(n.id)) app.npcShown[n.id] = false;
+    buildNpcDraws(app);
 }
 
 namespace puzzle { void enter(App& app); }
@@ -1987,9 +2021,9 @@ void enterMap(App& app) {
     app.frameEffects.clear();
     app.npcWarps.clear();
     app.renderer.destroy(app.triggerMesh);
-    app.lastKick = 0;
-    app.lastEvent.clear();
+    app.lastEvent.clear(); // (lastKick kept: checkEventKick alone clears it, the leader in no box)
     app.npcShown.clear();
+    app.examineLinger.clear();
     app.placedNpcs.clear();
     app.actorSlots.clear();
     app.cam = App::ScriptCam();
@@ -2049,6 +2083,7 @@ void enterMap(App& app) {
     if (dungeonBoxes)
         for (const auto& e : pick) boxes.push_back({e[0], e[1]});
     cr::applyTreasureFlags(app.events, app.npcs, boxes, app.game, true);
+    npcSetup(app); // (npc_setup at each field load)
     app.npcDraws.clear(); // (npc_setup reads their models again: no fade carried over from the last room)
     puzzle::enter(app); // PuzzleScene::init in a puzzle room (stage -1 elsewhere)
     app.puzzleStartPending = app.puzzle.stage >= 0;
@@ -2132,7 +2167,8 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     app.walker.pos = p;
     app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f; // FieldPCCtrl::reset: DegToRad
     app.walker.gait = cr::Gait::Stand;
-    app.lastKick = triggerAt(app, p); // don't fire a box we arrive in
+    // (lastKick as it was - the warping box's id: a box of another id where he lands kicks once the
+    // scripts end)
     app.lastWarp = "warp: event " + std::to_string(fromEvent) + " map " + std::to_string(fromMap) + " -> " +
                    std::to_string(w.map);
     SDL_Log("%s (%s) at (%.1f %.1f %.1f) facing %g", app.lastWarp.c_str(), cr::kMapCollisionFile[w.map], p.x, p.y, p.z,
@@ -2141,24 +2177,58 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     return true;
 }
 
-// The NPC in reach to examine or talk to: kind bit 3, displayed, and the player inside its box grown
-// by the walker radius + 1.5. RectWrapper::checkFollowWindow gives objects (bit 4 clear) the "!"
-// badge; checkFlagWindow gives people (bit 4 set) the talk badge. Both start the NPC's script.
+// An NPC whose window can be up: kind bit 3, displayed, not an opened box (FollowWindow::
+// isOpenedTreasureBox, 2.2.0 0x5e2a8: its lid's, id + 1, hide flag set - no badge, no examine)
+bool npcExaminable(const App& app, const cr::FieldNpc& n) {
+    if (!(n.kind & 8) || !npcActive(app, n)) return false;
+    if (n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) return false; // (story actors waiting)
+    if (n.treasure & 3) {
+        cr::NpcRow lid;
+        if (app.events.npcRow(n.id + 1, lid) && lid.flagHide >= 0 && app.game.flag(lid.flagHide)) return false;
+    }
+    return true;
+}
+
+// RectWrapper::checkFollowWindow / checkFlagWindow: the leader inside the NPC's box - about npc_setup's
+// position plus the offset - grown by the walker radius + 1.5
+bool npcInReach(const App& app, const cr::FieldNpc& n) {
+    if (!npcExaminable(app, n)) return false;
+    const float hx = n.box[0] / 2 + app.walker.radius + 1.5f, hz = n.box[2] / 2 + app.walker.radius + 1.5f;
+    return std::fabs(app.walker.pos.x - n.boxCenterX()) <= hx && std::fabs(app.walker.pos.z - n.boxCenterZ()) <= hz;
+}
+
+// A field frame of the windows: one put up (FollowWindow::set, 2.2.0 0x5e324 / FlagWindow's) for each
+// NPC in reach lasts 10 frames (FollowWindow::update counts it down), so it lingers a moment after
+// the leader steps out; the checks don't run while a script holds the field
+void stepExamineWindows(App& app) {
+    for (auto it = app.examineLinger.begin(); it != app.examineLinger.end();)
+        it = --it->second <= 0 ? app.examineLinger.erase(it) : std::next(it);
+    if (!app.havePlayer || app.runner.running()) return;
+    for (const cr::FieldNpc& n : app.npcs)
+        if (npcInReach(app, n)) app.examineLinger[n.id] = 10;
+}
+
+// The NPC the "!" button examines or talks to. FollowWindow::update (objects: kind & 0x18 == 8) runs
+// before FlagWindow::update (people: 0x18), and an examine from the first starts its script, which
+// holds the second back: an object in reach wins over a person. Each takes, of its windows up (in
+// reach, or lingering), the nearest by 3D distance from the box's centre to the leader.
 const cr::FieldNpc* interactTarget(const App& app) {
     if (!app.havePlayer) return nullptr;
-    const cr::FieldNpc* best = nullptr;
-    float bestD = 1e30f;
-    for (const cr::FieldNpc& n : app.npcs) {
-        if (!(n.kind & 8) || !npcActive(app, n)) continue;
-        if (n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) continue;
-        const float k = n.model <= 1 ? 1.0f : 0.0f;
-        const float cx = n.pos[0] + k * n.offset[0] + n.offset[0], cz = n.pos[2] + k * n.offset[2] + n.offset[2];
-        const float hx = n.box[0] / 2 + app.walker.radius + 1.5f, hz = n.box[2] / 2 + app.walker.radius + 1.5f;
-        const float dx = app.walker.pos.x - cx, dz = app.walker.pos.z - cz;
-        if (std::fabs(dx) > hx || std::fabs(dz) > hz) continue;
-        if (dx * dx + dz * dz < bestD) { bestD = dx * dx + dz * dz; best = &n; }
+    for (int people = 0; people < 2; ++people) {
+        const cr::FieldNpc* best = nullptr;
+        float bestD = 1e30f;
+        for (const cr::FieldNpc& n : app.npcs) {
+            if (bool(n.kind & 0x10) != bool(people)) continue;
+            const auto up = app.examineLinger.find(n.id);
+            if (!(up != app.examineLinger.end() && npcExaminable(app, n)) && !npcInReach(app, n)) continue;
+            const float dx = app.walker.pos.x - n.boxCenterX(), dy = app.walker.pos.y - (n.base(1) + n.offset[1]),
+                        dz = app.walker.pos.z - n.boxCenterZ();
+            const float d = dx * dx + dy * dy + dz * dz;
+            if (d < bestD) bestD = d, best = &n;
+        }
+        if (best) return best;
     }
-    return best;
+    return nullptr;
 }
 
 // Examines / talks to the NPC in reach, as FollowWindow::TouchFollowWindowUtil does: a treasure
@@ -2179,6 +2249,8 @@ bool interact(App& app, bool instant) {
         script = n->id + 1;
     }
     const int id = n->id;
+    app.examineLinger.erase(id); // (_FollowWindowOff)
+    menuSound(app, se::kChoose); // TouchFollowWindowUtil (2.2.0: before the EvtStart): __effgo(2) on every examine and talk
     if (!instant) { // played over the next frames (animations, item window, fades)
         app.runnerWhat = "examined " + what.substr(0, what.size() - 4) + " (" + std::to_string(id) + ")";
         app.lastEvent = app.runnerWhat;
@@ -2560,7 +2632,6 @@ void placePlayer(App& app) {
     app.player.time = 0;
     app.walkClock = 0;
     app.havePlayer = true;
-    app.lastKick = triggerAt(app, app.walker.pos); // starting inside a box doesn't fire it
 }
 
 // The viewer's side of a running script (see cr::EventHost).
@@ -11150,6 +11221,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
         // holding the field (G+0x2c0 bit 0) stops the stick, not the floor; the pushes wait for its end
         const std::vector<cr::WalkBody> bodies = walkBodies(app);
         if (fieldSceneRunning(app)) { // (a touch trigger may start a script this step)
+            stepExamineWindows(app); // (the windows count down, none put up)
             app.walker.gait = cr::Gait::Stand;
             app.walker.velocity = {};
             cr::checkWalkerHit(app.walker, app.collisionData, bodies, !app.runner.running());
@@ -11158,14 +11230,14 @@ void updatePlayer(App& app, float dt, float camYaw) {
         const float walkedDist = cr::stepWalker(app.walker, app.collisionData, bodies, sx, sy, run, camYaw, !app.runner.running());
         if (sx == 0 && sy == 0) // FieldPCCtrl::operate's state 3 (FollowWindow::update's receiveMessage 3): standing in reach,
             if (const cr::FieldNpc* n = interactTarget(app)) { // the leader turns to the target by 0.35 of the angle left each frame
-                const float k = n->model <= 1 ? 1.0f : 0.0f;
-                const float cx = n->pos[0] + k * n->offset[0] + n->offset[0], cz = n->pos[2] + k * n->offset[2] + n->offset[2];
+                const float cx = n->boxCenterX(), cz = n->boxCenterZ();
                 float d = std::atan2(cx - app.walker.pos.x, cz - app.walker.pos.z) - app.walker.heading;
                 while (d > 3.14159265f) d -= 2 * 3.14159265f;
                 while (d < -3.14159265f) d += 2 * 3.14159265f;
                 app.walker.heading += 0.35f * d;
             }
         if (walkedDist >= 0) fieldWalked(app, walkedDist); // fldencount_walk(|velocity + pushes|)
+        stepExamineWindows(app);
         checkTriggers(app);
         if (fieldSceneRunning(app)) app.walker.gait = cr::Gait::Stand;
         if (fieldSceneRunning(app) || !app.havePlayer) continue;
@@ -11211,7 +11283,7 @@ cr::Mat4 playerWorld(const cr::FieldWalker& w) {
 // for models 0/1), turned by the record's angle about Y, scaled by the table's percentage.
 // An NPC's model matrix: position (plus the offset for models 0/1), turned about Y, scaled
 cr::Mat4 npcWorld(const cr::FieldNpc& n) {
-    const float k = n.model <= 1 ? 1.0f : 0.0f;
+    const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
     const float c = std::cos(n.angle), sn = std::sin(n.angle);
     const bool set = n.axes[0] >= 0;
     const float sx = set ? n.axes[0] : n.scale, sy = set ? n.axes[1] : n.scale, sz = set ? n.axes[2] : n.scale;
@@ -11303,7 +11375,7 @@ std::vector<cr::WalkBody> walkBodies(const App& app) {
         if (!b.wall && !b.floor) continue;
         b.shown = npcVisible(app, idx) && // (actors waiting off stage)
                   !(n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0));
-        const float k = n.model <= 1 ? 1.0f : 0.0f;
+        const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
         b.pos = {n.pos[0] + k * n.offset[0], n.pos[1] + k * n.offset[1], n.pos[2] + k * n.offset[2]};
         for (int c = 0; c < 3; ++c) b.offset[c] = n.offset[c], b.box[c] = n.box[c];
         b.angle = n.rectAngle;
@@ -12684,6 +12756,7 @@ void endBattle(App& app, bool won) {
     cr::EncounterTable table;
     const bool have = cr::encounterTable(app.events, app.mapNumber, table);
     app.encounters.enterMap(have ? &table : nullptr);
+    resetFieldNpcs(app); // (the field read back: load flags | 0xd, npc_read_setup, then npc_setup)
     app.lastEvent = (won ? "won against " : "ran from ") + names;
     // Back on the field (fldread_prc): an event battle's script goes on from its Battle; after any
     // other the room's entry script (EvrStart 5) runs again, as the field reloads
@@ -15020,7 +15093,7 @@ void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, floa
     if (app.runner.running() || !app.dialogue.empty() || app.itemWindowOpen) return;
     const cr::FieldNpc* n = interactTarget(app);
     if (!n) return;
-    const float k = n->model <= 1 ? 1.0f : 0.0f;
+    const float k = n->model == 0 || n->model == 1 ? 1.0f : 0.0f;
     // FollowWindow::update: the bubble's point is the box's top, pos + offset + (0, sizeY, 0)
     const float p[3] = {n->pos[0] + k * n->offset[0] + n->offset[0], n->pos[1] + (k + 1) * n->offset[1] + n->box[1],
                         n->pos[2] + k * n->offset[2] + n->offset[2]};
@@ -15114,7 +15187,9 @@ void loseToArk(App& app) {
     w.angleDegrees = 180;
     cr::addOz(app.game, -(app.game.oz * 20 / 100));
     performWarp(app, w, -1);
-    app.pendingEntry = App::Entry::Room;
+    // _btl_lose (2.2.0 0xb6f8) stores the load flags as 0x27: bit 1 runs the area's script 0
+    // (fldread_evt_init2), bit 3 clear - no room entry script (EvrStart 5)
+    app.pendingEntry = App::Entry::Area;
     app.lastEvent = "lost: back to the Ark";
 }
 
@@ -18347,7 +18422,7 @@ int runSelfTest(App& app) {
             for (const cr::FieldNpc& n : targets) {
                 if (app.mapNumber != map0 || app.area != area0) showMap(app, int(at - app.maps.begin()), map0, area0);
                 if (!app.havePlayer) break;
-                const float k = n.model <= 1 ? 1.0f : 0.0f;
+                const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
                 const float cx = n.pos[0] + k * n.offset[0] + n.offset[0], cz = n.pos[2] + k * n.offset[2] + n.offset[2];
                 app.walker.pos = {cx + n.box[0] / 2 + app.walker.radius, n.pos[1], cz}; // just beside it
                 const cr::FieldNpc* t = interactTarget(app);
