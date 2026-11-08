@@ -255,9 +255,12 @@ c101/c102/c104/m207a, 2026-10-12).
       the game's language. Keys: Up/Down, Left/Right, Enter, Q/E or PgUp/PgDn for pages, Esc; the
       mouse clicks buttons, gauges, the page number and Back. Saved to settings.ini. From the title
       it is in title mode, as in the original: Reset Data instead of Return to Title. Return to
-      Title works. The **Instruction Manual**: the 29 topics of system messages 56000 on (titles
-      in label bars, 56007 - the manual's own introduction - first), the page beside them, wrapped
-      to the panel. **Reset Data** (from the title) asks twice ("Erase all the data from your game?",
+      Title works. The **Instruction Manual** (`__menuu_OptionPrc` 0xf..0x16): the manual items held
+      (439..478) in label bars; a topic opens its page (system message 56000 + item - 439) in the
+      standard message window (style 8, at `_mwin[4]` with a picture, else `_mwin[5]`), paged by tap,
+      five of them with their tutorial picture (MsgUty_SetMsg's table at 0xbe100), and closes back to
+      the list at that topic. The first Options of a game (flag 0x43) open on 56035 "Option" in that
+      window alone (OptionSet / OptionPrc 0..2). **Reset Data** (from the title) asks twice ("Erase all the data from your game?",
       then "This will erase all your game data. Are you sure you want to proceed?") and with Yes to
       both removes every pair's save and the resume point (`OptionPrc`: `prty_init_all`,
       `removeSaveData`, `removeContData`). On Android, Lock Screen Orientation holds the current
@@ -305,7 +308,7 @@ c101/c102/c104/m207a, 2026-10-12).
       Saved: flags, variables, items, opened boxes, area / map / position / facing, the leader,
       play time, the date. Loading arrives as a warp would (the room's entry scripts run).
       `CR_SAVE_DIR` puts the files elsewhere; `--camp`, `--save-screen save|load`, `--char-select`,
-      `--scenarios` (`--at y` scrolls), `--manual` (`--at n` picks topic n) capture them, `--title-new p` goes through the title as a player would (pair 1 / 2, New)
+      `--scenarios` (`--at y` scrolls), `--manual` (`--at n p` opens topic n's page p) capture them, `--title-new p` goes through the title as a player would (pair 1 / 2, New)
 - [x] **Shops** (Util 2, `__menuu_Shop*`; the Ark's shopkeeper, script 251 of areas 7/13/19/25):
       Talk / Buy / Sell, then Items / Weapons / Armor / Jewel, the list, how many with Yes / No,
       and "Equip it?" after buying gear - laid out from ShopPut and the ComUty_* pieces it calls

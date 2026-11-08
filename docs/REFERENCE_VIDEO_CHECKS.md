@@ -19,3 +19,15 @@ at 2 frames a second is in ~/.cache/cro-issue/cr1-ref/ocr-NN.
 | Android layout: the Break badge, the rows and the banner on the phone's edges (`_menub_mainPut`) | 02 676.0 s: the badge in the phone's top-left corner, the rows on its bottom-left edge, the banner at the top | Consistent with 1.1.1's code (- ox - oy, - ox + oy, - oy), which the port's Android layout now applies; not measured to the pixel |
 | Floor shadows under the fighters (_btl_shadow) | 02 676.0 s: soft dark ellipses under the pair and the monsters | Consistent (not measured) |
 | The Break ring a tick every other frame, the results' totals and purse, the boss's end, "Counter", an entry announced once, the banner a frame late, the turning, the cast loops | - | Code reading only (2.2.0 and Android 1.1.1 decomps) |
+
+## The Camp and the menu screens (backport of CRO-U's 2026-11-07 / 08 Camp and menu passes)
+
+Port captures: `--layout android` (1024 x 768, the 16:9 band in the middle) beside ffmpeg frames.
+
+| Behaviour (source) | Video, time | Result |
+|---|---|---|
+| The field's save screen (`__menuu_SaveLoadPut` from the SAVE button): the pair's boards at (0, 24 + 88k), Yes / No, "Save data?" on the board with its mark at the lower right, no heading | 01 923 s (also 01 1690, 02 456 s) | Contradicted, fixed: the port drew the Camp's heading and no mark. Now as the video (`--save-screen save`) |
+| No mask under the field's save screen (`__menuu_SaveLoadSet` masks in mode 1 - the title's - only) | 01 921 / 923 s: the hall's top (700..840 x 0..100) 50.0 / 50.1 mean before and under "Save data?" | Contradicted, fixed: the port blacked the scene to 0xa0 |
+| The face boards' level right-aligned (`__ComUty_FaceBoardFaceDraw`) | 01 923 s: "LV      1", the digit at the field's right | Contradicted, fixed: the port drew it at the field's left |
+| The field map with no dim of its own (`__menuu_MapPut` / `MapSet`: no mask) | - | Code reading only (CRO's finding on Omega's video; CR1's map sheet has its own panel, `--field-menu map`) |
+| The manual's pages in the message window, "Option" the first time (`__menuu_OptionPrc` 0..2, 0xf..0x16) | - (no Options footage in the OCR of parts 01-03) | Code reading only |

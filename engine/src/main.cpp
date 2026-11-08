@@ -417,6 +417,7 @@ struct App {
     cr::GameState scenariosFlags;          // every pair's saves together (the original's system data)
     bool manualOpen = false;               // Options > Instruction Manual
     int manualCursor = 0, manualTop = 0, manualAnim = 0;
+    int manualIntro = 0;                   // the page shown before a topic is chosen (56035), 0 none
     bool charSelectOpen = false;
     int charSelectCursor = 0, charSelectAnim = 0, chosenPair = 1, charSelectPage = 0;
     cr::Texture charSelectArt;
@@ -774,6 +775,18 @@ struct App {
         float x = 0, y = 0;                // tex2d, the picture's top-left (x2: the HD frame)
         cr::Texture tex;
     } tutoTex;
+    struct ManualMsg {                     // the manual's page (OptionPrc 0x12..0x16: MsgUty_WinOpen / SetMsg)
+        int state = 0;                     // 0 the list, 1 its windows going (0x12), 2 the message up (0x13 / 0x14),
+                                           // 3 its window closing (0x15 / 0x16)
+        int count = 0, id = 0;             // 0x12's 4 frames; the message (56000 + item - 439, 56035)
+        std::vector<std::vector<std::string>> pages;
+        size_t page = 0;
+        int typed = 0;                     // the page's characters out (PrcMsg)
+        bool picture = false;              // one of MsgUty_SetMsg's five: its picture, the window at _mwin[4]
+        MsgWin win;                        // PrcWin: the window's fade
+        TutoTex pic;                       // MsgUty_TexDisp*: the picture's pages and frames
+        float clock = 0;
+    } manualMsg;
     bool exclamation = false;              // Uty_DrawExclamationMark: the dimmed screen and "!" (flag 0)
     struct PuzzleBanner {                  // Uty_PuzzleStart (call 2003): two pieces sliding apart into place
         bool on = false;
@@ -1568,7 +1581,8 @@ void drawCharArt(App& app, float alpha, bool banner, float grey = 1);
 int plateIcon(int word);
 // Control Hints (Options, Game; F3): the port's own menu help. The iPhone layout has no room below.
 bool keyHints(const App& app);
-void openManual(App& app);
+void openManual(App& app, int intro);
+constexpr int kManualFirstPage = 56000, kOptionIntroPage = kManualFirstPage + 0x23; // (block 5; OptionPrc 0: SetMsg(0x23))
 void openScenarios(App& app);
 void openShop(App& app);
 void startBattle(App& app, const cr::BattleStart& start, int flags);
@@ -2035,8 +2049,9 @@ void resetTyping(App& app) {
 
 // PrcWin a frame: __WinOpen / __WinOpen2 take the window's alpha 0 -> 255 over 4 frames (t 4..0),
 // __WinClose / __WinClose2 255 -> 0 over 5 (t 0..4), then it is gone
-void stepMsgWin(App& app) {
-    App::MsgWin& w = app.msgWin;
+void stepMsgWin(App::MsgWin& w);
+void stepMsgWin(App& app) { stepMsgWin(app.msgWin); }
+void stepMsgWin(App::MsgWin& w) {
     switch (w.state) {
     case 1: w.t = 4, w.state = 2; break;
     case 2:
@@ -3848,7 +3863,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
         rows.push_back(swap);
         OptRow manual; // the topics and their pages (MuScrList + MsgUty)
         manual.label = sysLabel(app, 58081, "Instruction Manual");
-        manual.act = [&app](int) { openManual(app); };
+        manual.act = [&app](int) { openManual(app, 0); };
         rows.push_back(manual);
         OptRow title;
         if (app.optionsFromTitle) { // ModeOptionMenu(1): erasing the save data, asked twice
@@ -3991,13 +4006,26 @@ float optRowY(int i) { return kOptRowTop + kOptRowPitch * float(i); }
 float optCtrlX(float x) { return kOptCtrlX + (x - kOptCtrlX) * kOptCtrlScale; }
 
 void openOptions(App& app, int page) {
-    if (!app.optionsOpen) app.optionsFromTitle = app.titleOpen, app.resetAsk = 0;
+    const bool first = !app.optionsOpen;
+    if (first) app.optionsFromTitle = app.titleOpen, app.resetAsk = 0;
     app.optionsOpen = true;
     app.optionsPage = (page + kOptionPages) % kOptionPages;
     app.optionsRow = 0;
     app.optionsScroll = 0;
     app.optionsAnim = 0;
+    // __menuu_OptionSet (0x6fafc, 2.2.0 as 1.0.1): the first time - in any mode, the title's too - flag
+    // 0x43 set and OptionPrc 0..2: SetFlag(3), MsgUty_WinOpen / SetMsg(0x23) - block 5's 35, 56035
+    // "Option" in the manual's message window (no picture: _mwin[5]) - alone: no menu mask, the page
+    // held back until the window has shut (then MuCom_MenuSetMask(1) and OptionPrc 3's slide-in).
+    // (The title's flags are the saves', as the Progress Tracker's: allPairsFlags)
+    if (first && !app.game.flag(0x43) && !(app.titleOpen && allPairsFlags(app).flag(0x43))) {
+        app.game.setFlag(0x43, true);
+        openManual(app, kOptionIntroPage);
+    }
 }
+
+// OptionPrc 0..2: "Option" up (openOptions), the page and its mask not yet
+bool optionsAbout(const App& app) { return app.optionsOpen && app.manualOpen && app.manualIntro; }
 
 // The page's scroll kept in range - and, `follow`, moved to show the cursor's row
 void optionsScrollFix(App& app, int n, bool follow) {
@@ -4121,6 +4149,7 @@ void menuPoint(const App& app, float lx, float ly, float& mx, float& my) {
 void drawOptions(App& app, float, float) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
+    if (optionsAbout(app)) return; // (OptionPrc 0..2: the message window alone - drawManual)
     m.begin(r, app.windowTex, &app.font);
     const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
     // Behind the menu: the scene under the menu mask (drawFrame's drawMenuMask)
@@ -4225,6 +4254,7 @@ void stepOptions(App& app) {
     takeVitaFolder(app);
     takeAndroidFolder(app);
     if (!app.optionsOpen) return;
+    if (optionsAbout(app)) { app.optionsAnim = 0; return; } // (the page slides in once "Option" has shut)
     ++app.optionsAnim;
     app.optionsBob += app.optionsBobDir;
     if (app.optionsBob >= 5 || app.optionsBob <= 0) app.optionsBobDir = -app.optionsBobDir;
@@ -4502,6 +4532,11 @@ void openSaveScreen(App& app, bool load) {
         ss.allClear = sys.flag(32) && sys.flag(34) && sys.flag(36) && sys.flag(38);
         ss.cleared = sys.flag(40 + p);
     }
+    if (load && !ss.haveSave) { // no save of the pair: the boards are still drawn (__menuu_SaveLoadSet ->
+        // ComUty_CharInfoInit, 0x4a714) from the party records as the title holds them - prty_init's, level 1
+        ss.data = cr::SaveData();
+        ss.data.game.party = cr::newParty();
+    }
     if (!load) { // save: straight to "Save data?"
         ss.phase = 1;
         ss.pending = 1;
@@ -4616,6 +4651,20 @@ void saveScreenChoose(App& app, int i) { // the title's plates (savePlates): the
 // ComUty_GameTimeAndPlayTimeDraw: the save's date (picture 125 over a line; the month 126 + m,
 // the day, 139, the year; the time with the colon 75) on a dark board at (324, 12), and under it
 // __ComUty_PlayingTimeDraw at (324, 84): picture 126, the hours (to 999) and minutes
+// ComUty_PictAnimDraw out and back (PictAnimInit's last 1): its count goes up to ticks x frames and
+// back down to 0, one a draw; the piece is count / ticks steps to the right
+int pictAnimFrame(int draws, int ticks, int frames) {
+    const int top = ticks * frames, k = draws % (2 * top);
+    return (k <= top ? k : 2 * top - k) / ticks;
+}
+
+// The menu font's size (_MuComFontFromIdRegist 0x52684: 14, but 13 when FUN_000373e4 finds the
+// language outside 0, 5, 6, 7 - English, French, German, Spanish)
+float menuFontSize(const App& app) {
+    const int l = app.language;
+    return l >= 0 && l <= 7 && ((1 << l) & 0xe1) ? 14.0f : 13.0f;
+}
+
 void drawSaveDate(App& app, cr::MenuPainter& m, const cr::SaveData& d, float a) {
     (void)app;
     const time_t when = time_t(d.savedAt);
@@ -4660,29 +4709,31 @@ void drawSaveScreen(App& app) {
     const bool art = ss.load && app.charSelectArt.id;
     if (art) r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 1);
     r.setOrigin(r.uiX());
-    // On the title (__menuu_SaveLoadPut, mode 1) the pair's Character Select art behind it all: piece
-    // 16 of texture 0x11 (0x12 with flag 4092, the second sheet) at tex2d (-32, -64), z -10
-    // (dimmed a little for the plates and text)
-    if (art) drawCharArt(app, 1, false, 0.65f); // (else the menu mask, drawFrame's)
+    // On the title (__menuu_SaveLoadPut 0x75e04, mode 1) the pair's Character Select art behind it all:
+    // piece 16 of texture 0x11 (0x12 with flag 4092, the second sheet) at tex2d (-32, -64), z -10, in
+    // white - under the menu mask (__menuu_SaveLoadSet's ChgBackMaskDrawOrder(1) / MuCom_MenuOneFrSetMask:
+    // SetFade_back black at 0xa0), so 0x5f of it shows
+    if (art) drawCharArt(app, 1, false, 1 - 0xA0 / 255.0f); // (else the menu mask, drawFrame's)
     r.setOrigin(r.uiX());
     const float a = std::min(1.0f, ss.anim / 8.0f);
-    // Widescreen: the heading, face boards, emblems to the screen's left; the date, the plates to
-    // its right; Back and the message centred (as the shop)
+    // Widescreen: the face boards, emblems to the screen's left; the date, the plates to its right;
+    // Back and the message centred (as the shop). (No heading: SaveLoadPut draws none, 2.2.0 and 1.0.1
+    // alike - the port had the Camp's)
     r.setOrigin(wideLeft(app));
-    if (!ss.load) m.picture(81, 8, 4, a); // "Camp"
-    // The slot (__menuu_SaveLoadPut): the pair's face boards (ComUty_FaceBoardDraw) at (0, 24) and
-    // (0, 112) - the save's on the title, the party's when saving -, on the title the save's date
+    // The slot (__menuu_SaveLoadPut): the pair's face boards (ComUty_FaceBoardDraw, window 2) at (0, 24)
+    // and (0, 112) - the save's on the title, the party's when saving -, on the title the save's date
     // and play time (ComUty_GameTimeAndPlayTimeDraw) top right and the pair's emblems (pictures
-    // 111..113 at (16 + 72k, 224))
-    const cr::GameState* shown = ss.load ? (ss.haveSave ? &ss.data.game : nullptr) : &app.game;
-    if (shown)
-        for (int k = 0; k < 2; ++k) {
-            const int ch = ss.load ? (ss.data.leader & ~1) + k : (app.playerChar & ~1) + k;
-            int hp, hpMax, mp, mpMax;
-            memberHpMp(app, ch, hp, hpMax, mp, mpMax, shown);
-            drawFaceBoard(app, m, 0, 24 + 88.0f * float(k), ch, hp, hpMax, mp, mpMax, a, shown);
-        }
-    if (ss.load && !ss.haveSave) m.text("No save data", 24, 100, false, a, 16);
+    // 111..113 at (16 + 72k, 224)). ComUty_CharInfoInit (0x4a714): the records 2 x pair + k, as many as
+    // MuCom_ChkPartyNum (0x51ee0) gives - one while flag 0xfed + route (4077 + route) holds the second
+    // back; with no save the party as the title holds it (openSaveScreen)
+    const cr::GameState* shown = ss.load ? &ss.data.game : &app.game;
+    const int route = ss.load ? std::clamp(app.chosenPair - 1, 0, 3) : std::clamp(app.playerChar / 2, 0, 3);
+    for (int k = 0; k < (shown->flag(4077 + route) ? 1 : 2); ++k) {
+        const int ch = 2 * route + k;
+        int hp, hpMax, mp, mpMax;
+        memberHpMp(app, ch, hp, hpMax, mp, mpMax, shown);
+        drawFaceBoard(app, m, 0, 24 + 88.0f * float(k), ch, hp, hpMax, mp, mpMax, a, shown);
+    }
     for (int k = 0; k < 3; ++k)
         if (ss.emblems & (1u << k)) m.picture(111 + k, 16 + 72.0f * float(k), 224, a);
     r.setOrigin(wideRight(app));
@@ -4697,13 +4748,16 @@ void drawSaveScreen(App& app) {
         m.backBar(192, r.phoneLayout() ? 286 : 344, false, a); // (SaveLoadPut: BackButtonDraw mode 1, no arrows)
     } else if (r.phoneLayout()) { // the original's (SaveLoadPut, the same in 2.2.0): the message
         // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234); Yes / No the
-        // plates at window 6 + (336, 104) / (336, 160)
+        // plates at window 6 + (336, 104) / (336, 160). The board's mark (picture 13 at (458, 298), out and
+        // back: SaveLoadSet's ComUty_PictAnimInit(d357c, 0x30, 1, 4, ..)) and its lines in the menu font
         m.picture(12, 0, 220, a);
+        const short* mark = cr::kMenuPicture[13];
+        m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(ss.anim, 1, 4)), mark[1], mark[2], mark[3], a);
         const std::string msg = ss.message > 0 ? sysText(app, ss.message) : std::string("The save couldn't be written.");
-        m.text(msg.empty() ? "?" : msg, 24, 234, false, a, 14);
+        m.text(msg.empty() ? "?" : msg, 24, 234, false, a, menuFontSize(app));
         int extra = 0;
         for (int l : ss.lines)
-            if (l > 0) m.text(sysText(app, l), 24, 234 + 16.0f * float(++extra), false, a, 14);
+            if (l > 0) m.text(sysText(app, l), 24, 234 + 16.0f * float(++extra), false, a, menuFontSize(app));
         if (ss.phase == 1) {
             m.plate(336, 104, 0, 0, ss.confirm == 0, a, false);
             m.plate(336, 160, 1, 1, ss.confirm == 1, a, false);
@@ -5468,7 +5522,9 @@ void drawFaceBoard(App& app, cr::MenuPainter& m, float x, float y, int c, int hp
     m.picture((app.language == 0 ? 45 : 53) + face, x + 96, y + 24, a);
     m.picture(29 + face, x, y, a);
     m.picture(61, x + 24, y + 86, a);
-    drawShopNumber(m, pm.level, x + 48, y + 86, 3, 12, a, 1, true);
+    // (__ComUty_FaceBoardFaceDraw: PictNumDraw(x + 0x30, y + 0x56, level, 3 places, 12, style 1) right-aligned -
+    // Part 01 923 s: "LV      1", the digit at the field's right)
+    drawShopNumber(m, pm.level, x + 48, y + 86, 3, 12, a, 1);
     for (int k = 0; k < 2; ++k) {
         const float hx = x + 96, hy = y + 50 + 20.0f * float(k);
         m.picture(k ? 63 : 62, hx, hy, a);
@@ -6829,6 +6885,8 @@ void drawTexDisp(App& app) {
 // MsgUty_TexDispProc, a frame: 1 the picture read, 2 each page turn (flag 4075) the next page (its
 // frames from the start) until the pages run out - or flag 3 clears - then 3 deletes it. The frame
 // steps every 20 frames, the last one holds 40, then the page's frames run again
+void stepTutoFrames(App::TutoTex& t);
+void drawTutoPicture(App& app, const App::TutoTex& t);
 void stepTutoTex(App& app) {
     App::TutoTex& t = app.tutoTex;
     if (!t.on) return;
@@ -6847,6 +6905,10 @@ void stepTutoTex(App& app) {
         }
         if (!app.game.flag(3)) { app.game.setFlag(4075, false); finish(); return; }
     }
+    stepTutoFrames(t);
+}
+
+void stepTutoFrames(App::TutoTex& t) { // (the frame timer alone: the manual's picture too)
     if (--t.timer < 0 && t.page >= 0 && t.page < 4) {
         const int n = t.frames[t.page];
         t.timer = ++t.frame == n - 1 ? 40 : 20;
@@ -6857,8 +6919,11 @@ void stepTutoTex(App& app) {
 // MsgUty_TexDispDraw: while flag 3 is set, the page's frame (frame x 384, row x 256: 384 x 256 of
 // the 2048-wide sheet) at tex2d (2x, 2y) of the HD frame - the screen's (2x + 32, 2y + 64)
 void drawTutoTex(App& app) {
-    const App::TutoTex& t = app.tutoTex;
-    if (!t.on || !t.tex.id || !app.game.flag(3) || t.page < 0 || t.page >= 4 || t.frames[t.page] < 0) return;
+    if (app.game.flag(3)) drawTutoPicture(app, app.tutoTex);
+}
+
+void drawTutoPicture(App& app, const App::TutoTex& t) {
+    if (!t.on || !t.tex.id || t.page < 0 || t.page >= 4 || t.frames[t.page] < 0) return;
     cr::Renderer& r = app.renderer;
     const float ox = r.uiX(), k = float(t.tex.width) / 2048.0f;
     r.setOrigin(0);
@@ -7359,8 +7424,10 @@ void drawMapScreen(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     const float a = float(ms.fade) / 4;
-    r.setOrigin(r.uiX()); // __menuu_MapPut's PutWin: the game's screen dimmed to a quarter (widescreen: its sides
-    r.fillRect(0, 0, cr::Renderer::kLogicalW, cr::Renderer::kLogicalH, 0, 0, 0, 0.75f * a); // left as they are, as the reference's)
+    // __menuu_MapPut (0x7a598): PutWin / CmdBase of the menu's window, then the map sheet's picture and the
+    // marks; no mask - __menuu_MapSet (0x7a104) sets none - so the field shows untouched around the map's
+    // own panel (the port dimmed the whole screen under it as well)
+    r.setOrigin(r.uiX());
     m.begin(r, app.windowTex, &app.font);
     if (!ms.tex.id) return;
     m.imagePiece(ms.tex, 16, 32, 0, 0, 480, 320, a);
@@ -7978,27 +8045,19 @@ void scenariosKey(App& app, SDL_Keycode key) {
 }
 
 // ---- The Instruction Manual (Options; MuScrList + MsgUty: the topics, then the page) ----
-// The topics are system messages 56000 on ("Title / / text"); 56007 is the manual's own
-// introduction, 56006 / 56008 are fragments, "dummy" fills the gaps
-// A manual message's title: its first non-empty line (the messages open with an empty one)
-std::string manualTitle(const App& app, int id) {
-    std::vector<std::vector<std::string>> pages;
-    if (!app.systemText.message(id, app.language, nullptr, pages)) return std::string();
-    for (const auto& pg : pages)
-        for (const std::string& l : pg)
-            if (!l.empty()) return l;
-    return std::string();
-}
+// __menuu_OptionPrc (0x6fdbc) 0xf..0x16, 2.2.0 and 1.0.1 alike: the topics are the manual items the
+// bag holds (MuComMakeItemHaveData(0, 9) - make_item_list kind 9, 439..478, given as the story goes),
+// by name; each one's page is MsgUty_SetMsg's block 5 entry item - 439 (0x12: item - 0x1b7 while it
+// is below 0x1b7 + 0x28), system message 56000 + (item - 439). (The port had listed 56000..56036 as
+// fixed topics with 56007 first and the page in a side panel.) 56035 "Option" is OptionSet's, through
+// the message window: openOptions
+constexpr int kManualFirstItem = 439, kManualLastItem = 478;
 
-std::vector<int> manualTopics(const App& app) {
-    std::vector<int> ids;
-    for (int id = 56000; id <= 56036; ++id) {
-        if (id == 56006 || id == 56007 || id == 56008) continue;
-        const std::string t = manualTitle(app, id);
-        if (t.empty() || t == "dummy") continue;
-        ids.push_back(id);
-    }
-    return ids;
+std::vector<int> manualTopics(const App& app) { // the items
+    std::vector<int> items;
+    for (int item = kManualFirstItem; item <= kManualLastItem; ++item)
+        if (ownedCount(app, item) > 0) items.push_back(item);
+    return items;
 }
 
 std::vector<std::string> manualPage(const App& app, int id) { // the lines after the title
@@ -8013,11 +8072,129 @@ std::vector<std::string> manualPage(const App& app, int id) { // the lines after
     return lines;
 }
 
-void openManual(App& app) {
+// A topic's page (OptionPrc 0x12..0x16): SetFlag(3), MsgUty_WinOpen (0x7b1c4: _SetWin style 8 - the
+// tutorial band - at _mwin[4] (tex2d y 16, the picture below it) for an id in MsgUty_SetMsg's table,
+// else _mwin[5] (y 108); the port's msgLines 2 / 1 pick those rects - SE 6) and MsgUty_SetMsg
+// (FUN_0007b304: block 5's entry), paged by tap (PrcMsg). Its table (0xbe100, {id, picture}: {12, 8},
+// {13, 9}, {18, 10}, {10, 11}, {19, 13}) gives five of them a picture (MsgUty_TexDispInit: the rows at
+// 0xbe280 {slot 3, pages, (row, frames) x 4, x 144, y 160}; pictures 8..11 and 13 the battle_01..03,
+// gene_01 and battle_04 sheets, Uty_TutoTexDisp's): it shows from the first page turn, a page of the
+// picture a page of text, until its pages run out or the message ends. The last page out, the window
+// closes (MsgUty_WinClose: ClrWin, SE 7) and once gone the list is back at that item (0x16 -> 0xf:
+// MuScrList_SetListPosFromItemNo)
+void drawMessageBox(App& app, const std::vector<std::string>& page, const std::string& speaker, bool next,
+                    const std::string& pageNo);
+namespace manualpic {
+struct Row { int id; const char* sheet; int pages; int row[4], frames[4]; };
+constexpr Row kRows[5] = {
+    {12, "battle_01_hd.mct", 4, {0, 1, 2, 3}, {1, 4, 4, 1}}, {13, "battle_02_hd.mct", 4, {0, 1, 2, 3}, {1, 1, 2, 1}},
+    {18, "battle_03_hd.mct", 3, {0, 1, 2, -1}, {3, 1, 1, -1}}, {10, "gene_01_hd.mct", 3, {0, 1, 2, -1}, {1, 2, 1, -1}},
+    {19, "battle_04_hd.mct", 2, {0, 1, -1, -1}, {1, 1, -1, -1}}};
+constexpr float kX = 144, kY = 160;
+const Row* find(int id) {
+    for (const Row& r : kRows)
+        if (kManualFirstPage + r.id == id) return &r;
+    return nullptr;
+}
+} // namespace manualpic
+
+void manualShow(App& app, int id) {
+    App::ManualMsg& mm = app.manualMsg;
+    app.renderer.destroy(mm.pic.tex);
+    mm.pic = App::TutoTex();
+    mm.id = id;
+    mm.pages.clear();
+    if (!app.systemText.message(id, app.language, nullptr, mm.pages) || mm.pages.empty())
+        mm.pages = {{"[message " + std::to_string(id) + "]"}};
+    mm.page = 0, mm.typed = 0;
+    mm.win = App::MsgWin();
+    mm.win.state = 1;
+    menuSound(app, se::kWinOpen);
+    const manualpic::Row* row = manualpic::find(id);
+    mm.picture = row != nullptr;
+    if (row) {
+        App::TutoTex& t = mm.pic;
+        cr::Image img;
+        std::string name = row->sheet;
+        if (loadImage(app, name, img) || loadImage(app, name.replace(name.find("_hd"), 3, ""), img)) t.tex = app.renderer.upload(img);
+        t.on = true, t.state = 2, t.pages = row->pages;
+        for (int k = 0; k < 4; ++k) t.row[k] = row->row[k], t.frames[k] = row->frames[k];
+        t.x = manualpic::kX, t.y = manualpic::kY;
+    }
+    mm.state = 2;
+}
+
+void manualCloseMessage(App& app) { // the message done: ClrFlag(3) - the picture goes - and the window closes
+    App::ManualMsg& mm = app.manualMsg;
+    app.renderer.destroy(mm.pic.tex);
+    mm.pic = App::TutoTex();
+    mm.win.state = 4;
+    menuSound(app, se::kWinClose);
+    mm.state = 3;
+}
+
+int manualPageChars(const App& app) {
+    const App::ManualMsg& mm = app.manualMsg;
+    return mm.page < mm.pages.size() ? pageChars(mm.pages[mm.page]) : 0;
+}
+
+// A tap on the page (PrcMsg): one still typing comes out whole, one out turns - the picture to its
+// next page (flag 4075), gone past its last - and the last page out ends the message
+void manualTap(App& app) {
+    App::ManualMsg& mm = app.manualMsg;
+    if (mm.state != 2 || mm.win.state != 3) return;
+    if (mm.typed < manualPageChars(app)) { mm.typed = manualPageChars(app); return; }
+    mm.typed = 0;
+    if (mm.pic.on) {
+        mm.pic.timer = 20, mm.pic.frame = 0;
+        if (++mm.pic.page >= mm.pic.pages) { app.renderer.destroy(mm.pic.tex); mm.pic = App::TutoTex(); }
+    }
+    if (++mm.page >= mm.pages.size()) manualCloseMessage(app);
+}
+
+void openManual(App& app, int intro) { // intro: a page shown before any topic (OptionSet's 56035), 0 none
     app.manualOpen = true;
-    app.manualCursor = -1; // the introduction first
+    app.manualIntro = intro;
+    app.manualCursor = 0;
     app.manualTop = 0;
     app.manualAnim = 0;
+    App::ManualMsg& mm = app.manualMsg;
+    app.renderer.destroy(mm.pic.tex);
+    mm = App::ManualMsg();
+    if (intro) manualShow(app, intro); // (OptionPrc 0..2: the same window, then Options)
+}
+
+void manualChoose(App& app) { // OptionPrc 0x10: a topic chosen - the list's windows go, 4 frames on its page opens
+    const std::vector<int> topics = manualTopics(app);
+    if (app.manualCursor < 0 || app.manualCursor >= int(topics.size())) return;
+    menuSound(app, se::kChoose); // (__ScrListSelectSePlay)
+    App::ManualMsg& mm = app.manualMsg;
+    mm.id = kManualFirstPage + topics[size_t(app.manualCursor)] - kManualFirstItem;
+    mm.state = 1, mm.count = 4;
+}
+
+// A frame (20 Hz): 0x12's wait, PrcWin and PrcMsg's typing, the picture's frames, the window closing
+void stepManual(App& app) {
+    App::ManualMsg& mm = app.manualMsg;
+    switch (mm.state) {
+    case 1:
+        if (--mm.count < 0) manualShow(app, mm.id);
+        break;
+    case 2:
+        stepMsgWin(mm.win);
+        if (mm.win.state == 3) mm.typed = app.typeOn ? std::min(mm.typed + 1, manualPageChars(app)) : manualPageChars(app);
+        if (mm.pic.on) stepTutoFrames(mm.pic);
+        break;
+    case 3:
+        stepMsgWin(mm.win);
+        if (mm.win.state == 6) {
+            mm.state = 0;
+            if (app.manualIntro) { app.manualOpen = false; break; } // (the intro: on to Options)
+            app.manualAnim = 0; // (0xf: MuScrList_Start - the list's windows anew, at the item)
+        }
+        break;
+    default: break;
+    }
 }
 
 constexpr int kManualRows = 9;
@@ -8025,63 +8202,54 @@ constexpr int kManualRows = 9;
 void drawManual(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
+    const App::ManualMsg& mm = app.manualMsg;
     m.begin(r, app.windowTex, &app.font);
-    const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
     r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
+    if (!app.manualIntro) r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f); // ("Option": no mask yet)
     r.setOrigin(r.uiX());
-    const float a = std::min(1.0f, app.manualAnim / 8.0f);
-    m.picture(102, 8, 4, a); // "Options"
-    m.text(sysLabel(app, 58081, "Instruction Manual"), 236, 14, false, a, 16);
-    const std::vector<int> topics = manualTopics(app);
-    for (int i = 0; i < kManualRows && app.manualTop + i < int(topics.size()); ++i) {
-        const int n = app.manualTop + i;
-        std::string title = manualTitle(app, topics[size_t(n)]);
-        int same = 0; // the puzzles' second pages share their title
-        for (int k = 0; k < n; ++k) same += manualTitle(app, topics[size_t(k)]) == title;
-        if (same) title += " (" + std::to_string(same + 1) + ")";
-        m.rowBar(20, 52 + 32.0f * float(i), title, a, app.manualCursor == n);
-    }
-    if (app.manualTop > 0) m.text("...", 100, 40, false, a, 12);
-    if (app.manualTop + kManualRows < int(topics.size())) m.text("...", 100, 52 + 32.0f * kManualRows - 6, false, a, 12);
-    // The page, on the right
-    const int id = app.manualCursor >= 0 && app.manualCursor < int(topics.size()) ? topics[size_t(app.manualCursor)] : 56007;
-    if (r.phoneLayout()) // (the panel in the fitted menu's units)
-        drawWinPiece(app, kWinMessagePanel, 2 * (kPhoneFitX + 252 * kPhoneFitK), 2 * (kPhoneFitY + 48 * kPhoneFitK),
-                     2 * 252 * kPhoneFitK, 2 * 280 * kPhoneFitK);
-    else drawWinPiece(app, kWinMessagePanel, 2 * 252, 2 * 48, 2 * 252, 2 * 280);
-    m.text(manualTitle(app, id), 268, 58, false, a, 13);
-    float y = 82;
-    constexpr float kWidth = 228; // the panel's inside, in menu units: lines wrap at words
-    for (const std::string& l : manualPage(app, id)) {
-        std::string line;
-        auto flush = [&] {
-            if (y <= 316) m.text(line, 268, y, false, a, 10);
-            y += 14;
-            line.clear();
-        };
-        size_t at = 0;
-        if (l.empty()) { flush(); continue; }
-        while (at < l.size()) {
-            const size_t sp = l.find(' ', at);
-            const std::string word = l.substr(at, sp == std::string::npos ? std::string::npos : sp - at);
-            const std::string tryLine = line.empty() ? word : line + " " + word;
-            if (!line.empty() && m.textWidth(tryLine, 10) > kWidth) {
-                flush();
-                line = word;
-            } else {
-                line = tryLine;
+    if (!app.manualIntro) {
+        const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
+        const float a = std::min(1.0f, app.manualAnim / 8.0f);
+        m.picture(102, 8, 4, a); // "Options"
+        m.text(sysLabel(app, 58081, "Instruction Manual"), 236, 14, false, a, 16);
+        // The list (MuScrList: windows 7 and 8) fades out as a topic opens and is off while it's up
+        const float la = mm.state == 0 ? a : mm.state == 1 ? a * float(std::max(0, mm.count)) / 4.0f : 0.0f;
+        if (la > 0) {
+            const std::vector<int> topics = manualTopics(app);
+            for (int i = 0; i < kManualRows && app.manualTop + i < int(topics.size()); ++i) {
+                const int n = app.manualTop + i;
+                m.rowBar(20, 52 + 32.0f * float(i), itemName(app, topics[size_t(n)]), la, app.manualCursor == n);
             }
-            if (sp == std::string::npos) break;
-            at = sp + 1;
+            if (app.manualTop > 0) m.text("...", 100, 40, false, la, 12);
+            if (app.manualTop + kManualRows < int(topics.size())) m.text("...", 100, 52 + 32.0f * kManualRows - 6, false, la, 12);
+            m.backButton(192, 344, false, 0, la);
+            if (app.showHud) m.text("Up/Down  Enter: read  Esc: back", 20, 372, false, la * 0.8f, 9); // (our key hints)
         }
-        flush();
     }
-    m.backButton(192, 344, false, 0, a);
-    if (app.showHud) m.text("Up/Down  Esc: back", 20, 372, false, a * 0.8f, 9); // (our key hints)
+    if (mm.state < 2) return;
+    // The message in the standard window (drawMessageBox with the manual's window, style and rect)
+    const int keepStyle = app.msgStyle, keepLines = app.msgLines, keepLimit = app.textLimit;
+    const App::MsgWin keepWin = app.msgWin;
+    app.msgStyle = 8, app.msgLines = mm.picture ? 2 : 1, app.msgWin = mm.win;
+    const bool text = mm.state == 2 && mm.page < mm.pages.size();
+    app.textLimit = app.typeOn ? mm.typed : 1 << 30;
+    drawMessageBox(app, text ? mm.pages[mm.page] : std::vector<std::string>(), "", text && mm.typed >= manualPageChars(app), "");
+    app.msgStyle = keepStyle, app.msgLines = keepLines, app.msgWin = keepWin, app.textLimit = keepLimit;
+    if (mm.state == 2) drawTutoPicture(app, mm.pic); // (MsgUty_TexDispDraw: while flag 3 is set)
+    r.setOrigin(r.uiX());
 }
 
 void manualKey(App& app, SDL_Keycode key) {
+    App::ManualMsg& mm = app.manualMsg;
+    const bool confirm = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E;
+    const bool back = key == SDLK_ESCAPE || key == SDLK_BACKSPACE || key == SDLK_AC_BACK;
+    if (mm.state == 2) { // the page: a tap turns it (keys: confirm; back closes it at once - the port's)
+        if (confirm) manualTap(app);
+        else if (back && mm.win.state == 3) manualCloseMessage(app);
+        return;
+    }
+    if (mm.state != 0) return; // (the list going, or the window closing)
+    if (confirm) { manualChoose(app); return; }
     const int n = int(manualTopics(app).size());
     int& c = app.manualCursor;
     switch (key) {
@@ -8097,6 +8265,9 @@ void manualKey(App& app, SDL_Keycode key) {
 }
 
 void manualClick(App& app, float px, float py) {
+    App::ManualMsg& mm = app.manualMsg;
+    if (mm.state == 2) { manualTap(app); return; } // (anywhere: PrcMsg's tap)
+    if (mm.state != 0 || app.manualIntro) return;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
@@ -8104,9 +8275,10 @@ void manualClick(App& app, float px, float py) {
     if (my >= 344 && my < 368 && mx >= 192 && mx < 424) { app.manualOpen = false; menuSound(app, se::kBack); return; }
     if (mx >= 20 && mx < 240)
         for (int i = 0; i < kManualRows; ++i)
-            if (my >= 52 + 32.0f * i && my < 76 + 32.0f * i) {
-                app.manualCursor = std::min(app.manualTop + i, int(manualTopics(app).size()) - 1);
-                menuSound(app, se::kChoose); // a topic tapped (__ScrListSelectSePlay)
+            if (my >= 52 + 32.0f * i && my < 76 + 32.0f * i && app.manualTop + i < int(manualTopics(app).size())) {
+                app.manualCursor = app.manualTop + i;
+                manualChoose(app); // a topic tapped
+                return;
             }
 }
 
@@ -13334,10 +13506,16 @@ void loseToArk(App& app) {
 int menuMaskWanted(const App& app, bool& atOnce) {
     atOnce = false;
     if (app.mode != Mode::Maps) return -1;
-    if (app.saveScreen.open) { atOnce = true; return 0; }
+    // (__menuu_SaveLoadSet sets the mask in mode 1 alone - the title's, MuCom_MenuOneFrSetMask - 2.2.0 and 1.0.1
+    // alike: saving from the field (modes 2..4) leaves the scene as it is. Part 01 921 / 923 s: the hall's top
+    // 50.0 / 50.1 before and under "Save data?")
+    if (app.saveScreen.open) {
+        atOnce = true;
+        return app.saveScreen.load ? 0 : -1;
+    }
     if (app.tutoTex.on) return 0;
     if (app.campOpen) return 1;
-    if (app.optionsOpen || app.shop.open || app.worldChoiceOpen || app.lastBattle.open) return 1;
+    if ((app.optionsOpen && !optionsAbout(app)) || app.shop.open || app.worldChoiceOpen || app.lastBattle.open) return 1;
     if (app.battle.active && app.battle.phase == App::Battle::Results && app.battle.result.stage != 3) return 1; // (MbResultPrc 0 .. 10)
     return -1;
 }
@@ -13797,8 +13975,11 @@ void drawFrame(App& app, bool present = true) {
     if (app.resumePrompt && !app.optionsOpen) drawResumePrompt(app);
     if (app.optionsOpen && (app.campOpen || app.saveScreen.open)) drawOptions(app, W, H);
     if (app.manualOpen) {
+        for (app.manualMsg.clock += dt; app.manualMsg.clock >= 1.0f / kFramesPerSecond && app.manualOpen;
+             app.manualMsg.clock -= 1.0f / kFramesPerSecond)
+            stepManual(app);
         ++app.manualAnim;
-        drawManual(app);
+        if (app.manualOpen) drawManual(app);
     }
     r.setOrigin(0);
     r.endFrame(present);
@@ -16316,6 +16497,7 @@ int runSelfTest(App& app) {
         return same ? 0 : 1;
     };
     { // The Options screen: every page builds and draws; keys change what they should
+        app.game.setFlag(0x43, true); // ("Option", the first time's page, is the manual block's)
         const App::Mix mix = app.mix;
         const App::Video video = app.video;
         const int language = app.language;
@@ -16690,16 +16872,100 @@ int runSelfTest(App& app) {
         for (const char* f : {"save1.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
         SDL_RemovePath(app.saveDirOverride.c_str());
         app.saveDirOverride = keepDir;
-        // The Instruction Manual (Options) and Scenarios (the title)
-        openManual(app);
-        const int topics = int(manualTopics(app).size());
-        manualKey(app, SDLK_DOWN);
-        manualKey(app, SDLK_DOWN);
-        problems += topics < 25 || app.manualCursor != 1 || manualPage(app, manualTopics(app)[1]).empty();
-        manualKey(app, SDLK_PAGEDOWN);
-        manualKey(app, SDLK_ESCAPE);
-        problems += app.manualOpen;
-        problems += expectSounds("manual", {4, 4, 5, 3});
+        // The Instruction Manual (Options; OptionPrc 0xf..0x16): the manual items held (439..478), a topic's
+        // page 56000 + item - 439 in the message window, paged by tap, the five of MsgUty_SetMsg's table with
+        // their pictures and the window at _mwin[4]. The first Options of a game open on 56035 "Option" (flag
+        // 0x43), once. Then Scenarios (the title)
+        {
+            const cr::GameState keepGame = app.game;
+            const bool keepType = app.typeOn, keepTitle = app.titleOpen, keepOptions = app.optionsOpen;
+            app.typeOn = false;
+            app.optionsOpen = false;
+            for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items.erase(item);
+            for (int item : {439, 440, 441, 448, 451, 473}) app.game.items[item] = 1;
+            app.game.setFlag(0x43, false);
+            app.titleOpen = false;
+            App::ManualMsg& mm = app.manualMsg;
+            openOptions(app, 0);
+            problems += !app.manualOpen || app.manualIntro != kOptionIntroPage || manualPage(app, kOptionIntroPage).empty() ||
+                        !app.game.flag(0x43) || mm.state != 2 || mm.id != kOptionIntroPage || mm.picture;
+            // OptionPrc 0..2: no menu mask, the page held back until the window has shut - from the title too
+            int aboutHeld = 0;
+            auto held = [&] {
+                bool atOnce = false;
+                stepOptions(app);
+                aboutHeld += menuMaskWanted(app, atOnce) < 0 && app.optionsAnim == 0;
+            };
+            held();
+            for (int f = 0; f < 6; ++f) stepManual(app);
+            problems += mm.win.state != 3;
+            manualKey(app, SDLK_ESCAPE); // (the port's Back: the window closes, then on to Options)
+            for (int f = 0; f < 8; ++f) stepManual(app);
+            problems += app.manualOpen;
+            stepOptions(app);
+            aboutHeld += app.optionsAnim == 1;
+            app.optionsOpen = false;
+            openOptions(app, 0); // (seen: not again)
+            problems += app.manualOpen;
+            app.optionsOpen = false;
+            app.game.setFlag(0x43, false);
+            app.titleOpen = true;
+            openOptions(app, 0);
+            aboutHeld += app.manualOpen && app.manualIntro == kOptionIntroPage && mm.state == 2;
+            held();
+            for (int f = 0; f < 6; ++f) stepManual(app);
+            manualKey(app, SDLK_ESCAPE);
+            for (int f = 0; f < 8; ++f) stepManual(app);
+            aboutHeld += !app.manualOpen && app.game.flag(0x43);
+            app.optionsOpen = false;
+            app.titleOpen = false;
+            problems += aboutHeld != 5;
+            std::printf("options: \"Option\" (56035) alone in the message window, the page after it, from the field and "
+                        "the title: %d/5\n", aboutHeld);
+            openManual(app, 0);
+            const std::vector<int> topics = manualTopics(app);
+            manualKey(app, SDLK_DOWN);
+            manualKey(app, SDLK_DOWN);
+            problems += topics.size() != 6 || app.manualCursor != 2 || topics[2] != 441 || manualPage(app, 56002).empty();
+            manualKey(app, SDLK_PAGEDOWN); // (to the last, 473)
+            manualKey(app, SDLK_UP);       // 451, "Solo and Pair"
+            manualKey(app, SDLK_RETURN);
+            problems += mm.state != 1;
+            for (int f = 0; f < 5; ++f) stepManual(app); // 0x12's wait, then the window
+            const size_t textPages = mm.pages.size();
+            problems += mm.state != 2 || mm.id != 56012 || !mm.picture || mm.pic.page != -1 || textPages < 2;
+            manualKey(app, SDLK_RETURN); // (opening: no tap yet)
+            for (int f = 0; f < 6; ++f) stepManual(app);
+            problems += mm.page != 0 || mm.win.state != 3;
+            int lastPicPage = -1, framesSeen = 0, picturePages = 0, turned = 0;
+            for (int turn = 0; turn < 12 && mm.state == 2; ++turn) {
+                ++turned;
+                manualKey(app, SDLK_RETURN);
+                if (mm.state != 2) break;
+                if (mm.pic.on) {
+                    problems += mm.pic.page != lastPicPage + 1;
+                    lastPicPage = mm.pic.page;
+                    ++picturePages;
+                    for (int f = 0; f < 70; ++f) { stepManual(app); framesSeen = std::max(framesSeen, mm.pic.frame + 1); }
+                } else stepManual(app);
+                app.lastTicks = 0;
+                drawFrame(app, false);
+                ++frames;
+            }
+            const int wantPictures = std::min(4, int(textPages) - 1); // (battle_01: 4 pages, from the first turn)
+            problems += mm.state != 3 || mm.pic.on || picturePages != wantPictures || turned != int(textPages) || framesSeen < 4;
+            for (int f = 0; f < 8; ++f) stepManual(app);
+            problems += !app.manualOpen || mm.state != 0 || app.manualCursor != 4; // the list back at 451
+            manualKey(app, SDLK_ESCAPE);
+            problems += app.manualOpen || app.renderer.takeErrors();
+            std::printf("manual: %zu topics held, 56012 %zu pages, %d with battle_01's picture (frames up to %d)\n", topics.size(),
+                        textPages, picturePages, framesSeen);
+            app.typeOn = keepType;
+            app.titleOpen = keepTitle;
+            app.optionsOpen = keepOptions;
+            app.game = keepGame;
+        }
+        problems += expectSounds("manual", {6, 7, 6, 7, 4, 4, 5, 4, 2, 6, 7, 3});
         cr::GameState chart;
         chart.setFlag(1092, true);
         chart.setFlag(1093, true);
@@ -16714,7 +16980,7 @@ int runSelfTest(App& app) {
         scenariosKey(app, SDLK_ESCAPE);
         problems += app.scenariosOpen;
         problems += expectSounds("scenarios", {3}); // scrolling is silent
-        std::printf("manual: %d topics; scenarios chart drawn\n", topics);
+        std::printf("scenarios chart drawn\n");
         std::printf("saves: save -> title Start -> load %s (map %d, flags, items, vars, Oz, party, play time, position); "
                     "resume point written, offered at the title and resumed, saved as you go %s; %d problems\n", loaded ? "ok" : "FAILED",
                     after.map, asYouGo ? "yes" : "NO", problems);
@@ -19650,9 +19916,18 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     if (app.captureMenu == 5) { openScenarios(app); app.scenariosAnim = 100; app.scenariosScroll = app.captureAt[0] == app.captureAt[0] ? -app.captureAt[0] : 0;
         if (app.captureAt[1] == app.captureAt[1]) scenariosScrollSideways(app, -app.captureAt[1]); }
     if (app.captureMenu == 6) {
-        openManual(app);
+        openManual(app, 0);
         app.manualAnim = 100;
         if (app.captureAt[0] == app.captureAt[0]) app.manualCursor = int(app.captureAt[0]);
+        if (manualTopics(app).empty()) // (none held yet: every manual item, the topic the item's number - 439)
+            for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items[item] = 1;
+        if (app.captureAt[1] == app.captureAt[1]) { // --at topic page: that topic's page open (its picture 30 frames on)
+            app.typeOn = false;
+            manualChoose(app);
+            for (int f = 0; f < 12; ++f) stepManual(app);
+            for (int k = 0; k < int(app.captureAt[1]); ++k) manualTap(app);
+            for (int f = 0; f < 30; ++f) stepManual(app);
+        }
         std::printf("manual: %zu topics\n", manualTopics(app).size());
     }
     if (app.captureOptions) { // --volume-menu (page 1) / --video-menu (page 4)
