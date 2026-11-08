@@ -658,9 +658,11 @@ c101/c102/c104/m207a, 2026-10-12).
         counter, taps and clicks following them; the list screens (Options, the manual,
         Scenarios), Back, the message boards and dialogue stay centred. The iPhone layout keeps
         its one centred screen
-      - Painted rooms: Original (2×, a screen-sized window following the player and the scripts),
-        Whole (the whole painting at the screen's height, side bars) or Fill Width (top and bottom
-        cut off). The C key shows the collision and trigger meshes (off by default)
+      - Painted rooms: Original (2×, a screen-sized window following the player and the scripts,
+        as the game) or Fill (the port's: the same window zoomed until the room's painting covers
+        the screen, so a wide screen shows no bars; it still follows the player and the scripts'
+        pans). Settings: `painted_fill=0/1` (an old `painted_rooms=2` reads as Fill). The C key shows
+        the collision and trigger meshes (off by default)
       - Render scale 50–200% and MSAA 2×/4×/8× (Vulkan): the frame renders offscreen at that
         size and is scaled to the window (bilinear); 200% doubles as supersampling
       - Temporal anti-aliasing / upscaling (Vulkan, the Graphics page): **FSR 3.1** (AMD's
@@ -724,7 +726,7 @@ c101/c102/c104/m207a, 2026-10-12).
         `crtool gltfcheck <data> <model.bin> [file.glb]` skins both in every motion: all 335 models (and 69 particle props aside, through Blender too) land
         exactly on the originals
       - Command line: `--original`, `--resolution 1920x1080`, `--windowed` / `--fullscreen` /
-        `--borderless`, `--widescreen`, `--whole-paintings`, `--zoom-paintings`, `--render-scale 150`, `--msaa 4`,
+        `--borderless`, `--widescreen`, `--fill-paintings`, `--render-scale 150`, `--msaa 4`,
         `--upscaler off|fsr|fsr4|dlss|metalfx` (FSR 4: AMD's files in `fsr4/` - the README's Platforms; `CR_FSR4_DIR` elsewhere), `--upscale-mode native|quality|balanced|performance|ultra`,
         `--sharpness 0-100`, `--hd-textures`, `--smooth-models 2|3`, `--no-vsync`, `--fps n` (the frame rate's
         limit, 0 none); captures and the self-test start from the original

@@ -244,7 +244,8 @@ struct App {
         bool widescreen = false;           // the screen widens to the window (up to 21:9); else 4:3
 #endif
         int paintings = 0;                 // painted rooms: 0 the original's (2x, a screen-sized window following
-                                           // the player), 1 the whole painting at the screen's height, 2 at its width
+                                           // the player), 1 Fill: the same, zoomed until the room's painting covers
+                                           // the screen (no bars on a wide screen) - the port's own
         int renderScale = 100;             // % of the window's pixels (Vulkan)
         int msaa = 1;                      // 1, 2, 4, 8 (Vulkan)
         bool vsync = true;
@@ -2677,7 +2678,7 @@ void drawSceneEffects(App& app, bool battle = false) {
 bool paintedField(const App& app) {
     return app.mode == Mode::Maps && app.showBackground && app.background.id && app.haveStageCam;
 }
-bool scrollingField(const App& app) { return paintedField(app) && app.video.paintings == 0; }
+bool scrollingField(const App& app) { return paintedField(app); }
 // The stage view on the screen (FieldCamera::setCameraBack / setCamera3D's viewport): the record's
 // view doubled (fldread_prc - the iPad, the Vita always, the iPhone on Retina), that many of the
 // device's pixels - so on the 768-tall logical screen, x 768 / the device's height: the iPad's 768
@@ -2692,6 +2693,17 @@ float fieldViewScale(const App& app) {
 }
 float fieldViewW(const App& app) { return 2.0f * fieldViewScale(app) * float(app.stageCam.viewWidth > 0 ? app.stageCam.viewWidth : 1024); }
 float fieldViewH(const App& app) { return 2.0f * fieldViewScale(app) * float(app.stageCam.viewHeight > 0 ? app.stageCam.viewHeight : 1024); }
+// Painted Rooms: Fill (the port's): the view zoomed until the painting's rect covers the screen - 1
+// in the original presentation, or where the rect already covers it
+float fieldFillZoom(const App& app) {
+    if (app.video.paintings != 1 || !app.haveStageCam) return 1;
+    const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
+    const int* rc = app.stageCam.rect;
+    const bool haveRect = rc[2] > 0 && rc[3] > 0;
+    const float d = 2.0f * fieldViewScale(app); // (the rect in the record's view pixels: doubled, on this screen)
+    const float rw = haveRect ? d * float(rc[2]) : fieldViewW(app), rh = haveRect ? d * float(rc[3]) : fieldViewH(app);
+    return std::max(1.0f, std::max(SW / std::max(rw, 1.0f), H / std::max(rh, 1.0f)));
+}
 
 cr::Mat4 stageViewProjection(const App& app) {
     const cr::StageCamera& sc = app.stageCam;
@@ -2716,7 +2728,8 @@ bool fieldViewPoint(const App& app, const cr::Vec3& p, float& vx, float& vy) {
 // moves `rate` of the way there
 void scrollFieldTo(App& app, float vx, float vy, float rate) {
     const float V = fieldViewW(app), Vh = fieldViewH(app);
-    const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
+    const float fz = fieldFillZoom(app); // (Fill: less of the view on the screen)
+    const float SW = app.renderer.screenW() / fz, H = cr::Renderer::kLogicalH / fz;
     const int* rc = app.stageCam.rect;
     const bool haveRect = rc[2] > 0 && rc[3] > 0;
     const float d = 2.0f * fieldViewScale(app); // (the rect in the record's view pixels: doubled, on this screen)
@@ -3447,7 +3460,7 @@ void saveMix(const App& app) {
     const App::Video& v = app.video;
     const std::string video = "width=" + std::to_string(v.width) + "\nheight=" + std::to_string(v.height) +
                               "\ndisplay=" + std::to_string(v.display) + "\nwidescreen=" + std::to_string(int(v.widescreen)) +
-                              "\npainted_rooms=" + std::to_string(v.paintings) + "\nrender_scale=" +
+                              "\npainted_fill=" + std::to_string(v.paintings) + "\nrender_scale=" +
                               std::to_string(v.renderScale) + "\nmsaa=" + std::to_string(v.msaa) +
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
@@ -3506,7 +3519,10 @@ void loadVideo(App& app, const char* text) {
     v.height = std::clamp(keyValue(text, "\nheight=", v.height), 240, 2160);
     v.display = std::clamp(keyValue(text, "\ndisplay=", v.display), 0, 2);
     v.widescreen = keyValue(text, "\nwidescreen=", v.widescreen) != 0;
-    v.paintings = std::clamp(keyValue(text, "\npainted_rooms=", keyValue(text, "\nzoom_paintings=", 0) ? 2 : v.paintings), 0, 2);
+    // painted_fill= 0 / 1 (Original / Fill); the old painted_rooms= (0 Original, 1 Whole, 2 Fill Width) and
+    // zoom_paintings=: their Fill Width becomes Fill, Whole the original
+    const int legacy = keyValue(text, "\npainted_rooms=", keyValue(text, "\nzoom_paintings=", 0) ? 2 : 0);
+    v.paintings = std::clamp(keyValue(text, "\npainted_fill=", legacy == 2 ? 1 : 0), 0, 1);
     v.renderScale = std::clamp(keyValue(text, "\nrender_scale=", v.renderScale), 25, 400);
     v.msaa = std::clamp(keyValue(text, "\nmsaa=", v.msaa), 1, 8);
     v.vsync = keyValue(text, "\nvsync=", v.vsync) != 0;
@@ -3670,7 +3686,7 @@ void adjustVideo(App& app, int row, int dir) {
     }
     case 1: v.display = (v.display + dir + 3) % 3; break;
     case 2: v.widescreen = !v.widescreen; break;
-    case 3: v.paintings = (v.paintings + dir + 3) % 3; break;
+    case 3: v.paintings = (v.paintings + dir + 2) % 2; break;
     case 4: stepChoice(v.renderScale, kRenderScales, int(sizeof kRenderScales / sizeof kRenderScales[0]), dir); break;
     case 5: {
         static const int kMsaa[] = {1, 2, 4, 8};
@@ -3989,8 +4005,8 @@ std::vector<OptRow> optionRows(App& app, int page) {
         static const char* const kLayout[] = {"Auto", "iPad", "iPhone", "Android"};
         value("Layout", kLayout[std::clamp(v.layout, 0, 3)], [&app](int dir) { adjustVideo(app, 14, dir ? dir : 1); });
         rows.back().hint = "The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data";
-        static const char* const kPaintings[] = {"Original", "Whole", "Fill Width"};
-        value("Painted Rooms", kPaintings[std::clamp(v.paintings, 0, 2)], [&app](int dir) { adjustVideo(app, 3, dir ? dir : 1); });
+        static const char* const kPaintings[] = {"Original", "Fill"};
+        value("Painted Rooms", kPaintings[std::clamp(v.paintings, 0, 1)], [&app](int dir) { adjustVideo(app, 3, dir ? dir : 1); });
         onOff("VSync", &v.vsync, [&app] { applyVideo(app); });
         value("Frame Rate", v.frameLimit ? std::to_string(v.frameLimit) : std::string("Unlimited"),
               [&app](int dir) { adjustVideo(app, 15, dir ? dir : 1); });
@@ -9421,10 +9437,11 @@ bool fieldToLogical(const App& app, cr::Vec3 p, float& lx, float& ly) {
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
     float vx, vy, vw, vh;
     if (scrollingField(app)) {
-        vw = fieldViewW(app), vh = fieldViewH(app);
-        vx = (SW - vw) / 2 + app.scroll.offX, vy = (H - vh) / 2 - app.scroll.offY;
+        const float fz = fieldFillZoom(app);
+        vw = fieldViewW(app) * fz, vh = fieldViewH(app) * fz;
+        vx = (SW - vw) / 2 + app.scroll.offX * fz, vy = (H - vh) / 2 - app.scroll.offY * fz;
     } else {
-        vw = vh = app.video.paintings == 2 ? std::max(SW, H) : std::min(SW, H);
+        vw = vh = std::min(SW, H);
         vx = (SW - vw) / 2, vy = (H - vh) / 2;
     }
     float hx, hy;
@@ -10272,10 +10289,11 @@ bool click(App& app, float px, float py) {
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
     float vx, vy, vw, vh; // the stage view on screen, as drawFrame lays it out
     if (scrollingField(app)) {
-        vw = fieldViewW(app), vh = fieldViewH(app);
-        vx = (SW - vw) / 2 + app.scroll.offX, vy = (H - vh) / 2 - app.scroll.offY;
+        const float fz = fieldFillZoom(app);
+        vw = fieldViewW(app) * fz, vh = fieldViewH(app) * fz;
+        vx = (SW - vw) / 2 + app.scroll.offX * fz, vy = (H - vh) / 2 - app.scroll.offY * fz;
     } else {
-        vw = vh = app.video.paintings == 2 ? std::max(SW, H) : std::min(SW, H);
+        vw = vh = std::min(SW, H);
         vx = (SW - vw) / 2, vy = (H - vh) / 2;
     }
     const int t = pick(app, lx, ly, [&](cr::Vec3 p, float& x, float& y) {
@@ -14458,7 +14476,8 @@ void drawCheckerboard(cr::Renderer& r) {
 cr::Mat4 scriptCameraView(const App& app, const cr::Vec3& eye, const cr::Vec3& target) {
     const cr::StageCamera& sc = app.stageCam;
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
-    const float w = fieldViewW(app), h = fieldViewH(app);
+    const float fz = fieldFillZoom(app);
+    const float w = fieldViewW(app) * fz, h = fieldViewH(app) * fz;
     // (setCamera3D casts the corner's sum to int: a corner left of the screen moves a pixel on a
     // positive fraction - the shake's whole pixels taken against the corner, the layout's own
     // centring left as it is)
@@ -14651,14 +14670,15 @@ void drawFrame(App& app, bool present = true) {
         float vx, vy, vw, vh;
         if (scrollingField(app)) {
             followPlayerScroll(app);
-            vw = fieldViewW(app);
-            vh = fieldViewH(app);
+            const float fz = fieldFillZoom(app);
+            vw = fieldViewW(app) * fz;
+            vh = fieldViewH(app) * fz;
             float sx, sy;
             shownScroll(app, sx, sy);
-            vx = (SW - vw) / 2 + sx;
-            vy = (H - vh) / 2 - sy;
+            vx = (SW - vw) / 2 + sx * fz;
+            vy = (H - vh) / 2 - sy * fz;
         } else {
-            vw = vh = app.video.paintings == 2 ? std::max(SW, H) : std::min(SW, H);
+            vw = vh = std::min(SW, H);
             vx = (SW - vw) / 2;
             vy = (H - vh) / 2;
         }
@@ -21346,7 +21366,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
 } // namespace
 
 // Video settings from the command line (after settings.ini): --original, --resolution WxH,
-// --windowed / --fullscreen / --borderless, --widescreen, --zoom-paintings, --render-scale %,
+// --windowed / --fullscreen / --borderless, --widescreen, --fill-paintings, --render-scale %,
 // --msaa n, --no-vsync
 void videoArgs(App& app, int argc, char** argv) {
     App::Video& v = app.video;
@@ -21367,8 +21387,7 @@ void videoArgs(App& app, int argc, char** argv) {
         else if (SDL_strcmp(a, "--layout") == 0 && i + 1 < argc) // --layout auto | ipad | iphone | android
             v.layout = SDL_strcmp(argv[i + 1], "android") == 0 ? 3 : SDL_strcmp(argv[i + 1], "iphone") == 0 ? 2
                      : SDL_strcmp(argv[i + 1], "ipad") == 0 ? 1 : 0;
-        else if (SDL_strcmp(a, "--zoom-paintings") == 0) v.paintings = 2;
-        else if (SDL_strcmp(a, "--whole-paintings") == 0) v.paintings = 1;
+        else if (SDL_strcmp(a, "--zoom-paintings") == 0 || SDL_strcmp(a, "--fill-paintings") == 0) v.paintings = 1;
         else if (SDL_strcmp(a, "--render-scale") == 0 && next) v.renderScale = std::clamp(SDL_atoi(next), 25, 400);
         else if (SDL_strcmp(a, "--msaa") == 0 && next) v.msaa = std::clamp(SDL_atoi(next), 1, 8);
         else if (SDL_strcmp(a, "--no-vsync") == 0) v.vsync = false;
