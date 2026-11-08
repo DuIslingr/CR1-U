@@ -7954,8 +7954,10 @@ int fieldRoute(const App& app) { return std::clamp(app.playerChar / 2, 0, 3); }
 
 // 2.2.0's iPhone layout: the bar keeps to the screen's corner, (-16, +32) (its menuf_mainPut /
 // Prc and kganMfMainButtonPosTbl)
-float fieldDx(const App& app) { return app.renderer.phoneLayout() ? -16.0f : 0.0f; }
-float fieldDy(const App& app) { return app.renderer.phoneLayout() ? 32.0f : 0.0f; }
+// (Android 1.1.1's SetFldMenu, 0x65ea4: the whole table - the corner button, the bar's buttons and
+// their tap circles - moved by (+ox, -oy) / scale, onto the phone's top right corner)
+float fieldDx(const App& app) { return (app.renderer.phoneLayout() ? -16.0f : 0.0f) + androidEdgeX(app); }
+float fieldDy(const App& app) { return (app.renderer.phoneLayout() ? 32.0f : 0.0f) - androidEdgeY(app); }
 
 bool fieldMenuWanted(const App& app) { // the field, the player free to walk
     return app.mode == Mode::Maps && app.havePlayer && !app.titleOpen && !app.booting && !app.battle.active && !app.campOpen &&
