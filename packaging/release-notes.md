@@ -64,6 +64,39 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   their puzzles are cleared (`Uty_FireWall_Init`, also callable from scripts) - and `Uty_ChkLogo_flg` sets the
   flag when var 0 is set. (Omega's top-menu sound, its Down / Ward icons, its "doubled" battle param-ups and
   its teleport countdown don't exist in Chaos Rings: its param-ups are the four Ups, as the port has them.)
+- **The title, Options and the puzzle rooms** (checked against the 2.2.0 code's `__menuu_TitlePrc` / `TitlePut`,
+  `__menuu_OptionPrc`, `PuzzleScene` and the puzzle objects): the title shows its own art again - the CHAOS
+  RINGS logo, "Please Touch" and the credits strip, which the port never drew - alone until a tap or key
+  (its sound), then the logo goes and Start / Scenarios / Options slide in; the "resume from last saved
+  point?" offer comes after Start, not as the title opens, and its Yes stops the music and fades to black
+  before the load; the store's picture answers a tap with its sound (there is no store). Options' Return
+  to Title asks first ("return to the title?") and leaves through the original's black fade with the music
+  stopping. Puzzle rooms: picking up a gem shows the original's one effect (the second belongs to a gem
+  teleported away, as for a block); pyrokinesis counts a tap only twenty frames after the last; a Retry
+  fades out and in over 500 ms. (Omega's "Load complete." timing, sound-effects gauge sound, last battle
+  header, candle stage numbers and lifted-block sounds already were Chaos Rings' own here; Chaos Rings has
+  no second scenario to give a tune back to.)
+- **The battle rules** (checked against the 2.2.0 code's `btlord_*`, `btlque_*`, `btlai_prc`, `btlcalc_*`,
+  `Is_invincible` and `pcparam_*`): two monsters act together only in the two-small-monster formation;
+  Escape resolves before any other action of the round; speeds are read afresh for every action (a Speed
+  Up or an Invincible taken mid-round moves the rest of it); a twice-acting monster chooses its second
+  action when it comes up; the guest's target and turn count are the original's; an AI pick the original
+  doesn't handle falls back as it does, and a fallen target is replaced as the original replaces it (an own-side
+  action goes to its user, the rest to a random living opponent); with the enemy pair a blow on one of them
+  hits both, as with your pair; a pair attack whose partner has fallen becomes the survivor's own attack.
+  Invincible covers a pair's either member (for damage, MP loss, poison and acting first); poison and the
+  HP-regaining skill are settled as one amount at the round's end with Invincible and Endure holding against it, and a
+  monster poisoned to death gives its experience, Oz and drops; a fallen member loses his element; a critical
+  moves the Break gauge even when the element triangle or Invincible changes the hit; a counter is the
+  original's (everyone the blow hit answers everyone who struck, with the counterer's own attack; a monster's by
+  its model; never against a monster's first of two actions). The Gate skills raise only their own stat (the
+  Defense Gates no longer add max HP and MP); a Steal Item catch and an ability or skill a monster teaches or
+  drops go into the bag at once (kept after an escape or a defeat, not listed on the result screen); a gene
+  reflected back for the kill leaves no item or gene; a new game "with your clear data" keeps the levels' growth
+  in the bonuses, as the original's. (Omega's pair attack ids, warrior / sorcerer bonus, 234 / 239 / 243 repeats,
+  sure-escape group, escape frames, Ward refusals, stat clamps, first-scenario level cap and start-level growth
+  aren't Chaos Rings': its rules already stood here. Omega 3.1.0's sure Counter skill isn't either - Chaos Rings'
+  newest release still rolls 10 % / 20 %.)
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.

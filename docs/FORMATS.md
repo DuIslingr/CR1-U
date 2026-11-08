@@ -1917,7 +1917,16 @@ and 124 at (320, 16) / (380, 16). A plate: base (0,184,24,40), 21 × (28,184,4,4
 at x + 108; face from x + 28: (52,184,24,40), 17 × (76,184,4,40), (80,184,16,40), or selected
 (96,…), (120,…), (124,…); icon `kanIconNoTbl[word] - 1` (32 × 32, 16 per row from (0, 376)) at
 (x + 8, y + 4); the word at (x + 40, y + 8). Start opens `SetStoreMenu`, Scenarios
-`SetHistoryMenu`, Options `SetOptionMenu` + `ModeOptionMenu(1)`.
+`SetHistoryMenu`, Options `SetOptionMenu` + `ModeOptionMenu(1)`. Before them (`TitlePrc` 0 / 1) the title's
+own art stands alone: `title1.mct` (slot 0x11) and `chaos.mct` (0x12), MuTex sheet 1 pictures 7
+("Please Touch"), 6 (the logo) in window 0 and 8 (the credits strip) in window 1 - 2.2.0: (184, 360,
+112 × 32) at (184, 216), (0, 0, 480 × 256) at (0, 0), (0, 320, 480 × 40) at (0, 280); 1.0.1's iPad
+sheets (0, 848, 1024 × 64), (0, 0, 1024 × 512), (0, 768, 1024 × 80) at tex2d (−32, 432), (−32, −64),
+(−32, 624). A tap anywhere plays SE 0 and turns windows 0 and 2 off; six frames on, window 3 (the
+plates, pictures 155 / 124) slides in. In 2.2.0 Start goes to the resume offer when there is
+interrupt data (0xf..0x14; Yes: `__bgmgo(0x8000000)`, `SetFade` black 500 ms, 10 frames, then
+`SaveData_Load_set`); picture 155's box (320, 16, 57 × 57) opens the store with SE 2, 124's (380,
+16, 80 × 72) the publisher's page (1.0.1: both the store).
 
 **Options** (`__menuu_Option*`): the "Options" plate (picture 102) at (8, 4); rows at (20, 56 + 48k);
 controls at x 224 / 344 (gauges at (224, 108) and (224, 156)); "1 / 2" from the 14-unit digits

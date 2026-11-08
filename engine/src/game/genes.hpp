@@ -45,8 +45,9 @@ bool hasSkill(const GameState& gs, int character, int skill);
 // chk_gene_btl: armor that resists an element counts as its skill (148 Blaze / 149 Aqua / 150
 // Gale Resistance): each character's armors 222..227 (+28 a character) - 0 none
 int armorSkill(int armor);
-// pcparam_max_*: the stat with equipment, seeds, boosts and the skills' (175..186, the Gates:
-// each known stage worn adds its item's stat)
+// pcparam_max_*: the stat with equipment, seeds, boosts and the Gates' (175..177 Attack, 178..180
+// Defense, 181..183 Speed, 184..186 Luck: each known stage worn adds its item's own stat; HP and
+// MP take none)
 int memberStat(const GameState& gs, int character, int stat, const ItemTable& items, int swap = 0);
 // MbResult's level-ups with skills 164..169 worn: +10 HP / +1 MP, Attack, Defense, Speed, Luck a level
 void levelUpBoosts(GameState& gs, int character, int levels);

@@ -75,9 +75,13 @@ bool hasSkill(const GameState& gs, int character, int skill) {
 int memberStat(const GameState& gs, int character, int stat, const ItemTable& items, int swap) {
     character = std::clamp(character, 0, 7);
     int v = maxStat(gs.party[size_t(character)], character, Stat(std::clamp(stat, 0, 5)), items, swap);
-    for (int skill = 175; skill <= 186; ++skill)
-        if (hasSkill(gs, character, skill))
-            if (const ItemParam* p = items.item(skill)) v += p->stat[std::clamp(stat, 0, 5)];
+    // pcparam_atk / grd / spd / lck (FUN_00031f64 / 31eb0 / 31df8 / 31d40): each reads its own three
+    // Gates' own column (175..177 Attack, 178..180 Defense, 181..183 Speed, 184..186 Luck);
+    // pcparam_max_hp / mp consult no skill - the Defense Gates' HP / MP columns go unread
+    if (stat >= kAttack && stat <= kLuck)
+        for (int skill = 175 + 3 * (stat - kAttack); skill < 178 + 3 * (stat - kAttack); ++skill)
+            if (hasSkill(gs, character, skill))
+                if (const ItemParam* p = items.item(skill)) v += p->stat[stat];
     return v;
 }
 

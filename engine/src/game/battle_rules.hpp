@@ -166,6 +166,7 @@ struct BattleHit {
     bool fell = false;    // this hit took the target's last HP
     int status = -1;      // a status it set (BattleStatus), -1 none
     bool revived = false; // calc 19 brought it back
+    bool critical = false; // que +0xbf: it was a critical, whatever the type says now (the Break's event 8)
 };
 
 enum BattleCommandKind { kCmdNone = 0, kCmdAttack = 1, kCmdGene = 2, kCmdItem = 3, kCmdDefend = 4, kCmdEscape = 5 };
@@ -218,15 +219,16 @@ public:
     bool allyAuto = false;       // +0xa4f: member 1 is a guest who acts by itself (btlord_enemy_rand)
     int allyScript = 0;          // its rotation: 1 (group 370), 2 (groups 372 / 373)
     int enemyLevelFrom = -1;     // btl_enemy_init_lv's level, when taken before a guest joined
-    int allyCounter = 0;         // +0x17c
+    int allyCounter = 0;         // +0x186 (2.2.0)
+    int formation = 0;           // +0x10: read_btlcpl's formation (2: two size-1 monsters - the only enemy pair)
     int forceAction = 0;         // tests (--battle-view stage<n>): enemy 2 always chooses this action
     int expGained = 0, ozGained = 0;
     int purse = 0;               // the party's Oz at the start (calc 10 takes from it)
     int ozStolen = 0;            // what the enemies took
     bool doubleExp = false, doubleOz = false; // calcs 35 / 36 (Paradise Apples)
     std::vector<int> drops;      // items (btlcalc_0505), gene plates (chk_dead), in the order won
-    std::vector<int> learned;    // abilities and skills taught (btlcalc_0506)
-    std::vector<int> stolen;     // Steal Item's catch (btlcalc_0504: kept whatever the outcome)
+    std::vector<int> learned;    // abilities and skills taught (0506) or dropped (0505): in the bag at once (FUN_0002ae14)
+    std::vector<int> stolen;     // Steal Item's catch (btlcalc_0504: in the bag at once, never on the result screen)
     std::vector<std::string> unsupported; // calcs it met that aren't implemented
     // What the battle tutorials (EvrStart 2, var 1 = 0xff3..0xff5) look for, set for the rest of
     // the battle: G+0xa6 a gene gave its users (0406) or its targets (zokusei_chr1) its
@@ -305,14 +307,21 @@ private:
         bool counter = false;
         int repeats = 1;          // +0xb: monsters with row +0x3e 2 act twice; Asura Lotus 2..5 times
         bool paid = false;        // a repeat: the MP went with the first
+        bool rechoose = false;    // a twice-acting monster's second go: chosen as it comes up (btlque_make_que)
         bool done = false;        // +0x399: acted, or cancelled (Trompe-L'oeil)
         int kind = kCmdNone;
         int action = 0, item = 0;
         int actors[2] = {-1, -1};
         int target = -1;
+        int target2 = -1;         // a counter's second target (btlque_add_counter: all the blow's actors)
         int speed = 0;
-        int order = 0;
+        int actionSpeed = 0;      // the action's +6, added to the actors' average (btlord_calc_spd)
+        int order = 0;            // the record's place (fighter order): the first of equals goes first
     };
+    size_t pickNext();            // btlque_make_que: counters, then the escape, then the fastest (speeds read afresh)
+    bool invincible(int t) const; // Is_invincible: a pair's (or enemy pair's) either member
+    // btlcalc_chk_dead's fall: statuses (a member's element too) cleared, pair mode over, a monster's rewards
+    void fall(int t, const int actors[2], bool itemsAndGenes);
     std::vector<Entry> queue_;
     size_t next_ = 0;
     std::vector<BattleNotice> notices_; // this action's, handed to BattleTurn::notices
