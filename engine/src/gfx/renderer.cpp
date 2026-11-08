@@ -180,6 +180,15 @@ void Renderer::beginFrame(int windowW, int windowH) {
     mapScreen(sw, sh);
 }
 
+void Renderer::fitScreen(int windowW, int windowH) {
+    const float k = scalable() ? std::clamp(renderScale_, 0.25f, 4.0f) : 1.0f;
+    frameW_ = std::clamp(int(windowW * k + 0.5f), 1, 8192);
+    frameH_ = std::clamp(int(windowH * k + 0.5f), 1, 8192);
+    windowAspect_ = float(windowW) / float(std::max(windowH, 1));
+    windowW_ = std::max(windowW, 1);
+    mapScreen(frameW_, frameH_);
+}
+
 void Renderer::mapScreen(int drawableW, int drawableH) {
     drawableW_ = drawableW;
     drawableH_ = drawableH;

@@ -2739,6 +2739,7 @@ void scrollFieldTo(App& app, float vx, float vy, float rate) {
         return len <= screen ? lo + len / 2 : std::clamp(v, lo + screen / 2, lo + len - screen / 2);
     };
     const float tx = V / 2 - axis(vx, rx, rw, SW), ty = axis(vy, ry, rh, H) - Vh / 2;
+    if (SDL_getenv("CR_SCROLL_DEBUG")) std::printf("scroll clamp: screen %.0f x %.0f, view %.0f x %.0f, rect %.0f %.0f %.0f %.0f\n", SW, H, V, Vh, rx, ry, rw, rh);
     app.scroll.offX += (tx - app.scroll.offX) * rate;
     app.scroll.offY += (ty - app.scroll.offY) * rate;
 }
@@ -20707,6 +20708,18 @@ int runExportTextures(App& app, const char* dirArg) {
 int runCapture(App& app, const char* mapName, const char* outPath) {
     app.persist = false;
     app.trophy.live = false; // (no notifications of their own in captures: CR_CAPTURE_TROPHY shows one)
+    if (const char* sz = SDL_getenv("CR_CAPTURE_SIZE")) { // CR_CAPTURE_SIZE=WxH: the window's size (e.g. 1280x720, a phone's 16:9)
+        int cw = 0, ch = 0;
+        if (std::sscanf(sz, "%dx%d", &cw, &ch) == 2 && cw >= 320 && ch >= 240) {
+            SDL_SetWindowSize(app.window, cw, ch);
+            SDL_SyncWindow(app.window);
+        }
+    }
+    { // the logical screen as the first frame will have it (--frames runs step before drawing)
+        int ww = 0, wh = 0;
+        SDL_GetWindowSizeInPixels(app.window, &ww, &wh);
+        if (ww > 0 && wh > 0) app.renderer.fitScreen(ww, wh);
+    }
     app.typeOn = SDL_getenv("CR_CAPTURE_TYPED") != nullptr; // CR_CAPTURE_TYPED=n: n frames of typing
     setMode(app, Mode::Maps);
     int idx = -1;

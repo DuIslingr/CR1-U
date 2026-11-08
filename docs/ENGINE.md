@@ -343,7 +343,7 @@ c101/c102/c104/m207a, 2026-10-12).
       `--capture … --talk-portrait n` captures the n-th hall conversation moment with a portrait
       up, `--event n` starts the room's script n (`--area n` picks the event file where routes
       share a map, `--set-flags a,b` sets story flags first, `--win-battles` wins the battles it
-      starts, `CR_CAPTURE_TRACE=1` prints the script's state as it changes)
+      starts, `CR_CAPTURE_TRACE=1` prints the script's state as it changes, `CR_CAPTURE_SIZE=WxH` sets the window's size first (e.g. 1280x720 for a phone's 16:9; the logical screen is fitted before any step))
 - [x] New game: the opening plays as the original's script stages it (a 3D room filmed by the
       script camera: cuts and moves between shots, framed as `setCamera3D` does - the stage view
       doubled and centred, so the screen shows its middle), then the hall's characters can be talked
