@@ -1,211 +1,103 @@
-# CR1:U — a Chaos Rings reimplementation
+# CR1:U - Chaos Rings, reimplemented
 
-A from-scratch native port of *Chaos Rings* (Square Enix / Media.Vision, 2010), built by
-reverse-engineering the iPad's *Chaos Rings HD* v1.0.1. It also runs the voiced iPhone release
-(2.2.0), the Android release (1.1.1) and the PlayStation Vita release (PCSG00497), alone or as an add-on for their voices, music,
-languages and lossless art. The engine code here is new; it loads the game from **your own copy**
-at runtime.
+CR1:U is a new, native version of *Chaos Rings* (Square Enix / Media.Vision, 2010) for Windows,
+macOS, Linux and Android. It was rebuilt from scratch by studying the iPad's *Chaos Rings HD*
+1.0.1, and it plays the whole game: field, story scenes, battles, menus and all 64 puzzle rooms,
+checked against the original's code and a reference playthrough.
 
-**No game data is in this repository or distributed with it** - no art, audio, text, scripts or
-code of the game, and nothing generated from them. You need your own copy of the game. The
-engine's source does hold facts read out of the original (file names, flag numbers, screen
-positions, formula constants) where the port needs them.
+**No game data is included.** The engine is new code; it loads the game from **your own copy**
+when it starts. Nothing of the game - art, audio, text, scripts or code, or anything made from
+them - is in this repository or in the downloads.
 
-Licence: GPL-2.0-or-later (`LICENSE`); the bundled libraries keep their own (`THIRD_PARTY.md`).
+- [What you need](#what-you-need)
+- [Install and first start](#install-and-first-start)
+- [Controls](#controls)
+- [Settings worth knowing](#settings-worth-knowing)
+- [Extras: Vita saves, trophies, HD textures and models](#extras)
+- [Troubleshooting](#troubleshooting)
+- [Building from source](#building-from-source)
+- [Credits and licence](#credits-and-licence)
 
-## Quick start
+## What you need
 
-```sh
-cd engine
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
-cmake --build build
-build/chaosrings
-```
+A copy of *Chaos Rings* from any of these releases. One is enough:
 
-C++17 and SDL3 (downloaded and built by CMake when it isn't installed); Vulkan 1.3 by default,
-OpenGL 3.3 / ES 3.0 with `--renderer gl` or when Vulkan can't start. See [Platforms](#platforms) for Windows, macOS
-and Android.
+| Release | What to have | Notes |
+|---|---|---|
+| iPad *Chaos Rings HD* 1.0.1 | the `.ipa`, or its unpacked `ChaosRingsHD.app` | the release the port was built from |
+| iPhone 2.2.0 | the `.ipa`, or its unpacked `ChaosRings.app` | voiced; iPhone screen layout |
+| Android 1.1.1 (Google Play) | the APK and `main.100.com.square_enix.chaosrings.googleplay.obb` | sharper textures, its own art |
+| PlayStation Vita (PCSG00497) | the installed game (as Vita3K installs it), or a NoNpDrm dump | voices, ATRAC9 music, scripts in eight languages, lossless art; a 960 x 544 layout |
 
-Your copy goes in the game folder - for this build `engine/build/`, or the folder you start it
-from - as `ios/`, `android/` or `vita/` ([Your copy](#your-copy)), and it starts with nothing on
-the command line.
+The Vita game can also come from the Prequel Trilogy (PCSG00457): its add-on holds the game's
+data and is merged in.
 
-## Your copy
+**Having more than one helps.** With several copies, the iOS one is the game and the others add
+to it - the Vita's voices, music, languages and lossless art, the Android release's sharper
+textures and art. Each add-on can be switched off in Options, Game (Vita Assets / Android
+Assets). Without an iOS copy, the Vita copy alone is the game; without either, the Android
+release is.
 
-The easiest way: just start the program. With no copy found, it asks where yours is - pick it in
-the window it opens, and the files the port needs are **copied into the game folder** (the profile
-folder's if that one can't be written), the same layout as putting them there by hand (below):
+## Install and first start
 
-- **iOS** - the `.ipa` (or any file in its unpacked `.app`): unpacked into `ios/`;
-- **Android** - the APK and its `main.100.com.square_enix.chaosrings.googleplay.obb`, both at once: copied into `android/`
-  (an APK beside them that carries the game's package goes along; another game's is refused);
-- **Vita** - Vita3K's folder with the game installed (its own, the folder its `config.yml` names as
-  `pref-path`, or `ux0`), or the game's own `PCSG00497` folder: copied into `vita/PCSG00497/` as Vita3K installs
-  it (`eboot.bin`, `sce_sys/`, the game's folder).
-  A **NoNpDrm dump** (its files encrypted, `sce_sys/package/work.bin` its licence) - its folder, or packed as
-  `.rar`, `.7z`, `.zip` or `.vpk` - is decrypted as Vita3K's install does, this game's parts alone; from the
-  Prequel Trilogy (`PCSG00457`) its add-on `addcont/PCSG00457/DIESEL1000ADDCON` - where the game's data is - is merged into
-  the game's folder.
+1. Download the file for your system from the
+   [releases](https://github.com/DuIslingr/CR1-U/releases) and unzip it.
+2. Start `chaosrings`.
+3. If it doesn't find your game, it asks for it. Pick your copy in the window it opens:
+   - **iOS:** the `.ipa` (or any file inside the unpacked `.app`);
+   - **Android:** the APK and the OBB, both at once;
+   - **Vita:** Vita3K's folder with the game installed (or its `ux0`), the game's `PCSG00497`
+     folder, or a NoNpDrm dump - as a folder or packed as `.zip`, `.rar`, `.7z` or `.vpk`.
+     Dumps are decrypted for you, as Vita3K's install does.
 
-More than one adds to it - the Vita's voices and music over the iOS data, say -; then Start. Nothing is read where it was chosen, so the folder it came from can go
-afterwards. (Windows, Linux and macOS; on Android, copy the files over USB as below.)
+   You can add several before pressing Start. The files the port needs are **copied into the
+   game folder** (or the profile folder, if the game folder can't be written), so the originals
+   can be moved or deleted afterwards.
 
-Or, as before, nothing given on the command line: put your copy in the **game folder** and start
-the program - it finds it by itself. The game folder is:
+- **Windows:** if SmartScreen warns about an unsigned program, choose *More info*, *Run anyway*.
+- **macOS:** right-click `chaosrings.app` and choose *Open* (it isn't signed).
+- **Linux:** `chmod +x` the AppImage, then run it.
+- **Android:** install the APK. The first start's setup works on the phone too (it picks files;
+  folders are copied in over USB). Or copy your files over USB into
+  `Android/data/local.preservation.chaosrings/files/`, in an `ios/`, `android/` or `vita/` folder.
 
-| Platform | The game folder |
-|---|---|
-| Windows, Linux | the folder holding `chaosrings.exe` / `chaosrings` |
-| Linux AppImage | the folder holding the `.AppImage` |
-| macOS | the folder holding `chaosrings.app` (its `Contents/Resources/` works too) |
-| Android | `Android/data/local.preservation.chaosrings/files/` on the shared storage (copy your files there over USB) |
+### Putting the files in by hand
 
-(then the working directory too). In it, a folder for each release you have - any one is enough:
+Instead of the setup you can place your copy in the **game folder** yourself - the folder that
+holds `chaosrings` / `chaosrings.exe`, the `.AppImage` or `chaosrings.app` (on Android, the
+folder above). The release downloads already have these folders, each with a `README.txt`:
 
 ```
 <game folder>/
-├── chaosrings                          (or chaosrings.exe, chaosrings.app, the .AppImage)
-├── ios/
-│   └── ChaosRingsHD.app/               the iPad 1.0.1's .app: its dataHD/ (sys.evt, the .evt, .mct, .bin files)
-│                                       - or ChaosRings.app/ (the iPhone 2.2.0, voiced: its data/),
-│                                       or Payload/ChaosRingsHD.app/ (the .ipa unpacked as it is)
-├── android/
-│   ├── main.100.com.square_enix.chaosrings.googleplay.obb
-│   └── <the 1.1.1 APK>.apk             (or its classes.dex: the OBB's table is in it)
-├── vita/
-│   └── PCSG00497/                      the installed title: CR1/resources/cr1.psarc, CR1/sound/*.psarc
-├── fsr4/                            AMD FSR 4 (optional; Linux and Windows, an AMD GPU): AMD's two SDK DLLs, the driver's
-│                                    amdvkffx64.dll, and on Linux ffx-vk-linux's libffx_vk_linux.so - see Platforms
-└── textures/
-    ├── export/                         written by --export-textures: the pictures to upscale (<hash>.png)
-    └── hd/                             read by the game: the upscaled pictures (<hash>.png or .crhd)
+├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), or Payload/... as unpacked
+├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex)
+├── vita/       PCSG00497/ as installed - or a NoNpDrm dump's app/ (and addcont/), decrypted on the next start
+├── fsr4/       optional: AMD FSR 4's files (see Settings)
+├── textures/   optional: export/ and hd/ for HD textures
+└── models/     optional: export/ and hd/ for HD models
 ```
 
-A release's folder may hold the release itself or have it one or two folders down, as above
-(`ios/Payload/....app`, `vita/PCSG00xxx/`), so a copy can be dropped in as it was unpacked or
-installed; the names of the folders below `ios/`, `android/` and `vita/` don't matter. A Vita copy
-is the installed, decrypted title - or a NoNpDrm dump's folder as it was dumped, still encrypted (its
-`app/`, and `addcont/` beside it for the Prequel Trilogy's add-on): the next start decrypts it into
-`vita/` (on a phone too; it needs the space for the decrypted copy), and the dump can be deleted then.
-A dump packed in an archive (.zip, .rar, .7z, .vpk) is chosen in the first start's setup instead - a
-phone's too, which shows when there's no copy yet and picks files (folders are copied in over USB).
-The release downloads come with these folders made, each with a `README.txt` saying what
-goes in it.
+Each release may sit one or two folders down (as it was unpacked or installed), and the folder
+names below `ios/`, `android/` and `vita/` don't matter. Older places still work too: `dataHD/`,
+`data/`, `ChaosRingsHD.app/` or `Payload/` straight in the game folder.
 
-With several, **the iOS copy is the game and the others add to it**: the Vita's voices, ATRAC9
-music, scripts in eight languages and lossless art, the Android release's sharper textures and its
-own art (each switched off in Options, Game: Vita Assets / Android Assets). With no iOS copy the
-Vita copy alone is the game (its 960 x 544 layout), else the Android release alone (the iPhone 2.2.0's
-voiced data and layout).
+For a copy kept elsewhere, use `--data <iOS data>`, `--vita <PCSG00497 folder>` or
+`--android <folder>` (or the variables `CR_DATA`, `CR_VITA`, `CR_ANDROID`), or pick the folder in
+Options, Game; `--vita none` / `--android none` start without that add-on. If nothing is found,
+the program tells you where it looked.
 
-If nothing is found the program says where it looked. The older places still work: `dataHD/`, `data/`, `ChaosRingsHD.app/` or `Payload/` straight in the game folder.
-To use a copy elsewhere: `--data <iOS data>` (or `CR_DATA`), `--vita <PCSG00497 folder>` (`CR_VITA`), `--android <folder>` (`CR_ANDROID`) - each also a folder picked in Options, Game, kept in `settings.ini`; `--vita none` / `--android none` without. Settings and saves go to the profile folder
-(`~/.local/share/preservation/ChaosRingsHD/` on Linux; the same folders under `%APPDATA%\` on Windows and
-`~/Library/Application Support/` on macOS), not the game folder. All four ports (CR1:U, CRO-U, CR2-U, CR3-U) look for their copies the same way.
+**Settings and saves** live in your profile folder, not the game folder:
+`~/.local/share/preservation/ChaosRingsHD/` (Linux), `%APPDATA%\preservation\ChaosRingsHD\`
+(Windows), `~/Library/Application Support/preservation/ChaosRingsHD/` (macOS).
 
-## Vita save importing
-
-Import decrypted Vita saves from title-screen **Options**, using **Game → Import Vita Saves**.
-Choose the exported save folder and confirm; existing saves are backed up automatically.
-No Python is needed. See [Vita save importing](docs/VITA_SAVES.md) for supported state,
-profile locations and the optional command-line converter. CR1 supports level 100.
-
-## HD textures
-
-Upscaled textures you make yourself, from your own copy - waifu2x or Real-ESRGAN, drawn in place of
-the originals:
-
-1. `chaosrings --export-textures` writes every picture the game draws to `<game folder>/textures/export/`
-   (`<hash>.png`, upright; the profile folder's `textures/export/` if the game folder can't be written;
-   `--export-textures <folder>` elsewhere). Each release exports its own pictures.
-2. `python3 tools/hd_textures.py <game folder>` upscales them into `<game folder>/textures/hd/`
-   (`<hash>.png`): waifu2x (`waifu2x-ncnn-vulkan` on the PATH, or `--waifu2x <it>`) for the
-   lossless and block-compressed pictures, Real-ESRGAN (`--esrgan <the folder with
-   realesrgan-ncnn-vulkan and models/>`) for the 16-bit ones - or `--engine waifu2x` for all. It
-   needs Python 3 with NumPy and Pillow; `--help` lists the rest (`--scale`, `--noise`, `--only` ...).
-3. Start the game: with `textures/hd/` there, HD Textures is on by itself (Options, Detail, HD Textures switches
-   it; `--no-hd-textures` for a run without). One `textures/hd/` can hold every release's.
-
-The exports are ordinary PNGs, so any upscaler or image editor works as well: save the result
-under the same name in `textures/hd/`. Keep each picture's shape - one scale across and down, at
-least the original's size, up to 8192 a side - and its rows the right way up: a picture that
-doesn't fit is left out (the log says which and why) rather than drawn wrong.
-
-An export made with Vita Assets on takes the Vita's lossless version of each picture it has
-alike and leaves `<iOS hash>.cralias` files: the tool links each to that picture's upscale, so one
-upscale serves the game with or without the Vita's.
-
-`CR_HD_TEXTURES=<folder>` reads them from elsewhere; the older `hd-textures/` beside the program or in
-the profile folder is still read while there is no `textures/hd/`. The `tools/hd_textures.py` is the
-same in all four ports. Personal use: the outputs are made from the game's art - keep them out of
-anything shared.
-
-## HD models
-
-Models you make or improve yourself, drawn in place of the game's - more detailed, smoother,
-retextured - moving with the game's own skeleton and animations:
-
-1. `chaosrings --export-models` writes every model to `<game folder>/models/export/` as glTF 2.0
-   (`<name>.glb`: its skeleton, meshes, materials, pictures and animations; `--export-models <folder>`
-   elsewhere). Blender (File, Import, glTF 2.0) opens them as they are, animations included.
-2. Edit it - sculpt, subdivide, rebuild, re-weight, paint - keeping the armature: its bones are named
-   `node_<n>...` and the game finds them by that (a new bone goes with its nearest original parent).
-   A material keeps the game's render state by its name `cr_mat_<n>...`; give it a picture of your own
-   (PNG or JPEG, any size, packed in the `.glb`) and that picture replaces the model's.
-3. Export it from Blender as glTF 2.0 (`.glb`, the defaults) to `models/hd/<package>.glb` (`j001.glb` for Escher's `j001.bin`). With HD Models on
-   (Options, Detail; off until you switch it on) it is drawn instead of the original from the next scene on.
-
-What it reads: triangles, the first UV set and colour set, four weights a vertex; up to 255 joints a mesh; the game's particle props (`be*` / `ee*`) hang pieces on bones resting at scale 0, which Blender can't keep - edit those outside it. The
-animations in the file are for previewing - the game plays its own. `crtool gltfcheck <data> <model.bin> [file.glb]`
-checks a round trip (the export loaded back: every model lands exactly on the original in every
-animation). `CR_HD_MODELS=<folder>` reads them from elsewhere. Personal use: the exports are the
-game's models - keep them, and what you make from them, out of anything shared.
-
-## Platforms
-
-Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
-binaries are that run's artifacts (nothing of the game is in them): an AppImage, a Windows folder,
-a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vulkan and OpenGL, the
-same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
-MetalFX, in particular, is compiled but untested.
-
-| Platform | Build | Renderer | The game folder (its `ios/`, `android/`, `vita/`, `textures/`) |
-|---|---|---|---|
-| Linux | as above | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (with the SDK) | the folder holding `chaosrings`, or the AppImage |
-| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (MSVC, with the SDK) | the folder holding `chaosrings.exe` |
-| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the folder holding `chaosrings.app` (or its `Contents/Resources/`) |
-| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings/files/` on the shared storage (copy your files there over USB) |
-
-`-DCR_GLES=ON` builds the desktop game on OpenGL ES 3.0, as Android runs it (Mesa has it): a way
-to test that path without a device. Settings and saves go to SDL's profile folder:
-`%APPDATA%\preservation\ChaosRingsHD\` on Windows, `~/Library/Application Support/preservation/ChaosRingsHD/` on macOS.
-With Vulkan the profile folder also keeps `vulkan-pipelines.bin`: the graphics driver's compiled
-pipelines, so later starts and new screens don't compile them again (safe to delete; another GPU
-or a driver update starts it anew).
-
-DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
-(`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
-game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
-is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
-
-FSR 4 (Linux and Windows, an AMD GPU of the RX 6000 series or later): AMD's machine-learning
-upscaler, FSR Upscaling 4.1.2, is an Upscaler choice too (`--upscaler fsr4`) once its files are in
-`fsr4/` in the game folder. AMD ships it for Vulkan only as its own signed Windows DLLs, whose
-licence allows them to be passed on in that form under AMD's terms alone, so they aren't included:
-`amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from AMD's
-[FSR SDK 2.4](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/tag/v2.4.0)
-(`Kits/FidelityFX/signedbin/`), `amdvkffx64.dll` - FSR 4 itself - from AMD Software: Adrenalin
-Edition 26.10.1 or later (the Windows driver package), and on Linux `libffx_vk_linux.so` from
-[ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux) (MIT), which maps AMD's DLLs natively, no
-Wine. The game's log says which FSR AMD's SDK picked; without the driver DLL it offers only FSR 3.1
-and the game says so. `CR_FSR4_DIR` points at the files elsewhere.
+All four ports (CR1:U, CRO-U, CR2-U, CR3-U) find their copies the same way.
 
 ## Controls
 
-A controller plays as the Vita does (its manual). The face buttons are by position, so on an Xbox
-pad ○ is B, × is A, △ is Y and □ is X. ○ confirms and × cancels, as in the Japanese release;
-Options, Game, "Swap ○ and ×" turns that round. Tested with a
-Steam Controller (through Steam Input).
+A controller plays as the Vita release does. The face buttons go by position, so on an Xbox pad
+○ is B, × is A, △ is Y and □ is X. ○ confirms and × cancels, as in the Japanese release;
+Options, Game, "Swap ○ and ×" turns that round. Tested with a Steam Controller (through Steam
+Input).
 
 | Button | On the field | In menus and dialogue | In puzzle rooms |
 |---|---|---|---|
@@ -233,56 +125,121 @@ Steam Controller (through Steam Input).
 | F3 | toggle Control Hints (also in Options, Game; saved between runs) |
 | Mouse | everything the original takes by touch: plates, buttons, the dialogue, the corner button; drag to push a block in puzzle rooms |
 
-Touch (or the mouse) plays the field as the original does: put a finger down anywhere on the field
-and drag - a pad appears where it went down and the leader walks the way the finger points, running
-once it's pulled further out. With something in reach, the "!" button in the bottom right corner (or a
-tap on the "!" over it) examines or talks.
+**Touch** (or the mouse) works as in the original: put a finger down anywhere on the field and
+drag - a pad appears there and the leader walks the way you point, running when you pull further.
+Next to something you can use, the "!" button in the bottom right corner (or a tap on the "!"
+above it) examines or talks.
 
-## What it does
+## Settings worth knowing
 
-The whole game plays, checked against the original's code (Ghidra decompiles of 1.0.1, 2.2.0 and
-the Vita build) and a reference playthrough:
+The defaults are the original's presentation, drawn at 60 frames a second; Options changes it.
+A few highlights:
 
-- **Field**: the painted rooms at the iPad's 2× with the window following the player, the 3D rooms,
-  walking and collision, exits, NPCs and treasure, the event scripts (all 27,010 decode and run)
-  with their cutscenes, portraits, message windows, choices, scene effects and quakes
-- **Battles**: the original's rules (damage, criticals, elements, the Break, genes and skills,
-  every action calc, the AI), the bosses' staged attacks, the story battles' talks and line-ups,
-  effects, cameras and the HUD; random encounters as the original counts them
-- **Menus**: title, Character Select, save / load (a slot per pair, clear data), Camp (items,
-  equipment, genes, status), shops, the World Select, Scenarios, the field menu and map, the
-  staff roll and the last battle's pair choice, the instruction manual, Options
-- **Puzzle rooms**: all 64 stages (teleport, psychokinesis, toughness, pyrokinesis)
-- **The other releases**: 2.2.0's voices, languages and iPhone layout; the Vita's voices, music,
-  scripts, sound bank and art, as an add-on or as the game
-- **Presentation options** (the defaults are the original's): resolution, fullscreen, 4:3 or
-  widescreen (the menus' groups kept to the screen's edges, as the later widescreen release does),
-  render scale, MSAA, FSR 3.1 / DLSS, optional HD textures you make yourself (waifu2x /
-  Real-ESRGAN), smoothed models; 60 frames a second (Frame Rate: 30 / 60 / 120 / 144 / unlimited)
-  over the game's own 20 - the leader, NPCs, cameras, scroll and battle actors shown moving
-  between its frames
-- **Speed** (off unless set): Options, Game - Field Speed and Battle Speed, each Off or 2x .. 5x:
-  walking the field (its scenes, talk and menus as they are) and the battles that many times as
-  fast; `--field-speed n` / `--battle-speed n` for one run
-- **Testing**: `--selftest` checks every subsystem against the original's rules and data;
-  `--explore n` plays the game by itself from the title through all four pairs' stories and the
-  last battle to the final ending; `--capture` renders any room, screen or battle moment
+- **Game:** Language, Field Speed and Battle Speed (Off or 2x - 5x; walking and battles only -
+  scenes, talk and menus keep their pace; `--field-speed n` / `--battle-speed n` for one run),
+  Swap ○ and ×, Control Hints, Vita / Android Assets, Import Vita Saves, the Instruction Manual.
+- **Display:** resolution and window mode, 4:3 or Wide (the menus stay at the screen's edges, as
+  the later widescreen release does), Layout (Auto, iPad, iPhone or Android screens), **Painted
+  Rooms** (Original, or Fill to zoom the painted rooms to cover a wide screen), VSync and **Frame
+  Rate** (30 / 60 / 120 / 144 / unlimited - the game runs at its own 20 steps a second and the
+  port draws the movement in between). "Original Presentation" puts it all back.
+- **Detail:** HD Textures, HD Models, Smooth Models (rounder silhouettes), anisotropic filtering,
+  Smooth or Sharp texture filtering.
+- **Graphics** (Vulkan): Render Scale, anti-aliasing (MSAA, FSR Native AA, DLAA) and an
+  **Upscaler** - FSR 3.1 (built in), FSR 4, DLSS or MetalFX - with Upscale Mode and Sharpness.
 
-Not yet: Windows, macOS and Android packaging.
+Notes on the upscalers:
 
-## Documentation
+- **FSR 4** (Linux and Windows, AMD RX 6000 series or later) needs AMD's own files in the `fsr4/`
+  folder; AMD's licence doesn't let the port include them. Its `README.txt` says where each comes
+  from; on Linux they run natively through [ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux),
+  no Wine. Without them you have FSR 3.1.
+- **DLSS** isn't in the downloads: NVIDIA's library is proprietary and can't ship with GPL code.
+  You can build it in for your own use (see [Building from source](#building-from-source)).
+- **MetalFX** (macOS 13+) is built but hasn't been tried on a real Mac yet.
 
-| | |
+With Vulkan, the profile folder keeps `vulkan-pipelines.bin` so later starts and new screens don't
+compile the graphics pipelines again. It is safe to delete; a new GPU or driver starts it afresh.
+
+## Extras
+
+**Vita saves.** Bring your Vita progress over: on the title screen, Options, Game, **Import Vita
+Saves**, then choose the decrypted, exported save folder and confirm. Your current saves are
+backed up first, and no Python is needed. CR1 supports level 100. Details and an optional
+command-line converter: [docs/VITA_SAVES.md](docs/VITA_SAVES.md).
+
+**Trophies.** The Vita release's 16 trophies unlock as you play, whichever copy is the game, with a
+notification like the Vita's. Their names and pictures come from the Vita copy when you have it.
+
+**HD textures.** Make upscaled textures from your own copy and the game draws them instead:
+
+1. `chaosrings --export-textures` writes every picture to `textures/export/`.
+2. `python3 tools/hd_textures.py <game folder>` upscales them into `textures/hd/` with waifu2x or
+   Real-ESRGAN (needs Python 3 with NumPy and Pillow). Any upscaler or image editor works too:
+   save the result under the same name.
+3. Start the game: with `textures/hd/` present, HD Textures turns on (Options, Detail).
+
+**HD models.** `chaosrings --export-models` writes every model as glTF (`.glb`) to
+`models/export/`, ready for Blender, animations included. Edit one, keeping its armature, save it
+to `models/hd/<package>.glb` and switch on Options, Detail, HD Models.
+
+Both are for personal use: what you make comes from the game's art, so keep it out of anything you
+share. The rules (sizes, names, the Vita's `.cralias` links, what the model loader reads) are in
+[docs/HD_ASSETS.md](docs/HD_ASSETS.md).
+
+## Troubleshooting
+
+- **"No copy found" / the setup opens every time:** check the folder layout above; the program
+  lists where it looked. A release can be one or two folders down, not deeper.
+- **A Vita dump isn't picked up:** a dump in `vita/` is decrypted on the next start and needs room
+  for the decrypted copy. An archive (`.zip`, `.rar`, `.7z`, `.vpk`) has to go through the setup.
+- **Vulkan doesn't start:** the game falls back to OpenGL by itself; `--renderer gl` forces it.
+- **FSR 4 isn't offered:** Options, Graphics says why next to the Upscaler, and the game's log
+  says which FSR AMD's files picked; without AMD's driver DLL only FSR 3.1 is available.
+- **An HD texture doesn't show:** a picture whose shape doesn't fit is skipped, and the log says
+  which and why (see [docs/HD_ASSETS.md](docs/HD_ASSETS.md)).
+- **Android, updating from v0.4.5 or earlier:** those builds were signed with a different key -
+  uninstall the old version first, once. That removes the copied game files and your saves, so
+  keep a copy of the game files.
+- **Tested on:** Linux (played) and Windows (under Wine). The macOS and Android builds are made by
+  CI but haven't been run on real hardware yet - reports are welcome.
+
+## Building from source
+
+```sh
+cd engine
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build
+build/chaosrings
+```
+
+You need a C++17 compiler; CMake downloads and builds SDL3 if it isn't installed. Vulkan 1.3 is
+the default renderer (OpenGL 3.3 / ES 3.0 with `--renderer gl`, or when Vulkan can't start). Put
+your copy in `engine/build/` (or wherever you start it from) as described above.
+
+Every push is built by CI (`.github/workflows/build.yml`) for Linux (AppImage), Windows, macOS
+(universal `.app`) and Android (APK). The Windows, macOS and Android builds, DLSS, FSR 4,
+`-DCR_GLES=ON`, the tools, the self-test (`--selftest`), the self-playing `--explore` and
+`--capture` are covered in [docs/ENGINE.md](docs/ENGINE.md#building).
+
+| Document | What's in it |
 |---|---|
-| `docs/ENGINE.md` | building in detail (renderers, music decoding, upscalers, platforms), the tools, the asset viewer and debugging switches, and the full status list |
-| `docs/FORMATS.md` | the game's file formats and the original's systems as reverse-engineered |
-| `docs/ANDROID.md` | the Android release's APK: what it holds, its screen layout (`tools/re_setup_android.sh`) |
+| [docs/ENGINE.md](docs/ENGINE.md) | building in detail, the tools, debugging switches, and the full status list of what the port does |
+| [docs/HD_ASSETS.md](docs/HD_ASSETS.md) | HD textures and models in detail |
+| [docs/FORMATS.md](docs/FORMATS.md) | the game's file formats and systems, as reverse-engineered |
+| [docs/ANDROID.md](docs/ANDROID.md) | the Android release's APK and screen layout |
+| [docs/VITA_SAVES.md](docs/VITA_SAVES.md) | importing Vita saves |
 
-## Layout
+Repository layout: `engine/` (the C++17 / SDL3 engine and `crtool`), `docs/`, `tools/` (analysis
+and extraction tools that work on your own copy), `android/` and `packaging/`. Local
+reverse-engineering output (`re/`, `extracted/`) is never committed or shared.
 
-| Path | Purpose |
-|---|---|
-| `engine/` | the C++17 / SDL3 engine and `crtool` |
-| `docs/` | engine and format notes |
-| `tools/` | analysis / extraction tools; they work on your own copy |
-| `re/`, `extracted/` | (not in the repository) local RE output and decoded assets - never commit or share |
+## Credits and licence
+
+- By DuIslingr, with fixes and testing by [metastigma](https://github.com/metastigma).
+- *Chaos Rings* is by Square Enix and Media.Vision. This is a fan preservation project, not
+  affiliated with either. The engine's source holds facts read out of the original (file names,
+  flag numbers, screen positions, formula constants) where the port needs them, but no game data.
+- Licence: GPL-2.0-or-later ([LICENSE](LICENSE)). The bundled libraries keep their own licences
+  ([THIRD_PARTY.md](THIRD_PARTY.md)); the macOS app is GPL-3.0 because of MoltenVK. A build with
+  DLSS links NVIDIA's proprietary library and is for your own use only.

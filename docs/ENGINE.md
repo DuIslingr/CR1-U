@@ -77,12 +77,44 @@ executable (desktop) or `Android/data/<package>/files/dataHD` (Android), then (d
 `dataHD/`, `ChaosRingsHD.app/dataHD/` or `Payload/ChaosRingsHD.app/dataHD/` under the
 current directory, so running it from the unpacked .ipa folder works.
 
-| Platform | Status |
-|---|---|
-| Linux | Builds and runs (tested: GCC 16, Mesa, GL 4.6 core) |
-| Windows | Code is portable; build with Visual Studio 2022 + CMake. Not yet tested |
-| macOS | Code is portable (GL 3.3 core, forward-compatible); build with Xcode tools + CMake. Not yet tested |
-| Android | CMake target `main` exists; needs SDL's Gradle project wrapper + SDK/NDK. Not yet set up |
+### Platforms
+
+Every push is built for Linux, Windows, macOS and Android by `.github/workflows/build.yml`; the
+binaries are that run's artifacts (nothing of the game is in them): an AppImage, a Windows folder,
+a universal macOS `.app` and an APK. The Windows build is checked under Wine (Vulkan and OpenGL, the
+same frames as Linux's); macOS and Android are built in CI but not yet played on a real machine -
+MetalFX, in particular, is compiled but untested.
+
+| Platform | Build | Renderer | The game folder (its `ios/`, `android/`, `vita/`, `textures/`) |
+|---|---|---|---|
+| Linux | as in the quick start above | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (with the SDK) | the folder holding `chaosrings`, or the AppImage |
+| Windows 10+ (x64) | MSVC and Ninja from a Developer prompt, the [Vulkan SDK](https://vulkan.lunarg.com/) for Vulkan - or from Linux with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw): `-DCMAKE_TOOLCHAIN_FILE=engine/cmake/llvm-mingw-x86_64.cmake` (runs under Wine). SDL3 and zlib are built by CMake | Vulkan, OpenGL 3.3; FSR 3.1, FSR 4 (AMD's files in `fsr4/`), DLSS (MSVC, with the SDK) | the folder holding `chaosrings.exe` |
+| macOS 11+ (Apple silicon and Intel) | Xcode's command-line tools, Ninja and the [Vulkan SDK](https://vulkan.lunarg.com/) (MoltenVK, copied into the `.app`); add `"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"` for both | Vulkan (MoltenVK), OpenGL 3.3; FSR 3.1, MetalFX (macOS 13+) | the folder holding `chaosrings.app` (or its `Contents/Resources/`) |
+| Android 7+ (arm64, x86-64) | the Android SDK and NDK: `git clone -b release-3.2.0 https://github.com/libsdl-org/SDL android/SDL`, then `gradle assembleRelease` in `android/` | OpenGL ES 3.0 | `Android/data/local.preservation.chaosrings/files/` on the shared storage (copy your files there over USB) |
+
+`-DCR_GLES=ON` builds the desktop game on OpenGL ES 3.0, as Android runs it (Mesa has it): a way
+to test that path without a device. Settings and saves go to SDL's profile folder:
+`%APPDATA%\preservation\ChaosRingsHD\` on Windows, `~/Library/Application Support/preservation/ChaosRingsHD/` on macOS.
+With Vulkan the profile folder also keeps `vulkan-pipelines.bin`: the graphics driver's compiled
+pipelines, so later starts and new screens don't compile them again (safe to delete; another GPU
+or a driver update starts it anew).
+
+DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
+(`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the
+game. CI builds and links it on Linux and Windows to prove it, but never uploads those builds: NGX
+is proprietary and the port is GPL, so a DLSS build is for your own use (THIRD_PARTY.md).
+
+FSR 4 (Linux and Windows, an AMD GPU of the RX 6000 series or later): AMD's machine-learning
+upscaler, FSR Upscaling 4.1.2, is an Upscaler choice too (`--upscaler fsr4`) once its files are in
+`fsr4/` in the game folder. AMD ships it for Vulkan only as its own signed Windows DLLs, whose
+licence allows them to be passed on in that form under AMD's terms alone, so they aren't included:
+`amd_fidelityfx_loader_vk.dll` and `amd_fidelityfx_upscaler_vk.dll` from AMD's
+[FSR SDK 2.4](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK/releases/tag/v2.4.0)
+(`Kits/FidelityFX/signedbin/`), `amdvkffx64.dll` - FSR 4 itself - from AMD Software: Adrenalin
+Edition 26.10.1 or later (the Windows driver package), and on Linux `libffx_vk_linux.so` from
+[ffx-vk-linux](https://github.com/DuIslingr/ffx-vk-linux) (MIT), which maps AMD's DLLs natively, no
+Wine. The game's log says which FSR AMD's SDK picked; without the driver DLL it offers only FSR 3.1
+and the game says so. `CR_FSR4_DIR` points at the files elsewhere.
 
 ## Tools
 
