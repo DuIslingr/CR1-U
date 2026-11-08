@@ -544,13 +544,14 @@ struct App {
         int requestFlags = 0;
         // The rules (game/battle_rules.hpp) and the scene around them (btl_main's states)
         cr::BattleRules rules;
-        enum Phase { Intro, Command, Acting, WinTalk, BossDown, Won, Results, Lost, Fled } phase = Intro;
+        enum Phase { Intro, Command, Acting, WinTalk, BossDown, Won, Results, Lost, Fled, RoundEnd } phase = Intro;
         int phaseFrames = 0;
         bool wonTap = false; // a tap in the victory's hold (state 1099: 140 frames or pad_chk_trg_up)
         bool lostTap = false;    // a tap on the defeat (0x513: at once, or after 40 frames of an event battle's game over picture)
         cr::Texture gameOver;    // btl_main 0x4b0: gameover.mct, drawn fading in over 20 frames for a lost event battle
         bool ending = false;     // btl_main 9000 -> 0x238b: the mask to black over 10 frames (SetMask(0): 500 ms), the music out, 12 frames, then the way out
         int endFrames = 0, pendingExit = 0;
+        int idleSince = -1;      // the action's frame its actors came to rest (btlact_attack 1999: ten frames more, then the next)
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
         int member = 0;                    // solo: the member choosing
@@ -801,6 +802,7 @@ struct App {
         bool shown = false;                // _SetFldMenu_pad_visible
         float knob[2] = {0, 0};            // _fldpad: the knob's offset, easing toward the finger
     } touchPad;
+    bool npcNativesPending = false;        // npc_setup: the rows' natives (+8) to run for the room's NPCs as they are created
     bool bigPad = false;                   // the UI atlas has 2.2.0's larger pad (iPhone, Vita, Android)
     float promptX = -1, promptY = -1;      // the "!" bubble's centre as drawn (logical), -1 none
     struct MapScreen {                     // __menuu_Map*: the gate's map, where the pair is, where to go
@@ -1780,6 +1782,7 @@ void enterMap(App& app) {
         }
     }
     app.npcs = app.events.npcs(app.mapNumber);
+    app.npcNativesPending = true; // (their rows' natives on the first step: the fire walls' Uty_FireWall_Init)
     { // fldencount_init
         cr::EncounterTable table;
         const bool have = cr::encounterTable(app.events, app.mapNumber, table);
@@ -2814,6 +2817,11 @@ struct ViewerHost : cr::EventHost {
         moveNpc(id, v, 0, Facing::Keep, int(std::hypot(p.x - x, p.z - z) / speed), 0);
     }
     void fadeNpc(int id, float from, float to, int frames) override {
+        if (id == 0) { // the player's model (NpcFade 0: __EvtNpcFade's gac + 0x83c), as mdl_set_alpha
+            app.playerAlphaFrom = from, app.playerAlphaTo = to, app.playerAlpha = from;
+            app.playerFadeFrames = app.playerFadeLeft = std::max(frames, 1);
+            return;
+        }
         for (auto* d : npc(id)) {
             d->alphaFrom = from; d->alphaTo = to; d->alpha = from;
             d->fadeFrames = d->fadeLeft = std::max(frames, 1);
@@ -3124,7 +3132,22 @@ struct ViewerHost : cr::EventHost {
     }
     bool windowClosed() override { return app.msgWin.state == 0 || app.msgWin.state == 6; }
     void toggleFieldHidden() override { app.fieldHidden = !app.fieldHidden; }
-    bool logoSeen() override { const bool seen = app.logoSeen; app.logoSeen = true; return seen; }
+    bool logoSeen() override { return app.logoSeen; }       // Uty_ChkLogo_flg with var 0 = 0: read alone (gac + 0x1f85e6)
+    void setLogoSeen() override { app.logoSeen = true; }    // ... with var 0 set: set alone
+    // Uty_FireWall_Init (var 0 = the NPC): the first dungeon's fire walls 453 (side 1) / 454 (side 0) burn -
+    // effect 0x12 | side at the NPC's point, scale 100, looping (eff3d_set_with_pos) - unless the route's
+    // flag is set: 1124 (453) / 1125 (454) + 400 x route (the table at 0xcb520)
+    void fireWall(int npc) override {
+        if (npc != 0x1c5 && npc != 0x1c6) return;
+        const int side = npc == 0x1c5 ? 1 : 0, route = std::clamp(app.playerChar / 2, 0, 3);
+        if (app.game.flag((side ? 1124 : 1125) + 400 * route)) return;
+        cr::Vec3 p;
+        if (!actorPos(app, npc, p)) return;
+        const int h = startEffect(app, app.fieldEffects, 0x12 | side, p, true, 1.0f, 0.0f);
+        if (h)
+            for (Effect& fx : app.fieldEffects)
+                if (fx.handle == h) fx.faceCamera = true;
+    }
     void padArt() override { app.padArt = true; }
     // Uty_Btl_ParamUp01 / 02: battle fighter 1 / 0's attack, defense, speed and luck up for 6 rounds
     // (+0x8b..+0x8e = 6); outside a battle, for the next one
@@ -5331,7 +5354,7 @@ constexpr float kPhoneBackY = 286; // 2.2.0's (__MuCamp_NextProc's box (192, 286
 // kanIconNoTbl (0xc8740): a plate word's icon + 1
 constexpr int kIconOfWord[37] = {1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 14, 13, 13, 14, 13,
                                  14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, -1, -1, 14, 14};
-constexpr uint32_t kSoundEquip = 21, kSoundUse = 22;
+constexpr uint32_t kSoundEquip = 21, kSoundUse = 20; // __ChangeEquipItem's 0x15; an item used (__MuCamp_NextProc 6 -> Yes) 0x14
 } // namespace campui
 
 bool keyHints(const App& app) { return app.showHud && !app.renderer.phoneLayout(); }
@@ -5638,7 +5661,11 @@ void campChoose(App& app) {
             c.count = 1;
             c.confirm = 0;
         } else if (c.phase == App::Camp::Ask) {
-            if (c.confirm != 0) { campBack(app); return; }
+            if (c.confirm != 0) { // No: back to the list (__MuCamp_NextProc 6 -> 7 -> 1) with SE 2
+                menuSound(app, se::kChoose);
+                c.phase = App::Camp::List;
+                return;
+            }
             if (campUseItem(app, campCharacter(app, c.member), item, c.count)) menuSound(app, campui::kSoundUse);
             else menuSound(app, se::kBuzzer); // full already (the original's buzzer, effgo 4)
             c.phase = App::Camp::List;
@@ -9217,6 +9244,12 @@ void drawFx(App& app, const cr::Mat4& mvp) {
 } // namespace puzzle
 
 void stepEvents(App& app) {
+    if (app.npcNativesPending) { // npc_setup: SetVar(0, id); UtyPrcTbl[row + 8 - 1].init() for every created NPC with one
+        app.npcNativesPending = false;
+        ViewerHost natives(app);
+        for (const cr::FieldNpc& n : app.npcs)
+            if (n.native == 15 && npcActive(app, n)) app.game.vars[0] = n.id, natives.fireWall(n.id); // (15, Uty_FireWall_Init: the one handled)
+    }
     // fast-forward while the skip is held: every page turns at once (choices still wait for an answer)
     if (app.skipScene && app.runner.running() && !app.dialogue.empty()) advanceDialogue(app);
     stepTyping(app);
@@ -10221,7 +10254,7 @@ int enemyCameraSlot(const App& app, int fighter) {
 
 void cameraForTarget(App& app, int target, bool group) {
     App::Battle& b = app.battle;
-    if (target < 2) setBattleCamera(app, b.rules.pair || group ? 30 : 28 + target);
+    if (target < 2) setBattleCamera(app, group ? 0x26 + (b.rules.pair ? 1 : 0) : b.rules.pair ? 30 : 28 + target); // (_btlord_make_select: a party-wide scope's 0x26 + pair)
     else if (group) setBattleCamera(app, b.formation + 0x26, 2);
     else {
         const int size = monsterSize(app, target);
@@ -11020,8 +11053,10 @@ void battleChooseCommand(App& app, int i) {
         b.pick = b.pickTop = 0;
         break;
     }
-    case 3: // Defend
+    case 3: // Defend: the guard pose at once (__menub_mainPrc: the loop motion (slot 4) starts as it is chosen - both of a pair's)
         c.kind = cr::kCmdDefend;
+        for (int k = 0; k < 2; ++k)
+            if (App::Battle::Actor* a = (b.rules.pair || k == b.member) ? battleActor(app, k) : nullptr) playSlot(app, *a, btlui::kSlotGuard);
         battletalk::tutorial(app, 0xfa9); // the first time: what it does
         battleCommandDone(app);
         break;
@@ -11603,9 +11638,13 @@ void startTurn(App& app) {
         b.hitFrame = 0; // btlact_escape: away - 30 frames (2.2.0; 1.0.1 10, no line to wait for)
         return;          // then 40; stayed - 40
     }
-    if (t.cancelled) { // its message for 40 frames in place of the action
+    b.idleSince = -1;
+    if (t.cancelled) { // btlact_none: its message for 40 frames in place of the action, sixty frames on the user's
+        // camera (btlact_none_init: 0x53 + member, a pair's 0x55, a monster's 0x54 + its slot)
         setBanner(app, sysText(app, b.turn.message), 40);
         b.hitFrame = 0;
+        const int u = t.actors[0];
+        if (u >= 0) setBattleCamera(app, u < 2 ? (b.rules.pair ? 0x55 : 0x53 + u) : 0x54 + (u - 2));
         return;
     }
     const cr::BattleActionDef* a = app.battleActions.get(t.action);
@@ -12011,13 +12050,13 @@ void endRound(App& app) {
         b.phaseFrames = 0;
         settleBattle(app);
         break;
-    default:
-        b.phase = App::Battle::Command;
+    default: // btl_main 800 -> 899: thirty frames on the formation's camera (btlcamera_set(formation - 2)), then
+        // the commands (400) and chk_karaok_between
+        b.phase = App::Battle::RoundEnd;
         b.phaseFrames = 0;
         b.member = 0;
         b.commandSaid[0] = b.commandSaid[1] = false; // +0xafc / +0xafd
-        battleMenu(app, App::Battle::Top);
-        battletalk::between(app); // btl_main 899
+        setBattleCamera(app, std::max(0, b.formation - 2));
         break;
     }
 }
@@ -12167,9 +12206,15 @@ void stepBattle(App& app) {
             for (int k = 0; k < 2; ++k)
                 if (const App::Battle::Actor* u = b.turn.actors[k] >= 0 ? battleActor(app, b.turn.actors[k]) : nullptr)
                     busy |= u->then >= 0 && u->slot != btlui::kSlotHit;
+            // (the tail after the action: an attack's ten frames once its actors are back (btlact_attack 1999,
+            // count 10), a gene's or item's forty after its hit (btlact_gene / item 2000, count 0x28), a
+            // cancelled command's sixty on its user's camera (btlact_none_init: count 0x3c))
+            if (!busy && b.turnFrame >= b.hitFrame && b.idleSince < 0) b.idleSince = b.turnFrame;
             const bool over = b.turn.kind == cr::kCmdEscape ? b.turnFrame >= (b.turn.escaped ? 30 + 40 : 40)
                               : b.stageAction ? b.turnFrame >= b.hitFrame + b.stageWait // the staged ones' wait
-                                              : (!busy && b.turnFrame >= b.hitFrame + 24) || b.turnFrame > 400;
+                              : b.turn.cancelled ? b.turnFrame >= 60
+                              : b.turn.kind == cr::kCmdAttack ? (b.idleSince >= 0 && b.turnFrame >= b.idleSince + 10) || b.turnFrame > 400
+                                                              : (!busy && b.turnFrame >= b.hitFrame + 40) || b.turnFrame > 400;
             if (over) {
                 if (b.stageAction == 433) // 9999: mdl_set_act_motion(0), it stands
                     if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) playSlot(app, *u, btlui::kSlotIdle);
@@ -12188,6 +12233,14 @@ void stepBattle(App& app) {
                         if (u->slot != btlui::kSlotGuard) u->yaw = u->homeYaw;
                     }
             }
+        }
+        break;
+    case App::Battle::RoundEnd: // (899: thirty frames, then 400 - the menu - and _chk_karaok_between)
+        if (b.phaseFrames >= 30) {
+            b.phase = App::Battle::Command;
+            b.phaseFrames = 0;
+            battleMenu(app, App::Battle::Top);
+            battletalk::between(app); // btl_main 899 -> 400
         }
         break;
     case App::Battle::Won: // 0x3e8's ten frames, then 0x3e9 (the poses, tune and banner) and 1099's 140 or a tap
@@ -12587,14 +12640,15 @@ void drawBattleHud(App& app, float W, float H) {
         const float x = px / 2, y = py / 2;
         const int step = (kPopupTime - p.timer) >> 4;
         if (p.type >= 1 && p.type <= 7) { // the label: Blowout! Critical! Weak! / No Effect! Guard! Miss!
-            float ly = y - 24, la = 1;
+            float lx = x - 72, ly = y - 24, la = 1;
             const int idx = p.type - 1;
-            if (p.type < 4) {
-                if (p.timer >= 320) { const int k = 4 - (step); ly += -18.0f * float(std::max(0, k)); la = 1 - 0.25f * float(std::max(0, k)); }
-                else if (p.timer < 64) { const int k = 4 - (p.timer >> 4); ly += -18.0f * float(k); la = 1 - 0.25f * float(k); }
+            if (p.type < 4) { // __dmg_prc: Blowout / Critical / Weak slide in from the right (x + 18k while the timer is
+                // over 0x140) and out to the left (x - 18k under 0x40); the hop table is the others'
+                if (p.timer >= 320) { const int k = 4 - (step); lx += 18.0f * float(std::max(0, k)); la = 1 - 0.25f * float(std::max(0, k)); }
+                else if (p.timer < 64) { const int k = 4 - (p.timer >> 4); lx -= 18.0f * float(k); la = 1 - 0.25f * float(k); }
             } else if (step < 8)
                 ly -= float(kLabelHop[step]);
-            m.piece(x - 72, ly, float(idx % 4 * 144), float(idx / 4 * 24 + 72), 144, 24, a * la);
+            m.piece(lx, ly, float(idx % 4 * 144), float(idx / 4 * 24 + 72), 144, 24, a * la);
         }
         const bool number = p.type == cr::kHitNormal || p.type == cr::kHitCritical || p.type == cr::kHitWeak ||
                             p.type == cr::kHitResist;
@@ -17153,7 +17207,8 @@ int runSelfTest(App& app) {
         problems += !queued || !boosted;
         // 2029 / 2008: the logos once a run; the pad's picture while flag 0 is set
         app.logoSeen = false;
-        const bool logoOnce = !host.logoSeen() && host.logoSeen();
+        host.setLogoSeen(); // (var 0 set: the logos shown this run)
+        const bool logoOnce = host.logoSeen();
         app.game.setFlag(0, true);
         host.padArt();
         app.lastTicks = 0;
@@ -17945,8 +18000,8 @@ int runSelfTest(App& app) {
                     if (!talk2 && app.game.flag(1232)) talk2 = b.rules.round;
                     if (b.rules.lateAttack && !lateRound) lateRound = b.rules.round;
                     if (!app.game.flag(1232) && b.rules.f[2].hp == 1) ++heldAt1;
-                    if (roundBefore == b.rules.round && b.phase == App::Battle::Command && hpBefore < b.rules.f[2].hpMax &&
-                        b.rules.f[2].hp == b.rules.f[2].hpMax && !app.game.flag(1232))
+                    if (roundBefore == b.rules.round && (b.phase == App::Battle::Command || b.phase == App::Battle::RoundEnd) && // (the round's
+                        hpBefore < b.rules.f[2].hpMax && b.rules.f[2].hp == b.rules.f[2].hpMax && !app.game.flag(1232))         // end heals: 899's 30 frames)
                         ++healedWhole;
                 }
                 for (int f = 0; f < 3000 && app.runner.running() && !b.active; ++f) stepEvents(app), readOn(f);

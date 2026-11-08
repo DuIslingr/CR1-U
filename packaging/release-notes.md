@@ -49,6 +49,17 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   boxes, puzzle-room radius, one-at-a-time shop stock and World Select discount pair don't exist in
   Chaos Rings: its camera is bolted to the player, its trigger boxes are tested upright, and its shop
   sells any count and reads the route's own pair.)
+- **Battle UI, Camp and scripts' natives** (checked against the iOS code's `btl_main`, `btlact_*`, `__menub_mainPrc`,
+  `_btlord_make_select`, `__dmg_prc`, `__MuCamp_NextProc`, `npc_setup` and the `Uty_*` natives): a round ends with
+  thirty frames on the formation's camera before the commands; an attack waits ten frames once its actors are
+  back, a gene or item forty after its hit, a cancelled command sixty on its user's camera; Defend takes the
+  guard pose as it is chosen; a party-wide target's camera is the original's; Blowout / Critical / Weak slide in
+  from the right and out to the left; the Camp's item-used sound is the original's, and a No to using an item
+  goes back to the list. Scripts: `NpcFade 0` fades the player's model (the materialisation in the first
+  dungeon), an NPC row's native runs as the room is set up - the first dungeon's two fire walls burn until
+  their puzzles are cleared (`Uty_FireWall_Init`, also callable from scripts) - and `Uty_ChkLogo_flg` sets the
+  flag when var 0 is set. (Omega's top-menu sound, its Down / Ward icons, its "doubled" battle param-ups and
+  its teleport countdown don't exist in Chaos Rings: its param-ups are the four Ups, as the port has them.)
 - **Resuming:** leaving the game during a cutscene no longer makes the title's "resume from last
   saved point?" put you on that cutscene's painting with nothing running. The resume point is only
   what a scene's end (or an encounter) saved, as the original's is - quitting itself saves nothing.

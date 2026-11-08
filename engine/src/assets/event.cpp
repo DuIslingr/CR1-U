@@ -193,6 +193,7 @@ std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
             n.model = r.model;
             n.kind = r.kind;
             n.treasure = r.box;
+            n.native = r.native;
             n.puzzle = r.puzzle;
             std::memcpy(n.link, r.link, sizeof n.link);
             n.scale = r.scale;
@@ -205,13 +206,15 @@ std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
 bool EventFile::npcRow(int id, NpcRow& out) const {
     // Section 3: 40-byte rows of s16 fields, indexed by NPC id
     const size_t row = sec_[3] + 40 * size_t(id);
-    int16_t show = -1, hide = -1, model = -1, scale = -1, item = -1;
+    int16_t show = -1, hide = -1, model = -1, scale = -1, item = -1, native = 0;
     uint16_t kind = 0, box = 0, puzzle = 0;
     if (id < 0 || !loaded() || row + 40 > sec_[4] || !rd(data_, row, show) || !rd(data_, row + 2, hide) ||
         !rd(data_, row + 4, model) || !rd(data_, row + 14, kind) || !rd(data_, row + 18, box) ||
         !rd(data_, row + 20, puzzle) ||
         !rd(data_, row + 38, scale) || !rd(data_, row + 12, item))
         return false;
+    rd(data_, row + 8, native);
+    out.native = native;
     out.item = item;
     out.flagShow = show;
     out.flagHide = hide;
