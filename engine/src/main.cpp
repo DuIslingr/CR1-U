@@ -292,6 +292,9 @@ struct App {
     cr::Hud optionsHud;
     cr::Texture windowTex;                 // window_hd.mct: the game's UI atlas (panels, badges, …)
     bool androidWindow = false;            // this atlas keeps its dialogue parchment in window_cutin_<w>
+    cr::Texture parchPaperTex, parchStreakTex; // splitParchment's: the phone parchment's paper and its name streak apart
+    unsigned parchSplitFor = ~0u;          // (the window atlas they were made from)
+    float parchTop = 0;                    // the split paper's top edge beside the streak (piece units): it stays put as the paper scales
     cr::Texture cutinWideTex;              // window_cutin_<w>.mct (Android, slot 0x30): androidCutin's
     std::string cutinWideName;
     float footPrev = 0;                    // player's animation time last frame (footsteps)
@@ -11714,6 +11717,105 @@ const cr::Texture* androidCutin(App& app, float width) {
     return app.cutinWideTex.id ? &app.cutinWideTex : nullptr;
 }
 
+// The phone parchment (window_hd's (1024, 240, 960, 256): the iPhone's and the Vita's, the name streak
+// painted into its top-left corner) split as Android keeps it - the streak as a piece of its own (392 x 80,
+// as Android's (1024, 240)) and the paper without it - so a wider screen can have the paper scaled to it and
+// the streak where the iPhone puts it. The streak is told from the paper by colour (blue / green over the
+// paper's beige); under it the torn edge runs on between its ends with the tear's detail from the paper
+// beside it, mirrored, and the paper's own tone column by column
+bool splitParchment(App& app) {
+    if (app.parchSplitFor == app.windowTex.id) return app.parchPaperTex.id && app.parchStreakTex.id;
+    app.parchSplitFor = app.windowTex.id;
+    app.renderer.destroy(app.parchPaperTex);
+    app.renderer.destroy(app.parchStreakTex);
+    cr::Image wi;
+    if (!loadImage(app, "window_hd.mct", wi) || wi.rgba.empty()) return false;
+    const int lw = wi.logicalW > 0 ? wi.logicalW : wi.width;
+    const float k = float(wi.width) / float(std::max(lw, 1));
+    auto P = [&](float u) { return int(std::lround(u * k)); };
+    const int W = P(960), H = P(256), ox = P(1024), oy = P(240), BX = P(392), BY = P(80);
+    if (W < 16 || ox + W > wi.width || oy + H > wi.height) return false;
+    std::vector<float> px(size_t(W) * size_t(H) * 4);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W * 4; ++x) px[size_t(y) * size_t(W) * 4 + size_t(x)] = wi.rgba[(size_t(oy + y) * size_t(wi.width) + size_t(ox)) * 4 + size_t(x)];
+    auto at = [&](std::vector<float>& v, int x, int y) { return &v[(size_t(y) * size_t(W) + size_t(x)) * 4]; };
+    std::vector<float> m(size_t(W) * size_t(H), 0.0f);
+    int s0 = W, s1 = -1;
+    for (int y = 0; y < BY; ++y)
+        for (int x = 0; x < BX; ++x) {
+            const float* c = at(px, x, y);
+            const float v = c[3] > 8 ? std::clamp((std::max(c[1], c[2]) - c[0] - 6) / 40.0f, 0.0f, 1.0f) : 0.0f;
+            m[size_t(y) * size_t(W) + size_t(x)] = v;
+            if (v > 0.3f) s0 = std::min(s0, x), s1 = std::max(s1, x);
+        }
+    if (s1 < 0) return false;
+    std::vector<float> edgeY(static_cast<size_t>(W), static_cast<float>(H));
+    for (int x = 0; x < W; ++x)
+        for (int y = 0; y < H; ++y)
+            if (at(px, x, y)[3] > 128) { edgeY[size_t(x)] = float(y); break; }
+    const int L = 0, R = std::min(s1 + 3, W - 1), span = std::min(P(150), W - R - 2); // (from the piece's left edge)
+    if (span < 10) return false;
+    float refMean = 0;
+    for (int i = 1; i <= span; ++i) refMean += edgeY[size_t(R + i)];
+    refMean /= float(span);
+    auto mirror = [](int i, int n) { const int t = i % (2 * n); return t < n ? t : 2 * n - 1 - t; };
+    // the paper's broad tone per column (well inside it), smoothed across columns
+    std::vector<float> band(size_t(W) * 3, 0.0f), tone(size_t(W) * 3, 0.0f);
+    const int b0 = std::min(P(150), H - 2), b1 = std::min(P(250), H);
+    for (int x = 0; x < W; ++x)
+        for (int y = b0; y < b1; ++y)
+            for (int c = 0; c < 3; ++c) band[size_t(x) * 3 + size_t(c)] += at(px, x, y)[c] / float(b1 - b0);
+    const int kw = std::max(1, P(20));
+    for (int x = 0; x < W; ++x)
+        for (int c = 0; c < 3; ++c) {
+            float sum = 0;
+            for (int d = -kw; d <= kw; ++d) sum += band[size_t(std::clamp(x + d, 0, W - 1)) * 3 + size_t(c)];
+            tone[size_t(x) * 3 + size_t(c)] = sum / float(2 * kw + 1);
+        }
+    std::vector<float> paper = px;
+    const float taper = float(std::max(1, P(24))), deep = float(P(60)), blendLen = float(std::max(1, P(30)));
+    for (int x = L; x < R; ++x) {
+        const float w = std::min({1.0f, float(x - L + 1) / taper, float(R - x) / taper});
+        const int c = R + 1 + mirror(x - L, span);
+        // (Android's strip runs its torn top level under the streak, below the paper beside it and rising
+        // where the tail ends - Part 1 66 s: about 45 px lower under the streak than past it; the piece's own
+        // edge drops away to the left, under the portrait, so it is not followed there)
+        const float drop = float(P(34)) * std::min(1.0f, float(R - x) / taper); // (level, rising where the tail ends)
+        const float ex = edgeY[size_t(R)] + drop + w * (edgeY[size_t(c)] - refMean);
+        for (int y = 0; y < H; ++y) {
+            const float d = float(y) - ex;
+            float* o = at(paper, x, y);
+            if (d < -2) { o[0] = o[1] = o[2] = o[3] = 0; continue; }
+            const int yc = int(std::lround(edgeY[size_t(c)] + d));
+            if (yc >= H) break;
+            if (yc < 0) continue;
+            const float* rc = at(px, c, yc);
+            const float t = d < deep ? 0.0f : std::min(1.0f, (d - deep) / blendLen); // (back into the piece's own paper deeper down)
+            for (int ch = 0; ch < 3; ++ch) {
+                const float v = std::clamp(rc[ch] + tone[size_t(x) * 3 + size_t(ch)] - tone[size_t(c) * 3 + size_t(ch)], 0.0f, 255.0f);
+                o[ch] = v * (1 - t) + at(px, x, y)[ch] * t;
+            }
+            o[3] = d < deep ? rc[3] : 255.0f;
+        }
+    }
+    app.parchTop = refMean / k;
+    cr::Image pi, si;
+    pi.width = W, pi.height = H, pi.rgba.resize(size_t(W) * size_t(H) * 4);
+    for (size_t i = 0; i < pi.rgba.size(); ++i) pi.rgba[i] = uint8_t(std::lround(std::clamp(paper[i], 0.0f, 255.0f)));
+    si.width = BX, si.height = BY, si.rgba.resize(size_t(BX) * size_t(BY) * 4);
+    for (int y = 0; y < BY; ++y)
+        for (int x = 0; x < BX; ++x) {
+            const float* c = at(px, x, y);
+            uint8_t* o = &si.rgba[(size_t(y) * size_t(BX) + size_t(x)) * 4];
+            o[0] = uint8_t(c[0]), o[1] = uint8_t(c[1]), o[2] = uint8_t(c[2]);
+            o[3] = uint8_t(std::lround(c[3] * m[size_t(y) * size_t(W) + size_t(x)]));
+        }
+    if (k != 1.0f) pi.logicalW = 960, pi.logicalH = 256, si.logicalW = 392, si.logicalH = 80;
+    app.parchPaperTex = app.renderer.upload(pi);
+    app.parchStreakTex = app.renderer.upload(si);
+    return app.parchPaperTex.id && app.parchStreakTex.id;
+}
+
 bool drawAndroidMessagePanel(App& app, float x, float y, float w, float h, float nameX, float nameY) {
     const cr::Texture* strip = androidCutin(app, w);
     if (!strip) return false;
@@ -11849,15 +11951,31 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         const float stripBottom = r.layoutTop() + cr::Renderer::kLogicalH / r.layoutScale();
         // Android's atlas needs its separate full-width strip and overlaid name streak even
         // when the selected layout is iPhone (including Auto), rather than Android.
+        float parchK = 1, parchX = 32;
+        const float parchY = 2.0f * (pr[0] + 16) + 64;
         if (!((app.androidWindow || r.androidScreen()) && !fading &&
               drawAndroidMessagePanel(app, (W - stripW) / 2, stripY, stripW, stripBottom - stripY,
                                       32, 2.0f * (pr[0] + 16) + 64))) {
-            drawWinPiece(app, kWinParchmentPhone, 32, 2.0f * (pr[0] + 16) + 64, 960, 256, wa);
+            // (a screen wider than the iPhone's: the Vita stretches the piece across it, dragging the
+            // streak. The port scales the paper alike on both axes, to the screen's width from its
+            // left edge - no distortion, the bottom reaching the screen's - and keeps the streak where
+            // the iPhone has it, as Android's separate strip and streak do)
+            const float x0 = std::min(32.0f, std::floor((W - stripW) / 2)), x1 = std::max(992.0f, std::ceil((W + stripW) / 2));
+            const float K = (x1 - x0) / 960.0f;
+            if (K > 1.001f && splitParchment(app)) {
+                const float ptop = app.parchTop * (K - 1); // (scaled about its top edge: the edge stays where the streak expects it)
+                app.renderer.drawQuadUV(app.parchPaperTex, x0, parchY - ptop, 960 * K, 256 * K, 0, 0, 960, 256, 1, 1, 1, wa);
+                app.renderer.drawQuadUV(app.parchStreakTex, 32, parchY, 392, 80, 0, 0, 392, 80, 1, 1, 1, wa);
+            } else {
+                parchK = K, parchX = x0;
+                drawWinPiece(app, kWinParchmentPhone, x0, parchY, 960 * parchK, 256 * parchK, wa);
+            }
         }
         if (!speaker.empty() && textOn) {
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
-            app.nameHud.drawAt(r, {speaker}, 2.0f * 24 + 32 - cr::Hud::pad(2.0f), 2.0f * 206 + 64 - 14, 2.0f, 0, 0, 0.0f);
+            const float nx = parchX + (2.0f * 24 + 32 - 32) * parchK, ny = parchY + (2.0f * 206 + 64 - parchY) * parchK;
+            app.nameHud.drawAt(r, {speaker}, nx - cr::Hud::pad(2.0f), ny - 14, 2.0f, 0, 0, 0.0f);
         }
         app.dialogueHud.setTint(0.12f, 0.10f, 0.08f);
         textX = 2.0f * 36 + 32;
