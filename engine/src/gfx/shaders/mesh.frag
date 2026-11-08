@@ -21,7 +21,7 @@ vec4 texEnv(int mode, vec4 base, vec4 t) {
     return base * t;
 }
 void main() {
-    vec4 base = pc.color * vColor;
+    vec4 base = pc.noVertexColor != 0 ? pc.color : pc.color * vColor;
     vec4 c = base;
     if (pc.texMode >= 0) {
         vec4 t = texture(uTex, vUV);

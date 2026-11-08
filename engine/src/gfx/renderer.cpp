@@ -76,7 +76,9 @@ std::string Renderer::description() const { return dev_ ? dev_->description() : 
 
 GpuMesh Renderer::upload(const Mesh& mesh) {
     interleave(mesh.positions, mesh.uvs, mesh.colors, scratch_);
-    return dev_->upload(scratch_, mesh.indices, mesh.texture);
+    GpuMesh g = dev_->upload(scratch_, mesh.indices, mesh.texture);
+    g.vertexColors = mesh.hasColors;
+    return g;
 }
 
 void Renderer::updatePositions(GpuMesh& mesh, const std::vector<float>& positions, const std::vector<float>& uvs,
@@ -128,8 +130,14 @@ void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp
     // Light records are decoded: rgb = emission + ambient + diffuse, alpha = diffuse alpha.
     // 357 materials rely on this (black ambient, white diffuse - or the other way), so one alone is not enough.
     MeshShading sh;
-    for (int i = 0; i < 3; ++i) sh.color[i] = std::min(1.0f, mat.emission[i] + mat.ambient[i] + mat.diffuse[i]);
-    sh.color[3] = mat.diffuse[3];
+    if (mat.unlit) { // hwalSetAppearanceColor_ES1, lighting off: the colour array alone (property bit 6), else glColor = colour 1
+        const bool array = (mat.properties & 0x40) && mesh.vertexColors;
+        for (int i = 0; i < 4; ++i) sh.color[i] = array ? 1.0f : mat.diffuse[i];
+        sh.vertexColor = array;
+    } else {
+        for (int i = 0; i < 3; ++i) sh.color[i] = std::min(1.0f, mat.emission[i] + mat.ambient[i] + mat.diffuse[i]);
+        sh.color[3] = mat.diffuse[3];
+    }
     sh.alphaRef = mat.alphaThreshold / 255.0f;
     const bool textured = tex && tex->id;
     sh.texMode = textured ? int(mat.texBlend <= 4 ? mat.texBlend : 4) : -1;

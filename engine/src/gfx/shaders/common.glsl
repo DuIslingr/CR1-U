@@ -8,7 +8,8 @@ layout(push_constant) uniform Draw {
     float alphaRef;  // alpha test (0 = off)
     float reactive;  // scene: > 0 alpha-blended (reactive = this x alpha), < 0 additive (x brightness)
     int texMode2;    // meshes: texture unit 1's environment over unit 0's result, -1 none
-    int pad0, pad1, pad2;
+    int noVertexColor; // meshes: 1 the colour array off (ES1 without property bit 6)
+    int pad1, pad2;
     vec4 uv2;        // unit 1's coordinates: uv * uv2.xy + uv2.zw
 #ifdef SCENE
     mat4 prevMatrix; // this draw's matrix last frame (unjittered, as `matrix`)

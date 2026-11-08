@@ -65,6 +65,7 @@ uniform int uTexMode2;  // unit 1's environment over unit 0's result, -1 none
 uniform vec4 uUv2;      // unit 1's coordinates: uv * xy + zw
 uniform int uAlphaTex;  // GL_ALPHA texture: colour always comes from the fragment
 uniform float uAlphaRef;
+uniform int uVertexColor; // 0: the colour array off (ES1 without property bit 6)
 out vec4 fragColor;
 vec4 texEnv(int mode, vec4 base, vec4 t) {
     if (mode == 0) return t;
@@ -74,7 +75,7 @@ vec4 texEnv(int mode, vec4 base, vec4 t) {
     return base * t;
 }
 void main() {
-    vec4 base = uColor * vColor;
+    vec4 base = uVertexColor != 0 ? uColor * vColor : uColor;
     vec4 c = base;
     if (uTexMode >= 0) {
         vec4 t = texture(uTex, vUV);
@@ -343,6 +344,7 @@ public:
         gl::Uniform1f(uAlphaRef_, sh.alphaRef);
         gl::Uniform1i(uTexMode_, sh.texMode);
         gl::Uniform1i(uAlphaTex_, sh.alphaTex ? 1 : sh.noAlphaTex ? 2 : 0);
+        gl::Uniform1i(uVertexColor_, sh.vertexColor ? 1 : 0);
         const bool second = sh.tex2 && sh.tex2->id && sh.texMode2 >= 0;
         gl::Uniform1i(uTexMode2_, second ? sh.texMode2 : -1);
         gl::Uniform4f(uUv2_, sh.uv2[0], sh.uv2[1], sh.uv2[2], sh.uv2[3]);
@@ -484,6 +486,7 @@ private:
         uTexMode2_ = gl::GetUniformLocation(meshProgram_, "uTexMode2");
         uUv2_ = gl::GetUniformLocation(meshProgram_, "uUv2");
         uAlphaTex_ = gl::GetUniformLocation(meshProgram_, "uAlphaTex");
+        uVertexColor_ = gl::GetUniformLocation(meshProgram_, "uVertexColor");
         uProj_ = gl::GetUniformLocation(program_, "uProj");
         uColor_ = gl::GetUniformLocation(program_, "uColor");
         uTex_ = gl::GetUniformLocation(program_, "uTex");
@@ -519,7 +522,7 @@ private:
     unsigned program_ = 0, vao_ = 0, vbo_ = 0;
     int uProj_ = -1, uColor_ = -1, uTex_ = -1;
     unsigned meshProgram_ = 0;
-    int uMvp_ = -1, uMeshTex_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1;
+    int uMvp_ = -1, uMeshTex_ = -1, uAlphaRef_ = -1, uMeshColor_ = -1, uTexMode_ = -1, uAlphaTex_ = -1, uVertexColor_ = -1;
     int uMeshTex2_ = -1, uTexMode2_ = -1, uUv2_ = -1;
     int drawableW_ = 0, drawableH_ = 0;
     std::unordered_set<unsigned> mipmapped_; // textures uploaded with a mip chain

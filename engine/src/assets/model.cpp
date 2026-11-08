@@ -604,6 +604,7 @@ bool loadModelPackage(const std::vector<uint8_t>& file, Model& out, std::string*
         }
         m.uvs.assign(size_t(nRender) * 2, 0.0f);
         m.colors.assign(size_t(nRender) * 4, 255);
+        m.hasColors = !vb.colors.empty();
         if (!vb.colors.empty())
             std::memcpy(m.colors.data(), vb.colors.data(), std::min(m.colors.size(), vb.colors.size()));
         for (int v = 0; v < nRender && size_t(v) * 2 + 1 < vb.uv.size(); ++v) {

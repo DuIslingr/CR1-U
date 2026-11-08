@@ -153,7 +153,10 @@ Entering an area runs its entry script, so first visits play their scenes: actor
 places and walk, and the speakers' portraits appear beside the dialogue box. `--capture … --frames n`
 plays n frames of scripts before capturing (pages turn every 45 frames).
 
-Known viewer limitations: lighting is approximated as full-bright (surface colour =
+Known viewer limitations: field NPCs, the leader read by Set_Prtyno, effects and unlit
+alpha-model / leader materials are drawn as the original's loaders leave them (lighting off:
+colour 1 alone, or the colour array alone with property bit 6 - hwalSetAppearanceColor_ES1);
+lit materials, battle fighters and stages are approximated as full-bright (surface colour =
 emission + ambient + diffuse; many materials are black-diffuse/white-ambient) until scene
 Light records are decoded; effects whose colour is animated (fade in/out) are
 invisible until material animation is implemented. **F** toggles smooth texture filtering

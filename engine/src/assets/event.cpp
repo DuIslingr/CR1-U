@@ -78,6 +78,9 @@ bool loadStageCamera(const std::string& dataDir, int mapNumber, StageCamera& out
         int16_t look = 0;
         rd(f, rec + 70, look);
         out.lookHeight = look;
+        int16_t alpha = -1;
+        rd(f, rec + 64, alpha);
+        out.alphaModel = alpha;
         std::memcpy(out.eye, f.data() + rec, 12);
         std::memcpy(out.target, f.data() + rec + 12, 12);
         std::memcpy(&out.fovDegrees, f.data() + rec + 24, 4);
@@ -196,6 +199,7 @@ std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
             n.native = r.native;
             n.puzzle = r.puzzle;
             std::memcpy(n.link, r.link, sizeof n.link);
+            std::memcpy(n.shadow, r.shadow, sizeof n.shadow);
             n.scale = r.scale;
         }
         out.push_back(n);
@@ -223,6 +227,7 @@ bool EventFile::npcRow(int id, NpcRow& out) const {
     out.box = box;
     out.puzzle = puzzle;
     for (int k = 0; k < 4; ++k) rd(data_, row + 22 + 2 * size_t(k), out.link[k]);
+    for (int k = 0; k < 4; ++k) rd(data_, row + 30 + 2 * size_t(k), out.shadow[k]);
     out.scale = scale < 0 ? 1.0f : float(scale) / 100.0f; // npc_setup: +38 / 100, -1 = 1.0
     return true;
 }

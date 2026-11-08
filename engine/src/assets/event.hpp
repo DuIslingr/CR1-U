@@ -17,6 +17,7 @@ struct StageCamera {
     int hitRadius = -1;                // player wall-sphere radius (+68), <= 0 = default 5
     int rect[4] = {0, 0, 0, 0};        // +44: x, y, w, h of the painting in the view (the scroll limits)
     int lookHeight = 0;                // +70: added to the player's height + 7 when the camera follows
+    int alphaModel = -1;               // +64: fldread_prc's alpha model (cr::kStageAlphaModel), -1 none
     std::string eventFile;
     int area = -1;      // index of the area (event file) the record came from
     int mapNumber = -1;
@@ -49,6 +50,10 @@ struct FieldNpc {
     int16_t link[4] = {0, 0, 0, 0}; // NPC table +22..+28: a candle switch's linked NPCs; a candle block's
                                     // start (+22, 0 = put away) and switch (+24)
     float scale = 1;             // NPC table +38: percent, -1 = 100
+    // NPC table +30..+36: its shadow (npc_shodow, drawn when +18 has bit 15): unused, radius x, radius z,
+    // percent (< 0: at the model's position at 100%, else under its node 1102)
+    int16_t shadow[4] = {0, 0, 0, 0};
+    bool hasShadow() const { return (treasure & 0x8000) != 0; }
     float axes[3] = {-1, -1, -1}; // SetScale / AdjScale's (npc ctl +0x2c..+0x34, x y z), in place of scale once set
 
     bool touchTrigger() const { return (kind & 1) && (kind & 0x8000); }
@@ -73,6 +78,7 @@ struct NpcRow {
     uint16_t kind = 0, box = 0;
     uint16_t puzzle = 0;    // +20: what a puzzle room makes of it (game/puzzle.hpp kPuzzle*)
     int16_t link[4] = {0, 0, 0, 0}; // +22..+28 (FieldNpc::link)
+    int16_t shadow[4] = {0, 0, 0, 0}; // +30..+36 (FieldNpc::shadow)
     float scale = 1;
 };
 

@@ -262,6 +262,7 @@ bool decodeMct(const std::vector<uint8_t>& file, Image& out, MctInfo* info, std:
 
     out.width = w;
     out.height = ht;
+    out.format = uint8_t(fmt);
     out.rgba.assign(size_t(w) * ht * 4, 0);
     uint8_t* o = out.rgba.data();
     const size_t n = size_t(w) * ht;

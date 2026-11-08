@@ -29,6 +29,7 @@ struct GpuMesh {
     unsigned vao = 0, vbo = 0, ebo = 0; // opaque mesh handle in vao (0 = none); vbo/ebo reserved
     int indexCount = 0;
     int texture = -1;
+    bool vertexColors = false; // the mesh had a colour array (Mesh::hasColors)
 };
 
 class Renderer {
@@ -103,6 +104,7 @@ public:
     // drawQuad / drawQuadUV / fillRect / fillQuad (the menus' scroll lists: MuScrList_Draw's masks)
     void setClipY(float y0, float y1) { clipY0_ = y0, clipY1_ = y1; }
     void clearClipY() { clipY0_ = -1e9f, clipY1_ = 1e9f; }
+    float origin() const { return originX_; }
     void setWidescreen(bool on) { widescreen_ = on; }
     // The display's safe area (a camera hole's, the system's edges): its insets in the window's
     // pixels. 3D and fades keep the whole screen; safeLeft / safeRight are how far in from the
