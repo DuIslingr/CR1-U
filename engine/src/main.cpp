@@ -16347,6 +16347,10 @@ int fieldPresentationSelfTest(App& app) {
     int problems = 0, moving = 0;
     // A pause left in the model viewer must not stop field animation. Exercise the actual
     // player update with both touch-pad gaits, including each party member's loaded actions.
+    // (No encounters meanwhile: a battle started by the walk took the Space below - about one run in
+    // three failed "Space confirms")
+    const bool keepEncounters = app.noEncounters;
+    app.noEncounters = true;
     app.playing = false;
     for (int c = 0; c < int(SDL_arraysize(kPartyModels)); ++c) {
         app.playerChar = c;
@@ -16384,6 +16388,7 @@ int fieldPresentationSelfTest(App& app) {
     app.dialogue.clear();
     app.playerChar = 0;
     app.playing = true;
+    app.noEncounters = keepEncounters;
     problems += app.renderer.takeErrors();
     std::printf("field animation: %d/16 walk/run poses advance after viewer pause, Space confirms %s; %d problems\n",
                 moving, confirmed ? "yes" : "NO", problems);
