@@ -394,7 +394,8 @@ c101/c102/c104/m207a, 2026-10-12).
       no `achievement_prc`, `fld_checkAchievements` or `ComUty_ComPlate_GameCenter` (its title,
       0x7bba4, draws no trophy picture). So CRO's achievements (its
       3.1.0 Game Center set, Android 1.1.6's banner and list) have no CR1 counterpart, and the port
-      unlocks the Vita's trophies when **the Vita copy is the game**. When follows the Vita's code:
+      unlocks the Vita's trophies **whatever data is the game** (the owner's choice, as every port's
+      achievements; names and pictures from the Vita copy's TROPHY.TRP when it is there). When follows the Vita's code:
       `FUN_8106ae3a` unlocks, in order, 1..8 the gate bosses (any pair's flag 0x462 / 0x463 / 0x476 /
       0x477 / 0x48a / 0x48b / 0x49e / 0x49f, + 0x190 a pair), 9..12 each pair's own primal door
       (0x455 + 0x190 p), 13 Qualia (0x4b9 any pair), 14 the businessman (0x425 any pair), 15 the

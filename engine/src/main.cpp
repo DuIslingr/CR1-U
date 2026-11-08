@@ -8440,10 +8440,10 @@ void trackerSceneEnd(App& app) {
 }
 
 // ---- Trophies (game/trophies.hpp; docs/ENGINE.md "Trophies") ----
-// CR1's only achievements are the Vita's: on when the Vita copy is the game (2.2.0 and Android have
-// none). The unlocks follow the Vita's code (FUN_8106ae3a and its callers); the notification is the
+// CR1's only achievements are the Vita's (2.2.0 and Android have none): on whatever data is the game -
+// the owner's choice, as every port's achievements. The unlocks follow the Vita's code (FUN_8106ae3a and its callers); the notification is the
 // one the reference playthrough shows (the emulator's - on the Vita the system draws its own)
-bool trophiesOn(const App& app) { return app.trophy.live && (app.vitaOnly || app.trophy.force); }
+bool trophiesOn(const App& app) { return app.trophy.live; }
 
 // FUN_8106ae3a: every trophy whose condition holds unlocked, kept at once (the system's record), its
 // notification queued
@@ -16195,17 +16195,19 @@ int trophiesSelfTest(App& app) {
     const bool shop = app.trophy.flags.has(tr::kBought) && app.trophy.earnedLog == std::vector<int>{15};
     problems += !shop;
     app.shop = keepShop;
-    // nothing with the iOS (or Android) data as the game: 2.2.0 has no achievements
+    // with the iOS (or Android) data as the game too (the owner's choice: 2.2.0 has none of its own)
     fresh();
     app.trophy.force = false, app.vitaOnly = false;
     app.game.setFlag(0x462, true);
     checkTrophies(app);
-    const bool offIos = app.trophy.earnedLog.empty() && !app.trophy.flags.has(1);
-    app.vitaOnly = true;
+    const bool onIos = app.trophy.earnedLog == std::vector<int>{1};
+    fresh();
+    app.trophy.force = false, app.vitaOnly = true;
+    app.game.setFlag(0x462, true);
     checkTrophies(app);
     const bool onVita = app.trophy.earnedLog == std::vector<int>{1};
     app.vitaOnly = keepVitaOnly;
-    problems += !offIos + !onVita;
+    problems += !onIos + !onVita;
     // the notification: in over kIn, held, out; one at a time, in order
     fresh();
     app.game.setFlag(0x462, true), app.game.setFlag(0x463, true);
@@ -16269,10 +16271,10 @@ int trophiesSelfTest(App& app) {
     }
     if (app.trophy.packRead) names &= icons == tr::kCount;
     problems += !names;
-    std::printf("trophies: %d of %zu conditions unlock their own once, the shop's purchase %s, none without the Vita copy %s "
+    std::printf("trophies: %d of %zu conditions unlock their own once, the shop's purchase %s, with the iOS data as the game too %s "
                 "(with it %s), notification %s (in %.2f s, gone %.2f s, one at a time %s), kept across a restart %s, flags text %s, "
                 "names %s (pack %s, %d pictures); %d problems\n",
-                conditions, cases.size(), shop ? "yes" : "NO", offIos ? "yes" : "NO", onVita ? "yes" : "NO", notice ? "yes" : "NO",
+                conditions, cases.size(), shop ? "yes" : "NO", onIos ? "yes" : "NO", onVita ? "yes" : "NO", notice ? "yes" : "NO",
                 firstFull, firstGone, shownOrder.size() == 2 ? "yes" : "NO", kept ? "yes" : "NO", hexOk ? "yes" : "NO",
                 names ? "yes" : "NO", app.trophy.packRead ? "read" : "not beside the data", icons, problems);
     if (!keepTrophy.packTried)
