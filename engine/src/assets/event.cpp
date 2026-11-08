@@ -235,10 +235,12 @@ bool EventFile::npcRow(int id, NpcRow& out) const {
 
 namespace {
 
-// Decodes the message at `msg` (UTF-16LE) into pages of UTF-8 lines. Control codes (PrcMsg's
-// jump table): 1/2/3/0x15/0x16/0x1a/0x1b/0x1c/0x1e take one parameter (2 = insert a variable's
-// value, 3 = insert a string - the menus' item name is string 9 -, 0x1e = voice clip); 0x11 breaks the line, 0x10 clears the window, 0x12 waits for a tap (new page),
-// 0/0x13/0x14 end; other codes below 0x20 only set display state.
+// Decodes the message at `msg` (UTF-16LE) into pages of UTF-8 lines. Control codes (2.2.0
+// _PrcMsg's jump table, 0x2c444): 1/2/3/0x15/0x16/0x1a/0x1c/0x1e take one parameter (2 = insert a
+// variable's value, 3 = insert a string - the menus' item name is string 9 -, 0x1e = voice clip),
+// 0x18 two; 0x1b is a word alone (1.0.1's _PrcMsg 0x83480 steps two; no CR1 text has one); 0x11
+// breaks the line, 0x10 clears the window, 0x12 waits for a tap (a new page, which keeps the lines
+// unless 0x10 follows), 0/0x13/0x14 end; other codes below 0x20 only set display state.
 bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::function<int(int)>& var,
                    std::vector<std::vector<std::string>>& pages, MessageInfo* info,
                    const std::function<std::string(int)>& text = nullptr) {
@@ -246,16 +248,26 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
     if (info) *info = MessageInfo();
     std::vector<std::string> lines{std::string()};
     int lastPause = -1; // a 0x1a with nothing typed after it yet
-    auto typedSoFar = [&] { // the page's characters so far (UTF-8 lead bytes, not the \x01 marks)
-        int n = 0;
+    int kept = 0;       // what the page in progress took over from the one before (0x12 without 0x10)
+    auto typedSoFar = [&] { // the page's units so far, as the typing counts them (main.cpp pageChars):
+        // UTF-8 lead bytes, not the \x01 marks, and a line break one
+        int n = int(lines.size()) - 1;
         for (const std::string& l : lines)
             for (unsigned char ch : l) n += (ch & 0xC0) != 0x80 && ch != 0x01;
         return n;
     };
+    auto pushPage = [&] { // the page as shown: its trailing empty lines dropped
+        std::vector<std::string> shown = lines;
+        while (!shown.empty() && shown.back().empty()) shown.pop_back();
+        if (!shown.empty()) pages.push_back(shown);
+        return !shown.empty();
+    };
     auto newPage = [&] {
-        while (!lines.empty() && lines.back().empty()) lines.pop_back();
-        if (!lines.empty()) pages.push_back(lines);
+        if (kept > 0 && typedSoFar() <= kept) { // a 0x12 with nothing after it: no page of its own
+            if (info && !info->kept.empty() && info->kept.back().page == int(pages.size())) info->kept.pop_back();
+        } else pushPage();
         lines.assign(1, std::string());
+        kept = 0;
     };
     for (size_t q = msg; q + 2 <= data.size(); q += 2) {
         uint16_t u = 0;
@@ -309,7 +321,8 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
             q += 2;
             continue;
         }
-        if (u == 0x16 || u == 0x1a || u == 0x1b || u == 0x1c) { q += 2; continue; }
+        if (u == 0x1b) continue;             // (_PrcMsg flips G+0x337e6, which nothing in 2.2.0 reads)
+        if (u == 0x18) { q += 4; continue; } // the typing's speed, two digits (_PrcMsg: 3 words)
         if (u == 0x10) { // PrcMsg: the window cleared (Msg_allclar), typing again from its first line -
             // after a tap (0x12) or a pause (0x1a) that's the next page; at a page's start, nothing
             if (lines.size() > 1 || !lines[0].empty()) {
@@ -324,7 +337,18 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
             if (lines.back().empty() || lines.back()[0] != '\x01') lines.back().insert(0, "\x01");
             continue;
         }
-        if (u == 0x12) { newPage(); continue; }
+        if (u == 0x12) { // waits for a tap; the window clears only if 0x10 follows (_PrcMsg 0x12)
+            uint16_t next = 0;
+            rd(data, q + 2, next);
+            if (next == 0x10) { newPage(); continue; }
+            const int chars = typedSoFar();
+            if (kept > 0 && chars <= kept) continue; // (nothing since the last wait)
+            if (pushPage()) {
+                kept = chars;
+                if (info) info->kept.push_back({int(pages.size()), chars, next != 0x11});
+            }
+            continue;
+        }
         if (u < 0x20) continue;
         uint32_t c = u;
         if (u >= 0xD800 && u < 0xDC00) { // surrogate pair

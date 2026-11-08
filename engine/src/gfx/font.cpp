@@ -19,6 +19,18 @@ struct Font::Face {
     stbtt_fontinfo info;
 };
 
+namespace {
+// The face's glyph for `c`, with stand-ins for what iOS's font fallback would bring: the Korean
+// text's U+223C TILDE OPERATOR (sys.evt's skill lines, "2 U+223C 5") is in no Noto Sans CJK face - the
+// fullwidth tilde (or the wave dash) in its place
+int glyphIndex(const stbtt_fontinfo& info, uint32_t c) {
+    int g = stbtt_FindGlyphIndex(&info, int(c));
+    if (!g && c == 0x223C) g = stbtt_FindGlyphIndex(&info, 0xFF5E);
+    if (!g && c == 0x223C) g = stbtt_FindGlyphIndex(&info, 0x301C);
+    return g;
+}
+} // namespace
+
 Font::Font() = default;
 Font::~Font() = default;
 
@@ -73,7 +85,7 @@ bool Font::covers(const std::string& utf8) const {
     if (!loaded()) return false;
     for (size_t i = 0; i < utf8.size();) {
         const uint32_t c = nextUtf8(utf8, i);
-        if (c > 0x20 && c != 0x3000 && !stbtt_FindGlyphIndex(&face_->info, int(c))) return false;
+        if (c > 0x20 && c != 0x3000 && !glyphIndex(face_->info, c)) return false;
     }
     return true;
 }
@@ -96,7 +108,7 @@ bool Font::rasterise(const std::vector<std::string>& lines, float em, float line
         for (size_t i = 0; i < lines[l].size();) {
             const uint32_t c = nextUtf8(lines[l], i);
             if (c < 0x20) continue; // (a message's marks, such as the centred line's \x01: not drawn)
-            int g = stbtt_FindGlyphIndex(&info, int(c));
+            int g = glyphIndex(info, c);
             if (!g && c > 0x20 && c != 0x3000) g = fallback;
             int adv = 0, lsb = 0;
             stbtt_GetGlyphHMetrics(&info, g, &adv, &lsb);
