@@ -62,6 +62,7 @@
 #include "game/genes.hpp"
 #include "game/puzzle.hpp"
 #include "game/treasure.hpp"
+#include "game/trophies.hpp"
 #include "assets/model.hpp"
 #include "assets/texture.hpp"
 #include "audio/music.hpp"
@@ -450,6 +451,18 @@ struct App {
     vitaimport::Session saveImport;
     std::string saveDirOverride;           // tests: where save.dat / resume.dat go
     bool trackerArmed = false;             // G+0x34e1d: the Progress Tracker saves from the second scene's end on
+    struct Trophies { // game/trophies.hpp: the Vita's 16 (with the Vita copy as the game), kept in settings.ini
+        cr::trophies::Flags flags;     // G+0x34e38..: unlocked (0..15) and the shop's purchase (0x2f)
+        std::vector<int> queue;        // unlocked, notification not shown yet
+        cr::trophies::Notice notice;
+        std::array<cr::trophies::Info, cr::trophies::kCount> info; // TROPHY.TRP's names and pictures
+        std::array<cr::Texture, cr::trophies::kCount> icons;
+        bool packTried = false, packRead = false;
+        bool force = false;            // (self-test, captures) on without the Vita copy as the game
+        bool live = true;              // unlocked at all (off in the self-test's other checks and in captures)
+        bool hold = false;             // (captures) the notification held where it is
+        std::vector<int> earnedLog;    // (self-test) every trophy unlocked this run, in order
+    } trophy;
     // A controller, as the Vita's buttons (its manual, 56000 / 56025): the D-pad / left stick move
     // and pick, ○ confirms, × cancels (the Japanese release's; padConfirmEast false swaps them), △
     // opens / closes the menu, □ skips text, L / R turn pages; in puzzle rooms START restarts,
@@ -1221,6 +1234,8 @@ void vitaAudio(App& app) {
 }
 
 void saveMix(const App& app);
+void checkTrophies(App& app);
+void setTrophyBit(App& app, int bit);
 
 // Options' Vita Assets: the folder dialog answers on its own thread; the menu takes it next frame
 std::mutex vitaPickMutex;
@@ -3278,6 +3293,7 @@ struct ViewerHost : cr::EventHost {
             return true;
         }
         if (n == 5 || n == 6) { // SetSaveLoadMenu: at the title, the chosen pair's Load / New; else "Save data?"
+            if (n == 6) checkTrophies(app); // (the Vita's Util 6: SetModeSaveLoadMenu, then the trophy check - 0x8102e226)
             openSaveScreen(app, app.booting);
             // Util 6 off the title (__EvtUtil: SetModeSaveLoadMenu(3), 4 with flag 0 - both set the menu's title mark):
             // "Save data?" on the way to the title - saved or not, SaveLoadClr returns there (MuCom_ReturnTitle);
@@ -3334,6 +3350,8 @@ void loadMix(App& app) {
         for (int i = 0; i < 4; ++i)
             if (const char* at = SDL_strstr(text, keys[i])) *fields[i] = std::clamp(SDL_atoi(at + SDL_strlen(keys[i])), 0, 100);
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
+        // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
+        if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
         applyLanguage(app);
         loadVideo(app, text);
         app.voiceEntries.clear();
@@ -3377,7 +3395,8 @@ void saveMix(const App& app) {
                               std::to_string(int(app.lockLandscapeFlipped)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
                               (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
-    const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video;
+    const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\n" + video +
+                            "trophies=" + app.trophy.flags.hex() + "\n";
     std::string error;
     if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());
 }
@@ -5046,6 +5065,9 @@ void shopPay(App& app) {
     } else {
         app.game.items[item] = std::min(cr::kMaxItemCount, ownedCount(app, item) + s.count);
         cr::addOz(app.game, -total);
+        // (the Vita's __menuu_ShopPrc 7: FUN_8106ad28(0x2f) - G+0x34e3d bit 7 - then the trophy check, 0x8105c11a)
+        setTrophyBit(app, cr::trophies::kBought);
+        checkTrophies(app);
     }
     menuSound(app, se::kPaid);
     const cr::ItemParam* p = app.itemTable.item(item);
@@ -7663,6 +7685,112 @@ void trackerSceneEnd(App& app) {
     writeResume(app);
 }
 
+// ---- Trophies (game/trophies.hpp; docs/ENGINE.md "Trophies") ----
+// CR1's only achievements are the Vita's: on when the Vita copy is the game (2.2.0 and Android have
+// none). The unlocks follow the Vita's code (FUN_8106ae3a and its callers); the notification is the
+// one the reference playthrough shows (the emulator's - on the Vita the system draws its own)
+bool trophiesOn(const App& app) { return app.trophy.live && (app.vitaOnly || app.trophy.force); }
+
+// FUN_8106ae3a: every trophy whose condition holds unlocked, kept at once (the system's record), its
+// notification queued
+void checkTrophies(App& app) {
+    if (!trophiesOn(app)) return;
+    App::Trophies& t = app.trophy;
+    const std::vector<int> got = cr::trophies::check(app.game, t.flags);
+    if (got.empty()) return;
+    for (int n : got) {
+        t.queue.push_back(n);
+        t.earnedLog.push_back(n);
+        SDL_Log("trophy %d unlocked", n);
+    }
+    saveMix(app);
+}
+
+// FUN_8106ad28: a bit of the system data (the shop's purchase, 0x2f), kept
+void setTrophyBit(App& app, int bit) {
+    if (!trophiesOn(app) || app.trophy.flags.has(bit)) return;
+    app.trophy.flags.set(bit);
+    saveMix(app);
+}
+
+// The trophy pack beside the Vita copy (sce_sys/trophy/NPWR08182_00/TROPHY.TRP): names, grades, pictures
+void loadTrophyPack(App& app) {
+    App::Trophies& t = app.trophy;
+    if (t.packTried) return;
+    t.packTried = true;
+    for (const std::string& base : {app.vitaRoot + "/..", app.vitaPath, app.vitaRoot, app.vitaPath + "/.."}) {
+        if (base.size() <= 3) continue;
+        if (cr::trophies::readPack(base + "/sce_sys/trophy/NPWR08182_00/TROPHY.TRP", t.info)) {
+            t.packRead = true;
+            break;
+        }
+    }
+    for (int n = 0; n < cr::trophies::kCount; ++n) {
+        cr::Image img;
+        if (cr::trophies::decodeIcon(t.info[size_t(n)], img)) t.icons[size_t(n)] = app.renderer.upload(img);
+    }
+}
+std::string trophyName(const App& app, int n) {
+    const App::Trophies& t = app.trophy;
+    return t.packRead && !t.info[size_t(n)].name.empty() ? t.info[size_t(n)].name : cr::trophies::builtinName(n);
+}
+char trophyGrade(const App& app, int n) { return app.trophy.packRead ? app.trophy.info[size_t(n)].grade : cr::trophies::builtinGrade(n); }
+
+// One at a time, in the order unlocked
+void stepTrophies(App& app, float dt) {
+    App::Trophies& t = app.trophy;
+    if (!t.notice.on && !t.queue.empty()) {
+        loadTrophyPack(app);
+        t.notice.start(t.queue.front());
+        t.queue.erase(t.queue.begin());
+    }
+    if (!t.hold) t.notice.step(dt);
+}
+
+// The notification (Part 1 1850.8 s, 1280 x 720): a light grey box (190, 188, 193) at 0.94 with rounded
+// corners, x 720..1251, y 26..107 - right-aligned 29 from the screen's edge -, the trophy's picture
+// 64 x 64 at (+15, +8), "(Bronze) <name>" and "You have earned a trophy!" in dark grey (54, 52, 56)
+// from x +106, their glyphs at y +16..+40 and +46..+65 (the name cut at the box's edge); sliding in
+// from the right edge and out again. Sized by the visible screen's height
+void drawTrophyNotice(App& app) {
+    const cr::trophies::Notice& nt = app.trophy.notice;
+    const float shown = nt.shown();
+    if (!nt.on || shown <= 0) return;
+    cr::Renderer& r = app.renderer;
+    r.setOrigin(0);
+    const float R = r.layoutRight(); // (the visible screen's right edge and height, in the layout's units)
+    const float T = r.layoutTop(), H = 768.0f - 2 * T, s = H / 720.0f;
+    const float w = 530 * s, h = 82 * s, gap = 29 * s;
+    const float x = R - gap - w + (1 - shown) * (gap + w), y = T + 26 * s;
+    if (x >= R) return;
+    const float g[4] = {190 / 255.0f, 188 / 255.0f, 193 / 255.0f, 0.94f}; // (translucent: (182, 181, 186) over the dark snow, (192, 182, 178) over Part 1 3075 s orange)
+    const float rad = 10 * s;
+    static const float kInset[5] = {1.0f, 0.55f, 0.3f, 0.13f, 0.03f}; // a quarter circle's inset, rows of rad / 5
+    r.fillRect(x, y + rad, w, h - 2 * rad, g[0], g[1], g[2], g[3]);
+    for (int k = 0; k < 5; ++k) {
+        const float in = rad * kInset[k], dy = rad * float(k) / 5;
+        r.fillRect(x + in, y + dy, w - 2 * in, rad / 5 + 0.01f, g[0], g[1], g[2], g[3]);
+        r.fillRect(x + in, y + h - dy - rad / 5, w - 2 * in, rad / 5 + 0.01f, g[0], g[1], g[2], g[3]);
+    }
+    const int n = nt.id;
+    if (n >= 0 && n < cr::trophies::kCount && app.trophy.icons[size_t(n)].id)
+        r.drawQuad(app.trophy.icons[size_t(n)], x + 15 * s, y + 8 * s, 64 * s, 64 * s);
+    if (!app.font.loaded() || n < 0 || n >= cr::trophies::kCount) return;
+    cr::MenuPainter& m = app.menu;
+    m.begin(r, app.windowTex, &app.font);
+    const float ink = 54 / 255.0f;
+    const float line1 = 24 * s, line2 = 21 * s; // (the glyph boxes: the name's 24 rows with its brackets, the second line's cap 15)
+    std::string head = std::string(cr::trophies::gradeWord(trophyGrade(app, n))) + " " + trophyName(app, n);
+    const float room = std::min(R, x + w - 8 * s) - (x + 106 * s);
+    while (!head.empty() && m.textWidth(head, line1 / 2) * 2 > room) { // (cut at the box's edge, a character at a time)
+        size_t cut = head.size() - 1;
+        while (cut > 0 && (uint8_t(head[cut]) & 0xc0) == 0x80) --cut;
+        head.erase(cut);
+    }
+    m.textTint(head, (x + 106 * s) / 2, (y + 8.6f * s) / 2, ink, ink, ink, 1, line1 / 2);
+    m.textTint("You have earned a trophy!", (x + 106 * s) / 2, (y + 38.4f * s) / 2, ink, ink, ink, 1, line2 / 2);
+}
+
 // At the title: "You have save data from your last session. Resume game from last saved point?"
 void offerResume(App& app) {
     if (app.resumePrompt || !app.persist) return;
@@ -9645,6 +9773,7 @@ void stepEvents(App& app) {
     if (more) return;
     // Finished: report, and refresh what the script's flags changed (an opened box loses its lid)
     trackerSceneEnd(app);
+    checkTrophies(app); // (the Vita's __EvtReturn / __EvtAbort: FUN_8106ae3a - 0x8102d416 / 0x8102d528)
     const cr::EventResult& r = app.runner.result();
     if (!r.error.empty())
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "event (%s, area %d map %d): %s", app.runnerWhat.c_str(), app.area,
@@ -13981,6 +14110,8 @@ void drawFrame(App& app, bool present = true) {
         ++app.manualAnim;
         if (app.manualOpen) drawManual(app);
     }
+    stepTrophies(app, realDt); // (the system's notification: over everything, at its own pace)
+    drawTrophyNotice(app);
     r.setOrigin(0);
     r.endFrame(present);
 }
@@ -15062,6 +15193,150 @@ void saveFrame(App& app, const char* path) {
     SDL_DestroySurface(surf);
 }
 
+// Trophies (game/trophies.hpp): each condition unlocks exactly its trophy, once, any pair's flag for
+// the shared ones and only that pair's for its primal door; several at once in FUN_8106ae3a's order;
+// 0 once the fifteen are in; the shop's purchase; nothing without the Vita copy as the game; the
+// notification's timing and queue; kept across a restart (settings.ini); the trophy pack's names
+int trophiesSelfTest(App& app) {
+    namespace tr = cr::trophies;
+    int problems = 0;
+    const App::Trophies keepTrophy = app.trophy;
+    const cr::GameState keepGame = app.game;
+    const App::Shop keepShop = app.shop;
+    const bool keepPersist = app.persist, keepVitaOnly = app.vitaOnly;
+    app.persist = false;
+    auto fresh = [&] {
+        app.trophy.flags = tr::Flags(), app.trophy.queue.clear(), app.trophy.earnedLog.clear(), app.trophy.notice = tr::Notice();
+        app.trophy.live = true, app.trophy.force = true, app.trophy.hold = false;
+        app.game = cr::GameState();
+    };
+    struct Case { const char* what; std::vector<int> expect; std::function<void()> set; };
+    const std::vector<Case> cases = {
+        {"flag 0x462 (A Dryg Goch, Escher's)", {1}, [&] { app.game.setFlag(0x462, true); }},
+        {"flag 0x912 (A Dryg Goch, Ayuta's)", {1}, [&] { app.game.setFlag(0x912, true); }},
+        {"flag 0x7bf (the Prototype Agent, Olgar's)", {8}, [&] { app.game.setFlag(0x7bf, true); }},
+        {"flag 0x455 (Escher's primal door)", {9}, [&] { app.game.setFlag(0x455, true); }},
+        {"flag 0x5e5 (Zhamo's primal door)", {10}, [&] { app.game.setFlag(0x5e5, true); }},
+        {"flag 0x905 (Ayuta's primal door)", {12}, [&] { app.game.setFlag(0x905, true); }},
+        {"flag 0x649 (Qualia, Zhamo's)", {13}, [&] { app.game.setFlag(0x649, true); }},
+        {"flag 0x425 (the businessman)", {14}, [&] { app.game.setFlag(0x425, true); }},
+        {"a purchase (0x2f)", {15}, [&] { app.trophy.flags.set(tr::kBought); }},
+        {"three at once", {1, 5, 14}, [&] { app.game.setFlag(0x425, true), app.game.setFlag(0x48a, true), app.game.setFlag(0x5f2, true); }},
+        {"fourteen of fifteen", {}, [&] { for (int n = 1; n < 15; ++n) app.trophy.flags.set(n); }},
+        {"the fifteenth", {15, 0}, [&] { for (int n = 1; n < 15; ++n) app.trophy.flags.set(n); app.trophy.flags.set(tr::kBought); }},
+        {"another flag (0x456)", {}, [&] { app.game.setFlag(0x456, true); }},
+    };
+    int conditions = 0;
+    for (const Case& c : cases) {
+        fresh();
+        c.set();
+        checkTrophies(app);
+        const bool once = app.trophy.earnedLog == c.expect && app.trophy.queue == c.expect;
+        bool kept = true;
+        for (int n : c.expect) kept &= app.trophy.flags.has(n);
+        checkTrophies(app); // (again: nothing more)
+        const bool again = app.trophy.earnedLog.size() == c.expect.size();
+        if (once && kept && again) ++conditions;
+        else std::printf("trophies: %s unlocked %zu (want %zu)\n", c.what, app.trophy.earnedLog.size(), c.expect.size()), ++problems;
+    }
+    // the shop's purchase (__menuu_ShopPrc 7): the bit, then the check
+    fresh();
+    app.shop = App::Shop();
+    app.shop.list = {1};
+    app.shop.listCursor = 0, app.shop.count = 1, app.shop.selling = false;
+    app.game.oz = 100000;
+    shopPay(app);
+    const bool shop = app.trophy.flags.has(tr::kBought) && app.trophy.earnedLog == std::vector<int>{15};
+    problems += !shop;
+    app.shop = keepShop;
+    // nothing with the iOS (or Android) data as the game: 2.2.0 has no achievements
+    fresh();
+    app.trophy.force = false, app.vitaOnly = false;
+    app.game.setFlag(0x462, true);
+    checkTrophies(app);
+    const bool offIos = app.trophy.earnedLog.empty() && !app.trophy.flags.has(1);
+    app.vitaOnly = true;
+    checkTrophies(app);
+    const bool onVita = app.trophy.earnedLog == std::vector<int>{1};
+    app.vitaOnly = keepVitaOnly;
+    problems += !offIos + !onVita;
+    // the notification: in over kIn, held, out; one at a time, in order
+    fresh();
+    app.game.setFlag(0x462, true), app.game.setFlag(0x463, true);
+    checkTrophies(app);
+    std::vector<int> shownOrder;
+    float firstFull = -1, firstGone = -1, clock = 0;
+    for (int f = 0; f < 400 && shownOrder.size() < 2; ++f) {
+        const bool was = app.trophy.notice.on;
+        stepTrophies(app, 0.01f);
+        clock += 0.01f;
+        if (!was && app.trophy.notice.on) shownOrder.push_back(app.trophy.notice.id);
+        if (shownOrder.size() == 1 && firstFull < 0 && app.trophy.notice.shown() >= 1) firstFull = clock;
+        if (shownOrder.size() == 1 && was && !app.trophy.notice.on && firstGone < 0) firstGone = clock;
+    }
+    const bool notice = shownOrder == std::vector<int>({1, 2}) && std::abs(firstFull - 0.24f) < 0.025f &&
+                        std::abs(firstGone - (tr::Notice::kIn + tr::Notice::kHold + tr::Notice::kOut)) < 0.025f;
+    problems += !notice;
+    // kept across a restart: settings.ini's trophies= (an isolated folder, as controlHintsSelfTest's)
+    bool kept = false;
+    {
+        const char* oldEnv = SDL_getenv("CR_SAVE_DIR");
+        const std::string keepEnv = oldEnv ? oldEnv : "";
+        const auto testDir = std::filesystem::temp_directory_path() / ("cr-trophy-test-" + std::to_string(SDL_GetTicksNS()));
+        if (std::filesystem::create_directory(testDir)) {
+            SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR", testDir.u8string().c_str(), true);
+            const App::Mix keepMix = app.mix;
+            const int keepLanguage = app.language;
+            fresh();
+            app.persist = true;
+            app.game.setFlag(0x4b9, true);
+            checkTrophies(app); // (13: written as it is unlocked)
+            setTrophyBit(app, tr::kBought);
+            const tr::Flags before = app.trophy.flags;
+            app.trophy.flags = tr::Flags();
+            loadMix(app);
+            kept = before.has(13) && app.trophy.flags.bits == before.bits && app.trophy.flags.earned() == 1 && app.trophy.flags.has(tr::kBought);
+            app.persist = false;
+            app.mix = keepMix, app.language = keepLanguage;
+            applyLanguage(app), applyMix(app);
+            SDL_RemovePath(settingsPath().c_str());
+            std::filesystem::remove(testDir);
+            if (oldEnv) SDL_SetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR", keepEnv.c_str(), true);
+            else SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(), "CR_SAVE_DIR");
+        }
+    }
+    problems += !kept;
+    tr::Flags hex;
+    hex.set(0), hex.set(15), hex.set(tr::kBought);
+    tr::Flags back;
+    const bool hexOk = back.fromHex(hex.hex()) && back.bits == hex.bits && hex.hex().size() == 16 && !back.fromHex("zz");
+    problems += !hexOk;
+    // the names: the pack's (with the Vita copy beside) as the built-in ones, else the built-in ones
+    app.trophy = keepTrophy;
+    loadTrophyPack(app);
+    bool names = true;
+    int icons = 0;
+    for (int n = 0; n < tr::kCount; ++n) {
+        names &= !trophyName(app, n).empty() && (!app.trophy.packRead || trophyName(app, n) == tr::builtinName(n)) &&
+                 trophyGrade(app, n) == tr::builtinGrade(n);
+        icons += app.trophy.icons[size_t(n)].id != 0;
+    }
+    if (app.trophy.packRead) names &= icons == tr::kCount;
+    problems += !names;
+    std::printf("trophies: %d of %zu conditions unlock their own once, the shop's purchase %s, none without the Vita copy %s "
+                "(with it %s), notification %s (in %.2f s, gone %.2f s, one at a time %s), kept across a restart %s, flags text %s, "
+                "names %s (pack %s, %d pictures); %d problems\n",
+                conditions, cases.size(), shop ? "yes" : "NO", offIos ? "yes" : "NO", onVita ? "yes" : "NO", notice ? "yes" : "NO",
+                firstFull, firstGone, shownOrder.size() == 2 ? "yes" : "NO", kept ? "yes" : "NO", hexOk ? "yes" : "NO",
+                names ? "yes" : "NO", app.trophy.packRead ? "read" : "not beside the data", icons, problems);
+    if (!keepTrophy.packTried)
+        for (cr::Texture& t : app.trophy.icons) app.renderer.destroy(t);
+    app.trophy = keepTrophy;
+    app.game = keepGame;
+    app.persist = keepPersist;
+    return problems;
+}
+
 int controlHintsSelfTest(App& app) {
     const bool keepHud = app.showHud, keepPersist = app.persist;
     // settingsPath uses CR_SAVE_DIR, not the game's saveDirOverride. Give this
@@ -15907,6 +16182,7 @@ int clearDataNewGameSelfTest(App& app, const cr::SaveData& base) {
 
 int runSelfTest(App& app) {
     app.persist = false;
+    app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
     app.typeOn = false; // pages whole (the typing has its own test)
     app.video.layout = 1; // the iPad layout the tests measure (the iPhone one has its own)
     applyVideo(app);
@@ -15965,13 +16241,14 @@ int runSelfTest(App& app) {
     if (SDL_getenv("CR_SELFTEST_LIFECYCLE")) return fieldLifecycleSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_MOBILE")) return mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_TROPHIES")) return trophiesSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_BATTLES")) { // only the battle pass
         int frames = 0, glErrors = 0;
         setMode(app, Mode::Maps);
         return battleSelfTest(app, frames, glErrors) ? 1 : 0;
     }
-    int glErrors = controlHintsSelfTest(app) + fieldPresentationSelfTest(app), frames = 0, failedModels = 0;
+    int glErrors = controlHintsSelfTest(app) + trophiesSelfTest(app) + fieldPresentationSelfTest(app), frames = 0, failedModels = 0;
     setMode(app, Mode::Models);
     for (size_t i = 0; i < app.models.size(); ++i) {
         showModel(app, int(i));
@@ -19440,6 +19717,7 @@ int runExportTextures(App& app, const char* dirArg) {
 
 int runCapture(App& app, const char* mapName, const char* outPath) {
     app.persist = false;
+    app.trophy.live = false; // (no notifications of their own in captures: CR_CAPTURE_TROPHY shows one)
     app.typeOn = SDL_getenv("CR_CAPTURE_TYPED") != nullptr; // CR_CAPTURE_TYPED=n: n frames of typing
     setMode(app, Mode::Maps);
     int idx = -1;
@@ -19786,6 +20064,17 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         for (int f = SDL_atoi(ty); f > 0 && !app.dialogue.empty(); --f) stepTyping(app);
         std::printf("typed: %d of %d characters\n", app.dialogueTyped,
                     app.dialogue.empty() ? 0 : pageChars(app.dialogue[std::min(app.dialoguePage, app.dialogue.size() - 1)]));
+    }
+    if (const char* tr = SDL_getenv("CR_CAPTURE_TROPHY")) { // "n[:seconds]": trophy n's notification, seconds in (1 = held)
+        int n = 1;
+        float at = 1;
+        std::sscanf(tr, "%d:%f", &n, &at);
+        loadTrophyPack(app);
+        app.trophy.notice.start(std::clamp(n, 0, cr::trophies::kCount - 1));
+        app.trophy.notice.t = std::max(0.0f, at);
+        app.trophy.hold = true; // (as it is: the capture's own frame doesn't move it)
+        std::printf("trophy notification: %d, %.2f s, in %.2f, pack %s, picture %s\n", n, at, app.trophy.notice.shown(),
+                    app.trophy.packRead ? "read" : "not found", app.trophy.icons[size_t(app.trophy.notice.id)].id ? "yes" : "no");
     }
     if (SDL_getenv("CR_CAPTURE_CHOICE")) { // the event Yes / No over it (Util 3), settled
         app.msgStyle = 64, app.msgLines = 1;

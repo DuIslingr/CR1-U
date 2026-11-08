@@ -46,6 +46,7 @@ add_library(crcore STATIC
     src/game/battle_rules.cpp
     src/game/genes.cpp
     src/game/puzzle.cpp
+    src/game/trophies.cpp
     src/scene/pose.cpp
     src/scene/smooth.cpp
     src/audio/sound.cpp

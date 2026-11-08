@@ -388,6 +388,28 @@ c101/c102/c104/m207a, 2026-10-12).
       nothing of its own: iOS's `_ContData_Save` only writes the snapshot those moments took
       (`_ContData_Save_set`'s pending mark 0x3f6), never the live state - a game left during a
       cutscene resumes at the last scene's end, not on the cutscene's painting
+- [x] **Trophies** (`game/trophies.cpp`): CR1's only achievements are the Vita's 16 (NPWR08182_00) -
+      iOS 2.2.0 and 1.0.1 link no GameKit and carry no achievement code or text (no "achiev",
+      GameCenter or GK class in either binary, none in 2.2.0's system messages), and Android 1.1.1 has
+      no `achievement_prc`, `fld_checkAchievements` or `ComUty_ComPlate_GameCenter` (its title,
+      0x7bba4, draws no trophy picture). So CRO's achievements (its
+      3.1.0 Game Center set, Android 1.1.6's banner and list) have no CR1 counterpart, and the port
+      unlocks the Vita's trophies when **the Vita copy is the game**. When follows the Vita's code:
+      `FUN_8106ae3a` unlocks, in order, 1..8 the gate bosses (any pair's flag 0x462 / 0x463 / 0x476 /
+      0x477 / 0x48a / 0x48b / 0x49e / 0x49f, + 0x190 a pair), 9..12 each pair's own primal door
+      (0x455 + 0x190 p), 13 Qualia (0x4b9 any pair), 14 the businessman (0x425 any pair), 15 the
+      first purchase (G+0x34e3d bit 7, set by `__menuu_ShopPrc` 7 before its check), 0 (Gold) once
+      1..15 are in; each a bit of the system data (G+0x34e38, global: here settings.ini's
+      `trophies=`, 16 hex digits). Its callers: a script's end (`__EvtReturn` / `__EvtAbort`), Util 6
+      (the save on the way to the title), the boot's opcode 0x46 (here the first script's end after a
+      load does its job: the port passes the boot's own opcodes by) and the shop's purchase. The
+      names, grades and pictures are the trophy pack's (`sce_sys/trophy/NPWR08182_00/TROPHY.TRP` beside
+      the copy: TROP.SFM - Japanese only - and TROPnnn.PNG; built in when it's missing). On the Vita
+      the system shows an unlocked trophy, not the game: the port draws the notification the
+      reference playthrough shows (Part 1 1850.7 s - Vita3K's): a light grey box at the screen's top
+      right with the picture, "(Bronze) <name>" and "You have earned a trophy!", sliding in over
+      0.23 s, held 1.73 s and out, one at a time. `CR_CAPTURE_TROPHY=n[:seconds]` captures it,
+      `CR_SELFTEST_TROPHIES=1` runs its self-test (also part of `--selftest`)
 - [x] The Vita's boot when its scripts are used (also over iOS data, so every script's text is the
       Vita's): the health warning, Square Enix and Media.Vision logos (opcodes 0x47..0x4a: faded in,
       held - a tap or confirm cuts it short - and out)
