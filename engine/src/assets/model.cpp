@@ -617,10 +617,12 @@ bool loadModelPackage(const std::vector<uint8_t>& file, Model& out, std::string*
         for (size_t a = 0; a < out.appearanceIds.size(); ++a)
             if (out.appearanceIds[a] == ib.appearanceId) m.appearance = int(a);
         // Texture: the material references a texture by its MCT header id; a handful of
-        // materials use a 1-based package index instead
+        // materials use a 1-based package index instead. Every read_mdl* (2.2.0) binds a package's
+        // textures one by one (mceFigure_bindTexture: each appearance unit takes the table's
+        // texture of its ref gid), so of two with one id the later stays
         if (m.appearance >= 0) {
             const int ref = out.materials[m.appearance].textureRef;
-            for (size_t t = 0; t < out.textureIds.size() && m.texture < 0; ++t)
+            for (size_t t = 0; t < out.textureIds.size(); ++t)
                 if (out.textureIds[t] == ref) m.texture = int(t);
             if (ref < 0) {
                 ++out.stats.untextured;
@@ -633,7 +635,7 @@ bool loadModelPackage(const std::vector<uint8_t>& file, Model& out, std::string*
                 ++out.stats.texMissing;
             }
             const int ref2 = out.materials[m.appearance].textureRef2; // texture unit 1, the same way
-            for (size_t t = 0; t < out.textureIds.size() && ref2 >= 0 && m.texture2 < 0; ++t)
+            for (size_t t = 0; t < out.textureIds.size() && ref2 >= 0; ++t)
                 if (out.textureIds[t] == ref2) m.texture2 = int(t);
             if (ref2 >= 1 && m.texture2 < 0 && ref2 <= int(out.textures.size())) m.texture2 = ref2 - 1;
         }
