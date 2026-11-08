@@ -187,6 +187,7 @@ std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
         n.id = id;
         std::memcpy(n.pos, &data_[p + 4], 12);
         std::memcpy(&n.angle, &data_[p + 20], 4);
+        n.rectAngle = n.angle;
         std::memcpy(n.box, &data_[p + 28], 12);
         std::memcpy(n.offset, &data_[p + 40], 12);
         NpcRow r;

@@ -55,6 +55,8 @@ struct FieldNpc {
     int16_t shadow[4] = {0, 0, 0, 0};
     bool hasShadow() const { return (treasure & 0x8000) != 0; }
     float axes[3] = {-1, -1, -1}; // SetScale / AdjScale's (npc ctl +0x2c..+0x34, x y z), in place of scale once set
+    float rectAngle = 0;         // the record's angle: RectWrapper::init turns the solid box by it once, at load
+    bool mdlRead = false;        // its model read by a script (__EvtNpcMdlRead: npc ctl +0x98)
 
     bool touchTrigger() const { return (kind & 1) && (kind & 0x8000); }
     // Box centre as RectWrapper::checkEventKick computes it (the offset is applied twice

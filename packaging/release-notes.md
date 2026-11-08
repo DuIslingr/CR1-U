@@ -15,6 +15,14 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
   (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
   them again. Measured here: about 6.5 ms of pipeline compiling the first time, 0.1 ms the next;
   slower drivers save more. A cache from another GPU or driver is ignored and rebuilt.
+- **Walking as the original's collision has it:** the field's floor and walls are read from the
+  collision file's own tree, as the iOS game does - the floor under the leader is the highest one
+  in reach (ramps such as d0207's climb smoothly, no 5-unit step limit), walls push only when faced
+  and a move through one is undone, and the floor, NPC bodies and walls are checked every frame, so
+  standing still or during a scene the leader stays on the ground. Chests and other solid NPCs are
+  hit where they stand now, from their own height up, and floor NPCs (the puzzle rooms' plates) lift
+  the leader onto them. The encounter count uses the distance the leader actually moved after the
+  pushes.
 - **FSR 3.1.6:** the built-in FSR is updated from 3.1.4 to AMD's FSR SDK 2.4 passes.
 - **FSR 4 (Linux and Windows, AMD GPUs):** a new Upscaler choice. AMD ships FSR 4 for Vulkan only as
   its own Windows DLLs, so they aren't included: put AMD's two SDK DLLs, the driver's

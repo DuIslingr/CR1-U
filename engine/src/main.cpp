@@ -197,7 +197,6 @@ struct App {
     int stageCamIndex = 0;
     bool stageCamBorrowed = false;          // no camera of its own: best fit from the same family
     cr::Collision collisionData;           // the current field's collision, for walking on
-    cr::Collision walkCollision;           // collisionData + walls of solid NPCs (chests, crystals…)
     int mapNumber = -1, area = -1;         // the field being shown (map 0..129, area = event file)
     cr::EventFile events;                  // the current area's event file
     std::vector<cr::FieldNpc> npcs;        // this map's NPCs and trigger boxes
@@ -1723,7 +1722,7 @@ void noteWindowAtlas(App& app, const cr::Image& wi);
 // walls tan, so the walkable layout reads clearly.
 void enterMap(App& app);
 void buildNpcDraws(App& app);
-void buildWalkCollision(App& app);
+std::vector<cr::WalkBody> walkBodies(const App& app);
 cr::FieldNpc* findNpc(App& app, int id);
 std::string itemName(const App& app, int item);
 void startNewGame(App& app);
@@ -2052,7 +2051,6 @@ void enterMap(App& app) {
     puzzle::enter(app); // PuzzleScene::init in a puzzle room (stage -1 elsewhere)
     app.puzzleStartPending = app.puzzle.stage >= 0;
     buildNpcDraws(app);
-    buildWalkCollision(app);
     cr::Mesh mesh;
     for (const cr::FieldNpc& n : app.npcs) {
         bool warps = false;
@@ -2199,7 +2197,6 @@ bool interact(App& app, bool instant) {
     if (r.warp.valid && performWarp(app, r.warp, script)) return true;
     // Scripts change flags (opened boxes hide their lid): refresh what is shown and solid
     buildNpcDraws(app);
-    buildWalkCollision(app);
     updateTitle(app);
     return true;
 }
@@ -3081,7 +3078,6 @@ struct ViewerHost : cr::EventHost {
         // hall loaded at the origin without a Setc (t01 event 202, the execution scene).
         if (shown) app.placedNpcs.insert(id);
         buildNpcDraws(app);
-        buildWalkCollision(app);
     }
     void screenFade(float grey, float from, float to, int frames) override {
         app.fadeGrey = grey; app.fadeFrom = from; app.fadeTo = to; app.fadeFrames = std::max(frames, 1); app.fadeT = 0;
@@ -3236,7 +3232,10 @@ struct ViewerHost : cr::EventHost {
         if (pair >= 1 && pair <= 4) newPairParty(app, pair, clearData);
     }
     void loadNpc(int id) override {
-        if (findNpc(app, id)) return;
+        if (cr::FieldNpc* had = findNpc(app, id)) { // (+0x98: the standing push leaves it out)
+            if (had->model >= 0) had->mdlRead = true;
+            return;
+        }
         cr::NpcRow row;
         if (!app.events.npcRow(id, row)) return;
         cr::FieldNpc n; // __EvtNpcMdlRead: at the origin, facing 0, and hidden (+0x8c bit 0) when its
@@ -3248,6 +3247,7 @@ struct ViewerHost : cr::EventHost {
         n.treasure = row.box;
         n.puzzle = row.puzzle;
         n.scale = row.scale;
+        n.mdlRead = n.model >= 0;
         if (id >= 400 || !npcActive(app, n)) app.npcShown[id] = false;
         app.npcs.push_back(n);
         app.npcWarps.push_back(false);
@@ -9726,7 +9726,6 @@ void show(App& app, App::Puzzle::Obj& o, bool on) { // npc_born / npc_kill
     if (o.shown == on) return;
     o.shown = on;
     buildNpcDraws(app);
-    buildWalkCollision(app);
 }
 
 void place(App& app, App::Puzzle::Obj& o, cr::Vec3 p) { // PuzzleObject::setPos
@@ -9734,7 +9733,6 @@ void place(App& app, App::Puzzle::Obj& o, cr::Vec3 p) { // PuzzleObject::setPos
     cr::FieldNpc& n = app.npcs[size_t(o.npc)];
     n.pos[0] = p.x, n.pos[1] = p.y, n.pos[2] = p.z;
     if (App::NpcDraw* d = drawOf(app, o.npc)) d->world = npcWorld(n);
-    buildWalkCollision(app);
 }
 
 // A weigh switch below a cell: pressed (5, `silent` at the start) or let go (6)
@@ -9825,7 +9823,6 @@ void enter(App& app) {
         if (o.type == cr::kTypeCrystal && (app.npcs[size_t(o.npc)].puzzle & cr::kPuzzleObject40))
             o.shown = allSwitchesOn(app);
     buildNpcDraws(app);
-    buildWalkCollision(app);
     for (const App::Puzzle::Obj& o : pz.objs)
         if (o.ghost) fade(app, o.npc, kGhostAlpha, kGhostAlpha, 1);
 }
@@ -10257,7 +10254,6 @@ void stepTough(App& app) {
     }
     if (!rebuild) return;
     buildNpcDraws(app);
-    buildWalkCollision(app);
     if (born) app.sound.play(0x2a);
     if (killed) app.sound.play(0x29);
     for (const App::Puzzle::Obj& o : pz.objs) {
@@ -10890,7 +10886,6 @@ void stepEvents(App& app) {
     app.itemWindowOpen = false;
     app.tapPending = false;
     buildNpcDraws(app);
-    buildWalkCollision(app);
     updateTitle(app);
 }
 
@@ -11084,10 +11079,17 @@ void updatePlayer(App& app, float dt, float camYaw) {
         BetweenStep between(app);
         stepEvents(app);
         if (app.battle.active) break;
-        if (fieldSceneRunning(app)) app.walker.gait = cr::Gait::Stand;
-        if (fieldSceneRunning(app) || !app.havePlayer) continue;
-        const cr::Vec3 before = app.walker.pos;
-        cr::stepWalker(app.walker, app.walkCollision, sx, sy, run, camYaw);
+        if (!app.havePlayer) continue;
+        // FieldScene::onUpdate: FieldPCCtrl's update and checkHit (2.2.0 0x4272c) every frame - a script
+        // holding the field (G+0x2c0 bit 0) stops the stick, not the floor; the pushes wait for its end
+        const std::vector<cr::WalkBody> bodies = walkBodies(app);
+        if (fieldSceneRunning(app)) { // (a touch trigger may start a script this step)
+            app.walker.gait = cr::Gait::Stand;
+            app.walker.velocity = {};
+            cr::checkWalkerHit(app.walker, app.collisionData, bodies, !app.runner.running());
+            continue;
+        }
+        const float walkedDist = cr::stepWalker(app.walker, app.collisionData, bodies, sx, sy, run, camYaw, !app.runner.running());
         if (sx == 0 && sy == 0) // FieldPCCtrl::operate's state 3 (FollowWindow::update's receiveMessage 3): standing in reach,
             if (const cr::FieldNpc* n = interactTarget(app)) { // the leader turns to the target by 0.35 of the angle left each frame
                 const float k = n->model <= 1 ? 1.0f : 0.0f;
@@ -11097,8 +11099,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
                 while (d < -3.14159265f) d += 2 * 3.14159265f;
                 app.walker.heading += 0.35f * d;
             }
-        const cr::Vec3 moved = app.walker.pos - before;
-        fieldWalked(app, std::sqrt(cr::dot(moved, moved)));
+        if (walkedDist >= 0) fieldWalked(app, walkedDist); // fldencount_walk(|velocity + pushes|)
         checkTriggers(app);
         if (fieldSceneRunning(app)) app.walker.gait = cr::Gait::Stand;
         if (fieldSceneRunning(app) || !app.havePlayer) continue;
@@ -11221,49 +11222,29 @@ void buildNpcDraws(App& app) {
     }
 }
 
-// Solid NPCs (RectWrapper::init / checkHitWallToSphere): kind bit 1 set, bit 2 clear,
-// displayed. Their box is the record's box (offset ± size / 2) turned by the NPC's angle and
-// placed at its position; it is added to the walking collision as four vertical walls.
-void buildWalkCollision(App& app) {
-    app.walkCollision = app.collisionData;
-    cr::Collision& c = app.walkCollision;
+// RectWrapper's NPCs, read live each frame (SetupRect / getFloorHeight take the npc ctl's position as
+// it is): solid ones (kind bit 2 set, bit 4 clear) wall the leader in with their box's four sides,
+// floor ones (bit 4) lift it onto their top; both only while shown (_ChkNpcDisp). The box turns by
+// the record's angle (RectWrapper::init), the position is the record's plus, for models 0..1, its
+// offset (npc_setup).
+std::vector<cr::WalkBody> walkBodies(const App& app) {
+    std::vector<cr::WalkBody> out;
     for (size_t idx = 0; idx < app.npcs.size(); ++idx) {
         const cr::FieldNpc& n = app.npcs[idx];
-        if (!(n.kind & 2) || (n.kind & 4) || !npcVisible(app, idx)) continue;
-        if (n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) continue;
-        if (n.box[0] <= 0 || n.box[2] <= 0) continue;
-        const float k = n.model <= 1 ? 1.0f : 0.0f; // npc_setup adds the offset for models 0/1
-        const float bx = n.pos[0] + k * n.offset[0], bz = n.pos[2] + k * n.offset[2];
-        const float cs = std::cos(n.angle), sn = std::sin(n.angle);
-        const float lx[4] = {n.offset[0] - n.box[0] / 2, n.offset[0] + n.box[0] / 2, n.offset[0] + n.box[0] / 2,
-                             n.offset[0] - n.box[0] / 2};
-        const float lz[4] = {n.offset[2] - n.box[2] / 2, n.offset[2] - n.box[2] / 2, n.offset[2] + n.box[2] / 2,
-                             n.offset[2] + n.box[2] / 2};
-        float px[4], pz[4], cx = 0, cz = 0;
-        for (int i = 0; i < 4; ++i) {
-            px[i] = bx + cs * lx[i] + sn * lz[i];
-            pz[i] = bz - sn * lx[i] + cs * lz[i];
-            cx += px[i] / 4;
-            cz += pz[i] / 4;
-        }
-        const float y0 = n.pos[1] - 5, y1 = n.pos[1] + std::max(n.box[1], 10.0f);
-        for (int i = 0; i < 4; ++i) {
-            const int j = (i + 1) % 4;
-            cr::Vec3 v[4] = {{px[i], y0, pz[i]}, {px[j], y0, pz[j]}, {px[j], y1, pz[j]}, {px[i], y1, pz[i]}};
-            cr::Vec3 nrm = cr::normalize(cr::cross(v[1] - v[0], v[3] - v[0]));
-            const cr::Vec3 mid{(px[i] + px[j]) / 2 - cx, 0, (pz[i] + pz[j]) / 2 - cz};
-            if (cr::dot(nrm, mid) < 0) { std::swap(v[1], v[3]); nrm = nrm * -1.0f; } // face outwards
-            cr::CollisionPolygon poly;
-            poly.normal[0] = nrm.x; poly.normal[1] = nrm.y; poly.normal[2] = nrm.z;
-            poly.count = 4;
-            poly.attr1 = 1;
-            for (int q = 0; q < 4; ++q) {
-                poly.index[q] = int16_t(c.vertices.size() / 3);
-                c.vertices.insert(c.vertices.end(), {v[q].x, v[q].y, v[q].z});
-            }
-            c.polygons.push_back(poly);
-        }
+        cr::WalkBody b;
+        b.wall = (n.kind & 2) && !(n.kind & 4);
+        b.floor = (n.kind & 4) != 0;
+        if (!b.wall && !b.floor) continue;
+        b.shown = npcVisible(app, idx) && // (actors waiting off stage)
+                  !(n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0));
+        const float k = n.model <= 1 ? 1.0f : 0.0f;
+        b.pos = {n.pos[0] + k * n.offset[0], n.pos[1] + k * n.offset[1], n.pos[2] + k * n.offset[2]};
+        for (int c = 0; c < 3; ++c) b.offset[c] = n.offset[c], b.box[c] = n.box[c];
+        b.angle = n.rectAngle;
+        b.scriptModel = n.mdlRead;
+        out.push_back(b);
     }
+    return out;
 }
 
 // Each NPC instance has its own action and time: action 0 (idle) loops, others play once and
@@ -17859,6 +17840,220 @@ int clearDataNewGameSelfTest(App& app, const cr::SaveData& base) {
     return problems;
 }
 
+// The field's collision as FieldPCCtrl::checkHit has it: the leader walked round every map (finite,
+// on a floor, gets somewhere), walked into every solid NPC from four sides (never inside its box),
+// up d0207's ramp (polygons 49 / 50, normal.y 0.68: floors by the KD lists, climbed on their plane)
+// and onto a j001_p01 plate (a floor NPC: RectWrapper::getFloorHeight lifts it by the box's 3).
+// Returns the walk-ins that ended inside a box; problems go to `mapErrors`.
+int walkCollisionSelfTest(App& app, int& spawned, int& walked, int& mapErrors) {
+    setMode(app, Mode::Maps);
+    // On a floor: one within a unit of y (checkHit takes the floor before the pushes move x / z, so on a
+    // slope y can trail by a push's rise), or a floor NPC's top; with no floor under it at all, y must
+    // stay as it was (getFloor finds none: x and z move on - past a floor's edge with no wall there)
+    auto floorUnder = [&](const cr::Vec3& p, float& fy) {
+        return cr::floorHeight(app.collisionData, p.x, p.y + 1000.0f, p.z, 2000.0f, fy) ||
+               cr::bodyFloorHeight(walkBodies(app), p, 1000.0f, fy);
+    };
+    auto onFloor = [&](const cr::Vec3& p) {
+        float fy;
+        return (cr::floorHeight(app.collisionData, p.x, p.y + 1.0f, p.z, 0.0f, fy) && fy > p.y - 1.0f) ||
+               (cr::bodyFloorHeight(walkBodies(app), p, 1000.0f, fy) && std::fabs(fy - p.y) < 0.02f);
+    };
+    // Walk the leader around for 6 seconds of game time (stick turning a full circle) - then stand 20
+    // frames, the floor and the pushes still running
+    int offEdge = 0;
+    for (size_t i = 0; i < app.maps.size(); ++i) {
+        showMap(app, int(i));
+        if (!app.havePlayer) continue;
+        ++spawned;
+        const cr::Vec3 start = app.walker.pos;
+        const std::vector<cr::WalkBody> bodies = walkBodies(app);
+        float far = 0;
+        bool ok = true, off = false;
+        for (int f = 0; f < 140; ++f) {
+            const float a = float(f) / 120.0f * 6.2831853f;
+            const bool still = f >= 120;
+            const float wasY = app.walker.pos.y;
+            cr::stepWalker(app.walker, app.collisionData, bodies, still ? 0.0f : std::sin(a), still ? 0.0f : -std::cos(a),
+                           f % 40 < 20, 0.0f);
+            const cr::Vec3 p = app.walker.pos;
+            float fy;
+            const bool none = !floorUnder(p, fy);
+            off = off || none;
+            const bool good = std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) && (none ? p.y == wasY : onFloor(p));
+            if (ok && !good && SDL_getenv("CR_WALK_DEBUG"))
+                std::printf("  off the floor at frame %d: (%.2f %.2f %.2f), was y %.2f\n", f, p.x, p.y, p.z, wasY);
+            ok = ok && good;
+            const cr::Vec3 d = p - start;
+            far = std::max(far, std::sqrt(cr::dot(d, d)));
+        }
+        if (!ok) {
+            ++mapErrors;
+            std::printf("player left the floor in %s\n", app.maps[i].c_str());
+        }
+        offEdge += off;
+        walked += far > 5.0f;
+    }
+    std::printf("walk: on %d maps the leader went past a floor's edge (no wall there), y held\n", offEdge);
+    // Walk into every solid NPC from outside its box: the player must never end up inside it
+    auto wallBetween = [&](cr::Vec3 a, cr::Vec3 b) { // a wall polygon (either side) the segment a-b crosses
+        const cr::Collision& col = app.collisionData;
+        for (const cr::CollisionPolygon& w : col.polygons) {
+            if (!w.isWall()) continue;
+            const cr::Vec3 n{w.normal[0], w.normal[1], w.normal[2]};
+            auto vert = [&](int k) { const float* v = &col.vertices[size_t(w.index[k]) * 3]; return cr::Vec3{v[0], v[1], v[2]}; };
+            const float da = cr::dot(a - vert(0), n), db = cr::dot(b - vert(0), n);
+            if ((da > 0) == (db > 0)) continue;
+            const cr::Vec3 x = a + (b - a) * (da / (da - db));
+            float sgn = 0;
+            bool inside = true;
+            for (int k = 0; k < w.count && inside; ++k) {
+                const float sk = cr::dot(n, cr::cross(vert((k + 1) % w.count) - vert(k), x - vert(k)));
+                inside = sk * sgn >= 0;
+                if (sk != 0) sgn = sk;
+            }
+            if (inside) return true;
+        }
+        return false;
+    };
+    int solidTests = 0, entered = 0;
+    for (int area0 = 0; area0 < cr::kNumAreas; ++area0)
+        for (int map0 = 0; map0 < cr::kNumMaps; ++map0) {
+            if (cr::areaForMap(map0, area0) != area0) continue;
+            const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[map0]));
+            if (at == app.maps.end()) continue;
+            showMap(app, int(at - app.maps.begin()), map0, area0);
+            if (!app.havePlayer) continue;
+            const std::vector<cr::WalkBody> bodies = walkBodies(app);
+            for (const cr::WalkBody& b : bodies) {
+                if (!b.wall || !b.shown || b.box[0] <= 0 || b.box[2] <= 0) continue;
+                // the box as RectWrapper turns it: corners (offset +- size / 2) about the position
+                const float s = std::sin(b.angle), c = std::cos(b.angle);
+                float px[4], pz[4], cx = 0, cz = 0, reach = 0;
+                for (int q = 0; q < 4; ++q) {
+                    const float lx = b.offset[0] + (q == 1 || q == 2 ? 0.5f : -0.5f) * b.box[0];
+                    const float lz = b.offset[2] + (q >= 2 ? 0.5f : -0.5f) * b.box[2];
+                    px[q] = b.pos.x + s * lz + c * lx, pz[q] = b.pos.z + c * lz - s * lx;
+                    cx += px[q] / 4, cz += pz[q] / 4;
+                }
+                for (int q = 0; q < 4; ++q) reach = std::max(reach, std::hypot(px[q] - cx, pz[q] - cz));
+                reach += app.walker.radius + 2; // start outside the box
+                for (int dir = 0; dir < 4; ++dir) {
+                    const float a = dir * 1.5707963f;
+                    const cr::Vec3 from{cx + reach * std::sin(a), b.pos.y + 5, cz + reach * std::cos(a)};
+                    float fy;
+                    if (!cr::floorHeight(app.collisionData, from.x, from.y, from.z, 3.0f, fy)) continue;
+                    // (RectWrapper's sphere sits at y + 2.5: a box above or below that passes over / under it;
+                    // and a start behind a one-sided wall can be pushed through it)
+                    const float y0 = b.pos.y + b.offset[1], centreY = fy + 2.5f;
+                    if (centreY < y0 || centreY > y0 + b.box[1] || wallBetween({from.x, centreY + 2.5f, from.z}, {cx, centreY + 2.5f, cz}))
+                        continue;
+                    app.walker.pos = {from.x, fy, from.z};
+                    ++solidTests;
+                    bool inside = false;
+                    for (int f = 0; f < 120 && !inside; ++f) {
+                        const cr::Vec3 d{cx - app.walker.pos.x, 0, cz - app.walker.pos.z}; // camYaw 0: the stick is (world x, world z)
+                        cr::stepWalker(app.walker, app.collisionData, bodies, d.x, d.z, false, 0.0f);
+                        int in = 0; // on the inner side of all four sides
+                        for (int q = 0; q < 4; ++q) {
+                            const int r = (q + 1) % 4;
+                            const float ex = px[r] - px[q], ez = pz[r] - pz[q];
+                            in += ex * (app.walker.pos.z - pz[q]) - ez * (app.walker.pos.x - px[q]) > 0;
+                        }
+                        inside = in == 4;
+                    }
+                    if (inside && (entered < 8 || SDL_getenv("CR_WALK_DEBUG")))
+                        std::printf("  inside: %s map %d box centre (%.1f %.1f) reach %.1f, from dir %d, now (%.1f %.1f) y %.1f; "
+                                    "body y %.1f box %.1f %.1f %.1f offset %.1f %.1f %.1f angle %.3f r %.1f\n",
+                                    cr::kAreaEventFile[area0], map0, cx, cz, reach, dir, app.walker.pos.x, app.walker.pos.z,
+                                    app.walker.pos.y, b.pos.y, b.box[0], b.box[1], b.box[2], b.offset[0], b.offset[1], b.offset[2], b.angle, app.walker.radius);
+                    entered += inside;
+                }
+            }
+        }
+    std::printf("solid npcs: %d walk-ins, %d ended inside a box\n", solidTests, entered);
+    auto showByName = [&](const char* cmp, const char* evt) {
+        for (int area0 = 0; area0 < cr::kNumAreas; ++area0)
+            for (int map0 = 0; map0 < cr::kNumMaps; ++map0) {
+                if (cr::areaForMap(map0, area0) != area0 || std::string(cr::kMapCollisionFile[map0]) != cmp) continue;
+                if (evt && std::string(cr::kAreaEventFile[area0]) != evt) continue;
+                const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[map0]));
+                if (at == app.maps.end()) continue;
+                showMap(app, int(at - app.maps.begin()), map0, area0);
+                if (app.havePlayer) return true;
+            }
+        return false;
+    };
+    // d0207's ramp: up from its foot (y 30, z -60.9) to its top (y 54.1, z -83.0), x 168..188
+    int rampProblems = 0;
+    float rampTop = -1e9f, rampWorst = 0;
+    int rampSteps = 0;
+    if (showByName("d0207_10.cmp", nullptr)) {
+        const std::vector<cr::WalkBody> bodies = walkBodies(app);
+        app.walker.pos = {178.0f, 30.0f, -58.0f};
+        app.walker.velocity = {};
+        cr::checkWalkerHit(app.walker, app.collisionData, bodies);
+        for (int f = 0; f < 70; ++f) {
+            cr::stepWalker(app.walker, app.collisionData, bodies, 0.0f, -1.0f, false, 0.0f); // walk -z
+            const cr::Vec3 p = app.walker.pos;
+            if (p.z < -61.5f && p.z > -82.5f) { // on the ramp: on its plane
+                ++rampSteps;
+                rampWorst = std::max(rampWorst, std::fabs(p.y - (30.0f + (-60.9f - p.z) * (24.1f / 22.1f))));
+            }
+            rampTop = std::max(rampTop, p.y);
+        }
+        rampProblems = rampSteps < 30 || rampWorst > 0.2f || rampTop < 54.0f;
+    } else rampProblems = 1;
+    std::printf("ramp (d0207 49 / 50): %d steps on it, %.3f off its plane at worst, up to y %.1f; %d problems\n", rampSteps,
+                rampWorst, rampTop, rampProblems);
+    // j001_p01's plates (NPCs 153..207, model 32, kind bit 4, box 10 x 3 x 10): the leader stands on top
+    int plateProblems = 1, plateId = -1;
+    float plateY = 0, plateWant = 0, besideY = 0, besideWant = 0;
+    for (int area0 = 0; area0 < cr::kNumAreas && plateProblems; ++area0) {
+        if (std::string(cr::kAreaEventFile[area0]) != "j001_p01.evt") continue;
+        for (int map0 = 0; map0 < cr::kNumMaps && plateProblems; ++map0) {
+            if (cr::areaForMap(map0, area0) != area0) continue;
+            const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[map0]));
+            if (at == app.maps.end()) continue;
+            showMap(app, int(at - app.maps.begin()), map0, area0);
+            if (!app.havePlayer) continue;
+            for (const cr::FieldNpc& n : app.npcs) {
+                if (n.id < 153 || n.id > 207 || !(n.kind & 4) || n.box[1] <= 0) continue;
+                app.npcShown[n.id] = true; // (shown whatever the room's flags say)
+                const std::vector<cr::WalkBody> bodies = walkBodies(app);
+                const float cx = n.pos[0] + n.offset[0], cz = n.pos[2] + n.offset[2];
+                float floorY;
+                const int node = cr::searchNode(app.collisionData, {cx, n.pos[1], cz}, 5.0f);
+                if (cr::getFloor(app.collisionData, node, {cx, n.pos[1], cz}, 1000.0f, floorY) < 0) continue;
+                plateId = n.id;
+                plateWant = n.pos[1] + n.offset[1] + n.box[1];
+                app.walker.pos = {cx, floorY, cz};
+                app.walker.velocity = {};
+                cr::checkWalkerHit(app.walker, app.collisionData, bodies);
+                plateY = app.walker.pos.y;
+                // off its box (just past the side): back on the floor below
+                const cr::Vec3 beside{cx + n.box[0] * 0.5f + 0.5f, plateY, cz};
+                const int node2 = cr::searchNode(app.collisionData, beside, 5.0f);
+                if (cr::getFloor(app.collisionData, node2, beside, 1000.0f, besideWant) < 0) continue;
+                app.walker.pos = beside;
+                bool otherPlate = false;
+                for (const cr::WalkBody& b : bodies)
+                    otherPlate = otherPlate || (b.floor && b.shown && std::fabs(beside.x - b.pos.x - b.offset[0]) <= b.box[0] * 0.5f &&
+                                                std::fabs(beside.z - b.pos.z - b.offset[2]) <= b.box[2] * 0.5f);
+                if (otherPlate) continue;
+                cr::checkWalkerHit(app.walker, app.collisionData, bodies);
+                besideY = app.walker.pos.y;
+                plateProblems = std::fabs(plateY - plateWant) > 0.01f || plateWant < floorY + 2.9f || std::fabs(besideY - besideWant) > 0.01f;
+                break;
+            }
+        }
+    }
+    std::printf("plate (j001_p01 npc %d): stands at y %.2f (top %.2f), beside it %.2f (floor %.2f); %d problems\n", plateId,
+                plateY, plateWant, besideY, besideWant, plateProblems);
+    mapErrors += rampProblems + plateProblems;
+    return entered;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
@@ -17924,6 +18119,12 @@ int runSelfTest(App& app) {
     if (SDL_getenv("CR_SELFTEST_TROPHIES")) return trophiesSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD_RENDER")) return fieldRenderSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_WALK")) { // only the walking collision pass
+        int spawned = 0, walked = 0, problems = 0;
+        problems += walkCollisionSelfTest(app, spawned, walked, problems);
+        std::printf("walk: player spawned on %d maps, walked > 5 units on %d; %d problems\n", spawned, walked, problems);
+        return problems ? 1 : 0;
+    }
     if (SDL_getenv("CR_SELFTEST_BATTLES")) { // only the battle pass
         int frames = 0, glErrors = 0;
         setMode(app, Mode::Maps);
@@ -17956,29 +18157,6 @@ int runSelfTest(App& app) {
     for (size_t i = 0; i < app.maps.size(); ++i) {
         showMap(app, int(i));
         camMaps += app.haveStageCam;
-        // Walk the leader around for 4 seconds of game time (stick turning a full circle) and
-        // check it stays finite, on a floor, and gets somewhere
-        if (app.havePlayer) {
-            ++spawned;
-            const cr::Vec3 start = app.walker.pos;
-            float far = 0;
-            bool ok = true;
-            for (int f = 0; f < 120; ++f) {
-                const float a = float(f) / 120.0f * 6.2831853f;
-                cr::stepWalker(app.walker, app.collisionData, std::sin(a), -std::cos(a), f % 40 < 20, 0.0f);
-                const cr::Vec3 p = app.walker.pos;
-                float fy;
-                ok = ok && std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) &&
-                     cr::floorHeight(app.collisionData, p.x, p.y + 0.01f, p.z, 0.0f, fy) && std::fabs(fy - p.y) < 0.02f;
-                const cr::Vec3 d = p - start;
-                far = std::max(far, std::sqrt(cr::dot(d, d)));
-            }
-            if (!ok) {
-                ++mapErrors;
-                std::printf("player left the floor in %s\n", app.maps[i].c_str());
-            }
-            walked += far > 5.0f;
-        }
         for (int f = 0; f < 2; ++f) { // 3D view, then the composite (background + stage camera)
             app.showBackground = f == 1;
             app.lastTicks = 0; // no game time passes here, however long the load took
@@ -18051,56 +18229,7 @@ int runSelfTest(App& app) {
                 else ++offFloor[d.model];
             }
         }
-    // Walk into every solid NPC from 12 units away: the player must never end up inside its box
-    int solidTests = 0, entered = 0;
-    for (int area0 = 0; area0 < cr::kNumAreas; ++area0)
-        for (int map0 = 0; map0 < cr::kNumMaps; ++map0) {
-            if (cr::areaForMap(map0, area0) != area0) continue;
-            const auto at = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[map0]));
-            if (at == app.maps.end()) continue;
-            showMap(app, int(at - app.maps.begin()), map0, area0);
-            if (!app.havePlayer) continue;
-            const size_t base = app.collisionData.polygons.size();
-            for (size_t w = base; w + 3 < app.walkCollision.polygons.size(); w += 4) {
-                // the box's four corners are the bottom corners of its four walls
-                float cx = 0, cz = 0, y0 = 0, reach = 0;
-                for (int q = 0; q < 4; ++q) {
-                    const float* v = &app.walkCollision.vertices[size_t(app.walkCollision.polygons[w + q].index[0]) * 3];
-                    cx += v[0] / 4; cz += v[2] / 4; y0 = v[1] + 5;
-                }
-                for (int q = 0; q < 4; ++q) {
-                    const float* v = &app.walkCollision.vertices[size_t(app.walkCollision.polygons[w + q].index[0]) * 3];
-                    reach = std::max(reach, std::hypot(v[0] - cx, v[2] - cz));
-                }
-                reach += app.walker.radius + 2; // start outside the box
-                for (int dir = 0; dir < 4; ++dir) {
-                    const float a = dir * 1.5707963f;
-                    cr::Vec3 start{cx + reach * std::sin(a), y0, cz + reach * std::cos(a)};
-                    float fy;
-                    if (!cr::floorHeight(app.walkCollision, start.x, start.y, start.z, 3.0f, fy)) continue;
-                    app.walker.pos = {start.x, fy, start.z};
-                    ++solidTests;
-                    bool inside = false;
-                    for (int f = 0; f < 120 && !inside; ++f) {
-                        const cr::Vec3 d = cr::Vec3{cx, 0, cz} - cr::Vec3{app.walker.pos.x, 0, app.walker.pos.z};
-                        cr::stepWalker(app.walker, app.walkCollision, d.x, -d.z, false, 3.14159265f / 2 * 0); // camYaw 0: stick x = world x, stick -y = world z
-                        // inside = on the inner side of all four walls
-                        int in = 0;
-                        for (int q = 0; q < 4; ++q) {
-                            const auto& pg = app.walkCollision.polygons[w + q];
-                            const float* v = &app.walkCollision.vertices[size_t(pg.index[0]) * 3];
-                            if ((app.walker.pos.x - v[0]) * pg.normal[0] + (app.walker.pos.z - v[2]) * pg.normal[2] < 0) ++in;
-                        }
-                        inside = in == 4;
-                    }
-                    if (inside && entered < 8)
-                        std::printf("  inside: %s map %d box centre (%.1f %.1f) reach %.1f, from dir %d, now (%.1f %.1f)\n",
-                                    cr::kAreaEventFile[area0], map0, cx, cz, reach, dir, app.walker.pos.x, app.walker.pos.z);
-                    entered += inside;
-                }
-            }
-        }
-    std::printf("solid npcs: %d walk-ins, %d ended inside a box\n", solidTests, entered);
+    const int entered = walkCollisionSelfTest(app, spawned, walked, mapErrors);
     // Examine everything examinable on every (area, map)
     int examined = 0, gotItems = 0, lidsHidden = 0, examineWarps = 0, examineErrors = 0;
     std::map<std::string, int> examinedByModel;
@@ -21386,7 +21515,6 @@ int runExplore(App& app, int maxActions) {
             app.game.setFlag(3000 + app.puzzle.stage, true);
             puzzle::enter(app); // the room again as solved: its crystal out (the way on)
             buildNpcDraws(app);
-            buildWalkCollision(app);
             tried.clear();
             continue;
         }

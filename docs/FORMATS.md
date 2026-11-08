@@ -380,7 +380,8 @@ multiple of 16 bytes); every vertex index is in range. `tools/cmp.py`.
 ```
 0x00 u32  tree type          0 = KD tree (all shipped files), 1 = quad tree
 0x04 s16  nVerts   0x06 s16 nPolys   0x08 s16 nNodes
-0x0c f32  3.0 in every file (probably the collision sphere radius)
+0x0c f32  3.0 in every file: searchNode adds it to a point's distance from a split
+0x10..0x1f  pointer slots TreeKD::init fills (vertices, polygons, nodes)
 0x20 nVerts × vec3 f32        world coordinates, Y up
      nPolys × 32 bytes:
         f32[3] normal
@@ -391,11 +392,27 @@ multiple of 16 bytes); every vertex index is in range. `tools/cmp.py`.
         s16    attr2  always 7
         4 bytes padding (0xAFAFAFFF)
      nNodes × node (KD 32 bytes, QUAD 40): +0 index-list pointer slot,
-        +4..+10 four s16 counts, +24 s16 (child/leaf marker)
-     per node: sum(counts) × s16 polygon index
+        +4..+10 four s16 counts (+4 floors, +6 walls; +8 0 in the data, +10 some maps' origin squares)
+        KD: +12 f32 split, +16 s32 depth, +20 s32 axis (0 = x, else z),
+            +24 s16 child taken when split - p >= 0 (< 0: a leaf), +26 s16 child when < 0, +28 unused
+     per node, in node order: sum(counts) × s16 polygon index - its floors first, then its walls
 ```
 
-Data: 2,716 floor polygons (normal.y > 0.7), 3,860 walls, 1 ceiling.
+The KD tree (`Cmp::TreeKD::searchNode`, read in 1.0.1; 2.2.0 `Cmp::CmpBase::searchNode`
+0x2dac0 calls the tree's slot +0xc; node 0 the root, every file a full binary tree: 14,083 inner nodes,
+14,197 leaves) lists in every node, inner ones too, all the polygons of its region.
+`CmpBase::searchNode(pos, r)` walks down from node 0 and stops at the first node whose split is close
+to the point (`|(int)(split - p)| + 3.0 < r`; the field asks with r = 5, so within 2 units) or at a
+leaf; the floor and wall queries then read only that node's lists.
+
+What is ground and what is a wall comes from these lists (`Cmp::CmpBasic::getFloor` (2.2.0 0x2dcf8)
+reads the node's first count only, `checkHitWallToSphere` the second, neither the normal): seven ramps
+with normal.y 0.62..0.68 (d0207 49/50, d0309 16, d0311 29/30, d0408 97/98) are floors, the 10 × 10
+squares at the origin (polygon 0, and d0503's 12, d0509's 1 / 13 / 14) are in neither of those lists
+(12 polygons; some maps list them under +10, which nothing reads), and d0406's one downward polygon
+(20) sits in a floor list (at y 0, level with the floor round it: the walker, reading the lists, takes
+it as getFloor does; the port's placement helpers leave it out). Data (2.2.0, 114 files): 2,709 floor
+polygons, 3,889 walls.
 
 ## Event files (`.evt`)
 
@@ -1572,11 +1589,35 @@ Behaviour code rather than a file format, recorded here because it ties the form
   - State 0: speed 0, action 0. State 1: 0.5 units/frame, action 1. State 2: 1.65 units/frame, action 2.
   - `heading = RepeatPI(atan2(v.x, v.y) + atan2(eye.x − target.x, eye.z − target.z))`; the position moves
     by `speed · (sin h, 0, cos h)` and the model's Y rotation is `h / 2π` turns, so models face +Z.
-- **`checkHit`:** `searchNode(pos, 5.0)`, then a floor query within 1000 units sets Y. Floor polygon colours
-  (254/0/0, 175/175/175, …) only choose footstep effects. Then
-  `RectWrapper::checkHitWallToSphere` with the sphere centre raised by half a height and radius
-  `this+0x24` adds the push-out to the position.
-- **Radius (`init`/`reset`):** stage record `+68` (s16) when > 0 (3 in dungeons), else 5.0.
+- **`checkHit`** (2.2.0 0x4272c, 1.0.1 `FieldPCCtrl::checkHit`; `FieldScene::onUpdate` runs it after `update` every frame, during
+  scripts and standing still too): `searchNode(pos, 5.0)` (none: nothing more this frame), then
+  `Cmp::CmpBasic::getFloor` (2.2.0 0x2dcf8): the node's highest floor polygon whose x/z box and inside test
+  (`(p.z - a.z)(b.x - a.x) - (p.x - a.x)(b.z - a.z) <= 0` on every edge) hold the point, within
+  `|(int)(y - h)| <= 1000` - no step-up limit; none: y stays and the x / z move stands. Floor polygon
+  colours (254/0/0, 175/175/175, …) only choose footstep effects. `RectWrapper::getFloorHeight`
+  (2.2.0 0x3c594) raises y to a shown floor NPC's top (kind bit 4: y + offset.y + box height, the box
+  unrotated) - j001_p01's plates (box height 3) lift the leader 3.
+  Then two pushes, each added to the position (x / z) and to the velocity (`+0x30`, the move
+  `update` made) unless a script runs (G+0x2c0 bit 0) or G+0x358e8 is set:
+  - `RectWrapper::checkHitWallToSphere` (2.2.0 0x3cf40): the sphere at y + BLOCK_HEIGHT 5 × 0.5, radius `this+0x24`,
+    against the four sides of every shown solid NPC (kind bit 2 set, bit 4 clear): the record's box
+    (offset ± size / 2) turned by its angle once (`RectWrapper::init`), placed each frame at the npc
+    ctl's position, from y + offset.y up by the box's height; sides facing the move only
+    (n · v ≤ 1e-5), |distance| < r.
+  - `Cmp::CmpBasic::checkHitWallToSphere` (vtable +0x30): the sphere at y + UNIT_WIDTH 10 × 0.5
+    against the node's walls (attr2 & 2) that face the move (n · v ≤ 0 in x / z), whose plane the
+    previous centre (centre − velocity) is in front of, with `|(int)dist| < r`. A move segment
+    crossing the polygon (`checkHitVectorToPolygon`) returns −velocity at once - the frame's move
+    undone; a face hit (the centre's foot inside the polygon) pushes `(r − dist)(n.x, 0, n.z)` (the
+    normal not renormalised) and moves the centre and the velocity on; an edge or corner within r
+    (3D) pushes horizontally from the contact point out to r - only the first, and only while no
+    face was hit. After face hits one more pass runs from the new centre (depth < 2).
+  - Standing (velocity x² + z² within 1e-4: `IsNearZero`), both use their static forms (RectWrapper: 0x3cf40 calls 0x3c8e8 when IsNearZero(v.x² + v.z²);
+    CmpBasic's vtable +0x2c): no facing test, no previous-centre test, no crossing test, and RectWrapper
+    leaves out NPCs whose model a script read (`__EvtNpcMdlRead`, ctl +0x98).
+  `_fldencount_walk` counts |velocity| after the pushes. With no wall at a floor's edge the leader
+  walks past it at the same height (the cutscene stages' small floors, some exits).
+- **Radius (`init`/`reset`):** stage record `+68` (s16) when > 0 (3 in dungeons), else 5.0 (2.2.0 0x42670).
 - **Start position and angle:** globals that the event script sets (+0x2f940.., degrees at +0x2f94c).
 
 Stage record bytes after the placement rect: `+52..58` 0, `+60` s16 (map id?), `+62` s16 (read
