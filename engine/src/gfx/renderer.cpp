@@ -266,17 +266,30 @@ void Renderer::setSamples(int n) {
     if (dev_) dev_->setSamples(n);
 }
 
+// Cuts [y, y + h) to the clip band, the texture's [t0, t1) with it; false when nothing is left
+bool Renderer::clipV(float& y, float& h, float& t0, float& t1) const {
+    if (y >= clipY0_ && y + h <= clipY1_) return true;
+    if (h <= 0 || y + h <= clipY0_ || y >= clipY1_) return false;
+    const float y0 = std::max(y, clipY0_), y1 = std::min(y + h, clipY1_), dt = (t1 - t0) / h;
+    t1 = t0 + (y1 - y) * dt;
+    t0 = t0 + (y0 - y) * dt;
+    y = y0, h = y1 - y0;
+    return true;
+}
+
 void Renderer::drawQuad(const Texture& tex, float x, float y, float w, float h, float r, float g,
                         float b, float a) {
     if (!tex.id) return;
+    float t0 = 0, t1 = 1;
+    if (!clipV(y, h, t0, t1)) return;
     x += originX_;
     if (phone_) {
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
     const float v[24] = {
-        x, y, 0, 0,  x + w, y, 1, 0,  x + w, y + h, 1, 1,
-        x, y, 0, 0,  x + w, y + h, 1, 1,  x, y + h, 0, 1,
+        x, y, 0, t0,  x + w, y, 1, t0,  x + w, y + h, 1, t1,
+        x, y, 0, t0,  x + w, y + h, 1, t1,  x, y + h, 0, t1,
     };
     const float c[4] = {r, g, b, a};
     dev_->drawQuad(tex, v, proj_, c);
@@ -285,12 +298,14 @@ void Renderer::drawQuad(const Texture& tex, float x, float y, float w, float h, 
 void Renderer::drawQuadUV(const Texture& tex, float x, float y, float w, float h, float sx, float sy, float sw,
                           float sh, float r, float g, float b, float a) {
     if (!tex.id || tex.width <= 0 || tex.height <= 0) return;
+    float v0 = sy / tex.height, v1 = (sy + sh) / tex.height;
+    if (!clipV(y, h, v0, v1)) return;
     x += originX_;
     if (phone_) {
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
-    const float u0 = sx / tex.width, v0 = sy / tex.height, u1 = (sx + sw) / tex.width, v1 = (sy + sh) / tex.height;
+    const float u0 = sx / tex.width, u1 = (sx + sw) / tex.width;
     const float v[24] = {
         x, y, u0, v0,  x + w, y, u1, v0,  x + w, y + h, u1, v1,
         x, y, u0, v0,  x + w, y + h, u1, v1,  x, y + h, u0, v1,
@@ -305,9 +320,10 @@ void Renderer::fillRect(float x, float y, float w, float h, float r, float g, fl
 
 void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
     if (!white_.id) return;
+    if (std::max({xy[1], xy[3], xy[5], xy[7]}) <= clipY0_ || std::min({xy[1], xy[3], xy[5], xy[7]}) >= clipY1_) return;
     float p[8];
     for (int k = 0; k < 4; ++k) {
-        p[2 * k] = xy[2 * k] + originX_, p[2 * k + 1] = xy[2 * k + 1];
+        p[2 * k] = xy[2 * k] + originX_, p[2 * k + 1] = std::clamp(xy[2 * k + 1], clipY0_, clipY1_); // (axis-aligned edges)
         if (phone_) layoutToScreen(p[2 * k], p[2 * k + 1]);
     }
     const float v[24] = {

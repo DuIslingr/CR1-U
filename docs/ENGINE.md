@@ -461,12 +461,16 @@ c101/c102/c104/m207a, 2026-10-12).
       Armor, Jewel, Gene Plates; Left/Right), the seeds (a stat point each, up to 5000, how many
       asked) and the MP items used on a member, the item's HELP; **Equip** - a member, weapon /
       armor / jewel, what the bag holds for it with the state board showing the change;
-      **Status** - a member's boards (Left/Right for the other); **Genes** - the gene plates in
-      the bag on the gene board (picture, n / 6 known, abilities and skills). Seed points and
-      worn plates are saved. Item, equipment and gene lists support swiping, dragging the
-      scrollbar, tapping its arrows and using the mouse wheel; a swipe does not select an item.
-      All seven equipment rows fit above Back in phone layouts. `--capture … --camp --camp-view
-      items|use|equip|slots|wear|status|genes|plate` renders a page.
+      **Status** - a member's portrait and board, < > to its equipment and skills; **Genes** - the
+      gene plates in the bag on the gene board (n / 6 known, the known entries by name), a plate
+      opens its known entries (the plate's picture). As 2.2.0's `__MuCamp_NextProc` runs it: the
+      lists on MuScrList's focus line (the row on the line is chosen, another tapped comes to it;
+      swipes, the gauge and the mouse wheel move it), the windows' four-frame moves, a page's after
+      the main page's, Back the other way, the once-only messages 56010 / 56016, the used item's
+      board, the Emergency Exit home, a face board's tap to its member's equipment, a plate's
+      entries with Back | OK. Seed points and worn plates are saved. `--capture … --camp --camp-view
+      items|use|equip|slots|wear|status|genes|plate|entries|human` renders a page (`human`: the Human
+      Genes slot's list), `open@n` / `back@n` n frames after Items is chosen / after Back from it.
 - [x] Genes (`game/genes.cpp`): abilities (items 81-130, battle actions +120), skills (131-186)
       and the 22 gene plates; each member wears the Human Genes and up to three plates (Equip).
       In battle **Genes** lists what the worn plates hold that's known, with its MP (pair mode:

@@ -27,15 +27,28 @@ at 2 frames a second is in ~/.cache/cro-issue/cr1-ref/ocr-NN.
 
 ## The Camp and the menu screens (backport of CRO-U's 2026-11-07 / 08 Camp and menu passes)
 
-Port captures: `--layout android` (1024 x 768, the 16:9 band in the middle) beside ffmpeg frames.
+The recordings are the Vita release in Vita3K (its 960 x 544 scaled to 1280 x 720), so each row was also
+read in the Vita's code (re/vita/decomp.c) - it agrees with 2.2.0's wherever these rows lean on it. Port
+captures: `--layout android` (1024 x 768, the 16:9 band in the middle) beside ffmpeg frames: content,
+sequence and layout within a screen, not the Vita's absolute positions.
 
 | Behaviour (source) | Video, time | Result |
 |---|---|---|
 | The field's save screen (`__menuu_SaveLoadPut` from the SAVE button): the pair's boards at (0, 24 + 88k), Yes / No, "Save data?" on the board with its mark at the lower right, no heading | 01 923 s (also 01 1690, 02 456 s) | Contradicted, fixed: the port drew the Camp's heading and no mark. Now as the video (`--save-screen save`) |
-| No mask under the field's save screen (`__menuu_SaveLoadSet` masks in mode 1 - the title's - only) | 01 921 / 923 s: the hall's top (700..840 x 0..100) 50.0 / 50.1 mean before and under "Save data?" | Contradicted, fixed: the port blacked the scene to 0xa0 |
+| No mask under the field's save screen (`__menuu_SaveLoadSet` masks in mode 1 - the title's - only; the Vita's 0x81055f2a too) | 01 921 / 923 s: the hall's top (700..840 x 0..100) 50.0 / 50.1 mean before and under "Save data?" | Contradicted, fixed: the port blacked the scene to 0xa0 |
 | The face boards' level right-aligned (`__ComUty_FaceBoardFaceDraw`) | 01 923 s: "LV      1", the digit at the field's right | Contradicted, fixed: the port drew it at the field's left |
 | The field map with no dim of its own (`__menuu_MapPut` / `MapSet`: no mask) | - | Code reading only (CRO's finding on Omega's video; CR1's map sheet has its own panel, `--field-menu map`) |
 | The manual's pages in the message window, "Option" the first time (`__menuu_OptionPrc` 0..2, 0xf..0x16) | - (no Options footage in the OCR of parts 01-03) | Code reading only |
+| The Camp's main page: the pair's boards, Items / Equip / Genes / Status / Options, TIME / OZ top right, Back | 01 1180 s | Consistent (`--camp`) |
+| The clock and purse only on the main page (CampMain 6 takes window 1 off for a page) | 01 1180 s (TIME / OZ) against 1182.5-1210 s (none on Equip's pages) | Contradicted, fixed: the port kept it on every page but under the HELP |
+| The Camp's lists on MuScrList's focus line (mode 0: the lit row on the line, the rows moving under it, the gauge on the right) | 01 1182.5-1210 s: the lit row in the middle third, the gauge at the right edge, the down pill over the first row | Contradicted, fixed: the port drew four rows from the top with a moving cursor |
+| The Human Genes slot's list (EquipProc 0x17 with kind 0xb: 479..480) | 01 1190 s: "Human Warrior" (yellow, worn) and "Human Mage", six pips each, two gold | Contradicted, fixed: the port refused the slot |
+| The gene board (`ComUty_GeneBoardDraw`: the name dark on a white bar, "SKILL n / 6" on a solid white one, the known entries centred under it or the plate's picture) | 01 1190 s ("Human Warrior SKILL 2 / 6", "Trompe-L'oeil", "Physical Block"), 1195 s (the picture) | Contradicted, fixed: the port drew a dark panel, white name, a fading bar and "???" rows |
+| The HELP window (`ComUty_HelpWindowDraw`: the striped panel 0x11 at (144, 8), "HELP" at (144, -4), dark lines from x 156) | 01 1190 s: "Gene Plate used to record / Human Warrior abilities" | Contradicted, fixed: the port stretched another picture from 152 |
+| The section lines ("Equip", ">Genes", ">Gene Details"; none on the member and slot choice) | 01 1185-1210 s | Contradicted, fixed: the port wrote a section on every Equip state and ">Gene Plate" on the Genes page |
+| A plate's entries with Back / OK (`ComUty_CmdBack` type 3) and "MP/" costs | 01 1195 s, 1210 s ("Analyze MP/ 2") | Contradicted, fixed: the port had no entries page |
+| The face board's tap on the main page opens Equip on that member's slots (CampMain 5's box) | - (01 1180-1182.5 s goes from the main page to Escher's slots, but the 2 fps sheet can't tell the tap from Equip's member choice) | Code reading only (the port had no such tap) |
+| The windows' moves over four game frames, Back's order, the Emergency Exit's end, the Status page | - | Code reading only (2.2.0, the Vita's agreeing where read) |
 
 ## Trophies (backport of CRO-U's achievements, 1386052)
 

@@ -29,6 +29,14 @@ public:
     // Outside all that: the whole menu scaled by k and moved to (x, y) (fitting the iPad's 512 x 384
     // menus into the iPhone layout's screen)
     void setFit(float x, float y, float k) { fx_ = x; fy_ = y; fk_ = k; }
+    // Cuts what's drawn after this to menu rows y0..y1 (MuScrList_Draw's masks over a scrolled
+    // list); clearClip ends it
+    void setClip(float y0, float y1) {
+        if (r_) r_->setClipY(Y(y0) * 2.0f, Y(y1) * 2.0f);
+    }
+    void clearClip() {
+        if (r_) r_->clearClipY();
+    }
 
     // A piece of window_hd at (x, y): its sheet rectangle in menu units (u, v, w, h)
     void piece(float x, float y, float u, float v, float w, float h, float alpha = 1, float r = 1, float g = 1, float b = 1);
@@ -37,6 +45,9 @@ public:
                  float g = 1, float b = 1);
     // A whole texture (another MuTex sheet) drawn w x h at (x, y)
     void image(const Texture& tex, float x, float y, float w, float h, float alpha = 1);
+    // ... the texture's (u, v, uw, vh) drawn w x h menu units (a sheet with more pixels than units)
+    void imagePieceTo(const Texture& tex, float x, float y, float w, float h, float u, float v, float uw, float vh,
+                      float alpha = 1, float r = 1, float g = 1, float b = 1);
     // A w x h piece of another texture, in its own (logical) pixels, at (x, y)
     void imagePiece(const Texture& tex, float x, float y, float u, float v, float w, float h, float alpha = 1);
     // Sheet-0 picture `pict` (kMenuPicture) at (x, y) (MuComPictDraw)
@@ -73,6 +84,9 @@ public:
     // ComUty_CmdBack type 1 (the shop's): a plain 232-wide bar, white fading in over 24 at each end,
     // "Back" at x + 82
     void backBar(float x, float y, bool pressed, float alpha);
+    // ComUty_CmdBack type 3: Back (x .. x + 114, faded in over 24, the word at + 36) and OK (x + 118 .. x + 208,
+    // fading out to 232, its word (sheet (76, 224) 64 x 20) at (+126, +2)); `pressed` 1 lights Back, 5 OK
+    void backOkBar(float x, float y, int pressed, float alpha);
     // The 14 x 14 digits of sheet 0 (0 at (0, 0), then every 14 units) and "/" (picture 66)
     void digit(int d, float x, float y, float alpha = 1);
 

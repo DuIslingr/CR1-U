@@ -213,6 +213,26 @@ void MenuPainter::backBar(float x, float y, bool pressed, float alpha) {
     piece(x + 82, y, 0, 224, 76, 24, alpha);
 }
 
+void MenuPainter::imagePieceTo(const Texture& tex, float x, float y, float w, float h, float u, float v, float uw, float vh,
+                               float alpha, float r, float g, float b) {
+    if (!r_ || !tex.id || alpha <= 0.001f) return;
+    r_->drawQuadUV(tex, X(x) * kScale, Y(y) * kScale, w * K() * kScale, h * K() * kScale, u, v, uw, vh, r, g, b, alpha);
+}
+
+void MenuPainter::backOkBar(float x, float y, int pressed, float alpha) {
+    const float cyan[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, alpha}; // (tex2d's 0xEBFF4B is A B G R: cyan)
+    const float white[4] = {1, 1, 1, alpha};
+    const float* b = pressed == 1 ? cyan : white;
+    const float* o = pressed == 5 ? cyan : white;
+    const float clearB[4] = {b[0], b[1], b[2], 0}, clearO[4] = {o[0], o[1], o[2], 0};
+    quad(x, y, 24, 24, clearB, b);
+    quad(x + 24, y, 90, 24, b, b);
+    quad(x + 118, y, 90, 24, o, o);
+    quad(x + 208, y, 24, 24, o, clearO);
+    piece(x + 36, y, 0, 224, 76, 24, alpha);
+    piece(x + 126, y + 2, 76, 224, 64, 20, alpha);
+}
+
 void MenuPainter::digit(int d, float x, float y, float alpha) {
     if (d < 0) picture(66, x, y, alpha); // "/"
     else piece(x, y, float(d % 10) * 14, 0, 14, 14, alpha);
