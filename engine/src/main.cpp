@@ -393,9 +393,15 @@ struct App {
     // Yes / No. Talk hides it and plays the area's EvrStart 4 (the shopkeeper) while the script
     // that opened the shop is parked.
     struct Shop {
-        enum Phase { Main, Category, List, Count, EquipAsk, Talk } phase = Main;
+        // Member: __Buy_CharChoiceProc's pair (Buy's Weapons / Armor / Jewel, Sell's all but Items)
+        enum Phase { Main, Category, Member, List, Count, EquipAsk, Talk } phase = Main;
         bool open = false, selling = false;
+        // listCursor: the focus row, on MuScrList's line at y 150; scroll: the rows' offset now, on
+        // its way to 48 x the focus 8 a frame (listTop: kept equal to the focus)
         int cursor = 0, category = 0, listCursor = 0, listTop = 0, count = 1, confirm = 0;
+        float scroll = 0;
+        int mark = 0;                      // the message board's mark (ComUty_PictAnimInit(1, 4, 20): out and back)
+        int bob = 0, bobDir = 1;           // ComUty_CmdBack's arrows (0..5 and back)
         int member = 0;                    // the board's character: the pair's first (0) or second
         int bgmBack = 0;                   // ShopSet: var 0, the music to put back as it closes (+0x18)
         bool noBgmRecovery = false;        // SetShopBgmNoRecovery (Uty_EndMenu 2) (+0x1c)
@@ -750,7 +756,7 @@ struct App {
     std::string captureTouchPad;           // --touch-pad dx,dy[,chest]: the pad held that far from the screen's middle
     int captureSceneFx[3] = {-1, 0, 0};    // --scene-fx set effect [frames]
     std::string captureBattleView;         // --battle-view top|commands|targets|items|escape|hit|results
-    std::string captureShop;               // --shop main|category|buy|sell|count|confirm|talk
+    std::string captureShop;               // --shop main|category|member|buy|items|sell|count|equip|talk
     int captureTitlePair = 0;              // --title-new p: the title's Start, Character Select pair p, New
     int captureBattle[2] = {-1, -1};       // --capture ... --battle group stage
     bool showNpcs = true;                  // N (map mode): NPCs, treasure boxes, field objects
@@ -942,6 +948,8 @@ struct App {
         bool skip = false;                 // +0x26: ... and Yes (flag 1)
         bool cancelled = false;            // +0x24: Back (flag 0)
         float win[11] = {}, winTo[11] = {}, fromX[11] = {}, fromY[11] = {};
+        float scroll = 0, levelScroll = 0;  // MuScrList: the rows' offset, on its way to 48 x the focus row
+        int mark = 0;                      // the board's mark (one a frame)
         cr::Texture maps[6];               // MAP_01..06.mct (slots 0x11..)
         float clock = 0;
     } worldSelect;
@@ -1648,6 +1656,10 @@ void drawShopNumber(cr::MenuPainter& m, int value, float x, float y, int digits,
 void openCharSelect(App& app);
 void drawCharArt(App& app, float alpha, bool banner, float grey = 1);
 int plateIcon(int word);
+int campMembers(const App& app);
+int campCharacter(const App& app, int member);
+void drawHelpWindow(App& app, cr::MenuPainter& m, int item, float a, float dx = 0, float dy = 0);
+void drawCampScrollBar(cr::MenuPainter& m, float scroll, int n, float a);
 // Control Hints (Options, Game; F3): the port's own menu help. The iPhone layout has no room below.
 bool keyHints(const App& app);
 void openManual(App& app, int intro);
@@ -4961,6 +4973,8 @@ constexpr int kCategoryIcons[4] = {8, 24, 25, 26};
 constexpr float kRowX = 192, kRowY = 92, kRowH = 48;
 constexpr int kRows = 4;                              // rows shown
 constexpr float kBackX = 192, kBackY = 288;
+// MuScrList_Draw mode 0 (0xbc1f0): the focus line at 150, the rows cut to 76..280, the gauge at (456, 72)
+constexpr float kFocusY = 150, kClipTop = 76, kClipBottom = 280;
 constexpr uint32_t kSoundEquip = 21; // ShopPrc, Yes to "Equip it?"
 // The board's stat rows (the delta table at 0xc8af0, from the board's y): HP, MP, Attack, Defense, Speed, Luck
 constexpr float kStatRowY[6] = {56, 76, 136, 156, 176, 196};
@@ -5034,6 +5048,12 @@ void stepShop(App& app) {
     App::Shop& s = app.shop;
     if (!s.open) return;
     ++s.anim;
+    ++s.mark;
+    s.bob += s.bobDir;
+    if (s.bob >= 5 || s.bob <= 0) s.bobDir = -s.bobDir;
+    const float to = shopui::kRowH * float(s.listCursor); // (MuScrList_Proc: 8 a frame toward the focus row)
+    if (std::fabs(to - s.scroll) > shopui::kRowH) s.scroll = to;
+    else s.scroll = s.scroll < to ? std::min(to, s.scroll + 8) : std::max(to, s.scroll - 8);
     if (s.phase == App::Shop::Talk) {
         if (s.timer >= 0 && ++s.timer > 4) { // ShopPrc waits 4 frames, then starts it
             s.timer = -1;
@@ -5066,10 +5086,29 @@ void shopChooseMain(App& app, int i) {
     s.anim = 0;
 }
 
+// __menuu_ShopPrc 4 / 5's 2 -> 3 (FUN_0006a968: ComUty_CharInfoInit, window 9): Buy's Weapons / Armor /
+// Jewel and Sell's all but Items ask whose list first - the pair's plates; the list's Back returns there
+bool shopAsksMember(const App& app) { return app.shop.category != 0; }
 void shopChooseCategory(App& app, int c) {
     App::Shop& s = app.shop;
     s.category = c;
     s.listCursor = s.listTop = 0;
+    s.scroll = 0;
+    menuSound(app, se::kChoose);
+    s.anim = 0;
+    if (shopAsksMember(app)) {
+        s.member = 0;
+        s.phase = App::Shop::Member;
+        return;
+    }
+    refreshShopList(app);
+    s.phase = App::Shop::List;
+}
+void shopChooseMember(App& app, int k) {
+    App::Shop& s = app.shop;
+    s.member = std::clamp(k, 0, campMembers(app) - 1);
+    s.listCursor = s.listTop = 0;
+    s.scroll = 0;
     refreshShopList(app);
     menuSound(app, se::kChoose);
     s.phase = App::Shop::List;
@@ -5156,7 +5195,8 @@ void shopBack(App& app) {
     switch (s.phase) {
     case App::Shop::Main: closeShop(app); break;
     case App::Shop::Category: s.phase = App::Shop::Main; s.anim = 0; break;
-    case App::Shop::List: s.phase = App::Shop::Category; s.anim = 0; break;
+    case App::Shop::Member: s.phase = App::Shop::Category; s.anim = 0; break;
+    case App::Shop::List: s.phase = shopAsksMember(app) ? App::Shop::Member : App::Shop::Category; s.anim = 0; break;
     case App::Shop::Count: case App::Shop::EquipAsk: shopBackToList(app); break;
     default: break;
     }
@@ -5281,13 +5321,18 @@ void drawNumCount(cr::MenuPainter& m, int count, int = 99, float dx = 0, float a
 void drawShop(App& app) {
     using namespace shopui;
     App::Shop& s = app.shop;
-    if (s.phase == App::Shop::Talk) return; // the shopkeeper's scene is up instead
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
+    if (s.phase == App::Shop::Talk) { // the shopkeeper's scene: ShopPrc 2 takes windows 1 - 5 off, "Shop" (window 0)
+        r.setOrigin(wideLeft(app));      // stays over it
+        m.picture(97, 8, 4, 1);
+        r.setOrigin(r.uiX());
+        return;
+    }
     const float a = std::min(1.0f, float(s.anim + 1) / 6.0f), slide = (1 - a) * (1 - a);
-    const bool phone = r.phoneLayout(); // the iPhone layout: one 480-wide screen, no spreading
+    const float kFont = menuFontSize(app); // (the labels: MuComFontFromIdRegist's size)
     const float leftEdge = wideLeft(app), centre = r.uiX(), rightEdge = wideRight(app); // origins (the screen's edges inside the safe area)
     const bool list = s.phase == App::Shop::List;
     const bool asking = s.phase == App::Shop::Count || s.phase == App::Shop::EquipAsk;
@@ -5296,35 +5341,30 @@ void drawShop(App& app) {
 
     // Left: the shopkeeper (or the character's board), the heading and the section labels
     r.setOrigin(leftEdge);
-    if (s.keeper.id && !list && !board)
-        r.drawQuad(s.keeper, (-32 - 240 * slide) * 2, 128 * 2, 256 * 2, 256 * 2, 1, 1, 1, 1);
+    // window 3 (FUN_0006a1e8, the shop's Put): tex 10's picture 3, 256 x 256 at (0, 64) of the phone's screen
+    // (+ (16, 32) in menu units); the iPad layout keeps 1.0.1's place
+    if (s.keeper.id && !list && !board) {
+        const bool phone = r.phoneLayout();
+        r.drawQuad(s.keeper, ((phone ? 16 : -32) - 240 * slide) * 2, (phone ? 32 + 64 : 128) * 2, 256 * 2, 256 * 2, 1, 1, 1, 1);
+    }
     if (board) drawShopBoard(app, 12 - 200 * slide, 92, shopCharacter(app), s.selling ? 0 : item, a);
     m.picture(97, 8, 4, 1); // "Shop"
-    if (s.phase != App::Shop::Main) {
-        m.textCentred(s.selling ? "Sell" : "Buy", 12, 47, false, 1, 15); // (FontDisp's 12, 40: the box's top)
+    if (s.phase == App::Shop::Main) { // window 2: font 0 (7, 0x3a) "Shopping" at (12, 40) over picture 15
+        m.textCentred(sysText(app, 58058), 12 - 140 * slide, 47, false, a, kFont);
+        m.picture(15, -140 * slide, 56, a);
+    } else { // window 6: "Buy" / "Sell" (7, 0x5a / 0x5b); window 7: the category (7, 0xbd118's 99, 73, 74, 75)
+        m.textCentred(sysText(app, s.selling ? 58091 : 58090), 12, 47, false, 1, kFont);
         m.picture(15, 0, 56, 1);
         if (list || asking) {
-            static const char* const kCategory[4] = {"Items", "Weapons", "Armor", "Jewel"};
-            m.textCentred(std::string(">") + kCategory[std::clamp(s.category, 0, 3)], 40, 65, false, 1, 15);
+            static const int kCategory[4] = {58099, 58073, 58074, 58075}; // >Items, >Weapons, >Armor, >Jewel
+            m.textCentred(sysText(app, kCategory[std::clamp(s.category, 0, 3)]), 40, 65, false, 1, kFont);
             m.picture(16, 24, 72, 1);
         }
     }
 
     // Right: Oz, the plates, the list, the count and Yes / No
     r.setOrigin(rightEdge);
-    if (list && !s.list.empty()) { // HELP: the cursor's item, from the list's left to the screen's edge
-        const float hx = 152, hw = 512 - hx + (rightEdge > 0 ? 0 : 0);
-        m.stretch(12, hx, 0, hw, 66, a);
-        m.picture(18, hx + 4, 2, a);
-        std::vector<std::vector<std::string>> help;
-        if (app.systemText.message(cr::itemHelpId(item), app.language, nullptr, help) && !help.empty()) {
-            float y = 20;
-            for (const std::string& line : help[0]) {
-                m.text(line, hx + 14, y, false, a, 13);
-                if ((y += 16) > 52) break;
-            }
-        }
-    }
+    if (list && !s.list.empty()) drawHelpWindow(app, m, item, a); // HELP: the cursor's item (ComUty_HelpWindowDraw)
     m.picture(152, 316, 0, 1); // the Oz bar
     drawShopNumber(m, app.game.oz, 362, 0, 9, 12, 1);
     if (s.phase == App::Shop::Main)
@@ -5333,12 +5373,20 @@ void drawShop(App& app) {
     if (s.phase == App::Shop::Category)
         for (int i = 0; i < 4; ++i)
             m.plate(328 + 240 * slide, 96 + 48.0f * float(i), kCategoryIcons[i], kCategoryWords[i], s.category == i, a, false);
-    if (list) {
+    if (s.phase == App::Shop::Member) // FUN_0006a634: window 9, the pair's plates at (328, 176 + 56k) (FUN_0004f234)
+        for (int k = 0; k < campMembers(app); ++k) {
+            const int word = 12 + campCharacter(app, k);
+            m.plate(328 + 240 * slide, 176 + 56.0f * float(k), plateIcon(word), word, s.member == k, a, false);
+        }
+    if (list) { // MuScrList_Draw mode 0: rows from the focus line at 150 less the scroll, cut to 76..280
+        const int n = int(s.list.size());
         if (s.list.empty())
-            m.text(s.selling ? "Nothing to sell." : "Nothing for sale.", kRowX + 56, kRowY + 16, false, a, 15);
-        for (int k = 0; k < kRows && s.listTop + k < int(s.list.size()); ++k) {
-            const int index = s.listTop + k, it = s.list[size_t(index)];
-            const float x = kRowX + 160 * slide, y = kRowY + kRowH * float(k);
+            m.text(s.selling ? "Nothing to sell." : "Nothing for sale.", kRowX + 56, kFocusY + 16, false, a, 15);
+        m.setClip(kClipTop, kClipBottom);
+        for (int index = 0; index < n; ++index) {
+            const int it = s.list[size_t(index)];
+            const float x = kRowX + 160 * slide, y = kFocusY + kRowH * float(index) - s.scroll;
+            if (y + kRowH <= kClipTop || y >= kClipBottom) continue;
             const float ra = shopMaxCount(app, it) > 0 ? a : a * 0.55f; // unaffordable rows dim (our addition)
             m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
             if (const cr::ItemParam* p = app.itemTable.item(it); p && p->icon >= 0)
@@ -5347,22 +5395,19 @@ void drawShop(App& app) {
             drawShopNumber(m, shopUnitPrice(app, it), x + 158, y + 30, 6, 10, ra);
             m.picture(101, x + 226, y + 34, ra);
         }
-        if (int(s.list.size()) > kRows) { // the scroll bar: track, ▲ ▼, the knob
-            const float sx = 462, top = kRowY, h = kRowH * kRows;
-            const float dark[4] = {0.05f, 0.05f, 0.08f, 0.8f * a};
-            m.quad(sx, top, 8, h, dark, dark);
-            m.picture(76, sx - 4, top - 14, a);
-            m.picture(77, sx - 4, top + h - 2, a);
-            const float span = h - 40, f = float(s.listTop) / float(int(s.list.size()) - kRows);
-            m.picture(106, sx, top + span * f, a);
+        if (n > 2) { // the jump pills: down over the first rows, up under the last (0x8c / 0x8d at x 280)
+            if (s.listCursor < 2) m.picture(0x8c, 280 + 160 * slide, 112 - s.scroll, a);
+            if (s.listCursor >= n - 2) m.picture(0x8d, 280 + 160 * slide, 208 + kRowH * float(n - 1) - s.scroll, a);
         }
+        m.clearClip();
+        drawCampScrollBar(m, s.scroll, n, a); // (ComUty_GuageBarDraw at (456, 72), 208 long)
     }
     if (asking && item > 0) {
         if (s.phase == App::Shop::Count) {
             m.picture(98, 312, 40, 1); // PRICE and the total
             drawShopNumber(m, shopUnitPrice(app, item) * s.count, 362, 40, 9, 12, 1);
             m.picture(73, 362, 49, 1);
-            drawNumCount(m, s.count, shopMaxCount(app, item));
+            drawNumCount(m, s.count, shopMaxCount(app, item)); // (two digits, the box at 0xb3: ComUty_NumCountDraw)
         }
         m.plate(336, 104, 0, 0, s.confirm == 0, 1, false); // Yes
         m.plate(336, 160, 1, 1, s.confirm == 1, 1, false); // No
@@ -5370,22 +5415,18 @@ void drawShop(App& app) {
 
     // Centre: Back (with ◀ ▶ for equipment lists) and the message board
     r.setOrigin(centre);
-    if (asking && item > 0) {
+    if (asking && item > 0) { // ComUty_MsgBoardDraw (window 0x10, (0, 220)): its mark, the lines at (24, 234), 16 apart, one style
         m.picture(12, 0, 220, 1);
-        m.text(shopMessage(app), 24, 234, false, 1, 15);
+        const short* mark = cr::kMenuPicture[13];
+        m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(s.mark, 1, 4)), mark[1], mark[2], mark[3], 1);
+        m.text(shopMessage(app), 24, 234, false, 1, kFont);
         std::vector<std::vector<std::string>> have;
         if (s.phase == App::Shop::Count &&
             app.systemText.message(57046, app.language, [&](int) { return ownedCount(app, item); }, have) && !have.empty() &&
             !have[0].empty())
-            m.text(have[0][0], 24, 252, false, 0.85f, 14);
+            m.text(have[0][0], 24, 250, false, 1, kFont);
     } else if (list && shopEquipment(app)) {
-        const float white[4] = {1, 1, 1, a};
-        m.quad(kBackX + 29, kBackY, 22, 24, white, white);
-        m.picture(99, kBackX + 32, kBackY + 4, a);
-        m.quad(kBackX + 56, kBackY, 120, 24, white, white);
-        m.piece(kBackX + 78, kBackY, 0, 224, 76, 24, a);
-        m.quad(kBackX + 181, kBackY, 22, 24, white, white);
-        m.picture(100, kBackX + 184, kBackY + 4, a);
+        m.backButton(kBackX, kBackY, false, s.bob, a); // ComUty_CmdBack 2: < Back >
     } else {
         m.backBar(kBackX, kBackY, false, a);
     }
@@ -5415,11 +5456,16 @@ void shopKey(App& app, SDL_Keycode key) {
         else if (enter) shopChooseCategory(app, s.category);
         else if (back) shopBack(app);
         break;
+    case App::Shop::Member:
+        if ((up || down || left || right) && campMembers(app) > 1) { s.member ^= 1; menuSound(app, se::kCursor); }
+        else if (enter) shopChooseMember(app, s.member);
+        else if (back) shopBack(app);
+        break;
     case App::Shop::List: {
         const int n = int(s.list.size());
         if ((up || down) && n > 0) {
             s.listCursor = (s.listCursor + (up ? n - 1 : 1)) % n;
-            s.listTop = std::clamp(s.listTop, std::max(0, s.listCursor - shopui::kRows + 1), s.listCursor);
+            s.listTop = s.listCursor; // (the focus row on the line)
             menuSound(app, se::kCursor);
         } else if ((left || right) && shopEquipment(app)) shopSwitchMember(app);
         else if (enter) shopChooseItem(app, s.listCursor);
@@ -5472,17 +5518,27 @@ void shopClick(App& app, float px, float py) {
         if (const int i = plateAt(328, 96, 48, 4); i >= 0) shopChooseCategory(app, i);
         else if (onBack) shopBack(app);
         break;
+    case App::Shop::Member:
+        if (const int i = plateAt(328, 176, 56, campMembers(app)); i >= 0) shopChooseMember(app, i);
+        else if (onBack) shopBack(app);
+        break;
     case App::Shop::List: {
         using namespace shopui;
         const bool arrows = shopEquipment(app) && my >= kBackY && my < kBackY + 24;
-        if (rx >= kRowX && rx < kRowX + 256 && my >= kRowY && my < kRowY + kRowH * kRows) {
-            const int index = s.listTop + int((my - kRowY) / kRowH);
-            if (index < int(s.list.size())) shopChooseItem(app, index);
-        } else if (rx >= 455 && rx < 480 && my >= kRowY - 16 && my < kRowY + 20 && s.listTop > 0) --s.listTop;
-        else if (rx >= 455 && rx < 480 && my >= kRowY + kRowH * kRows - 20 && my < kRowY + kRowH * kRows + 16 &&
-                 s.listTop + kRows < int(s.list.size()))
-            ++s.listTop;
-        else if (arrows && ((cx >= kBackX + 29 && cx < kBackX + 51) || (cx >= kBackX + 181 && cx < kBackX + 203)))
+        const int n = int(s.list.size());
+        auto focusTo = [&](int i) { s.listCursor = s.listTop = i; menuSound(app, se::kCursor); };
+        if (rx >= kRowX && rx < kRowX + 256 && my >= kClipTop && my < kClipBottom) {
+            // MuScrList_Proc: the row on the line is chosen; another comes to it; over the first row the down
+            // pill's box jumps to the end, under the last the up pill's to the top
+            const int row = int(std::floor((my - kFocusY + s.scroll) / kRowH));
+            if (row >= 0 && row < n) {
+                if (row == s.listCursor) shopChooseItem(app, row);
+                else focusTo(row);
+            } else if (n > 2 && row < 0 && s.listCursor < 2) focusTo(n - 1), s.scroll = kRowH * float(n - 1);
+            else if (n > 2 && row >= n && s.listCursor >= n - 2) focusTo(0), s.scroll = 0;
+        } else if (rx >= 452 && rx < 476 && my >= 68 && my < 92 && s.listCursor > 0) focusTo(s.listCursor - 1); // the gauge's arrows
+        else if (rx >= 452 && rx < 476 && my >= 268 && my < 296 && s.listCursor + 1 < n) focusTo(s.listCursor + 1);
+        else if (arrows && ((cx >= 0xc0 && cx < 0xf3) || (cx >= 0x175 && cx < 0x1a8)))
             shopSwitchMember(app);
         else if (onBack) shopBack(app);
         break;
@@ -7032,15 +7088,6 @@ void toYesNo(App& app, bool ask) {
 }
 // MuScrList_Draw's scroll bar (ComUty_GuageBarDraw) beside the rows while some are out of sight,
 // as the shop's: track, the arrows (76 / 77), the knob (106)
-void scrollBar(cr::MenuPainter& m, float dx, int top, int n, float a) {
-    if (n <= kRows) return;
-    const float sx = 462 + dx, y = kListY, h = kListStep * kRows;
-    const float dark[4] = {0.05f, 0.05f, 0.08f, 0.8f * a};
-    m.quad(sx, y, 8, h, dark, dark);
-    m.picture(76, sx - 4, y - 14, a);
-    m.picture(77, sx - 4, y + h - 2, a);
-    m.picture(106, sx, y + (h - 40) * float(top) / float(n - kRows), a);
-}
 void levelList(App& app, float from) {
     App::WorldSelect& ws = app.worldSelect;
     on(app, 3, -140, 0);
@@ -7166,6 +7213,14 @@ void stepWorldSelect(App& app) {
     if (!app.worldChoiceOpen) return;
     for (int w = 0; w < 11; ++w)
         ws.win[w] = ws.win[w] < ws.winTo[w] ? std::min(ws.winTo[w], ws.win[w] + 0.25f) : std::max(ws.winTo[w], ws.win[w] - 0.25f);
+    ++ws.mark;
+    auto toward = [](float& s, int focus) { // (MuScrList_Proc: 8 a frame toward the focus row)
+        const float to = wldsel::kListStep * float(focus);
+        if (std::fabs(to - s) > wldsel::kListStep) s = to;
+        else s = s < to ? std::min(to, s + 8) : std::max(to, s - 8);
+    };
+    toward(ws.scroll, ws.cursor);
+    toward(ws.levelScroll, ws.levelCursor);
     switch (ws.state) {
     case 3: if (--ws.timer < 0) ws.state = 4; break;
     case 7: if (--ws.timer < 0) ws.state = 8; break;
@@ -7215,46 +7270,62 @@ void drawWorldSelect(App& app) {
             for (int k = 0; k < 4; ++k) m.picture(pips & (1 << k) ? 11 : 10, x + 195 + 14 * float(k), y + 30, a);
     };
     r.setOrigin(wideRight(app));
+    // __menuu_WldChoicePut (0x4054c) draws its lists through MuScrList_Draw - mode 0 of the table at 0xbc1f0, as the
+    // Camp's and the shop's: the focus row on the line at 150, the rows moving under it, cut to 76..280, the
+    // pills (0x8c / 0x8d at x 280) and ComUty_GuageBarDraw's gauge at (456, 72)
+    auto scrollList = [&](float sx, int n, int focus, float scroll, auto&& row, float a) {
+        m.setClip(campui::kListTop, campui::kListBottom);
+        for (int i = 0; i < n; ++i) {
+            const float y = campui::kFocusY + kListStep * float(i) - scroll;
+            if (y + kListStep > campui::kListTop && y < campui::kListBottom) row(i, sx, y);
+        }
+        if (n > 2) {
+            if (focus < 2) m.picture(0x8c, sx + 88, 112 - scroll, a);
+            if (focus >= n - 2) m.picture(0x8d, sx + 88, 208 + kListStep * float(n - 1) - scroll, a);
+        }
+        m.clearClip();
+        m.setOffset((phone ? 16.0f : 0.0f) + sx - kListX, phone ? 32.0f : 0.0f);
+        drawCampScrollBar(m, scroll, n, a);
+        ownPlace(true);
+    };
     if (ws.win[6] > 0) { // the gates
         ownPlace(true);
-        ws.top = std::clamp(ws.top, std::max(0, ws.cursor - kRows + 1), ws.cursor);
-        for (int i = ws.top; i < std::min(int(ws.worlds.size()), ws.top + kRows); ++i) {
+        const int n = int(ws.worlds.size());
+        scrollList(kListX + dx(6), n, ws.cursor, ws.scroll, [&](int i, float x, float y) {
             const int g = ws.worlds[size_t(i)];
             int pips = -1;
             if (g < 5) {
                 pips = 0;
                 for (int k = 0; k < 4; ++k) pips |= app.game.flag(kPipFlag[g][k][ws.pair]) ? 1 << k : 0;
             }
-            const float x = kListX + dx(6), y = kListY + kListStep * float(i - ws.top);
             plate(x, y, ws.state == 1 && i == ws.cursor, sysText(app, 58002 + g), pips, ws.win[6]);
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[6]); // icon 0x3d
-        }
-        scrollBar(m, dx(6), ws.top, int(ws.worlds.size()), ws.win[6]);
+        }, ws.win[6]);
         ownPlace(false);
         m.backBar(kBackX + dx(6), kBackY, false, ws.win[6]);
     }
     if (ws.win[7] > 0) { // the level bands
         ownPlace(true);
-        ws.levelTop = std::clamp(ws.levelTop, std::max(0, ws.levelCursor - kRows + 1), ws.levelCursor);
-        for (int i = ws.levelTop; i < std::min(ws.levels, ws.levelTop + kRows); ++i)
-        {
-            const float x = kListX + dx(7), y = kListY + kListStep * float(i - ws.levelTop);
+        scrollList(kListX + dx(7), ws.levels, ws.levelCursor, ws.levelScroll, [&](int i, float x, float y) {
             plate(x, y, ws.state == 6 && i == ws.levelCursor, sysText(app, 58008 + i), -1, ws.win[7]);
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[7]);
-        }
-        scrollBar(m, dx(7), ws.levelTop, ws.levels, ws.win[7]);
+        }, ws.win[7]);
         ownPlace(false);
         m.backBar(kBackX + dx(7), kBackY, false, ws.win[7]);
     }
     r.setOrigin(r.uiX());
     if (ws.win[9] > 0) { // the board (ComUty_MsgBoardDraw at y 220, from 160 below)
+        // (ComUty_MsgBoardDraw: its mark - WldChoiceSet's PictAnimInit(d1b74, 0x30, 1, 4, ..) - and the lines in
+        // the menu font)
         const float a = ws.win[9], y = 220 + oy + dy(9);
         m.picture(12, ox, y, a);
+        const short* mark = cr::kMenuPicture[13];
+        m.piece(458 + ox, y + 78, float(mark[0] + 20 * pictAnimFrame(ws.mark, 1, 4)), mark[1], mark[2], mark[3], a);
         std::vector<std::string> lines;
         if (ws.asking) lines = {sysText(app, 57000 + 0x40)};
         else if (ws.world == 5) lines = {sysText(app, 58002 + ws.world), sysText(app, 58018)};
         else lines = {sysText(app, 58002 + ws.world), sysText(app, 58008 + ws.level), sysText(app, 58018)};
-        for (size_t k = 0; k < lines.size(); ++k) m.text(lines[k], 24 + ox, y + 14 + 16 * float(k), false, a, 15);
+        for (size_t k = 0; k < lines.size(); ++k) m.text(lines[k], 24 + ox, y + 14 + 16 * float(k), false, a, menuFontSize(app));
     }
     r.setOrigin(wideRight(app));
     if (ws.win[8] > 0) { // Yes / No
@@ -7302,13 +7373,20 @@ void worldSelectClick(App& app, float px, float py) {
             else worldSelectLevel(app, -1);
             return;
         }
-        const int top = ws.state == 1 ? ws.top : ws.levelTop, n = ws.state == 1 ? int(ws.worlds.size()) : ws.levels;
-        for (int i = top; i < std::min(n, top + kRows); ++i)
-            if (in(kListX, kListY + kListStep * float(i - top), 256, 48)) {
-                if (ws.state == 1) ws.cursor = i, worldSelectChoose(app, i);
-                else ws.levelCursor = i, worldSelectLevel(app, i);
-                return;
-            }
+        // (MuScrList_Proc: the row on the line is chosen, another comes to it; the pills' boxes jump to the other end)
+        const int n = ws.state == 1 ? int(ws.worlds.size()) : ws.levels;
+        int& focus = ws.state == 1 ? ws.cursor : ws.levelCursor;
+        const float scroll = ws.state == 1 ? ws.scroll : ws.levelScroll;
+        if (in(kListX, campui::kListTop, 256, campui::kListBottom - campui::kListTop)) {
+            const int row = int(std::floor((my - campui::kFocusY + scroll) / kListStep));
+            if (row >= 0 && row < n) {
+                if (row != focus) { focus = row; menuSound(app, se::kCursor); }
+                else if (ws.state == 1) worldSelectChoose(app, row);
+                else worldSelectLevel(app, row);
+            } else if (n > 2 && row < 0 && focus < 2) focus = n - 1, menuSound(app, se::kCursor);
+            else if (n > 2 && row >= n && focus >= n - 2) focus = 0, menuSound(app, se::kCursor);
+            return;
+        }
     } else if (ws.state == 4 || ws.state == 8) {
         if (in(336, 104, 136, 40)) worldSelectAnswer(app, true);
         else if (in(336, 160, 136, 40)) worldSelectAnswer(app, false);
@@ -7964,7 +8042,7 @@ void drawMapScreen(App& app) {
 // at (144, -4), up to three lines at x 156 from y 32 / 26 / 18 (one / two / three lines: 0xbb298's 24 / 18 / 10,
 // + 8), 16 apart, MuComFontDisp style 1 (dark). Part 01 1190 s: "Gene Plate used to record / Human Warrior
 // abilities" on the striped panel over the Camp's top right
-void drawHelpWindow(App& app, cr::MenuPainter& m, int item, float a, float dx = 0, float dy = 0) {
+void drawHelpWindow(App& app, cr::MenuPainter& m, int item, float a, float dx, float dy) {
     if (item <= 0) return;
     m.picture(17, 144 + dx, 8 + dy, a);
     m.picture(18, 144 + dx, -4 + dy, a);
@@ -18134,6 +18212,8 @@ int runSelfTest(App& app) {
         shopKey(app, SDLK_RETURN);
         shopKey(app, SDLK_DOWN);   // Weapons
         shopKey(app, SDLK_RETURN);
+        problems += app.shop.phase != App::Shop::Member; // (__Buy_CharChoiceProc: whose list)
+        shopKey(app, SDLK_RETURN); // Escher's
         problems += app.shop.phase != App::Shop::List || app.shop.list != std::vector<int>{201, 202};
         app.menuSoundLog.clear();
         shopKey(app, SDLK_RETURN); // Trusty Longsword, 450: how many, with Yes / No beside
@@ -18148,9 +18228,11 @@ int runSelfTest(App& app) {
         problems += expectSounds("shop: item, count 2 then its end twice, Yes, too dear", {2, 2, 4, 4, 22, 4, 4});
         // Armor for Escher, worn at once: what he wore goes in the bag
         app.game.oz = 2000;
+        shopKey(app, SDLK_ESCAPE); // the pair again
         shopKey(app, SDLK_ESCAPE);
         shopKey(app, SDLK_DOWN);   // Armor
         shopKey(app, SDLK_RETURN);
+        shopKey(app, SDLK_RETURN); // Escher's
         problems += app.shop.list != std::vector<int>{215, 216};
         shopKey(app, SDLK_DOWN);
         shopKey(app, SDLK_RETURN); // 216, 1350
@@ -18171,19 +18253,22 @@ int runSelfTest(App& app) {
         ++frames;
         app.menuSoundLog.clear();
         shopKey(app, SDLK_ESCAPE);
+        shopKey(app, SDLK_ESCAPE);
         shopKey(app, SDLK_ESCAPE); // back to Talk / Buy / Sell
         shopKey(app, SDLK_DOWN);   // Sell
         shopKey(app, SDLK_RETURN);
         shopKey(app, SDLK_UP);     // Weapons
         shopKey(app, SDLK_RETURN);
+        shopKey(app, SDLK_RETURN); // Escher's
         problems += app.shop.list != std::vector<int>{201};
         shopKey(app, SDLK_RETURN);
         shopKey(app, SDLK_RETURN); // one, for half the price
         problems += app.game.oz != 875 || app.game.items[201] != 1 || app.shop.phase != App::Shop::List;
-        problems += expectSounds("shop: Back, Back, Sell, Weapons, the sword, Yes", {3, 3, 4, 2, 4, 2, 2, 22});
+        problems += expectSounds("shop: Back, Back, Back, Sell, Weapons, Escher, the sword, Yes", {3, 3, 3, 4, 2, 4, 2, 2, 2, 22});
         app.lastTicks = 0;
         drawFrame(app, false);
         ++frames;
+        shopKey(app, SDLK_ESCAPE);
         shopKey(app, SDLK_ESCAPE);
         shopKey(app, SDLK_ESCAPE);
         shopKey(app, SDLK_UP);
@@ -20951,6 +21036,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         } else if (p != "main") {
             shopChooseMain(app, p == "sell" ? 2 : 1);
             if (p != "category") shopChooseCategory(app, p == "sell" || p == "items" ? 0 : 1);
+            if (s.phase == App::Shop::Member && p != "member") shopChooseMember(app, 0); // (member: the pair's plates)
             if (p == "count" || p == "equip") {
                 shopChooseItem(app, 1);
                 if (p == "count") s.count = 2;
@@ -20960,6 +21046,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             }
         }
         s.anim = 100;
+        for (int f = 0; f < 12; ++f) stepShop(app), s.anim = 100; // (the list settled on its line)
         std::printf("shop: level %d, %zu in the list, phase %d, %d oz\n", s.level, s.list.size(), int(s.phase), app.game.oz);
     }
     if (app.puzzle.stage >= 0) {

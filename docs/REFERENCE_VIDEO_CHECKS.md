@@ -49,6 +49,10 @@ sequence and layout within a screen, not the Vita's absolute positions.
 | A plate's entries with Back / OK (`ComUty_CmdBack` type 3) and "MP/" costs | 01 1195 s, 1210 s ("Analyze MP/ 2") | Contradicted, fixed: the port had no entries page |
 | The face board's tap on the main page opens Equip on that member's slots (CampMain 5's box) | - (01 1180-1182.5 s goes from the main page to Escher's slots, but the 2 fps sheet can't tell the tap from Equip's member choice) | Code reading only (the port had no such tap) |
 | The windows' moves over four game frames, Back's order, the Emergency Exit's end, the Status page | - | Code reading only (2.2.0, the Vita's agreeing where read) |
+| The shop: the keeper on the left, "Shop" / "Sell" / ">Items" in the menu font, the list on the focus line with the HELP and the gauge, the question's board with two lines | 02 78-102 s | Consistent with the port now (`--shop items`); the port had the keeper lower and further left, its own English labels and four rows from the top |
+| Sell's Weapons asks whose list first (ShopPrc 5's 2 -> 3: the pair's plates) | 02 96 s: "Escher" / "Musiea" plates after Weapons, then 102 s Musiea's list | Contradicted, fixed: the port went straight to the list |
+| How many: two digits ("03"), the question's two lines in one style | 02 84 s: "03", "How many Piu-Piu's Collection (Book)s would you like to sell?" / "(Currently possessed: 5)" | Contradicted, fixed: the port drew one digit and a dimmer, smaller second line |
+| "Shop" stays over the shopkeeper's talk (ShopPrc 2 takes windows 1 - 5 off) | 02 72 / 108 s: the heading at the top left over Piu-Piu's talk | Contradicted, fixed: the port drew nothing of the shop then |
 
 ## Trophies (backport of CRO-U's achievements, 1386052)
 
