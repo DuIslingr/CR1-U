@@ -129,6 +129,7 @@ struct App {
     std::atomic<bool> graphicsReset{false};
     SDL_ThreadID gameThread = 0;
     bool pointerCancelled = false;
+    bool pointerLast = false;           // the last press a touch / click (no key or pad since): touch play's look
     SDL_Window* window = nullptr;
     bool rendererReady = false;
     cr::Renderer renderer;
@@ -13860,6 +13861,14 @@ void drawBattleNumber(cr::MenuPainter& m, int value, float x, float y, int digit
     }
 }
 
+// The command pages' cursor plate lit: for keys and pads; not after a touch or click. 2.2.0 is
+// touch-only: __menub_mainPut (0x19728) lights a plate while a finger is in its box (pad_chk_box0)
+// and __menub_mainPrc (0x17920) state 2 sets +0x92 to -1 every frame - no cursor. The Vita's
+// __menub_mainPut (0x81043646) keeps one (DAT_81120298 the top page's, DAT_8112029c[member] the
+// commands'; a touch moves it): the Vita copy as the game keeps it lit after a tap too. After a tap
+// the plate just chosen shows lit as its page slides out (as Omega's port)
+bool battleCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app) || app.battle.viewState == 3; }
+
 // cmd_bottom: a battle button (`x` and `y` its corner): base, face (lit when selected), icon, word
 void drawBattleButton(cr::MenuPainter& m, float x, float y, int icon, int word, bool selected, bool dimmed, float a) {
     const float c = dimmed ? 0.25f : 1.0f;
@@ -14195,13 +14204,13 @@ void drawBattleHud(App& app, float W, float H) {
             for (int i = 0; i < 4; ++i) {
                 const bool dim = (i == 1 && (!(b.rules.f[0].alive() && b.rules.f[1].alive()) || b.rules.allyAuto)) ||
                                  (i == 2 && b.rules.escapeBlocked);
-                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kTopIcon[i], kTopWord[i], b.cursor == i, dim, a);
+                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kTopIcon[i], kTopWord[i], b.cursor == i && battleCursorLit(app), dim, a);
             }
             break;
         case App::Battle::Commands:
             for (int i = 0; i < 4; ++i) {
                 const bool dim = i == 1 && (battleGeneList(app).empty() || battleGenesSilenced(app));
-                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kCmdIcon[i], kCmdWord[i], b.cursor == i, dim, a);
+                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kCmdIcon[i], kCmdWord[i], b.cursor == i && battleCursorLit(app), dim, a);
             }
             m.backBar(kBackX, kBackY, false, a);
             break;
@@ -14364,10 +14373,10 @@ void battleClick(App& app, float px, float py) {
     };
     switch (b.menu) {
     case App::Battle::Top:
-        if (const int i = buttonAt(); i >= 0) { b.cursor = i; battleChooseTop(app, i); }
+        if (const int i = buttonAt(); i >= 0) { b.cursor = b.view.cursor = i; battleChooseTop(app, i); } // (the page as shown lights the tapped plate as it goes)
         break;
     case App::Battle::Commands:
-        if (const int i = buttonAt(); i >= 0) { b.cursor = i; battleChooseCommand(app, i); }
+        if (const int i = buttonAt(); i >= 0) { b.cursor = b.view.cursor = i; battleChooseCommand(app, i); }
         else if (onBack) battleBack(app);
         break;
     case App::Battle::Targets: {
@@ -14867,8 +14876,13 @@ void drawFrame(App& app, bool present = true) {
             app.menu.begin(r, app.windowTex, &app.font);
             r.setOrigin(r.uiX());
             const PhoneMenu phoneMenu(app, app.menu);
-            app.menu.plate(336 + dx, 104, 0, 0, app.choiceCursor == 0, 1, false);
-            app.menu.plate(336 + dx, 160, 1, 1, app.choiceCursor == 1, 1, false);
+            // (__menuu_EventPrc 0x76e24 clears the lit plate (DAT_000d36f0) every frame and
+            // ComUty_YesNoChoiceProc sets it only while a finger is down on one: touch play shows both
+            // dark; keys and pads keep the cursor's lit. The Vita's EventPrc (0x81052a0a) keeps its
+            // DAT_81121cc8 between frames: a cursor, lit after a tap too)
+            const bool lit = !app.pointerLast || vitaLayout(app);
+            app.menu.plate(336 + dx, 104, 0, 0, lit && app.choiceCursor == 0, 1, false);
+            app.menu.plate(336 + dx, 160, 1, 1, lit && app.choiceCursor == 1, 1, false);
         } else {
             const float cx = W - 260, cy = H - 360;
             r.fillRect(cx, cy, 200, 110, 0.05f, 0.08f, 0.2f, 0.85f);
@@ -17859,6 +17873,24 @@ int runSelfTest(App& app) {
         for (int f = 0; f < 16 && app.titleReturnIn > 0; ++f) stepEvents(app); // (the black's frames)
         problems += !app.booting;
         app.runner.stop();
+        { // touch play's look: no battle plate lit while a page is in after a click or touch, the one
+          // chosen as it goes; the cursor's for keys and pads
+            const bool keep = app.pointerLast;
+            const int keepState = app.battle.viewState;
+            app.battle.viewState = 2;
+            app.pointerLast = false;
+            const bool keyLit = battleCursorLit(app);
+            app.pointerLast = true;
+            const bool touchDark = !battleCursorLit(app);
+            app.battle.viewState = 3;
+            const bool goingLit = battleCursorLit(app);
+            app.battle.viewState = keepState;
+            app.pointerLast = keep;
+            if (!keyLit || !touchDark || !goingLit)
+                std::printf("  touch play: the battle's cursor plate lit %s after keys, %s after a tap, %s as the page goes\n",
+                            keyLit ? "yes" : "NO", touchDark ? "not" : "STILL", goingLit ? "lit" : "NOT");
+            problems += !keyLit + !touchDark + !goingLit;
+        }
         std::printf("options: %d pages, %d rows; FSR 3.1 modes drawn: %d; title menu after %d frames; %d problems\n",
                     kOptionPages, rows, upscaled, bootFrames, problems);
         mapErrors += problems;
@@ -21026,9 +21058,10 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         std::printf("trophy notification: %d, %.2f s, in %.2f, pack %s, picture %s\n", n, at, app.trophy.notice.shown(),
                     app.trophy.packRead ? "read" : "not found", app.trophy.icons[size_t(app.trophy.notice.id)].id ? "yes" : "no");
     }
-    if (SDL_getenv("CR_CAPTURE_CHOICE")) { // the event Yes / No over it (Util 3), settled
+    if (const char* ch = SDL_getenv("CR_CAPTURE_CHOICE")) { // the event Yes / No over it (Util 3), settled
         app.msgStyle = 64, app.msgLines = 1;
         app.choiceFlag = 0, app.choiceCursor = 0, app.choiceAnim = 4;
+        if (SDL_strcmp(ch, "touch") == 0) app.pointerLast = true; // (touch play's look)
     }
     if (!app.captureShop.empty()) { // the Ark's shop (area 7), with some Oz and things to sell
         if (app.area != 7 && app.mapNumber >= 97) {
@@ -21987,6 +22020,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        app.pointerLast = false;
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which) padButton(app, event->gbutton.button);
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_UP: // the square let go: the skip stops
@@ -21997,6 +22031,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         if (event->key.key == SDLK_X) holdSkip(app, kSkipKey, false);
         break;
     case SDL_EVENT_KEY_DOWN:
+        app.pointerLast = false;
         // X holds the skip corner wherever a scene runs - a battle's talk too, whose key handler
         // takes every key before the switch below (seen in metastigma's fork, 8a3aa5d)
         if (event->key.key == SDLK_X && app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true);
@@ -22193,6 +22228,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        app.pointerLast = true;
         app.pointerCancelled = false;
         if (app.puzzle.pkPointerCancelled && app.puzzle.pkState == 1) {
             int ww = 0, wh = 0;

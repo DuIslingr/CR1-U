@@ -553,7 +553,7 @@ c101/c102/c104/m207a, 2026-10-12).
       MASTER once all are known, the name yellow when worn, grey while nothing on it is known)
       and the gene slot page's HELP board; the World Select's lists at the shop's rows with its
       scroll bar, the bands with the gate icon (`ComUty_ComPlate_Lvl`). `--battle` captures mark
-      the battle tutorials seen (`CR_CAPTURE_TUTORIALS=1` keeps them); `CR_CAPTURE_CHOICE=1` puts
+      the battle tutorials seen (`CR_CAPTURE_TUTORIALS=1` keeps them); `CR_CAPTURE_CHOICE=1` (`=touch`: as after a touch, no plate lit) puts
       the Yes / No over `--message n`
 - [x] The Break changing hands (`btlbreak_effect_*`): when a side loses the Break the battle
       waits for "BREAK!! The battle situation changed" (the stripes, "Player" / "Enemy" sliding
