@@ -212,11 +212,12 @@ Steam Controller (through Steam Input).
 | Left stick / D-pad | walk (the stick pushed far runs) | move the cursor (held, it repeats) | walk |
 | ○ | examine / talk | confirm, turn the page | examine |
 | × | - | cancel, back | - |
-| △ | open the Camp | close the Camp | open the Camp |
+| △ | open the Camp (the Vita copy: the corner bar - D-pad picks, ○ presses, × shuts) | close the Camp | open the Camp |
 | □ | - | skip a scene's text (until a choice) | use the pair's ability |
 | L / R | - | previous / next page | - |
 | START | Options | close Options | restart the puzzle |
 | SELECT | the corner bar (Camp, Save, Map, encounters) | - | the puzzle's help |
+| Right stick / R3 | - | - | a touch pointer: the stick moves it, R3 held is the finger (lift and swipe blocks, tap anything) |
 
 | Keyboard / mouse | |
 |---|---|

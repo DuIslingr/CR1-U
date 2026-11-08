@@ -951,6 +951,11 @@ struct App {
         float clock = 0;
         int cursor = 0;                    // the Vita's: the bar's button under the buttons' cursor (DAT_81113a74)
     } fieldMenu;
+    struct StickPointer {                  // a puzzle room's touch from a controller (the PS TV's way: a pointer the
+        bool shown = false, down = false;  // right stick moves, R3 the finger): its place in window pixels
+        float x = 0, y = 0;
+        int stage = -1;                    // the room it was put in (a new room: back to the screen's middle)
+    } stickPointer;
     struct TouchPad {                      // CrossKey: the field's touch pad, where a finger went down
         bool down = false;                 // a finger (or the mouse) holds it
         float ox = 0, oy = 0;              // where it went down (tex2d)
@@ -7999,6 +8004,10 @@ bool fieldButtonShown(const App& app, int k) {
 
 bool fieldBarPad(const App& app);
 std::vector<int> fieldBarEntries(const App& app);
+void drawStickPointer(App& app);
+bool stickPointerWanted(const App& app);
+void stickPointerStep(App& app, float dt);
+void stickPointerRelease(App& app);
 void drawFieldMenu(App& app) {
     using namespace fieldui;
     const App::FieldMenu& f = app.fieldMenu;
@@ -15883,6 +15892,7 @@ void drawFrame(App& app, bool present = true) {
     }
     stepTrophies(app, realDt); // (the system's notification: over everything, at its own pace)
     drawTrophyNotice(app);
+    drawStickPointer(app); // (the port's: a controller's touch in a puzzle room)
     r.setOrigin(0);
     r.endFrame(present);
 }
@@ -21097,6 +21107,76 @@ int runSelfTest(App& app) {
                 std::printf("controller, the Vita's bar: △ opens it on Camp %s, the cursor steps %s and wraps %s, × shuts it %s, ○ opens Camp %s\n",
                             barOpen ? "yes" : "NO", stepped ? "yes" : "NO", wrapped ? "yes" : "NO", shut ? "yes" : "NO", camp ? "yes" : "NO");
             }
+            { // A puzzle room's touch from the controller: R3 on a psychokinesis block lifts it, the right
+              // stick slides the finger, R3 let go sends it; outside a puzzle room the pointer stays away
+                const bool fieldAway = !stickPointerWanted(app);
+                const bool keepPointerLast = app.pointerLast, keepPointerCancelled = app.pointerCancelled;
+                int pkStage = -1;
+                for (int i = 0; i < cr::kPuzzleStages; ++i)
+                    if (cr::kPuzzleStage[i].ability == cr::kAbilityPsychokinesis) { pkStage = i; break; }
+                const cr::GameState keepRoomGame = app.game;
+                cr::WarpRequest w;
+                w.valid = true, w.area = cr::kPuzzleArea, w.map = cr::kFirstPuzzleMap + pkStage;
+                const bool entered = pkStage >= 0 && performWarp(app, w, -1);
+                app.runner.stop(), app.pendingEntry = App::Entry::None, app.dialogue.clear();
+                for (int f = 0; f < 30; ++f) stepEvents(app), stepFieldMenu(app);
+                app.runner.stop(), app.pendingEntry = App::Entry::None, app.dialogue.clear();
+                int target = -1;
+                for (size_t i = 0; entered && i < app.puzzle.objs.size(); ++i)
+                    if (app.puzzle.objs[i].type == cr::kTypeNormal && app.puzzle.objs[i].shown) { target = int(i); break; }
+                bool lifted = false, followed = false, sent = false;
+                if (target >= 0) {
+                    const App::Puzzle::Obj& o = app.puzzle.objs[size_t(target)];
+                    const cr::FieldNpc& n = app.npcs[size_t(o.npc)];
+                    const int row = o.row, col = o.col;
+                    float lx = 0, ly = 0, ax, ay, bx, by;
+                    fieldToLogical(app, {n.pos[0], n.pos[1] + n.box[1], n.pos[2]}, lx, ly);
+                    app.renderer.toLogical(0, 0, ax, ay), app.renderer.toLogical(1000, 1000, bx, by); // (the frame's pixels back)
+                    int ww = 0, wh = 0;
+                    SDL_GetWindowSize(app.window, &ww, &wh);
+                    App::StickPointer& sp = app.stickPointer;
+                    sp = App::StickPointer();
+                    sp.x = (lx - ax) * 1000 / (bx - ax) * float(ww) / float(app.renderer.frameWidth());
+                    sp.y = (ly - ay) * 1000 / (by - ay) * float(wh) / float(app.renderer.frameHeight());
+                    sp.shown = true, sp.stage = app.puzzle.stage;
+                    const float px = sp.x, py = sp.y;
+                    SDL_Event pe{};
+                    pe.gbutton.which = SDL_GetGamepadID(pad), pe.gbutton.button = SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+                    // (each way in turn until the block goes: a wall or another block may stand in one)
+                    static const int kWay[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+                    for (const auto& wv : kWay) {
+                        sp.x = px, sp.y = py;
+                        pe.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
+                        SDL_AppEvent(&app, &pe);
+                        lifted = lifted || (sp.down && app.puzzle.pkState == 1 && app.puzzle.pkTarget == target);
+                        for (int f = 0; f < 6; ++f) stepEvents(app);
+                        const float x0 = sp.x, y0 = sp.y;
+                        SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_RIGHTX, Sint16(wv[0] * 32767));
+                        SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_RIGHTY, Sint16(wv[1] * 32767));
+                        SDL_UpdateJoysticks();
+                        for (int f = 0; f < 4; ++f) stickPointerStep(app, 0.05f), stepEvents(app);
+                        SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_RIGHTX, 0);
+                        SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_RIGHTY, 0);
+                        SDL_UpdateJoysticks();
+                        followed = followed || std::fabs(sp.x - x0) + std::fabs(sp.y - y0) > 20;
+                        pe.type = SDL_EVENT_GAMEPAD_BUTTON_UP;
+                        SDL_AppEvent(&app, &pe);
+                        for (int f = 0; f < 90; ++f) stepEvents(app);
+                        sent = !sp.down && (o.row != row || o.col != col);
+                        if (sent) break;
+                    }
+                }
+                stickPointerRelease(app);
+                app.stickPointer = App::StickPointer();
+                app.pointerLast = keepPointerLast, app.pointerCancelled = keepPointerCancelled;
+                app.game = keepRoomGame;
+                showMap(app, 0, 0, 2);
+                app.pendingEntry = App::Entry::None, app.runner.stop(), app.dialogue.clear();
+                const bool ok = fieldAway && entered && lifted && followed && sent;
+                problems += !ok;
+                std::printf("controller, a puzzle room's touch: away from puzzles %s, R3 lifts a block %s, the right stick slides %s, let go sends it %s\n",
+                            fieldAway ? "yes" : "NO", lifted ? "yes" : "NO", followed ? "yes" : "NO", sent ? "yes" : "NO");
+            }
             app.runner.stop();
             app.dialogue.clear();
             app.pendingEntry = App::Entry::None;
@@ -23583,6 +23663,83 @@ bool padLive(App& app) {
 }
 // Each frame: the stick in the menus as the cursor keys, and either held repeating (after 0.35 s,
 // every 0.08 s)
+// ---- A puzzle room's touch from a controller ----
+// The puzzles are touch play (the Vita release's too: a PS TV puts a pointer on the screen for them).
+// Here the right stick moves a pointer in a puzzle room and R3 held is the finger on the glass: a
+// press, its slide and its release go through as the mouse's, so every touch the room takes - a
+// block lifted and swiped, the ability's button, the panel, the field's pad - works the same.
+bool stickPointerWanted(const App& app) {
+    return app.pad && app.mode == Mode::Maps && app.puzzle.stage >= 0 && fieldMenuWanted(app) && !fieldSceneRunning(app) &&
+           !app.fieldMenu.open;
+}
+void stickPointerEvent(App& app, Uint32 type) {
+    App::StickPointer& p = app.stickPointer;
+    SDL_Event e{};
+    e.type = type;
+    if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = p.x, e.motion.y = p.y, e.motion.state = p.down ? SDL_BUTTON_LMASK : 0;
+    else e.button.x = p.x, e.button.y = p.y, e.button.button = SDL_BUTTON_LEFT, e.button.down = type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+    SDL_AppEvent(&app, &e);
+}
+void stickPointerRelease(App& app) { // the room left or covered: a finger still down lifts, the pointer goes
+    App::StickPointer& p = app.stickPointer;
+    if (p.down) p.down = false, stickPointerEvent(app, SDL_EVENT_MOUSE_BUTTON_UP);
+    p.shown = false;
+}
+void stickPointerButton(App& app, bool down) { // R3
+    App::StickPointer& p = app.stickPointer;
+    if (down) {
+        if (!stickPointerWanted(app) || p.down) return;
+        if (!p.shown || p.stage != app.puzzle.stage) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            if (p.stage != app.puzzle.stage) p.x = float(ww) / 2, p.y = float(wh) / 2;
+            p.stage = app.puzzle.stage, p.shown = true;
+        }
+        p.down = true;
+        stickPointerEvent(app, SDL_EVENT_MOUSE_BUTTON_DOWN);
+    } else if (p.down) {
+        p.down = false;
+        stickPointerEvent(app, SDL_EVENT_MOUSE_BUTTON_UP);
+    }
+}
+// Each frame: the stick moves the pointer (a dead zone of a quarter; all the way over, the window's
+// height a second, gentler near the middle), the move sent as the mouse's
+void stickPointerStep(App& app, float dt) {
+    App::StickPointer& p = app.stickPointer;
+    if (!stickPointerWanted(app)) {
+        if (p.shown || p.down) stickPointerRelease(app);
+        return;
+    }
+    const float sx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_RIGHTX)) / 32767.0f;
+    const float sy = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_RIGHTY)) / 32767.0f;
+    const float mag = std::sqrt(sx * sx + sy * sy);
+    if (mag < 0.25f) return;
+    int ww = 0, wh = 0;
+    SDL_GetWindowSize(app.window, &ww, &wh);
+    if (p.stage != app.puzzle.stage) p.x = float(ww) / 2, p.y = float(wh) / 2, p.stage = app.puzzle.stage;
+    p.shown = true;
+    const float k = (mag - 0.25f) / 0.75f, speed = float(wh) * std::min(1.0f, k) * std::min(1.0f, k) * std::min(dt, 0.1f) / mag;
+    p.x = std::clamp(p.x + sx * speed, 0.0f, float(std::max(ww - 1, 0)));
+    p.y = std::clamp(p.y + sy * speed, 0.0f, float(std::max(wh - 1, 0)));
+    stickPointerEvent(app, SDL_EVENT_MOUSE_MOTION);
+}
+// The pointer: a small cyan cross, ringed dark, a size of its own whatever the screen
+void drawStickPointer(App& app) {
+    const App::StickPointer& p = app.stickPointer;
+    if (!p.shown || !stickPointerWanted(app)) return;
+    cr::Renderer& r = app.renderer;
+    int ww = 0, wh = 0;
+    SDL_GetWindowSize(app.window, &ww, &wh);
+    float lx, ly;
+    r.toLogical(p.x * (ww > 0 ? float(r.frameWidth()) / float(ww) : 1.0f), p.y * (wh > 0 ? float(r.frameHeight()) / float(wh) : 1.0f), lx, ly);
+    r.setOrigin(0);
+    const float a = p.down ? 1.0f : 0.85f, arm = p.down ? 13.0f : 16.0f;
+    r.fillRect(lx - arm - 2, ly - 4, 2 * arm + 4, 8, 0.02f, 0.06f, 0.1f, 0.8f * a);
+    r.fillRect(lx - 4, ly - arm - 2, 8, 2 * arm + 4, 0.02f, 0.06f, 0.1f, 0.8f * a);
+    r.fillRect(lx - arm, ly - 2, 2 * arm, 4, 0.3f, 0.95f, 1.0f, a);
+    r.fillRect(lx - 2, ly - arm, 4, 2 * arm, 0.3f, 0.95f, 1.0f, a);
+}
+
 void padStep(App& app, float dt) {
     if (!padLive(app) || !padMenus(app)) { app.padHeld = -1; return; }
     const float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
@@ -23661,11 +23818,16 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         app.pointerLast = false;
-        if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which) padButton(app, event->gbutton.button);
+        if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which) {
+            if (event->gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) stickPointerButton(app, true); // R3: a puzzle room's finger
+            else padButton(app, event->gbutton.button);
+        }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_UP: // the square let go: the skip stops
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which && event->gbutton.button == SDL_GAMEPAD_BUTTON_WEST)
             holdSkip(app, kSkipPad, false);
+        if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which && event->gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK)
+            stickPointerButton(app, false);
         break;
     case SDL_EVENT_KEY_UP:
         if (event->key.key == SDLK_X) holdSkip(app, kSkipKey, false);
@@ -24085,6 +24247,7 @@ SDL_AppResult SDL_AppIterate(void* state) {
     App& app = *static_cast<App*>(state);
     const float activeDt = app.clock.step();
     padStep(app, activeDt);
+    stickPointerStep(app, activeDt);
     app.music.update(activeDt);
     // the frame rate's limit: each frame no sooner than its slot (vsync may hold it longer)
     if (app.video.frameLimit > 0) {
