@@ -493,7 +493,9 @@ c101/c102/c104/m207a, 2026-10-12).
       target and back; the fallen fade out. `--capture … --battle <group> <stage> --battle-view
       top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
       (the results that many frames in, after that many taps); `intro@<n>` the opening n battle
-      frames in (btl_main 200 at frame 4, the commands at 36). `CR_BATTLE_STRIKE=1|2` starts the
+      frames in (btl_main 200 at frame 4, the commands at 36), `top@<n>` n frames after the first
+      page starts sliding in (its offset printed), `break@<n>` the Break effect's n-th frame;
+      `CR_BATTLE_CAMLOG=1` prints the shown camera every battle frame. `CR_BATTLE_STRIKE=1|2` starts the
       captured battle as a first strike / an ambush; `CR_BATTLE_BANNERLOG=1` prints the top
       banner's text and the phase each time they change, by battle frame.
 - [x] Every action calc (`btlcalcTbl`, 0..36): fixed and split damage, % of HP, down to 1 HP,

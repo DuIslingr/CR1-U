@@ -588,6 +588,22 @@ struct App {
         std::vector<int> picks;            // Targets: fighters; Items: item numbers
         int pick = 0, pickTop = 0;
         int confirm = 0;                   // EscapeAsk: 0 Yes
+        // The pages as drawn (__menub_mainPrc's slides, +0x38): each page comes in from the right (320 -> 0,
+        // 80 a frame; 480, 120 in the Android layout: battleSlideDistance) and goes out again before the next
+        // comes in; it takes taps only once in. The page the logic is on is `page`; the view follows it
+        struct MenuView {
+            int page = -1;                 // the page shown (-1 none)
+            Menu menu = Top;
+            int cursor = 0, member = 0, pick = 0, pickTop = 0, confirm = 0, targetAction = 0;
+            bool pair = false;
+            std::vector<int> picks;
+        } view;
+        int page = 0;                      // bumped at each page change
+        int viewState = 0;                 // 0 out, 1 coming in, 2 in, 3 going out, 4 held out
+        int slide = 320;                   // the view's offset to the right
+        int slideHold = 0;                 // frames held out before the next page (Defend's 20: state 199)
+        int menuGone = 100;                // frames since the view went out with no page to show (0x270e, then 500 / 600)
+        bool roundWait = false;            // the round's first action waits for the menu to go
         bool turnOn = false;               // an action is playing
         cr::BattleTurn turn;
         int turnFrame = 0, hitFrame = 0;
@@ -627,7 +643,14 @@ struct App {
             size_t upNext = 0, itemNext = 0;
         } result;
         cr::Mat4 vp;                       // the last frame's camera (the damage numbers)
-        int cam = -1, camActor = 0, camFrame = 0; // btlcamera_set: the camera, its actor, frames since
+        int cam = -1, camActor = 0, camFrame = 0; // btlcamera_set: the camera (+0xa8e), its actor (+0xa8c), its count (+0xa88)
+        int camDur = 0, camHold = 25;      // +0xa8a its frames; +0xae0 as its 10000..10002 read it
+        bool camLive = false;              // +0xa80 set: btlcamera_prc still runs it
+        bool camHeld = false;              // +0xa90: set held (no easing)
+        int camSets = 0;                   // btlcamera_set calls (tests)
+        float camEase = 1;                 // +0xfc / +0x100: the shown camera's divisor (5 eased)
+        bool camSnapped = false;           // _Clr_evcv this frame: the shown camera cut to the wanted
+        cr::Vec3 camEye{488, 12, 555}, camTarget{500, 4, 498}, camWantEye{488, 12, 555}, camWantTarget{500, 4, 498};
         std::vector<Effect> effects;       // eff3d: playing effects (32 at most)
         // The voiced releases' battle lines (2.2.0's _btlvoice_*): each fighter's next variant of
         // three (+0xd3), who of a pair speaks this round (+0xd2), the command lines said (+0xafc)
@@ -10632,40 +10655,98 @@ cr::Vec3 actorHead(App& app, const App::Battle::Actor& a) {
 }
 
 // btlcamera_set: camera `id` (sys.evt section 15), its values over 9000 relative to fighter `actor`
-void setBattleCamera(App& app, int id, int actor = 0) {
+void setBattleCamera(App& app, int id, int actor = 0, bool held = false) {
+    // _btlcamera_set (2.2.0 0x5fd6c): the camera (+0xa80 / +0xa8e), its actor (+0xa8c), held (+0xa90). A
+    // moving (raw[7]) or turning (raw[14]) one starts its count (+0xa88) again over raw[15] (+0xa8a) unless
+    // the actor is -98..-1; a turning one given a negative actor makes one step (raw[15] negated, actor 0);
+    // a turning one's 10000..10002 is the battle's counter (+0xae0: camHold), 10003 40
     App::Battle& b = app.battle;
-    if (!app.battleData.camera(id)) return;
-    b.cam = id;
-    b.camActor = actor;
-    b.camFrame = 0;
-}
-
-// btlcamera_prc: the camera's eye and target this frame - still, moving from its first pair of
-// points to its second over raw[15] frames, or turning raw[14] degrees about its target
-void battleCameraView(App& app, cr::Vec3& eye, cr::Vec3& target) {
-    const App::Battle& b = app.battle;
-    const cr::BattleCamera* c = app.battleData.camera(b.cam);
-    if (!c) c = app.battleData.camera(std::max(0, b.formation - 2));
+    const cr::BattleCamera* c = app.battleData.camera(id);
     if (!c) return;
     const int16_t* r = c->raw;
-    cr::Vec3 base{0, 0, 0};
-    for (const App::Battle::Actor& a : b.actors) // btlcamera_prc / getpos: its node 1003 (0x3eb) as it moves
-        if (a.fighter == b.camActor) base = actorPoint(app, a, 1003);
-    auto rel = [](int v, float at) { return v > 9000 ? float(v - 10000) + at : float(v); };
-    eye = {rel(r[0], base.x), rel(r[1], base.y), rel(r[2], base.z)};
-    target = {rel(r[3], base.x), rel(r[4], base.y), rel(r[5], base.z)};
-    const float t = std::min(1.0f, float(b.camFrame) / float(std::max<int>(1, r[15])));
-    if (r[7] != 0) {
-        const cr::Vec3 e2{rel(r[7], base.x), rel(r[8], base.y), rel(r[9], base.z)};
-        const cr::Vec3 t2{rel(r[10], base.x), rel(r[11], base.y), rel(r[12], base.z)};
-        eye = eye + (e2 - eye) * t;
-        target = target + (t2 - target) * t;
-    } else if (r[14] != 0) {
-        const float ang = float(r[14]) * t * 3.14159265f / 180.0f, c0 = std::cos(ang), s0 = std::sin(ang);
-        const float dx = eye.x - target.x, dz = eye.z - target.z;
-        eye.x = target.x + dx * c0 - dz * s0;
-        eye.z = target.z + dx * s0 + dz * c0;
+    b.cam = id;
+    b.camActor = actor;
+    b.camHeld = held;
+    b.camLive = true;
+    ++b.camSets;
+    if ((r[7] != 0 || r[14] != 0) && (actor >= 0 || actor < -98)) {
+        b.camFrame = 0;
+        b.camDur = r[15];
+        if (r[7] == 0) {
+            if (actor < 0) b.camDur = -r[15], b.camActor = 0;
+            if (b.camDur >= 10000 && b.camDur <= 10002) b.camDur = b.camHold;
+            if (b.camDur == 10003) b.camDur = 40;
+        }
     }
+}
+
+// _btlcamera_prc (0x6007c, end of btl_main) and btl_prc's FUN_0000b4d8 / b580: the wanted eye and target -
+// still (once; any negative actor), turning raw[14] degrees about the target over the count (yaw from
+// mceUtil3D_atan2 less a quarter turn, the eye at the whole 3D distance), or moving from the first pair of
+// points to the second; the count goes up before it's used. A camera ends when its count is over (a still
+// one at once), but 10001 / 10002 hold and 0x48 turns for ever. Unless held, the shown eye and target chase
+// the wanted by a fifth a frame (+0xfc / +0x100 = 5.0) for the formation (< 0x0e), victory (0x45..0x47),
+// cast (0x49..0x5c) and 0x21b cameras once their count passes 1, and cut (_Clr_evcv) for the rest
+void stepBattleCamera(App& app) {
+    App::Battle& b = app.battle;
+    b.camSnapped = false;
+    if (b.camLive) {
+        const cr::BattleCamera* c = app.battleData.camera(b.cam);
+        if (!c) { b.camLive = false; return; }
+        const int16_t* r = c->raw;
+        cr::Vec3 base{0, 0, 0};
+        if (b.camActor >= 0)
+            for (const App::Battle::Actor& a : b.actors) // btlcamera_getpos: its node 1003 (0x3eb) as it moves
+                if (a.fighter == b.camActor) base = actorPoint(app, a, 1003);
+        auto rel = [](int v, float at) { return v > 9000 ? float(v - 10000) + at : float(v); };
+        if ((r[7] == 0 && r[14] == 0) || b.camActor < 0) {
+            b.camWantEye = {rel(r[0], base.x), rel(r[1], base.y), rel(r[2], base.z)};
+            b.camWantTarget = {rel(r[3], base.x), rel(r[4], base.y), rel(r[5], base.z)};
+            b.camLive = false;
+        } else if (r[7] == 0) {
+            const cr::Vec3 e{rel(r[0], base.x), rel(r[1], base.y), rel(r[2], base.z)};
+            const cr::Vec3 t{rel(r[3], base.x), rel(r[4], base.y), rel(r[5], base.z)};
+            const cr::Vec3 d = t - e;
+            const float dist = std::sqrt(cr::dot(d, d)), flat = std::sqrt(d.x * d.x + d.z * d.z);
+            ++b.camFrame;
+            const float turn = 2.0f * 3.14159265f;
+            float yaw = std::atan2(d.z, d.x) - turn * 0.25f;
+            yaw += float(r[14]) * float(b.camFrame) / float(std::max(1, std::abs(b.camDur))) / 360.0f * turn;
+            const float pitch = std::atan2(d.y, flat);
+            b.camWantTarget = t;
+            b.camWantEye = {t.x + std::sin(yaw) * dist, t.y - std::sin(pitch) * dist, t.z - std::cos(yaw) * dist};
+            if (b.camFrame >= b.camDur) {
+                if (r[15] == 10001 || r[15] == 10002) --b.camFrame;
+                else if (b.cam == 0x48) b.camFrame = 0;
+                else b.camLive = false;
+            }
+        } else {
+            ++b.camFrame;
+            const float k = b.camDur != 0 ? float(b.camFrame) / float(b.camDur) : 1.0f;
+            auto at = [&](int i, float o) { return rel(r[i], o) + (rel(r[i + 7], o) - rel(r[i], o)) * k; };
+            b.camWantEye = {at(0, base.x), at(1, base.y), at(2, base.z)};
+            b.camWantTarget = {at(3, base.x), at(4, base.y), at(5, base.z)};
+            if (b.camFrame >= b.camDur) b.camLive = false;
+        }
+        if (!b.camHeld) {
+            const int id = b.cam;
+            if (b.camFrame > 1 && (id < 0x0e || (id >= 0x49 && id <= 0x5c) || (id >= 0x45 && id <= 0x47) || id == 0x21b))
+                b.camEase = 5;
+            else b.camSnapped = true; // (_Clr_evcv: flag 0x800, cleared after the frame)
+        }
+    }
+    if (b.camSnapped) b.camEye = b.camWantEye, b.camTarget = b.camWantTarget;
+    b.camEye = b.camEye + (b.camWantEye - b.camEye) * (1.0f / b.camEase);
+    b.camTarget = b.camTarget + (b.camWantTarget - b.camTarget) * (1.0f / b.camEase);
+    if (SDL_getenv("CR_BATTLE_CAMLOG")) // debugging: the shown camera each battle frame
+        std::printf("camlog %d phase %d/%d cam %#x actor %d count %d/%d ease %.0f eye %.3f %.3f %.3f target %.3f %.3f %.3f\n", b.frames,
+                    int(b.phase), b.phaseFrames, b.cam, b.camActor, b.camFrame, b.camDur, b.camEase, b.camEye.x, b.camEye.y, b.camEye.z,
+                    b.camTarget.x, b.camTarget.y, b.camTarget.z);
+}
+
+// The camera shown this frame: the eased eye and target
+void battleCameraView(App& app, cr::Vec3& eye, cr::Vec3& target) {
+    eye = app.battle.camEye, target = app.battle.camTarget;
 }
 
 // The cameras the menus and actions use (menub_mainPrc, btlord_make_select, btlact_*_init)
@@ -11105,6 +11186,7 @@ int battleInSound(int g) {
     return 0x17;
 }
 
+int battleSlideDistance(const App& app);
 void startBattle(App& app, const cr::BattleStart& start, int flags) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     App::Battle& b = app.battle;
@@ -11138,6 +11220,8 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.menu = App::Battle::Top;
     b.cursor = 0;
     b.member = 0;
+    b.view = {};
+    b.page = 0, b.viewState = 0, b.slide = battleSlideDistance(app), b.slideHold = 0, b.menuGone = 100, b.roundWait = false;
     b.turnOn = false;
     b.popups.clear();
     b.banner.clear();
@@ -11156,7 +11240,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.stageAction = 0;
     b.breakPop = 0;
     b.gaugeShown = 0;
-    b.cam = -1;
+    b.cam = -1, b.camLive = false, b.camHeld = false, b.camEase = 1, b.camHold = 25;
     loadModelFile(app, cr::kBattleStageFile[start.stage], b.stage, false);
     auto add = [&](int modelId, const short* place, float yaw, int fighter) -> App::Battle::Actor& {
         App::Battle::Actor a;
@@ -11218,6 +11302,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         b.shownMp[i] = rules.f[size_t(i)].mp;
     }
     setBattleCamera(app, std::max(0, b.formation - 2), -1); // (under the white; btl_main 200 sets it again)
+    stepBattleCamera(app);
     { // btl_main 0: FUN_0000bcc4(group) - the battle's opening sound (__effgo)
         const uint32_t id = uint32_t(battleInSound(start.group));
         app.sound.play(id);
@@ -11338,6 +11423,7 @@ namespace btlvoice { void command(App& app, int member); }
 void battleMenu(App& app, App::Battle::Menu menu) {
     App::Battle& b = app.battle;
     b.menu = menu;
+    ++b.page;
     b.cursor = 0;
     b.pick = b.pickTop = 0;
     // the pages' own kept lines (the target prompt) go with them; a timed message stays until it runs out
@@ -11361,6 +11447,7 @@ void battleOpenTargets(App& app, int action) {
     if (b.rules.isGroupScope(*a)) { // the whole side: no choosing (the plates show who)
     }
     b.menu = App::Battle::Targets;
+    ++b.page;
     b.pick = 0;
     b.targetAction = action;
     cameraForTarget(app, b.picks[0], b.rules.isGroupScope(*a));
@@ -11381,6 +11468,7 @@ void battleStartRound(App& app) {
     // 500 / 600 don't wait for it (only 799, between actions, does) and the first action's name replaces it
     b.notices.clear();
     b.roundFirst = true;
+    b.roundWait = true; // (the menu goes first: __menub_mainPrc 0x270e, then btl_main 500 / 600)
 }
 
 // A command is set: the second member's turn (solo), else the round
@@ -11499,6 +11587,7 @@ void battleChooseCommand(App& app, int i) {
         if (b.picks.empty() || battleGenesSilenced(app)) { menuSound(app, se::kBuzzer); break; }
         menuSound(app, se::kChoose);
         b.menu = App::Battle::Genes;
+        ++b.page;
         b.pick = b.pickTop = 0;
         battletalk::tutorial(app, 0xfa8); // the first time: what genes cost
         break;
@@ -11514,6 +11603,7 @@ void battleChooseCommand(App& app, int i) {
         }
         menuSound(app, se::kChoose);
         b.menu = App::Battle::Items;
+        ++b.page;
         b.pick = b.pickTop = 0;
         break;
     }
@@ -11521,6 +11611,7 @@ void battleChooseCommand(App& app, int i) {
         c.kind = cr::kCmdDefend;
         for (int k = 0; k < 2; ++k)
             if (App::Battle::Actor* a = (b.rules.pair || k == b.member) ? battleActor(app, k) : nullptr) playSlot(app, *a, btlui::kSlotGuard);
+        if (b.viewState == 1 || b.viewState == 2) b.slideHold = 20; // (the page goes, then 20 frames: 0x66 -> 199, +0x48 0x14)
         battletalk::tutorial(app, 0xfa9); // the first time: what it does
         battleCommandDone(app);
         break;
@@ -11714,10 +11805,7 @@ void stepFlash(App& app) {
 // flashes at fixed frames, the hit (btlcalc_prc) at the end of it, then a wait.
 bool isStagedAction(int action) { return action == 430 || (action >= 432 && action <= 436); }
 
-bool cameraDone(const App& app) { // btlcamera_prc clears G+0x9e0 when its frames are over
-    const cr::BattleCamera* c = app.battleData.camera(app.battle.cam);
-    return !c || app.battle.camFrame >= std::max<int>(1, c->raw[15]);
-}
+bool cameraDone(const App& app) { return !app.battle.camLive; } // btlcamera_prc clears +0xa80 when its frames are over
 
 std::vector<int> turnTargets(const cr::BattleTurn& t) { // the action's targets (+0x7a), each once
     std::vector<int> out;
@@ -12397,19 +12485,22 @@ void drawBreakFx(App& app, cr::MenuPainter& m) {
         // corners ((0, 160)-(280, 0)-(0, 216)-(376, 0), (160, 320)-(480, 140)-(256, 320)-(480, 192)),
         // "Player" at (pos cos 30 + 130, 10 - pos sin 30), "Enemy" at (234 - pos cos 30, pos sin 30
         // + 208), "BREAK!!" (528, 432, 480 x 72) at (slide - 480, 120), the line (528, 504, 480 x 32)
-        // at (480 - slide, 192)
+        // at (480 - slide, 192). Android 1.1.1's btlbreak_effect_prc (0x3ccb0): the first stripe and "Player"
+        // (- ex, - ey) into the phone's top left, the second and "Enemy" (+ ex, + ey) into its bottom right
+        // (decomp 22999-23027; the labels' fsub / fadd at 0x3ce44 / 0x3ce90); "BREAK!!" and the line centred
+        const float ex = androidEdgeX(app), ey = androidEdgeY(app);
         for (float x = 0; x < 480; x += 2) {
             const float top1 = 160 - 160 * x / 280, bot1 = 216 - 216 * x / 376;
-            if (bot1 > top1 && bot1 > 0) m.quad(x + 16, std::max(top1, 0.0f) + 32, 2, bot1 - std::max(top1, 0.0f), white, white);
+            if (bot1 > top1 && bot1 > 0) m.quad(x + 16 - ex, std::max(top1, 0.0f) + 32 - ey, 2, bot1 - std::max(top1, 0.0f), white, white);
             if (x >= 160) {
                 const float top2 = std::max(140.0f, 320 - 180 * (x - 160) / 320);
                 const float bot2 = x < 256 ? 320 : std::max(192.0f, 320 - 128 * (x - 256) / 224);
-                if (bot2 > top2) m.quad(x + 16, top2 + 32, 2, bot2 - top2, white, white);
+                if (bot2 > top2) m.quad(x + 16 + ex, top2 + 32 + ey, 2, bot2 - top2, white, white);
             }
         }
         const float c = std::cos(30 * 3.14159265f / 180), s = std::sin(30 * 3.14159265f / 180), pos = float(fx.pos);
-        m.piece(pos * c + 130 + 16, 10 - pos * s + 32, 704, 328, 160, 104);
-        m.piece(234 - pos * c + 16, pos * s + 208 + 32, 864, 328, 160, 104);
+        m.piece(pos * c + 130 + 16 - ex, 10 - pos * s + 32 - ey, 704, 328, 160, 104);
+        m.piece(234 - pos * c + 16 + ex, pos * s + 208 + 32 + ey, 864, 328, 160, 104);
         m.piece(float(fx.slide) - 480 + 16, 120 + 32, 528, 432, 480, 72);
         m.piece(480 - float(fx.slide) + 16, 192 + 32, 528, 504, 480, 32);
         return;
@@ -12570,6 +12661,67 @@ void endRound(App& app) {
     }
 }
 
+// How far a page slides: 320 in iOS 2.2.0 (__menub_mainPrc 0x17920: +0x38 by 0x50 to 0x140); Android
+// 1.1.1's _menub_mainPrc takes 480 (a quarter a frame) on a Retina, iPad or 720 x 480 screen, 320 below -
+// its iPhone screen is centred on a wider phone. The Android layout is a 720-tall phone's: 480, 120 a frame
+int battleSlideDistance(const App& app) { return app.renderer.androidScreen() ? 480 : 320; }
+
+// __menub_mainPrc's slides: the page shown follows the logic's - it goes out (a quarter a frame), is held
+// out a while (Defend's 20 frames), and the next comes in (state 1's sound 0x22 for the first page); with
+// none to show (a talk, the round, Options) it stays out
+void stepMenuView(App& app) {
+    App::Battle& b = app.battle;
+    App::Battle::MenuView& v = b.view;
+    const int dist = battleSlideDistance(app);
+    const int want = b.phase == App::Battle::Command && !battletalk::on(app) && !app.optionsOpen ? b.page : -1;
+    auto live = [&]() { // the page as the logic has it
+        v.menu = b.menu, v.cursor = b.cursor, v.member = b.member, v.pick = b.pick, v.pickTop = b.pickTop;
+        v.confirm = b.confirm, v.targetAction = b.targetAction, v.pair = b.rules.pair, v.picks = b.picks;
+    };
+    if ((b.viewState == 1 || b.viewState == 2) && v.page != want) b.viewState = 3;
+    switch (b.viewState) {
+    case 1: // coming in
+        live();
+        b.slide = std::max(0, b.slide - dist / 4);
+        if (b.slide == 0) {
+            b.viewState = 2;
+            if (v.menu == App::Battle::Top) app.sound.play(0x22); // (__menub_mainPrc 1 -> 2: the top menu in place)
+        }
+        return;
+    case 2: live(); return;
+    case 3: // going out
+        b.slide = std::min(dist, b.slide + dist / 4);
+        if (b.slide < dist) return;
+        b.viewState = b.slideHold > 0 ? 4 : 0;
+        if (b.viewState == 4) return;
+        break;
+    case 4: // held out
+        if (--b.slideHold > 0) return;
+        b.viewState = 0;
+        break;
+    default:
+        if (v.page == want || want < 0) { // nothing new: out
+            v.page = -1;
+            ++b.menuGone;
+            return;
+        }
+        break;
+    }
+    b.slide = dist; // out: the next page (or none)
+    b.slideHold = 0;
+    b.menuGone = 0;
+    v.page = want;
+    if (want < 0) return;
+    live();
+    b.viewState = 1;
+}
+
+// Taps and keys are taken once the page is in (and the logic's page is the one shown)
+bool battleMenuReady(const App& app) {
+    const App::Battle& b = app.battle;
+    return b.viewState == 2 && b.view.page == b.page;
+}
+
 // One 20 Hz battle frame: the actors' motions and moves, the round, the HUD's counters
 void stepResults(App& app);
 void resultsTap(App& app);
@@ -12586,7 +12738,6 @@ void stepBattle(App& app) {
     b.bannerShown = b.bannerFrames > 0 ? b.banner : std::string(); // (what the last frame set shows from this one)
     ++b.frames;
     ++b.phaseFrames;
-    ++b.camFrame;
     stepEffects(app);
     stepSceneEffects(app);
     for (App::Battle::Actor& a : b.actors) {
@@ -12656,7 +12807,9 @@ void stepBattle(App& app) {
     battletalk::rules(app);
     if (app.game.flag(battletalk::kFlag)) { // a talk: the script runs (its fades with it), the battle waits
         battletalk::step(app);
+        stepMenuView(app);
         turnActors(app);
+        stepBattleCamera(app);
         stepQuake(app);
         stepFlash(app);
         return;
@@ -12711,6 +12864,8 @@ void stepBattle(App& app) {
             // btl_main 799: no next action while a message is up or waiting (the round's first comes from
             // 500 / 600 straight)
             if (!b.roundFirst && (!b.notices.empty() || (b.bannerFrames > 0 && b.bannerFrames <= btlui::kMessageFrames))) break;
+            if (b.roundWait && (b.viewState != 0 || b.menuGone < 2)) break; // the menu goes first
+            b.roundWait = false;
             b.roundFirst = false;
             if (b.rules.nextTurn(app.battleActions, b.turn)) {
                 b.turnOn = true;
@@ -12844,7 +12999,11 @@ void stepBattle(App& app) {
         b.exit = b.pendingExit;
         b.ending = false, b.endFrames = b.pendingExit = 0;
     }
+    // the pages after the frame's logic: a page set this frame starts at its distance with its camera's cut
+    // (video 02 1634.70-1634.90 s: the plates partly in 3 frames after the cut, settled at 4)
+    stepMenuView(app);
     turnActors(app); // (btl_prc's mdl_put)
+    stepBattleCamera(app); // (btl_main's end: btlcamera_prc; btl_prc: the eye, the easing)
     stepQuake(app); // gameapp_prc: UpdateQuake and PutMask after the battle's frame
     stepFlash(app);
 }
@@ -13326,7 +13485,18 @@ void drawBattleHud(App& app, float W, float H) {
 
     // Right: the menus
     r.setOrigin(wideRight(app));
-    if (b.phase == App::Battle::Command && !app.optionsOpen) { // (Options covers them while it's up)
+    // the page as shown (b.view), slid right by b.slide (__menub_mainPut: x + +0x38) - the logic's state swapped
+    // for the view's while it draws
+    const App::Battle::MenuView& v = b.view;
+    struct Keep { App::Battle::Menu menu; int cursor, member, pick, pickTop, confirm, targetAction; bool pair; std::vector<int> picks; };
+    const Keep keep{b.menu, b.cursor, b.member, b.pick, b.pickTop, b.confirm, b.targetAction, b.rules.pair, b.picks};
+    const bool shown = v.page >= 0 && b.slide < battleSlideDistance(app);
+    if (shown) {
+        b.menu = v.menu, b.cursor = v.cursor, b.member = v.member, b.pick = v.pick, b.pickTop = v.pickTop;
+        b.confirm = v.confirm, b.targetAction = v.targetAction, b.rules.pair = v.pair, b.picks = v.picks;
+        m.setOffset(float(b.slide), 0);
+    }
+    if (shown && !app.optionsOpen) { // (Options covers them while it's up)
         // the HELP board across the top (ComUty_HelpWindowDraw): the item's or gene's target and effect
         auto helpBoard = [&](int item) {
             const float hx = 152;
@@ -13404,6 +13574,11 @@ void drawBattleHud(App& app, float W, float H) {
         }
         }
     }
+    if (shown) {
+        m.setOffset(0, 0);
+        b.menu = keep.menu, b.cursor = keep.cursor, b.member = keep.member, b.pick = keep.pick, b.pickTop = keep.pickTop;
+        b.confirm = keep.confirm, b.targetAction = keep.targetAction, b.rules.pair = keep.pair, b.picks = keep.picks;
+    }
     r.setOrigin(r.uiX());
     const char* help = b.phase != App::Battle::Command ? ""
                        : b.menu == App::Battle::Top ? "Up/Down  Enter"
@@ -13439,7 +13614,7 @@ void battleKey(App& app, SDL_Keycode key) {
         if (enter || back) b.lostTap = true;
         return;
     }
-    if (b.phase != App::Battle::Command) return;
+    if (b.phase != App::Battle::Command || !battleMenuReady(app)) return;
     switch (b.menu) {
     case App::Battle::Top:
     case App::Battle::Commands:
@@ -13501,7 +13676,7 @@ void battleClick(App& app, float px, float py) {
         b.wonTap = true;
         return;
     }
-    if (b.phase != App::Battle::Command) return;
+    if (b.phase != App::Battle::Command || !battleMenuReady(app)) return;
     const bool onBack = my >= kBackY && my < kBackY + 24 && rx >= kBackX && rx < kBackX + 232;
     auto buttonAt = [&]() {
         for (int i = 0; i < 4; ++i)
@@ -14829,7 +15004,9 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                           battleInSound(0x15f) == 0x18 && battleInSound(0x165) == 0x1a && battleInSound(0x170) == 0x19 &&
                           battleInSound(0x171) == 0x17 && battleInSound(0x179) == 0x18,
                       "in-eff-table");
-                int group = 1, idleMonsters = 0, toCommand = 0, ambushAt = 0, shadowsDrawn = 0, castFrames = 0;
+                int group = 1, idleMonsters = 0, toCommand = 0, ambushAt = 0, shadowsDrawn = 0, castFrames = 0, turnDeg = 0, turnFrames = 0;
+                float peakStep = 0, lastStep = 0;
+                std::string slideSeq;
                 for (int g = 1; g <= app.battleData.groupCount(); ++g) { // two or more monsters, not formation 2
                     const std::array<int, 3> ids = app.battleData.group(g);
                     const cr::MonsterDef *m0 = app.battleData.monster(ids[0]), *m1 = app.battleData.monster(ids[1]);
@@ -14858,10 +15035,39 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     stepBattle(app); // 200
                     check(app.fadeFrom == 1 && app.fadeTo == 0 && app.fadeT == 0 && app.fadeFrames == 20 && b.cam == fm && b.camActor == -1, "state-200");
                     stepBattle(app); // 300's first
-                    check(b.cam == fm && b.camActor == 0 && b.camFrame == 0, "state-300");
+                    const cr::BattleCamera* fc = app.battleData.camera(fm);
+                    check(fc && b.cam == fm && b.camActor == 0 && b.camDur == fc->raw[15] && b.camFrame == 1 && b.camSnapped, "state-300");
+                    if (fc) turnDeg = fc->raw[14], turnFrames = fc->raw[15];
+                    // the turn cut to on its first frame, then eased in by a fifth a frame: the eye's steps grow to
+                    // the turn's last frame and fall after, settled before the commands
+                    std::vector<float> steps;
+                    cr::Vec3 last = b.camEye;
+                    const int sets = b.camSets;
                     toCommand = kIntroWhite + 1;
-                    for (; toCommand < 100 && b.phase == App::Battle::Intro; ++toCommand) stepBattle(app);
-                    check(toCommand == kIntroWhite + 32 && b.cam == b.formation + 12, "commands-at-32");
+                    for (; toCommand < 100 && b.phase == App::Battle::Intro; ++toCommand) {
+                        stepBattle(app);
+                        if (b.phase != App::Battle::Intro) break;
+                        const cr::Vec3 d = b.camEye - last;
+                        steps.push_back(std::sqrt(cr::dot(d, d)));
+                        last = b.camEye;
+                    }
+                    ++toCommand;
+                    check(toCommand == kIntroWhite + 32 && b.cam == b.formation + 12 && b.camSets == sets + 1 && b.camSnapped, "commands-at-32");
+                    // the first page slides in a quarter of its distance a frame, taking taps once in
+                    for (int f = 0; f < 6 && !battleMenuReady(app); ++f) {
+                        slideSeq += (slideSeq.empty() ? "" : " ") + std::to_string(b.slide);
+                        stepBattle(app);
+                    }
+                    slideSeq += " " + std::to_string(b.slide);
+                    check(battleMenuReady(app) && slideSeq == (battleSlideDistance(app) == 320 ? "320 240 160 80 0" : "480 360 240 120 0"), "page-slide");
+                    if (turnDeg != 0 && turnFrames > 2 && int(steps.size()) > turnFrames + 8) {
+                        const size_t top = size_t(turnFrames - 2);
+                        bool rising = true, falling = true;
+                        for (size_t i = 1; i <= top; ++i) rising &= steps[i] > steps[i - 1];
+                        for (size_t i = top + 2; i < steps.size(); ++i) falling &= steps[i] <= steps[i - 1];
+                        peakStep = steps[top], lastStep = steps.back();
+                        check(rising && falling && lastStep < peakStep * 0.05f, "intro-ease");
+                    }
                     // the shadows: a fan per fighter standing, 204, hidden none
                     app.lastTicks = 0;
                     drawFrame(app, false);
@@ -14954,10 +15160,10 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 app.runner.stop();
                 app.game = saved;
                 sp += app.renderer.takeErrors();
-                std::printf("battle scene: the opening (white %d steps, 200's fade and still camera, 300's turning one, the commands at %d, an "
-                            "ambush's round at %d, \"%s\"), start sound, idle phases (%d monsters), shadows (%d fans at 204), cast loop (%d frames), "
+                std::printf("battle scene: the opening (white %d steps, 200's fade and still camera, 300's turning one (%d degrees over %d, "
+                            "eased: eye steps up to %.2f, the last %.3f), the commands at %d (the page in: %s), an ambush's round at %d, \"%s\"), start sound, idle phases (%d monsters), shadows (%d fans at 204), cast loop (%d frames), "
                             "turning 15/frame, the gauge every other frame, the banner a frame late; %d problems%s\n",
-                            kIntroWhite, toCommand - kIntroWhite, ambushAt - kIntroWhite, strikeBanner.c_str(), idleMonsters, shadowsDrawn, castFrames, sp,
+                            kIntroWhite, turnDeg, turnFrames, peakStep, lastStep, toCommand - kIntroWhite, slideSeq.c_str(), ambushAt - kIntroWhite, strikeBanner.c_str(), idleMonsters, shadowsDrawn, castFrames, sp,
                             why.c_str());
                 problems += sp;
             }
@@ -19901,14 +20107,27 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         const std::string& v = app.captureBattleView;
         App::Battle& b = app.battle;
         const int introAt = v.rfind("intro@", 0) == 0 ? SDL_atoi(v.c_str() + 6) : -1;
-        for (int f = 0; f < (introAt >= 0 ? introAt : 30) && app.battle.active; ++f) stepBattle(app);
-        for (int f = 0; introAt < 0 && f < 10 && b.active && b.phase != App::Battle::Command; ++f) stepBattle(app);
+        // top@n: n frames after the first page starts in (0: set at its distance, not drawn yet)
+        const int topAt = v.rfind("top@", 0) == 0 ? SDL_atoi(v.c_str() + 4) : -1;
+        if (topAt >= 0) {
+            for (int f = 0; f < 600 && b.active && b.viewState != 1; ++f) stepBattle(app);
+            for (int f = 0; f < topAt && b.active; ++f) stepBattle(app);
+            std::printf("battle view %s: slide %d of %d, state %d\n", v.c_str(), b.slide, battleSlideDistance(app), b.viewState);
+        }
+        for (int f = 0; topAt < 0 && f < (introAt >= 0 ? introAt : 30) && app.battle.active; ++f) stepBattle(app);
+        for (int f = 0; introAt < 0 && topAt < 0 && f < 10 && b.active && b.phase != App::Battle::Command; ++f) stepBattle(app);
+        // (the page in, as a player would have it before tapping)
+        for (int f = 0; introAt < 0 && topAt < 0 && f < 10 && b.active && b.phase == App::Battle::Command && !battleMenuReady(app); ++f) stepBattle(app);
         if (v == "items") app.game.items[21] = 3, app.game.items[22] = 1, app.game.items[24] = 2;
         if (v == "commands" || v == "targets" || v == "items") battleChooseTop(app, 0);
         if (v == "targets") battleChooseCommand(app, 0);
         if (v == "items") battleChooseCommand(app, 2);
         if (v == "escape") battleChooseTop(app, 2);
         if (v == "options") battleChooseTop(app, 3), app.optionsAnim = 100;
+        if (v.rfind("break@", 0) == 0) { // break@n: the Break effect (btlbreak_effect_prc), its n-th frame
+            startBreakFx(app);
+            for (int f = 0, n = SDL_atoi(v.c_str() + 6); f < n; ++f) stepBreakFx(app);
+        }
         if (v.rfind("effect", 0) == 0) { // effect<id>[@frame]: that effect on the first enemy, some frames in
             const int id = SDL_atoi(v.c_str() + 6);
             const size_t at = v.find('@');

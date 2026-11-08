@@ -70,7 +70,9 @@ offset over the 2D scale (gac +0x3d14c / +0x3d150 over +0x3d154; (80, 20) tex2d 
 1280 x 720 phone) so the battle's Break badge (- ox, - oy: top left), the pair's rows (- ox,
 + oy: bottom left) and the banner (- oy: top) sit on the phone's own edges, as Omega's 1.1.6
 does. The port's Android layout does the same through `androidEdgeX` / `androidEdgeY` (0 in the
-other layouts). Not done yet: `btlbreak_effect_prc` (22931) offsets its stripes too, and the
+other layouts). `btlbreak_effect_prc` (22931) puts the first stripe and "Player" at (- ox, - oy)
+and the second and "Enemy" at (+ ox, + oy), as the port now does; the command pages slide 480,
+120 a frame (`_menub_mainPrc` on a Retina, iPad or 720 x 480 screen; 320 below). Not done yet: the
 field's corner pieces, the message's marks, the side portraits and the like (Omega's list) are
 unchecked in 1.1.1.
 
