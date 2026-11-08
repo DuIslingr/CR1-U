@@ -179,6 +179,9 @@ MetalFX, in particular, is compiled but untested.
 `-DCR_GLES=ON` builds the desktop game on OpenGL ES 3.0, as Android runs it (Mesa has it): a way
 to test that path without a device. Settings and saves go to SDL's profile folder:
 `%APPDATA%\preservation\ChaosRingsHD\` on Windows, `~/Library/Application Support/preservation/ChaosRingsHD/` on macOS.
+With Vulkan the profile folder also keeps `vulkan-pipelines.bin`: the graphics driver's compiled
+pipelines, so later starts and new screens don't compile them again (safe to delete; another GPU
+or a driver update starts it anew).
 
 DLSS: the NGX headers and library from NVIDIA's [DLSS SDK](https://github.com/NVIDIA/DLSS)
 (`-DCR_DLSS_SDK=<its checkout>`, or `engine/third_party/dlss/`), its runtime copied next to the

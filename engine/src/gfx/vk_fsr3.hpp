@@ -35,6 +35,7 @@ public:
     static const char* extension() { return VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME; }
 
     bool init(VkDevice device, VkPhysicalDevice gpu, int framesInFlight);
+    void setPipelineCache(VkPipelineCache cache) { cache_ = cache; } // (the device's: before init)
     void shutdown();
     bool ready() const { return device_ != VK_NULL_HANDLE; }
     // Records the upscale into `cmd` (frame slot `slot` < framesInFlight); recreates the
@@ -77,6 +78,7 @@ private:
 
     VkDevice device_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;
+    VkPipelineCache cache_ = VK_NULL_HANDLE;
     VkPhysicalDeviceMemoryProperties memProps_{};
     PFN_vkCmdPushDescriptorSetKHR pushDescriptors_ = nullptr;
     VkSampler point_ = VK_NULL_HANDLE, linear_ = VK_NULL_HANDLE;

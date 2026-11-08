@@ -19561,6 +19561,15 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             cr::setFsr4Dirs(dirs);
         }
 #endif
+        { // the Vulkan pipelines compiled in earlier runs: the profile's, as settings.ini is kept - not a
+          // capture's, a test's, an explore's or an export's; CR_PIPELINE_CACHE names another file, "" none
+            bool kept = true;
+            for (int i = 1; i < argc; ++i)
+                for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
+                    if (SDL_strcmp(argv[i], f) == 0) kept = false;
+            if (const char* pc = SDL_getenv("CR_PIPELINE_CACHE")) cr::setPipelineCacheFile(pc);
+            else cr::setPipelineCacheFile(kept ? userDir() + "vulkan-pipelines.bin" : std::string());
+        }
         if (app->renderer.init(app->window, b)) {
             app->rendererReady = true;
             break;

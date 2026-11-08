@@ -4,6 +4,10 @@ A from-scratch reimplementation of *Chaos Rings* for Windows, macOS, Linux and A
 
 ## What's new
 
+- **Vulkan: fewer hitches.** The renderer keeps the driver's compiled pipelines between runs
+  (`vulkan-pipelines.bin` in the profile folder), so the start and each new screen don't compile
+  them again. Measured here: about 6.5 ms of pipeline compiling the first time, 0.1 ms the next;
+  slower drivers save more. A cache from another GPU or driver is ignored and rebuilt.
 - **FSR 3.1.6:** the built-in FSR is updated from 3.1.4 to AMD's FSR SDK 2.4 passes.
 - **FSR 4 (Linux and Windows, AMD GPUs):** a new Upscaler choice. AMD ships FSR 4 for Vulkan only as
   its own Windows DLLs, so they aren't included: put AMD's two SDK DLLs, the driver's

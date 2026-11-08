@@ -24,6 +24,7 @@
 #endif
 #include "gfx/vk_fsr3.hpp"
 #include "gfx/vk_fsr4.hpp"
+#include "platform/atomic_file.hpp"
 
 #include <algorithm>
 #include <array>
@@ -186,6 +187,12 @@ struct Frame {
     VkDeviceSize ringSize = 0, ringUsed = 0;
 };
 
+// (setPipelineCacheFile's: the file each device's pipeline cache is kept in, "" none)
+std::string& cacheFile() {
+    static std::string path;
+    return path;
+}
+
 class VkDevice_ final : public RenderDevice {
 public:
     uint64_t windowFlags() const override { return SDL_WINDOW_VULKAN; }
@@ -224,6 +231,7 @@ public:
         destroyPipelines();
         destroySceneTarget();
         fsr_.shutdown();
+        destroyPipelineCache();
         dlss_.shutdown();
         fsr4_.shutdown();
 #ifdef __APPLE__
@@ -701,6 +709,7 @@ public:
 
     void endFrame(bool present) override {
         if (!inFrame_) return;
+        if (cacheDirty_ && ++cacheQuietFrames_ >= 300) savePipelineCache(); // (the new pipelines kept, a while after the last)
         endScene();
         inFrame_ = false;
         Frame& f = frames_[serial_ % kFrames];
@@ -1119,6 +1128,8 @@ private:
         ci.enabledExtensionCount = uint32_t(ext.size());
         ci.ppEnabledExtensionNames = ext.data();
         if (!ok(vkCreateDevice(gpu_, &ci, nullptr, &device_))) return false;
+        createPipelineCache();
+        fsr_.setPipelineCache(pipelineCache_);
         if (fsrSupported_ && !fsr_.init(device_, gpu_, kFrames)) fsrSupported_ = false;
         if (upscaleCaps_) dlss_.init(instance_, gpu_, device_);
         if (upscaleCaps_) fsr4_.init(instance_, gpu_, device_);
@@ -1212,6 +1223,59 @@ private:
         quadPipeline_ = makePipeline(true, kQuadKey);
         if (upscaleCaps_) sceneQuadPipeline_ = makePipeline(true, kQuadKey | kScenePipeline);
         return quadPipeline_ != VK_NULL_HANDLE;
+    }
+
+    // The pipeline cache: each pipeline is made the first time a material's state is drawn, and a
+    // driver can take long over it - mid-frame, at the start and on each new screen. The cache keeps
+    // what the driver compiled between runs (the file setPipelineCacheFile names: the profile's
+    // vulkan-pipelines.bin), seeded only when its header is this GPU's and driver's
+    // (VkPipelineCacheHeaderVersionOne: vendor, device, pipelineCacheUUID - a driver update starts
+    // it anew), saved once no pipeline has been made for 300 frames, and at shutdown
+    void createPipelineCache() {
+        std::vector<uint8_t> seed;
+        const std::string& file = cacheFile();
+        if (!file.empty()) {
+            size_t n = 0;
+            if (void* data = SDL_LoadFile(file.c_str(), &n)) {
+                VkPipelineCacheHeaderVersionOne h{};
+                const bool fits = n >= sizeof h && n < (size_t(256) << 20);
+                if (fits) std::memcpy(&h, data, sizeof h);
+                if (fits && h.headerSize >= sizeof h && h.headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+                    h.vendorID == props_.vendorID && h.deviceID == props_.deviceID &&
+                    std::memcmp(h.pipelineCacheUUID, props_.pipelineCacheUUID, VK_UUID_SIZE) == 0)
+                    seed.assign(static_cast<uint8_t*>(data), static_cast<uint8_t*>(data) + n);
+                else
+                    SDL_Log("pipeline cache: %s is another GPU's or driver's - started anew", file.c_str());
+                SDL_free(data);
+            }
+        }
+        VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+        ci.initialDataSize = seed.size();
+        ci.pInitialData = seed.empty() ? nullptr : seed.data();
+        if (vkCreatePipelineCache(device_, &ci, nullptr, &pipelineCache_) != VK_SUCCESS && !seed.empty()) {
+            ci.initialDataSize = 0, ci.pInitialData = nullptr; // (data the driver refuses: an empty one)
+            if (vkCreatePipelineCache(device_, &ci, nullptr, &pipelineCache_) != VK_SUCCESS) pipelineCache_ = VK_NULL_HANDLE;
+        }
+        if (!seed.empty()) SDL_Log("pipeline cache: %zu bytes from %s", seed.size(), file.c_str());
+    }
+    void savePipelineCache() {
+        cacheDirty_ = false;
+        if (!pipelineCache_ || cacheFile().empty()) return;
+        size_t n = 0;
+        if (vkGetPipelineCacheData(device_, pipelineCache_, &n, nullptr) != VK_SUCCESS || n == 0) return;
+        std::string data(n, '\0');
+        if (vkGetPipelineCacheData(device_, pipelineCache_, &n, data.data()) != VK_SUCCESS) return;
+        data.resize(n);
+        std::string error;
+        if (!crstorage::replaceFile(cacheFile(), data, &error)) SDL_Log("pipeline cache: %s", error.c_str());
+    }
+    void destroyPipelineCache() {
+        if (pipelinesMade_)
+            SDL_Log("pipelines: %d made, %.1f ms%s", pipelinesMade_, double(pipelineNs_) / 1e6, pipelineCache_ ? "" : " (no cache)");
+        if (!pipelineCache_) return;
+        if (cacheDirty_) savePipelineCache();
+        vkDestroyPipelineCache(device_, pipelineCache_, nullptr);
+        pipelineCache_ = VK_NULL_HANDLE;
     }
 
     void destroyPipelines() {
@@ -1320,7 +1384,9 @@ private:
         pi.pDynamicState = &dy;
         pi.layout = scene ? sceneLayout_ : layout_;
         VkPipeline p = VK_NULL_HANDLE;
-        ok(vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pi, nullptr, &p));
+        const uint64_t t0 = SDL_GetTicksNS();
+        if (ok(vkCreateGraphicsPipelines(device_, pipelineCache_, 1, &pi, nullptr, &p))) cacheDirty_ = true, cacheQuietFrames_ = 0;
+        pipelineNs_ += SDL_GetTicksNS() - t0, ++pipelinesMade_;
         return p;
     }
 
@@ -1816,6 +1882,11 @@ private:
     VkPipeline quadPipeline_ = VK_NULL_HANDLE, bound_ = VK_NULL_HANDLE;
     VkDescriptorSet boundSet_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE}; // texture units 0 and 1
     std::map<uint32_t, VkPipeline> pipelines_;
+    VkPipelineCache pipelineCache_ = VK_NULL_HANDLE;
+    bool cacheDirty_ = false;   // (a pipeline made since the last save)
+    int cacheQuietFrames_ = 0;  // (frames since then)
+    int pipelinesMade_ = 0;     // (and the time spent making them: the log's, at shutdown)
+    uint64_t pipelineNs_ = 0;
     std::array<VkSampler, 32> samplers_{};
     float anisotropy_ = 1.0f;
     TextureFiltering filtering_, filteringWanted_; // (the samplers', the options')
@@ -1925,6 +1996,7 @@ private:
 } // namespace
 
 std::unique_ptr<RenderDevice> makeVkDevice() { return std::make_unique<VkDevice_>(); }
+void setPipelineCacheFile(std::string path) { cacheFile() = std::move(path); }
 
 void useBundledVulkan() {
 #ifdef __APPLE__
@@ -1941,6 +2013,7 @@ void useBundledVulkan() {
 
 namespace cr {
 std::unique_ptr<RenderDevice> makeVkDevice() { return nullptr; } // built without Vulkan
+void setPipelineCacheFile(std::string) {}
 void useBundledVulkan() {}
 } // namespace cr
 

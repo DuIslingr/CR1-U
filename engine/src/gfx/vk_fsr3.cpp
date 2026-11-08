@@ -305,7 +305,7 @@ bool Fsr3::createPass(Pass& p, const uint32_t* code, size_t bytes, const std::ve
     ci.stage.module = m;
     ci.stage.pName = "main";
     ci.layout = p.layout;
-    const VkResult r = vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &ci, nullptr, &p.pipeline);
+    const VkResult r = vkCreateComputePipelines(device_, cache_, 1, &ci, nullptr, &p.pipeline);
     vkDestroyShaderModule(device_, m, nullptr);
     return r == VK_SUCCESS;
 }

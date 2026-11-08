@@ -50,6 +50,8 @@ struct MeshShading {
 enum class Upscaler { Off, Fsr3, Dlss, MetalFx, Fsr4 }; // (MetalFX: Apple's, macOS 13+; FSR 4: AMD's DLLs in fsr4/, Linux and Windows)
 // where FSR 4's files are looked for (gfx/vk_fsr4.cpp: the Vulkan build's)
 void setFsr4Dirs(std::vector<std::string> dirs);
+// where the Vulkan device keeps its pipeline cache between runs ("" none: compiled anew each run)
+void setPipelineCacheFile(std::string path);
 struct UpscaleSettings {
     Upscaler mode = Upscaler::Off;
     float ratio = 1.0f;     // output / render size per axis (1 = native AA)
