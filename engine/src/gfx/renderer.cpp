@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace cr {
@@ -305,7 +306,20 @@ void Renderer::drawQuadUV(const Texture& tex, float x, float y, float w, float h
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
-    const float u0 = sx / tex.width, u1 = (sx + sw) / tex.width;
+    float u0 = sx / tex.width, u1 = (sx + sw) / tex.width;
+    // An atlas piece drawn at a fractional number of the frame's pixels per texel (a window that
+    // isn't the layout's whole multiple - 1024 x 768 for the Android layout: 0.8) samples its
+    // neighbours across its edges (linear filtering: a grey row of the next picture). Then the edges
+    // are taken half a texel in; whole multiples keep the exact rectangle
+    auto inset = [&](float& t0, float& t1, float texels, float pixels, float size) {
+        const float k = texels > 0 ? pixels / texels : 0;
+        if (k <= 0 || std::fabs(k - std::round(k)) < 0.01f || texels < 2) return;
+        const float d = 0.5f / size * (t1 >= t0 ? 1.0f : -1.0f);
+        t0 += d, t1 -= d;
+    };
+    inset(u0, u1, std::fabs(sw), std::fabs(w) * scale_, float(tex.width));
+    if (std::fabs(v1 - v0) * tex.height >= 2 && h != 0) // (clipV may have cut the rectangle: its share)
+        inset(v0, v1, std::fabs(v1 - v0) * float(tex.height), std::fabs(h) * scale_, float(tex.height));
     const float v[24] = {
         x, y, u0, v0,  x + w, y, u1, v0,  x + w, y + h, u1, v1,
         x, y, u0, v0,  x + w, y + h, u1, v1,  x, y + h, u0, v1,
