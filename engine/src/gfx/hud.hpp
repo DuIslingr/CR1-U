@@ -28,6 +28,9 @@ public:
     // The width `lines` take at `scale` (rasterising them), and the distance between lines
     float measure(Renderer& r, const std::vector<std::string>& lines, float scale);
     float lineStep(float scale) const;
+    // The blank margin round the rasterised text (logical units): drawAt's (x, y) is this far
+    // above and left of the glyphs' box
+    static float pad(float scale);
 
 private:
     bool update(Renderer& r, const std::vector<std::string>& lines, float scale);

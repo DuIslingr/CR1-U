@@ -93,6 +93,8 @@ float Hud::lineStep(float scale) const {
     return font_ && font_->loaded() ? kFontLine * scale : float(kGlyph + kLineGap) * scale;
 }
 
+float Hud::pad(float scale) { return kPad * scale; }
+
 void Hud::draw(Renderer& r, const std::vector<std::string>& lines, float scale) {
     if (lines.empty() || !update(r, lines, scale)) return;
     const float w = tex_.width / density_, h = tex_.height / density_;

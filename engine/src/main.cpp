@@ -11562,8 +11562,11 @@ extern const float kWinSmallPanel[4] = {0, 1600, 512, 96}; // dark small window
 // parchment, its name on the blue streak painted into it; other speech on the grey band, the
 // name on a small dark tab). The skip button and the page's "next" diamond beside them.
 constexpr float kWinParchment[4] = {1024, 248, 1024, 280};
-constexpr float kWinSkip[4] = {680, 1700, 50, 50};
-constexpr float kWinNext[4] = {672, 1750, 62, 30};
+// _PutMsg's pieces (2.2.0 0x2bf84: tex2d_add u, v, w, h on the 1024 sheet, doubled on window_hd):
+// the skip button (336, 848) 32 x 32; the "next" mark - a down arrow over a bar - (512, 36) 20 x 20,
+// olive on the parchment (style 2), (532, 36) white on style 0x20's band
+constexpr float kWinSkip[4] = {672, 1696, 64, 64};
+constexpr float kWinNext[2][4] = {{1024, 72, 40, 40}, {1064, 72, 40, 40}};
 constexpr float kWinBadge[4] = {936, 880, 88, 96};         // the "!" bubble over an NPC in reach (menuf_mainPut's FollowWindow type 0: tex2d (468, 440) 44 x 48)
 
 // A message page in the game's message window, across the whole screen's width: the parchment
@@ -11578,8 +11581,11 @@ void drawMessageLines(App& app, const std::vector<std::string>& page, float x, f
     bool any = centreAll;
     for (const std::string& l : page) any |= !l.empty() && l[0] == '\x01';
     const std::vector<std::string> shown = typedPage(page, app.textLimit); // typing: centred on the whole line
+    // (x, y) is _CmdFont's (2.2.0 0x2bdf0): the glyphs' box - the Hud's rasterised text has a
+    // margin round it
+    const float pad = cr::Hud::pad(scale);
     if (!any) {
-        app.dialogueHud.drawAt(r, shown, x, y, scale, 0, 0, 0.0f);
+        app.dialogueHud.drawAt(r, shown, x - pad, y - pad, scale, 0, 0, 0.0f);
         return;
     }
     const float step = app.dialogueHud.lineStep(scale);
@@ -11591,11 +11597,11 @@ void drawMessageLines(App& app, const std::vector<std::string>& page, float x, f
         app.dialogueHud.tint(tint);
         h.setTint(tint[0], tint[1], tint[2]);
         const float w = h.measure(r, {text}, scale);
-        const float lx = flip != centreAll ? cr::Renderer::kLogicalW / 2 - w / 2 : x;
+        const float lx = flip != centreAll ? cr::Renderer::kLogicalW / 2 - w / 2 : x - pad;
         if (k >= shown.size()) break; // (not typed yet)
         const std::string& part = shown[k];
         const std::string drawn = flip && !part.empty() ? part.substr(1) : part;
-        if (!drawn.empty()) h.drawAt(r, {drawn}, lx, y + step * float(k), scale, 0, 0, 0.0f);
+        if (!drawn.empty()) h.drawAt(r, {drawn}, lx, y - pad + step * float(k), scale, 0, 0, 0.0f);
     }
 }
 
@@ -11628,6 +11634,32 @@ bool drawAndroidMessagePanel(App& app, float x, float y, float w, float h, float
     static const float kWinNamePhone[4] = {1024, 240, 392, 80};
     drawWinPiece(app, kWinNamePhone, nameX, nameY, 392, 80);
     return true;
+}
+
+// _PutMsg's "next" mark (2.2.0 0x2bf84), steady (no blink), by the window's style: the parchment's
+// (2) olive at tex2d (452, 296), the others' white - style 4 at y 100, a tutorial band's (8) 84
+// below its top, 0x10 at 296, and 0x20 (alone) at 296; none otherwise (the grey panel 0x40, the bare
+// text 0x80 / 0x200 without those bits). The iPad's (1.0.1) sits 48 above the bottom, 88 in from the right. Android
+// adds its edges (ox, and oy but for styles 4 and 8). `right` / `bottom`: the safe area's edges in
+// logical units; `rectY` the style's rect y (tex2d)
+void drawMessageMark(App& app, int style, int rectY, float right, float bottom) {
+    const cr::Renderer& r = app.renderer;
+    const float ex = 2 * androidEdgeX(app), ey = 2 * androidEdgeY(app);
+    const float x = right - (r.phoneLayout() ? 56.0f : 88.0f) + ex;
+    float y;
+    if (style & 2) y = bottom - 48 + ey;
+    else if (style & 4) y = 2.0f * 100 + 64;
+    else if (style & 8) y = 2.0f * float(rectY + 84) + 64;
+    else if (style & 0x30) y = bottom - 48 + ey;
+    else return;
+    drawWinPiece(app, kWinNext[style & 2 ? 0 : 1], x, y, 40, 40);
+}
+
+// _PutMsg's skip button: tex2d (444, 0) on the iPhone - 36 in from the safe area's right, at its
+// top (Android: + ox, - oy) - drawn while a scene plays
+void drawMessageSkip(App& app, float right, float top) {
+    if (!app.runner.running()) return;
+    drawWinPiece(app, kWinSkip, right - 72 + 2 * androidEdgeX(app), top - 2 * androidEdgeY(app), 64, 64);
 }
 
 void drawMessageBox(App& app, const std::vector<std::string>& page, const std::string& speaker, bool next,
@@ -11669,12 +11701,12 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         } else if (style & 0x20) { // a black band across the bottom (tex2d y 252..352), the name on its edge
             r.fillRect(left, 2.0f * 252 + 64, width, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
             if (!speaker.empty() && textOn) { // PutMsg: drawfont_l at tex2d (16, 236), just above the band
-                const float nx = 2.0f * 16 + 32, ny = 2.0f * 236 + 64;
+                const float nx = 2.0f * 16 + 32, ny = 2.0f * 236 + 64, namePad = cr::Hud::pad(2.2f); // (the glyphs' left)
                 drawFrontFade(app); // (the name: text, over the front fade)
                 app.nameHud.setTint(0, 0, 0); // (an outline, so it reads over a bright scene too)
-                for (int k = 0; k < 4; ++k) app.nameHud.drawAt(r, {speaker}, nx + (k & 1 ? 2 : -2), ny + (k & 2 ? 2 : -2), 2.2f, 0, 0, 0.0f);
+                for (int k = 0; k < 4; ++k) app.nameHud.drawAt(r, {speaker}, nx - namePad + (k & 1 ? 2 : -2), ny + (k & 2 ? 2 : -2), 2.2f, 0, 0, 0.0f);
                 app.nameHud.setTint(1, 1, 1);
-                app.nameHud.drawAt(r, {speaker}, nx, ny, 2.2f, 0, 0, 0.0f);
+                app.nameHud.drawAt(r, {speaker}, nx - namePad, ny, 2.2f, 0, 0, 0.0f);
             }
         } else if (style & 8) { // a tutorial's band: dark, its edges soft (8 / 88 / 8 tex2d), the text further left
             const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192;
@@ -11705,11 +11737,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         app.dialogueHud.setTint(1, 1, 1);
         if (textOn) drawMessageLines(app, page, tx, ty, 2.2f, centreAll);
         (void)pageNo; // (PutMsg draws no page count)
-        // PutMsg's "next" mark: tex2d x 452, at y 328 - beside a tutorial's band 84 below its
-        // top; none on the grey panel - drawn steadily, no blink
-        const float markY = style & 8 ? 2.0f * (rect[0] + 84) + 64 : H - 44;
-        if (next && textOn && !(style & 0x40)) drawWinPiece(app, kWinNext, right - 76, markY, 46, 22);
-        if (app.runner.running()) drawWinPiece(app, kWinSkip, right - 66, top + 12, 50, 50);
+        if (next && textOn) drawMessageMark(app, style, rect[0], right, H);
+        drawMessageSkip(app, right, top);
         return;
     }
     (void)portraits;
@@ -11733,7 +11762,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (!speaker.empty() && textOn) {
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
-            app.nameHud.drawAt(r, {speaker}, 2.0f * 24 + 32, 2.0f * 206 + 64 - 14, 2.0f, 0, 0, 0.0f);
+            app.nameHud.drawAt(r, {speaker}, 2.0f * 24 + 32 - cr::Hud::pad(2.0f), 2.0f * 206 + 64 - 14, 2.0f, 0, 0, 0.0f);
         }
         app.dialogueHud.setTint(0.12f, 0.10f, 0.08f);
         textX = 2.0f * 36 + 32;
@@ -11744,7 +11773,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (!speaker.empty() && textOn) {
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
-            app.nameHud.drawAt(r, {speaker}, left + 44, H - 274, 2.0f, 0, 0, 0.0f); // on the streak (piece y 14..52)
+            app.nameHud.drawAt(r, {speaker}, left + 44 - cr::Hud::pad(2.0f), H - 274, 2.0f, 0, 0, 0.0f); // on the streak (piece y 14..52)
         }
         app.dialogueHud.setTint(0.12f, 0.10f, 0.08f); // ink
         textY = H - 196;
@@ -11760,8 +11789,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         textY = H - 140;
     }
     if (textOn) drawMessageLines(app, page, textX, textY, 2.2f, false); // text and name from the screen's left
-    if (next && textOn) drawWinPiece(app, kWinNext, right - 76, H - 44, 46, 22); // (steady: PutMsg doesn't blink it)
-    if (app.runner.running()) drawWinPiece(app, kWinSkip, right - 66, top + 12, 50, 50); // a scene is playing
+    if (next && textOn) drawMessageMark(app, style, 0, right, H); // (steady: PutMsg doesn't blink it)
+    drawMessageSkip(app, right, top); // a scene is playing
 }
 
 void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h, float alpha) {
