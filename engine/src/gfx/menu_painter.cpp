@@ -95,11 +95,20 @@ MenuPainter::Cached& MenuPainter::rasterise(const std::string& s, float size) {
     return c;
 }
 
+// The eight copies a unit off in grey level k (drawfont_l 0x37a20: tex2d_add at x -1..+1, y -1..+1)
+void MenuPainter::edge(const Texture& tex, float x, float y, float w, float h, float k, float alpha) {
+    if (!outline_) return;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if (dx || dy) r_->drawQuad(tex, X(x + float(dx)) * kScale, Y(y + float(dy)) * kScale, w, h, k, k, k, alpha);
+}
+
 void MenuPainter::text(const std::string& s, float x, float y, bool dark, float alpha, float size) {
     if (!r_ || s.empty() || alpha <= 0.001f) return;
     Cached& c = rasterise(s, size * K());
     if (!c.tex.id) return;
     const float k = dark ? 0.0f : 1.0f;
+    edge(c.tex, x, y, c.w, c.h, 1 - k, alpha);
     r_->drawQuad(c.tex, X(x) * kScale, Y(y) * kScale, c.w, c.h, k, k, k, alpha);
 }
 
@@ -107,6 +116,7 @@ void MenuPainter::textTint(const std::string& s, float x, float y, float r, floa
     if (!r_ || s.empty() || alpha <= 0.001f) return;
     Cached& c = rasterise(s, size * K());
     if (!c.tex.id) return;
+    edge(c.tex, x, y, c.w, c.h, r + g + b > 0.01f ? 0.0f : 1.0f, alpha); // (a colour: edged black)
     r_->drawQuad(c.tex, X(x) * kScale, Y(y) * kScale, c.w, c.h, r, g, b, alpha);
 }
 

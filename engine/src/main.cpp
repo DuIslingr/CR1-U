@@ -14153,7 +14153,9 @@ void drawBattleHud(App& app, float W, float H) {
         m.quad(88, 4 + by, 24, 24, clear, dark);
         m.quad(112, 4 + by, 351, 24, dark, dark);
         m.quad(463, 4 + by, 24, 24, dark, clear);
+        m.setOutline(false); // (the banner's text plain: __menub_mainPut's 0x3783c, drawfont_btl's twin, has no edge)
         m.textCentred(b.bannerShown, 287 - m.textWidth(b.bannerShown, 14) / 2, 16 + by, false, 1, 14);
+        m.setOutline(true);
     }
 
     // Right: the menus
@@ -14171,19 +14173,7 @@ void drawBattleHud(App& app, float W, float H) {
     }
     if (shown && !app.optionsOpen) { // (Options covers them while it's up)
         // the HELP board across the top (ComUty_HelpWindowDraw): the item's or gene's target and effect
-        auto helpBoard = [&](int item) {
-            const float hx = 152;
-            m.stretch(12, hx, 0, 512 - hx, 66, a);
-            m.picture(18, hx + 4, 2, a);
-            std::vector<std::vector<std::string>> help;
-            if (app.systemText.message(cr::itemHelpId(item), app.language, nullptr, help) && !help.empty()) {
-                float hy = 20;
-                for (const std::string& line : help[0]) {
-                    m.text(line, hx + 14, hy, false, a, 13);
-                    if ((hy += 16) > 52) break;
-                }
-            }
-        };
+        auto helpBoard = [&](int item) { drawHelpWindow(app, m, item, a); };
         switch (b.menu) {
         case App::Battle::Top:
             for (int i = 0; i < 4; ++i) {
