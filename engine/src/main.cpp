@@ -190,6 +190,7 @@ struct App {
     std::vector<bool> npcWarps;            // per NPC: its touch script warps (from a trial run)
     cr::GpuMesh triggerMesh;               // trigger boxes, shown with the collision overlay
     cr::GpuMesh puzzleBeams;               // the candle switches' beams (CandleSwitch::draw3D)
+    cr::GpuMesh battleShadows;             // the fighters' floor shadows (_btl_shadow's fans)
     cr::GameState game;                    // flags / variables the scripts use (new game)
     int lastKick = 0;                      // trigger the player is standing in (fires once)
     std::string lastWarp;                  // shown in the status line
@@ -507,7 +508,14 @@ struct App {
             uint32_t hp = 0, hpMax = 0;
             std::string name;
             cr::Vec3 pos;
-            float yaw = 0;
+            float yaw = 0;                 // +0x554: the yaw shown (radians)
+            // _mdl_put (0x14a70) with FUN_00013734: the shown yaw turns toward the wanted one (+0x540) by
+            // turnStep degrees a frame (+0x558: 15, set again once it's there); btlmove_prc turns it home
+            // over a setpos_angy move (turnHome: at the move's start)
+            float wantYaw = 0, turnStep = 15;
+            bool turnHome = false;
+            float approachYaw = 0;         // the attack's heading out, turned to on the way back
+            bool approached = false;
             int slot = 0, action = -1;     // action slot (BattleAnim) and the package's action index
             float time = 0;
             float scale = 1;               // the model's size (the pair's 1: btl_main's 0.5 at +0x540 is its yaw, half a turn)
@@ -575,10 +583,19 @@ struct App {
         std::vector<Popup> popups;         // __dmg_set's five numbers
         std::string banner;                // the top bar: the action, the target prompt, messages
         int bannerFrames = 0;
+        // ... as drawn: a font slot's text shows from the frame after it is set (font_set_utf16; drawfont_btl a
+        // frame on)
+        std::string bannerShown;
         std::vector<cr::BattleNotice> notices; // G+0xa14: the calcs' messages, one per free banner
         int shownHp[5] = {}, shownMp[5] = {}; // what the HUD shows (changes as the hits land)
-        int gaugeShown = 0;                // the badge's gauge, a step a frame toward the rules'
+        int gaugeShown = 0;                // the badge's gauge, a step every other frame toward the rules'
         float breakPop = 0;
+        uint32_t steps = 0;                // battle steps taken (CRView::prc's +0x3c6a8 count: its parity paces the gauge)
+        struct Shadow { int fighter = -1; float alpha = 0; cr::Vec3 at; float rx = 0, rz = 0; }; // _btl_shadow's fans drawn (tests)
+        std::vector<Shadow> shadows;
+        std::vector<float> shadowTris;     // their triangles this frame (xyz x 3 each)
+        int introStep = 300;               // the opening's btl_main state past 200: 300 (the counter), 400, 499
+        bool roundFirst = false;           // btl_main 500 / 600: the round's first action doesn't wait for the banner
         std::vector<int> levelled;
         bool settled = false;              // the save has the battle's results
         int exit = 0;                      // 1 back to the field (fled), 2 to the title (lost), 4 won
@@ -1368,6 +1385,7 @@ void unloadModel(App& app) {
     app.renderer.destroy(app.collision);
     app.renderer.destroy(app.triggerMesh);
     app.renderer.destroy(app.puzzleBeams);
+    app.renderer.destroy(app.battleShadows);
     app.collisionPolys = 0;
     unloadLoaded(app, app.model);
 }
@@ -4061,6 +4079,20 @@ float wideRight(const App& app) {
     const cr::Renderer& r = app.renderer;
     return r.phoneLayout() ? r.uiX() : std::max(r.uiX(), 2 * r.uiX() - r.safeRight());
 }
+// The Android layout: how far the phone's own edges lie outside the centred 480 x 320 screen, in
+// tex2d units - Android 1.1.1's gac +0x3d14c / +0x3d150 (the centring offset in pixels) over +0x3d154
+// (the 2D scale). The pieces 1.1.1 puts on the phone's edges add or subtract it (_menub_mainPut: the
+// battle's badge, rows and banner); 0 in the iPhone, iPad and Vita layouts
+float androidEdgeX(const App& app) {
+    const cr::Renderer& r = app.renderer;
+    if (!r.androidScreen()) return 0;
+    // tex2d x 0 is layout x uiX + 32; the screen's left edge is layout x w/2 - w/2 / scale
+    return (r.uiX() + 32 - r.screenW() * 0.5f * (1 - 1 / r.layoutScale())) / 2;
+}
+float androidEdgeY(const App& app) {
+    const cr::Renderer& r = app.renderer;
+    return r.androidScreen() ? (64 - r.layoutTop()) / 2 : 0.0f; // (tex2d y 0 is layout y 64)
+}
 // A logical point in menu units of the group drawn from `origin`
 void menuPointAt(const App& app, float lx, float ly, float origin, float& mx, float& my) {
     mx = (lx - origin) / 2, my = ly / 2;
@@ -5884,7 +5916,7 @@ void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int c
         m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, a);
     m.text(item > 0 ? itemName(app, item) : std::string("-"), x + 56, y + 12, false, a, 14);
     if (!label.empty()) m.text(label, x + 56, y + 30, false, a * 0.8f, 11);
-    if (count > 0) drawShopNumber(m, count, x + 222 - 10, y + 30, 2, 10, a, 2);
+    if (count > 0) drawShopNumber(m, count, x + 222, y + 30, 2, 10, a, 2); // (ComUty_PictNumDraw(x + 0xde, 2 digits): the field from 222)
 }
 
 // A gene plate's row (ComUty_ComPlate_Equip_GenePlate): plate 8 / 9, its icon and name - yellow
@@ -10261,6 +10293,7 @@ constexpr int kMessageFrames = 60; // 0x3c: the calcs' messages and the queued o
 constexpr int kSlotIdle = 0, kSlotWin = 1, kSlotReturn = 3, kSlotGuard = 4, kSlotHit = 5, kSlotDown = 6, kSlotEvade = 7;
 } // namespace btlui
 
+constexpr int kIntroWhite = 4; // the steps under the encounter's white before btl_main 200 (10, 100, 199 - then 200)
 App::Battle::Actor* battleActor(App& app, int fighter) {
     for (App::Battle::Actor& a : app.battle.actors)
         if (a.fighter == fighter) return &a;
@@ -10756,6 +10789,21 @@ void step(App& app) {
 }
 } // namespace battletalk
 
+// btl_main 0's FUN_0000bcc4 (2.2.0 0xbcc4): the sound a battle opens with, by its group (__effgo) -
+// 0x18 for groups 9-10, 0x2a-0x2b, 0x48-0x49, 0x7a-0x7b, 0xac-0xad, 0x154-0x163, 0x168-0x16f and 0x179;
+// 0x19 for 0x104-0x106, 0x118-0x11b, 0x12c-0x12e, 0x140-0x142, 0x170, 0x173, 0x176, 0x178; 0x1a for
+// 0x164-0x167; else 0x17 (Omega's table, its sounds 0xa8..0xab)
+int battleInSound(int g) {
+    for (int base : {9, 0x2a, 0x48, 0x7a, 0xac})
+        if (g == base || g == base + 1) return 0x18;
+    if ((g >= 0x154 && g <= 0x163) || (g >= 0x168 && g <= 0x16f) || g == 0x179) return 0x18;
+    if ((g >= 0x104 && g <= 0x106) || (g >= 0x118 && g <= 0x11b) || (g >= 0x12c && g <= 0x12e) || (g >= 0x140 && g <= 0x142) ||
+        g == 0x170 || g == 0x173 || g == 0x176 || g == 0x178)
+        return 0x19;
+    if (g >= 0x164 && g <= 0x167) return 0x1a;
+    return 0x17;
+}
+
 void startBattle(App& app, const cr::BattleStart& start, int flags) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     App::Battle& b = app.battle;
@@ -10772,15 +10820,20 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.eventBattle = false;
     b.breakFx = {};
     app.runner.setGate(battletalk::kFlag); // PrcEvnt in battle mode
-    // CRView::prc: SetFade(white, 255, 255) as the field goes; btl_main 200: SetFade(white, 255, 0,
-    // 1000 ms) - the battle comes in out of white over its opening (whatever the field's fade was)
-    app.fadeGrey = 1, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 20, app.fadeT = 0; // (btl_main 200: 1000 ms)
+    // CRView::prc's encounter frame (2.2.0 decomp 932-933): one get_random(2), then SetFade(white, 255,
+    // 255, 1 ms) - solid white at once; btl_main 0 -> 10 -> 100 -> 199 -> 200 run under it, and 200
+    // starts the fade in (SetFade(white, 255, 0, 1000 ms): the Intro phase, kIntroWhite steps on)
+    app.rng.get(2);
+    app.fadeGrey = 1, app.fadeFrom = 1, app.fadeTo = 1, app.fadeFrames = 20, app.fadeT = 0;
     b.frames = 0;
     b.clock = 0;
     b.formation = std::max(0, app.battleData.formation(ids));
     b.actors.clear();
     b.phase = App::Battle::Intro;
     b.phaseFrames = 0;
+    b.introStep = 300;
+    b.roundFirst = false;
+    b.steps = 0;
     b.menu = App::Battle::Top;
     b.cursor = 0;
     b.member = 0;
@@ -10788,6 +10841,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.popups.clear();
     b.banner.clear();
     b.bannerFrames = 0;
+    b.bannerShown.clear();
     b.notices.clear();
     b.levelled.clear();
     b.settled = false;
@@ -10810,7 +10864,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         if (!b.models.count(a.model)) loadModelFile(app, a.model, b.models[a.model], true);
         if (fighter >= 0 && fighter < 5) battleSlotsLoaded(b.models[a.model], modelId, fighter < 2, false);
         a.pos = a.home = {float(place[0]), 0.0f, float(place[1])};
-        a.yaw = a.homeYaw = yaw;
+        a.yaw = a.homeYaw = a.wantYaw = yaw; // (+0x558 = 15: btl_main 100, read_btlcpl)
         a.fighter = fighter;
         b.actors.push_back(a);
         playSlot(app, b.actors.back(), btlui::kSlotIdle);
@@ -10854,12 +10908,20 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         a.level = rules.f[size_t(2 + k)].level;
         a.hp = a.hpMax = uint32_t(rules.f[size_t(2 + k)].hpMax);
         a.name = sysText(app, 53000 + m->id - 1); // font block 2: monster names
+        // read_btlcpl (0xceec-0xcf14): slot 0's frame get_random(btlanm_get_max_frm(slot 0)) - the
+        // monsters' idles out of step
+        a.time = float(app.rng.get(int(actorDuration(app, a) - 1.0f)));
     }
     for (int i = 0; i < 5; ++i) {
         b.shownHp[i] = rules.f[size_t(i)].hp;
         b.shownMp[i] = rules.f[size_t(i)].mp;
     }
-    setBattleCamera(app, std::max(0, b.formation - 2)); // btl_main 200: the opening turn
+    setBattleCamera(app, std::max(0, b.formation - 2), -1); // (under the white; btl_main 200 sets it again)
+    { // btl_main 0: FUN_0000bcc4(group) - the battle's opening sound (__effgo)
+        const uint32_t id = uint32_t(battleInSound(start.group));
+        app.sound.play(id);
+        app.soundLog.push_back(id);
+    }
     // btl_main 100: var 58 under 29 names the battle's track; else the route's World Select band
     // (prty+0xc10[pair], the byte btl_enemy_init_lv levels the monsters by) picks 8, or 9 from band 5
     const auto v58 = app.game.vars.find(58);
@@ -10977,7 +11039,9 @@ void battleMenu(App& app, App::Battle::Menu menu) {
     b.menu = menu;
     b.cursor = 0;
     b.pick = b.pickTop = 0;
-    if (menu != App::Battle::Targets) setBanner(app, "");
+    // the pages' own kept lines (the target prompt) go with them; a timed message stays until it runs out
+    // or the next replaces it - 2.2.0's __menub_mainPrc (0x17920) writes slot 11 only for the escape question
+    if (menu != App::Battle::Targets && b.bannerFrames > (1 << 19)) setBanner(app, "");
     // the camera: the field of battle for the first menu, the member (or the pair) choosing
     if (menu == App::Battle::Top || menu == App::Battle::EscapeAsk) setBattleCamera(app, b.formation + 12);
     else if (menu == App::Battle::Commands) {
@@ -11012,7 +11076,10 @@ void battleStartRound(App& app) {
     b.phase = App::Battle::Acting;
     b.phaseFrames = 0;
     b.turnOn = false;
-    setBanner(app, "");
+    // btl_main 500 (decomp 6241-6262): the message queue's count (+0xadc) back to 0; the banner up stays -
+    // 500 / 600 don't wait for it (only 799, between actions, does) and the first action's name replaces it
+    b.notices.clear();
+    b.roundFirst = true;
 }
 
 // A command is set: the second member's turn (solo), else the round
@@ -11242,10 +11309,33 @@ void battleEscapeAnswer(App& app, bool yes) {
 
 // ---- Playing the round (btlact_*) ----
 
-// The fighter's model faces `target`
+// _btlact_attack_init's mdl_ang_y (2.2.0 0x15548: into +0xd7c, the wanted yaw only): the attacker's
+// wanted yaw toward `target` - turned to at 15 degrees a frame by mdl_put, not snapped
 void faceFighter(App& app, App::Battle::Actor& a, int target) {
     if (const App::Battle::Actor* t = battleActor(app, target))
-        if (t != &a) a.yaw = std::atan2(t->home.x - a.pos.x, t->home.z - a.pos.z);
+        if (t != &a) a.wantYaw = std::atan2(t->pos.x - a.pos.x, t->pos.z - a.pos.z);
+}
+
+// _mdl_put (0x14a70, FUN_00013734 in battle mode): each model's shown yaw toward its wanted one, by
+// +0x558 degrees a frame (_GetNewMdlDir2: the shorter way round), the step back to 15 once it's there
+void turnActors(App& app) {
+    constexpr float kTurn = 2.0f * 3.14159265f;
+    for (App::Battle::Actor& a : app.battle.actors) {
+        const float d = std::remainder(a.wantYaw - a.yaw, kTurn);
+        const float step = a.turnStep / 360.0f * kTurn;
+        if (std::fabs(d) <= step) {
+            a.yaw = a.wantYaw;
+            a.turnStep = 15;
+        } else
+            a.yaw = std::remainder(a.yaw + (d > 0 ? step : -step), kTurn);
+    }
+}
+
+// A turn timed over `frames` (btlmove_prc, _btlact_attack's return and end: the gap x 360 / frames)
+void turnOver(App::Battle::Actor& a, float want, float frames) {
+    const float d = std::fabs(std::remainder(want - a.wantYaw, 2.0f * 3.14159265f));
+    a.wantYaw = want;
+    a.turnStep = d * 180.0f / 3.14159265f / std::max(1.0f, frames);
 }
 
 // ---- Screen quakes and flashes (Quake, SetFade_back) ----
@@ -11744,7 +11834,11 @@ void startTurn(App& app) {
         return;
     }
     const cr::BattleActionDef* a = app.battleActions.get(t.action);
-    setBanner(app, sysText(app, 54000 + t.action - 1));
+    // _btlque_make_que (0x342d8): a counter is announced as action 0xdc's name, "Counter", whatever blow it
+    // is (font_set_utf16(11, 3, 0xdb, 40)); any other entry once, while its announced flag (+0x3e0) is
+    // clear - a repeated go of the same entry (Asura Lotus's strikes) leaves the banner alone; btlai_prc's
+    // re-choice clears the flag (named afresh)
+    if (!t.repeat || t.counter) setBanner(app, sysText(app, 54000 + (t.counter ? 0xdb : t.action - 1)));
     for (int k : t.actors) // the gene's MP leaves as it's cast
         if (k >= 0) b.shownMp[k] = b.rules.f[size_t(k)].mp;
     b.stageAction = 0;
@@ -11772,8 +11866,17 @@ void startTurn(App& app) {
         if (!u) continue;
         int slot = a && a->cls >= 8 && a->cls < cr::kBattleAnimSlots ? a->cls : 8;
         if (t.kind == cr::kCmdAttack && t.actors[1] >= 0 && k == 1) slot = 9; // the pair attack's second
-        if (target >= 0) faceFighter(app, *u, target);
-        playSlot(app, *u, slot, melee ? btlui::kSlotReturn : btlui::kSlotIdle);
+        if (target >= 0 && t.kind == cr::kCmdAttack && !melee) faceFighter(app, *u, target); // (gene_init / item_init turn no one)
+        u->turnHome = false, u->approached = false;
+        if ((t.kind == cr::kCmdGene || t.kind == cr::kCmdItem) && !melee) {
+            // _btlact_gene_init / _btlact_item_init (0x3ef28 / 0x4033c): _mdl_set_act_motion_loop(slot, 2,
+            // loop start, loop end) - played to the loop's end, then its loop over and over (the whole
+            // slot when it has none) till another motion is set (the round's end, a blow)
+            playSlot(app, *u, slot, -1);
+            const cr::BattleAnim ca = app.battleData.anim(u->modelId, u->slot);
+            if (ca.loopEnd > ca.loopStart) u->loopFrom = ca.loopStart, u->loopTo = ca.loopEnd;
+        } else
+            playSlot(app, *u, slot, melee ? btlui::kSlotReturn : btlui::kSlotIdle);
         const cr::BattleAnim an = app.battleData.anim(u->modelId, slot);
         if (k == 0) b.hitFrame = an.hit > 0 ? an.hit : t.kind == cr::kCmdAttack ? 18 : 30;
         u->moveFrom = u->moveTo = 0;
@@ -11789,6 +11892,10 @@ void startTurn(App& app) {
                 if (k == 1) u->to = u->to + cr::Vec3{d.z / len * 18, 0, -d.x / len * 18}; // beside the first
                 u->moveFrom = an.moveEnd > an.moveStart ? an.moveStart : 0;
                 u->moveTo = an.moveEnd > an.moveStart ? an.moveEnd : std::max(1, b.hitFrame - 4);
+                // (_btlact_attack_init 0x15548: btlmove_setpos_angy, then mdl_ang_y(from, to) into both the
+                // wanted and the shown yaw - kept for the way back - and btlmove_prc turns it home over the move)
+                if (u->to.x != u->from.x || u->to.z != u->from.z) u->yaw = u->wantYaw = std::atan2(u->to.x - u->from.x, u->to.z - u->from.z);
+                u->approachYaw = u->wantYaw, u->approached = true, u->turnHome = true;
             }
         }
     }
@@ -12049,7 +12156,7 @@ void victoryShown(App& app) {
     }
     for (int k = 0; k < 2; ++k)
         if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive()) {
-            a->yaw = a->homeYaw;
+            a->yaw = a->wantYaw = a->homeYaw;
             a->hidden = false;
             playSlot(app, *a, btlui::kSlotWin);
         }
@@ -12061,8 +12168,8 @@ void victoryShown(App& app) {
 // 2, shows the boss's end first - the camera on it (the formation's 0x35th, m105a's 0x34th), the
 // fallen monsters' down motion (btlanm_boss_dead_anim), the pair out of sight. m102 .. m105a
 // (0x3e3 .. 0x3e6): a quake and white, the boss gone under it, the pair back; any other (0x3de):
-// its down motion played, then it fades (effect 0x1b, sound 0x5f) and 40 frames pass. Then
-// 1000's 10 frames, and the victory (battleWon)
+// its down motion played, then it fades (effect 0x1b, sound 0x5f) and 40 frames pass (999). Then
+// the victory (battleWon: the Won phase is 1000, its 10 frames)
 void battleVictory(App& app) {
     App::Battle& b = app.battle;
     bool boss = false;
@@ -12087,7 +12194,7 @@ void stepBossDown(App& app) {
     App::Battle::Actor* boss = battleActor(app, 2);
     if (m < 9 || m > 12) { // 0x3de, then 999's 40 frames and 1000's 10
         if (b.bossWait > 0 && --b.bossWait < 2) {
-            b.bossWait = -(40 + 10);
+            b.bossWait = -40; // (999's +0xae0 40; 1000's 10 frames are the Won phase's own)
             if (boss) boss->fading = true, spawnEffect(app, 0x1b, 2);
             app.sound.play(0x5f);
         } else if (b.bossWait < 0 && ++b.bossWait == 0) battleWon(app);
@@ -12114,7 +12221,7 @@ void stepBossDown(App& app) {
         for (App::Battle::Actor& a : b.actors)
             if (a.fighter >= 0 && a.fighter < 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = false;
     }
-    if (f == kEnd[k] + 1 + 10) battleWon(app); // (999's frame, 1000's 10)
+    if (f == kEnd[k] + 1) battleWon(app); // (999's frame - +0xae0 1 - then 1000, whose 10 frames are the Won phase's)
 }
 
 void endRound(App& app) {
@@ -12148,6 +12255,11 @@ void endRound(App& app) {
         break;
     default: // btl_main 800 -> 899: thirty frames on the formation's camera (btlcamera_set(formation - 2)), then
         // the commands (400) and chk_karaok_between
+        // (0x320, decomp 6131-6154: the pair standing - not evading, slot 7 - and formation 2's first two
+        // monsters back to their idles, mdl_set_act_nextanm 0: a cast's loop ends here)
+        for (int k = 0; k < (b.formation == 2 ? 4 : 2); ++k)
+            if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive() && a->slot != btlui::kSlotEvade && a->slot != btlui::kSlotIdle)
+                playSlot(app, *a, btlui::kSlotIdle);
         b.phase = App::Battle::RoundEnd;
         b.phaseFrames = 0;
         b.member = 0;
@@ -12163,6 +12275,14 @@ void resultsTap(App& app);
 
 void stepBattle(App& app) {
     App::Battle& b = app.battle;
+    if (SDL_getenv("CR_BATTLE_BANNERLOG")) { // the top banner's changes, by battle frame (the last frame's state)
+        static std::string shown;
+        static int shownPhase = -1;
+        if (b.banner != shown || int(b.phase) != shownPhase)
+            std::printf("battle frame %d: phase %d, banner '%s' (%d left), camera %d\n", b.frames, int(b.phase), b.banner.c_str(), b.bannerFrames, b.cam);
+        shown = b.banner, shownPhase = int(b.phase);
+    }
+    b.bannerShown = b.bannerFrames > 0 ? b.banner : std::string(); // (what the last frame set shows from this one)
     ++b.frames;
     ++b.phaseFrames;
     ++b.camFrame;
@@ -12189,9 +12309,11 @@ void stepBattle(App& app) {
                     a.to = a.home;
                     a.moveFrom = ra.moveEnd > ra.moveStart ? ra.moveStart : 0;
                     a.moveTo = ra.moveEnd > ra.moveStart ? ra.moveEnd : std::max(1, int(actorDuration(app, a)));
-                } else if (next == btlui::kSlotIdle) {
+                    // (_btlact_attack 0x406: the wanted yaw the heading out again, turned to over the way back)
+                    if (a.approached) turnOver(a, a.approachYaw, float(a.moveTo - a.moveFrom));
+                    a.turnHome = false;
+                } else if (next == btlui::kSlotIdle) { // (the yaw is left: the attack's end turns it home)
                     a.pos = a.home;
-                    a.yaw = a.homeYaw;
                     a.moveFrom = a.moveTo = 0;
                 }
             }
@@ -12204,11 +12326,18 @@ void stepBattle(App& app) {
         if (a.moveTo > a.moveFrom) {
             const float t = std::clamp((a.time + a.blend.lag() - float(a.moveFrom)) / float(a.moveTo - a.moveFrom), 0.0f, 1.0f);
             a.pos = a.from + (a.to - a.from) * t;
+            // btlmove_prc (0x3544c): a setpos_angy move, its wait over, turns the wanted yaw home over the move
+            if (a.turnHome && a.time + a.blend.lag() >= float(a.moveFrom)) {
+                turnOver(a, a.homeYaw, float(a.moveTo - a.moveFrom));
+                a.turnHome = false;
+            }
         }
         if (a.fading) a.alpha = std::max(0.0f, a.alpha - 1.0f / 20.0f);
     }
-    // The badge's gauge follows the rules' a step a frame (menub_mainPut), the pop shrinks
-    if (b.gaugeShown != b.rules.breakGauge) b.gaugeShown += b.gaugeShown < b.rules.breakGauge ? 1 : -1;
+    // The badge's gauge follows the rules' a step every other frame (__menub_mainPut 0x19728, decomp
+    // 12797-12805: only while CRView::prc's frame count +0x3c6a8 is even), the pop shrinks
+    if (b.gaugeShown != b.rules.breakGauge && (b.steps & 1) == 0) b.gaugeShown += b.gaugeShown < b.rules.breakGauge ? 1 : -1;
+    ++b.steps;
     if (b.breakPop >= 1.0f) b.breakPop -= 4.0f / 7.0f;
     if (b.bannerFrames > 0) --b.bannerFrames;
     if (b.bannerFrames == 0 && !b.notices.empty()) { // menub_mainPut: the next queued message
@@ -12226,23 +12355,46 @@ void stepBattle(App& app) {
     battletalk::rules(app);
     if (app.game.flag(battletalk::kFlag)) { // a talk: the script runs (its fades with it), the battle waits
         battletalk::step(app);
+        turnActors(app);
         stepQuake(app);
         stepFlash(app);
         return;
     }
     if (app.fadeT < app.fadeFrames) ++app.fadeT; // the screen's fade (stepEvents' while a talk runs)
     switch (b.phase) {
-    case App::Battle::Intro: // the fade and the opening camera (btl_main 200 / 300): 30 frames, a boss's (formation 2) 60
-        // with its camera 0x21b from the second; a strike's or ambush's announcement (sys texts 0x36 / 0x37,
-        // font_set_utf16(0xb, 6, strike + 0x35, 60)) from the first
-        if (b.phaseFrames == 1 && (b.start.strike == 1 || b.start.strike == 2)) setBanner(app, sysText(app, 57053 + b.start.strike), 60);
-        if (b.phaseFrames == 2 && b.formation == 2) setBattleCamera(app, 0x21b);
-        if (b.phaseFrames >= (b.formation == 2 ? 60 : 30)) {
+    case App::Battle::Intro: // btl_main 10 / 100 / 199 under the encounter's white, then 200, 300 and 400
+        if (b.phaseFrames == kIntroWhite) {
+            // 200 (2.2.0 btl_main 0xd34c, decomp 6372-6389): the fade in over 20 frames, the formation's
+            // camera held still (actor -1), the 300 counter (+0xae0: 30, formation 2's 60), a strike's or
+            // ambush's announcement - var 0 the lead's name (+0xaa), sys 0x36 / 0x37 for 60 frames
+            app.fadeGrey = 1, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 20, app.fadeT = 0;
+            setBattleCamera(app, std::max(0, b.formation - 2), -1);
+            if (b.start.strike == 1 || b.start.strike == 2) {
+                const App::Battle::Actor* lead = battleActor(app, 0);
+                setBanner(app, sysText(app, 57053 + b.start.strike, lead ? lead->name : std::string()), 60);
+            }
+        }
+        // 300's first frame (6393-6405): the counter at 29 sets the formation's camera again with actor 0;
+        // formation 2's at 59 camera 0x21b instead
+        if (b.phaseFrames == kIntroWhite + 1) setBattleCamera(app, b.formation == 2 ? 0x21b : std::max(0, b.formation - 2), 0);
+        if (b.introStep == 300 && b.phaseFrames >= kIntroWhite + (b.formation == 2 ? 60 : 30)) {
+            // the counter below 1 (and the fade done): 400 next, _chk_karaok_frist - a story battle's talk
+            // (flag 0xfff) or the first battle's tutorial holds 400 till it ends
+            b.introStep = 400;
+            battletalk::first(app);
+        } else if (b.introStep == 400) {
+            // 400 (6422-6459): ambushed (+0x35874 2) - 500, the enemies' round, no menu and no camera of its
+            // own; else +0x2c0 |= 0x200 and 499
+            if (b.start.strike == 2) {
+                battleStartRound(app);
+                b.roundFirst = true;
+            } else
+                b.introStep = 499;
+        } else if (b.introStep == 499) {
+            // __menub_mainPrc 0 the frame after: the top menu and its camera (formation + 0xc)
             b.phase = App::Battle::Command;
             b.phaseFrames = 0;
             battleMenu(app, App::Battle::Top);
-            if (b.start.strike == 2) battleStartRound(app); // ambushed: the enemies' round first
-            battletalk::first(app); // btl_main 300 -> 400
         }
         break;
     case App::Battle::WinTalk: // btl_main 8000: the last word said, the victory
@@ -12255,8 +12407,10 @@ void stepBattle(App& app) {
             break;
         }
         if (!b.turnOn) {
-            // btl_main: no next action while a message is up or waiting
-            if (!b.notices.empty() || (b.bannerFrames > 0 && b.bannerFrames <= btlui::kMessageFrames)) break;
+            // btl_main 799: no next action while a message is up or waiting (the round's first comes from
+            // 500 / 600 straight)
+            if (!b.roundFirst && (!b.notices.empty() || (b.bannerFrames > 0 && b.bannerFrames <= btlui::kMessageFrames))) break;
+            b.roundFirst = false;
             if (b.rules.nextTurn(app.battleActions, b.turn)) {
                 b.turnOn = true;
                 startTurn(app);
@@ -12322,11 +12476,15 @@ void stepBattle(App& app) {
                 if (b.rules.elementTaken) battletalk::tutorial(app, 0xff3);
                 else if (b.rules.statusTaken) battletalk::tutorial(app, 0xff4);
                 else if (b.rules.learnedNew) battletalk::tutorial(app, 0xff5);
+                // (_btlact_attack's end, 2.2.0 _btlact_attack 0x164a8: each attacker's wanted yaw home, turned over 3
+                // frames - a size-3 monster's 7; the other actions don't turn their actors)
                 for (int k = 0; k < 2; ++k)
                     if (App::Battle::Actor* u = b.turn.actors[k] >= 0 ? battleActor(app, b.turn.actors[k]) : nullptr) {
                         u->pos = u->home;
                         u->moveFrom = u->moveTo = 0;
-                        if (u->slot != btlui::kSlotGuard) u->yaw = u->homeYaw;
+                        u->turnHome = false, u->approached = false;
+                        if (u->slot != btlui::kSlotGuard)
+                            turnOver(*u, u->homeYaw, b.turn.kind == cr::kCmdAttack && b.turn.actors[k] >= 2 && monsterSize(app, b.turn.actors[k]) == 3 ? 7.0f : 3.0f);
                     }
             }
         }
@@ -12385,12 +12543,72 @@ void stepBattle(App& app) {
         b.exit = b.pendingExit;
         b.ending = false, b.endFrames = b.pendingExit = 0;
     }
+    turnActors(app); // (btl_prc's mdl_put)
     stepQuake(app); // gameapp_prc: UpdateQuake and PutMask after the battle's frame
     stepFlash(app);
 }
 
+// _btl_shadow (2.2.0 0xbb80, after mdl_put in btl_prc) with _mdl_shadow (0x138ac): a 32-triangle black
+// ellipse fan under each fighter standing (_IsDead clear), into tex2d slot 0x4e - centred on the x / z of
+// the model's node 1102 (btlcamera_getpos2) at its y + 0.1, radii its row's +0x42 (x) and +0x44 (z)
+// turned by its shown yaw (+0x554), alpha 0x50 = 80% of 255 for all (Omega fades a monster's with it);
+// a monster's none when +0x42 is 0, none while a model is hidden (+0x55c clear). The pair's row is the
+// character's (btl_prty_init: +0x24 = rows + c x 0x7f8, monster row c x 10 + 1)
+void addBattleShadow(App& app, const App::Battle::Actor& a) {
+    App::Battle& b = app.battle;
+    if (a.fighter < 0 || a.fighter > 4 || a.hidden || !b.rules.f[size_t(a.fighter)].alive()) return;
+    const cr::Fighter& f = b.rules.f[size_t(a.fighter)];
+    const cr::MonsterDef* row = a.fighter < 2 ? app.battleData.monster(f.character * 10 + 1) : f.def;
+    if (!row) return;
+    const int rx = int16_t(row->raw[0x42] | row->raw[0x43] << 8), rz = int16_t(row->raw[0x44] | row->raw[0x45] << 8);
+    if (a.fighter >= 2 && rx == 0) return;
+    App::Battle::Shadow sh;
+    sh.fighter = a.fighter;
+    sh.alpha = float(80 * 255 / 100) / 255.0f; // (|0x50| x 255 / 100: 204)
+    const cr::Vec3 c = actorPoint(app, a, 1102);
+    sh.at = {c.x, a.pos.y + 0.1f, c.z};
+    sh.rx = float(rx), sh.rz = float(rz);
+    // the fan's triangles: (centre, point i, point i + 1), i / 31 turns round, the last back to 0
+    const float cy = std::cos(a.yaw), sy = std::sin(a.yaw);
+    auto point = [&](int i) {
+        const float t = float(i == 32 ? 0 : i) / 31.0f * 2.0f * 3.14159265f;
+        const float x = sh.rx * std::sin(t), z = sh.rz * std::cos(t);
+        return cr::Vec3{sh.at.x + x * cy + z * sy, sh.at.y, sh.at.z + z * cy - sy * x};
+    };
+    for (int i = 0; i < 32; ++i) {
+        const cr::Vec3 p0 = point(i), p1 = point(i + 1);
+        b.shadowTris.insert(b.shadowTris.end(), {sh.at.x, sh.at.y, sh.at.z, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z});
+    }
+    b.shadows.push_back(sh);
+}
+
+void drawBattleShadows(App& app, const cr::Mat4& vp) {
+    App::Battle& b = app.battle;
+    constexpr size_t kVerts = 5 * 32 * 3;
+    if (b.shadows.empty()) return;
+    if (!app.battleShadows.vao) {
+        cr::Mesh mesh;
+        mesh.positions.assign(kVerts * 3, 0.0f);
+        mesh.uvs.assign(kVerts * 2, 0.0f);
+        mesh.colors.assign(kVerts * 4, 0);
+        for (uint32_t i = 0; i < kVerts; ++i) mesh.indices.push_back(i);
+        app.battleShadows = app.renderer.upload(mesh);
+    }
+    std::vector<float> pos = b.shadowTris, uv(kVerts * 2, 0.0f);
+    pos.resize(kVerts * 3, 0.0f);
+    std::vector<uint8_t> col(kVerts * 4, 0);
+    for (size_t v = 0; v < b.shadows.size() * 32 * 3 && v < kVerts; ++v) col[v * 4 + 3] = uint8_t(std::lround(b.shadows[v / 96].alpha * 255.0f));
+    app.renderer.updatePositions(app.battleShadows, pos, uv, col);
+    cr::Material m; // untextured, double-sided, depth tested, not written
+    m.culling = 0;
+    m.properties = 8;
+    m.blendSrc = 4, m.blendDst = 5;
+    app.renderer.drawMesh(app.battleShadows, nullptr, vp, m);
+}
+
 // btl_prc: the whole screen through the formation's camera (btl_main: camera formation - 2;
-// perspective 0.0792 turns = 28.5 degrees vertical, 4:3, near 9, far 2000)
+// perspective 0.0792 turns = 28.5 degrees vertical, 4:3, near 9, far 2000 - 2.2.0's btl_prc 0xf7f8
+// passes 0x41100000 / 0x44fa0000: Omega's 1 / 3500 are its own)
 void drawBattle(App& app, float dt) {
     App::Battle& b = app.battle;
     auto& r = app.renderer;
@@ -12434,6 +12652,7 @@ void drawBattle(App& app, float dt) {
     r.setCamera(9.0f, 2000.0f, 28.5f * 3.14159265f / 180.0f);
     r.begin3DRect(0, 0, W, H);
     drawLoaded(app, b.stage, vp);
+    b.shadows.clear(), b.shadowTris.clear();
     for (size_t ai = 0; ai < b.actors.size(); ++ai) {
         // the actor as a frame between steps shows it: moved, turned, faded and its animation
         // played on by then (an animation that looped, changed or jumped is shown as it is)
@@ -12469,6 +12688,8 @@ void drawBattle(App& app, float dt) {
         world.m[12] = a.pos.x; world.m[13] = a.pos.y; world.m[14] = a.pos.z;
         drawLoaded(app, lm, vp * world, nullptr, a.alpha);
     }
+    for (const App::Battle::Actor& a : b.actors) addBattleShadow(app, a); // (as the step left them)
+    drawBattleShadows(app, vp); // (_btl_shadow after mdl_put)
     drawEffects(app, vp, eye, target);
     r.end3D();
     drawSceneEffects(app, true); // the field's weather goes on over the battle
@@ -12556,9 +12777,11 @@ void drawBattleRow(App& app, cr::MenuPainter& m, int k, bool dimmed, float a) {
     const cr::Fighter& f = b.rules.f[size_t(k)];
     if (!f.present) return;
     const bool phone = app.renderer.phoneLayout(); // 2.2.0: (+16, -32), into the iPhone's corner
-    const float dx = (k == 0 ? 40 : 0) + (phone ? 16 : 0), dy = (k == 0 ? -24 : 0) + (phone ? -32 : 0);
+    // (Android 1.1.1's _menub_mainPut: - ex, + ey - the phone's bottom left)
+    const float ex = androidEdgeX(app), ey = androidEdgeY(app);
+    const float dx = (k == 0 ? 40 : 0) + (phone ? 16 - ex : 0), dy = (k == 0 ? -24 : 0) + (phone ? -32 + ey : 0);
     const float c = dimmed ? 0.25f : 1.0f;
-    m.piece((k == 0 ? 52 : 0) + (phone ? 16 : 0), 328 + dy, float(f.character * 48), 440, 48, 48, a, c, c, c);
+    m.piece((k == 0 ? 52 : 0) + (phone ? 16 - ex : 0), 328 + dy, float(f.character * 48), 440, 48, 48, a, c, c, c);
     m.piece(2 + dx, 370 + dy, 0, 14, 22, 10, a); // "HP"
     m.piece(86 + dx, 370 + dy, 22, 14, 22, 10, a); // "MP"
     drawBattleNumber(m, b.shownHp[k], 24 + dx, 364 + dy, 5, b.shownHp[k] <= f.hpMax / 4, a);
@@ -12631,9 +12854,11 @@ void stepResults(App& app) {
     auto climb = [](float& v, float to, float step) { if (v < to) v = std::min(to, v + step); };
     climb(rs.shownExp, float(rs.expTotal), float(rs.expTotal / 60));
     climb(rs.shownOz, float(rs.ozTotal), float(rs.ozTotal / 60));
-    climb(rs.shownPurse, float(rs.purseTo), float(rs.ozTotal / 60));
+    // the purse climbs by the earned OZ / 60 only while it is below the OZ earned (__menuu_MbResultPrc
+    // compares DAT_000d2db8 with DAT_000d2d2c, not the new purse): a fuller purse holds until the settle
+    if (rs.shownPurse < float(rs.ozTotal)) rs.shownPurse = std::min(9999999.0f, rs.shownPurse + float(rs.ozTotal / 60));
     --rs.count;
-    if ((rs.count & 1) == 0 && (rs.expTotal > 0 || rs.ozTotal > 0)) app.sound.play(se::kMenuBase + 0x13);
+    if (rs.count % 3 == 0 && (rs.expTotal > 0 || rs.ozTotal > 0)) app.sound.play(se::kMenuBase + 0x13); // (__effgo 0x13 every third)
     if (rs.count < 1) resultsSettle(rs);
 }
 
@@ -12667,10 +12892,10 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     m.picture(67, 304 + rx, 48, a);
     m.picture(68, 288 + rx, 76, a); // EXP Gained
     m.picture(70, 340 + rx, 96, a);
-    drawShopNumber(m, int(rs.shownExp), 358 + rx, 98, 6, 12, a);
+    drawShopNumber(m, rs.expTotal, 358 + rx, 98, 6, 12, a); // (__menuu_MbResultPut: the totals, DAT_000d2d28 / 2d2c - not the counters)
     m.picture(69, 288 + rx, 132, a); // OZ Earned
     m.picture(70, 340 + rx, 152, a);
-    drawShopNumber(m, int(rs.shownOz), 358 + rx, 154, 6, 12, a);
+    drawShopNumber(m, rs.ozTotal, 358 + rx, 154, 6, 12, a);
     const int keepOz = app.game.oz;
     app.game.oz = int(rs.shownPurse); // (ComUty_BattryAndRealTimeAndOzDraw: the purse as it counts)
     drawClockAndOz(app, m, a * in);
@@ -12718,6 +12943,9 @@ void drawBattleHud(App& app, float W, float H) {
     // corners - (+16, +32) / (+16, -32) - the banner 32 lower, the menus where they are
     const bool phone = r.phoneLayout();
     const float edge = wideLeft(app); // the left-hand pieces' origin (the screen's edge inside the safe area)
+    // Android 1.1.1's _menub_mainPut puts them on the phone's edges: the badge (- ex, - ey) (top left), the
+    // rows (- ex, + ey) (bottom left), the banner - ey (top); the menus stay centred
+    const float ex = androidEdgeX(app), ey = androidEdgeY(app);
 
     // Damage numbers (__dmg_prc): over their targets, projected from the 3D across the screen
     r.setOrigin(0);
@@ -12762,7 +12990,7 @@ void drawBattleHud(App& app, float W, float H) {
     // Top left: the Break badge - the ring, a piece per point, the holder's name
     const int g = b.gaugeShown;
     r.setOrigin(edge);
-    m.setOffset(phone ? 16.0f : 0.0f, phone ? 32.0f : 0.0f);
+    m.setOffset(phone ? 16.0f - ex : 0.0f, phone ? 32.0f - ey : 0.0f);
     m.piece(0, 0, 0, 120, 64, 64, a);
     for (int i = 0; i < std::min(8, std::abs(g)); ++i) {
         const short* t = kBreakTick[i];
@@ -12786,13 +13014,13 @@ void drawBattleHud(App& app, float W, float H) {
 
     // The banner: the action's name, the target prompt, the messages
     r.setOrigin(r.uiX());
-    if (b.bannerFrames > 0 && !b.banner.empty()) {
+    if (!b.bannerShown.empty()) { // (font_set_utf16 fills slot 11, drawfont_btl draws it a frame on)
         const float clear[4] = {0, 0, 0, 0}, dark[4] = {0, 0, 0, 0x98 / 255.f};
-        const float by = phone ? 32.0f : 0.0f;
+        const float by = phone ? 32.0f - ey : 0.0f;
         m.quad(88, 4 + by, 24, 24, clear, dark);
         m.quad(112, 4 + by, 351, 24, dark, dark);
         m.quad(463, 4 + by, 24, 24, dark, clear);
-        m.textCentred(b.banner, 287 - m.textWidth(b.banner, 14) / 2, 16 + by, false, 1, 14);
+        m.textCentred(b.bannerShown, 287 - m.textWidth(b.bannerShown, 14) / 2, 16 + by, false, 1, 14);
     }
 
     // Right: the menus
@@ -12858,7 +13086,7 @@ void drawBattleHud(App& app, float W, float H) {
                 // (three digits to (218, 30)), dim when the MP won't pay
                 drawCampRow(app, m, 232, y, g, 0, index == b.pick, ra);
                 m.picture(27, 232 + 188, y + 34, ra);
-                drawShopNumber(m, cost, 232 + 218 - 20, y + 30, 3, 10, ra, 2);
+                drawShopNumber(m, cost, 232 + 218, y + 30, 3, 10, ra, 2); // (ComUty_ComPlate_Gene: PictNumDraw's field from 0xda, right-aligned)
             }
             m.backBar(kBackX, kBackY, false, a);
             if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // the gene's target and effect
@@ -14274,6 +14502,152 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 ran += started;
                 endBattle(app, false);
                 app.runner.stop();
+            }
+            { // The battle scene as 2.2.0's (CRO's 54a299d .. 0150c2d, checked against CR1's code): the encounter's
+              // white and btl_main 200 / 300 / 400 / 499 (the commands at 32, an ambush's round at 31), the strike
+              // banner's name, FUN_0000bcc4's sound, read_btlcpl's idle phases, _btl_shadow's fans, the casts' loops,
+              // mdl_put's turning, the gauge every other frame, the banner a frame late
+                app.game = saved;
+                int sp = 0;
+                std::string why;
+                auto check = [&](bool ok, const char* what) { if (!ok) ++sp, why += std::string(" ") + what; };
+                auto near = [](float x, float y, float e = 0.01f) { return std::fabs(x - y) < e; };
+                check(battleInSound(1) == 0x17 && battleInSound(9) == 0x18 && battleInSound(0x2b) == 0x18 && battleInSound(0xae) == 0x17 &&
+                          battleInSound(0x105) == 0x19 && battleInSound(0x107) == 0x17 && battleInSound(0x11b) == 0x19 &&
+                          battleInSound(0x15f) == 0x18 && battleInSound(0x165) == 0x1a && battleInSound(0x170) == 0x19 &&
+                          battleInSound(0x171) == 0x17 && battleInSound(0x179) == 0x18,
+                      "in-eff-table");
+                int group = 1, idleMonsters = 0, toCommand = 0, ambushAt = 0, shadowsDrawn = 0, castFrames = 0;
+                for (int g = 1; g <= app.battleData.groupCount(); ++g) { // two or more monsters, not formation 2
+                    const std::array<int, 3> ids = app.battleData.group(g);
+                    const cr::MonsterDef *m0 = app.battleData.monster(ids[0]), *m1 = app.battleData.monster(ids[1]);
+                    if (m0 && m1 && m0->model >= 0 && m1->model >= 0 && m0->model < cr::kNumBattleModels && m1->model < cr::kNumBattleModels &&
+                        app.battleData.formation(ids) != 2) {
+                        group = g;
+                        break;
+                    }
+                }
+                std::string strikeBanner;
+                App::Battle& b = app.battle;
+                app.soundLog.clear();
+                app.rng.seed(5);
+                startBattle(app, {group, 0, -1, 0}, 0);
+                if (b.active) {
+                    check(std::find(app.soundLog.begin(), app.soundLog.end(), uint32_t(battleInSound(group))) != app.soundLog.end(), "in-eff-played");
+                    std::set<int> seen;
+                    bool inRange = true;
+                    for (const App::Battle::Actor& a : b.actors)
+                        if (a.fighter >= 2) seen.insert(int(a.time)), inRange &= a.time >= 0 && a.time < std::max(1.0f, actorDuration(app, a) - 1.0f), ++idleMonsters;
+                    check(idleMonsters >= 2 && seen.size() >= 2 && inRange, "idle-phases");
+                    bool white = true;
+                    for (int f = 1; f < kIntroWhite; ++f) stepBattle(app), white &= app.fadeFrom == 1 && app.fadeTo == 1 && app.fadeGrey == 1;
+                    check(white, "white-held");
+                    const int fm = std::max(0, b.formation - 2);
+                    stepBattle(app); // 200
+                    check(app.fadeFrom == 1 && app.fadeTo == 0 && app.fadeT == 0 && app.fadeFrames == 20 && b.cam == fm && b.camActor == -1, "state-200");
+                    stepBattle(app); // 300's first
+                    check(b.cam == fm && b.camActor == 0 && b.camFrame == 0, "state-300");
+                    toCommand = kIntroWhite + 1;
+                    for (; toCommand < 100 && b.phase == App::Battle::Intro; ++toCommand) stepBattle(app);
+                    check(toCommand == kIntroWhite + 32 && b.cam == b.formation + 12, "commands-at-32");
+                    // the shadows: a fan per fighter standing, 204, hidden none
+                    app.lastTicks = 0;
+                    drawFrame(app, false);
+                    shadowsDrawn = int(b.shadows.size());
+                    const App::Battle::Shadow* s0 = nullptr;
+                    for (const App::Battle::Shadow& sh : b.shadows)
+                        if (sh.fighter == 0) s0 = &sh;
+                    App::Battle::Actor* m0 = battleActor(app, 0);
+                    check(s0 && near(s0->alpha, 204.0f / 255.0f, 0.001f) && s0->rx > 0 && s0->rz > 0 && m0 && near(s0->at.y, m0->pos.y + 0.1f) &&
+                              b.shadowTris.size() == b.shadows.size() * 32 * 9,
+                          "shadow-member");
+                    if (m0) {
+                        m0->hidden = true;
+                        drawFrame(app, false);
+                        for (const App::Battle::Shadow& sh : b.shadows) check(sh.fighter != 0, "shadow-hidden");
+                        m0->hidden = false;
+                    }
+                    // mdl_put's turning: 15 degrees a frame; an attacker's wanted yaw, not snapped; home over 3
+                    if (m0) {
+                        const float y0 = m0->yaw, quarter = 3.14159265f / 2.0f, deg = 3.14159265f / 180.0f, full = 2 * 3.14159265f;
+                        m0->wantYaw = y0 + quarter;
+                        turnActors(app);
+                        bool ok = near(std::remainder(m0->yaw - y0, full), 15 * deg, 1e-4f);
+                        for (int f = 0; f < 5; ++f) turnActors(app);
+                        ok &= near(std::remainder(m0->yaw - (y0 + quarter), full), 0, 1e-4f) && m0->turnStep == 15;
+                        m0->yaw = m0->wantYaw = y0;
+                        faceFighter(app, *m0, 2);
+                        ok &= m0->yaw == y0;
+                        turnOver(*m0, y0, 3);
+                        for (int f = 0; f < 3; ++f) turnActors(app);
+                        ok &= near(std::remainder(m0->yaw - y0, full), 0, 1e-4f);
+                        check(ok, "turning");
+                    }
+                    // a gene's cast: the slot played to its loop's end, then that loop over and over
+                    int gene = -1;
+                    for (int id = 1; id < app.battleActions.count() && gene < 0; ++id)
+                        if (const cr::BattleActionDef* d = app.battleActions.get(id); d && d->cls == 11 && d->motion != 1) gene = id;
+                    if (m0 && gene >= 0) {
+                        const int slot = realSlot(b.models[m0->model], 11);
+                        const cr::BattleAnim ca = app.battleData.anim(m0->modelId, slot);
+                        b.turn = cr::BattleTurn();
+                        b.turn.kind = cr::kCmdGene, b.turn.action = gene, b.turn.actors[0] = 0;
+                        startTurn(app);
+                        bool ok = m0->slot == slot && m0->then == -1;
+                        if (ca.loopEnd > ca.loopStart) {
+                            ok &= m0->loopFrom == ca.loopStart && m0->loopTo == ca.loopEnd;
+                            float top = 0, prev = m0->time;
+                            bool wrapped = false;
+                            b.phase = App::Battle::Command, b.turnOn = false; // (the actor alone steps on)
+                            for (int f = 0; f < ca.loopEnd + 2 * (ca.loopEnd - ca.loopStart) + 4; ++f, ++castFrames) {
+                                stepBattle(app);
+                                top = std::max(top, m0->time);
+                                wrapped |= m0->time < prev;
+                                prev = m0->time;
+                            }
+                            ok &= wrapped && top < float(ca.loopEnd) && m0->slot == slot && m0->time >= float(ca.loopStart);
+                        } else
+                            castFrames = -1;
+                        check(ok, "cast-loop");
+                    }
+                    // the badge's gauge: a step every other frame
+                    b.phase = App::Battle::Command;
+                    b.rules.breakGauge = 4, b.gaugeShown = 0;
+                    for (int f = 0; f < 4; ++f) stepBattle(app);
+                    check(b.gaugeShown == 2, "gauge-every-other");
+                    b.rules.breakGauge = 0, b.gaugeShown = 0;
+                    // the banner a frame late
+                    setBanner(app, "x");
+                    const bool before = b.bannerShown.empty() || b.bannerShown != "x";
+                    stepBattle(app);
+                    check(before && b.bannerShown == "x", "banner-late");
+                    endBattle(app, false);
+                    // ambushed: 400 goes to the enemies' round at 31, no menu
+                    app.rng.seed(5);
+                    startBattle(app, {group, 0, -1, 2}, 0);
+                    for (; ambushAt < 100 && b.phase == App::Battle::Intro; ++ambushAt) stepBattle(app);
+                    check(ambushAt == kIntroWhite + 31 && b.phase == App::Battle::Acting, "ambush-400");
+                    endBattle(app, false);
+                    // a first strike: "<the lead>'s team attacks first!" (var 0 the lead's name), kept over the first page
+                    startBattle(app, {group, 0, -1, 1}, 0);
+                    for (int f = 0; f < kIntroWhite; ++f) stepBattle(app);
+                    const App::Battle::Actor* lead = battleActor(app, 0);
+                    strikeBanner = b.banner;
+                    check(lead && !lead->name.empty() && b.banner == sysText(app, 57054, lead->name) && b.banner.rfind(lead->name, 0) == 0, "strike-banner");
+                    for (int f = 0; f < 40 && b.phase == App::Battle::Intro; ++f) stepBattle(app);
+                    check(b.phase == App::Battle::Command && b.banner == strikeBanner && b.bannerFrames > 0, "strike-banner-kept");
+                    endBattle(app, false);
+                } else
+                    check(false, "no-battle");
+                app.runner.stop();
+                app.game = saved;
+                sp += app.renderer.takeErrors();
+                std::printf("battle scene: the opening (white %d steps, 200's fade and still camera, 300's turning one, the commands at %d, an "
+                            "ambush's round at %d, \"%s\"), start sound, idle phases (%d monsters), shadows (%d fans at 204), cast loop (%d frames), "
+                            "turning 15/frame, the gauge every other frame, the banner a frame late; %d problems%s\n",
+                            kIntroWhite, toCommand - kIntroWhite, ambushAt - kIntroWhite, strikeBanner.c_str(), idleMonsters, shadowsDrawn, castFrames, sp,
+                            why.c_str());
+                problems += sp;
             }
             // a plain hit (btlcalc_0404) shakes the screen for 5 frames
             app.game = saved;
@@ -18044,7 +18418,8 @@ int runSelfTest(App& app) {
                 pagesSeen = std::max(pagesSeen, int(app.dialogue.size()));
                 if (!app.dialogue.empty() && ++pageFrames == 12) look("CR_TALK_SHOT_A"); // the first page and its picture
                 if (pageFrames >= 12) readOn(f);
-            } else if (talkFrames > 0) {
+            } else if (talkFrames > 0) { // (the talk's end: btl_main 400, then the menu a frame on)
+                for (int k = 0; k < 2 && b.phase == App::Battle::Intro; ++k) stepBattle(app);
                 tutorialSeen = app.game.flag(0xff1) && !app.runner.running() && b.phase == App::Battle::Command;
                 break;
             }
@@ -18975,12 +19350,15 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         }
         if (!SDL_getenv("CR_CAPTURE_TUTORIALS")) // the battles' tutorials seen (else the first one holds the view)
             for (int f : {0xff1, 0xff2, 0xff3, 0xff4, 0xff5, 0xfa8, 0xfa9}) app.game.setFlag(f, true);
-        startBattle(app, {app.captureBattle[0], app.captureBattle[1], -1, 0}, 0);
-        for (int f = 0; f < 30 && app.battle.active; ++f) stepBattle(app);
-        // --battle-view top|commands|targets|items|escape|hit|results: a screen of it
+        // (CR_BATTLE_STRIKE: 1 the party strikes first, 2 an ambush)
+        startBattle(app, {app.captureBattle[0], app.captureBattle[1], -1, SDL_getenv("CR_BATTLE_STRIKE") ? SDL_atoi(SDL_getenv("CR_BATTLE_STRIKE")) : 0}, 0);
+        // --battle-view top|commands|targets|items|escape|hit|results: a screen of it; intro@n: the
+        // opening n battle frames in (btl_main 200 at kIntroWhite)
         const std::string& v = app.captureBattleView;
         App::Battle& b = app.battle;
-        for (int f = 0; f < 10 && b.active && b.phase != App::Battle::Command; ++f) stepBattle(app);
+        const int introAt = v.rfind("intro@", 0) == 0 ? SDL_atoi(v.c_str() + 6) : -1;
+        for (int f = 0; f < (introAt >= 0 ? introAt : 30) && app.battle.active; ++f) stepBattle(app);
+        for (int f = 0; introAt < 0 && f < 10 && b.active && b.phase != App::Battle::Command; ++f) stepBattle(app);
         if (v == "items") app.game.items[21] = 3, app.game.items[22] = 1, app.game.items[24] = 2;
         if (v == "commands" || v == "targets" || v == "items") battleChooseTop(app, 0);
         if (v == "targets") battleChooseCommand(app, 0);

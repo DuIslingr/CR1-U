@@ -701,6 +701,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         if (e.rechoose) { // btlque_make_que: a twice-acting monster's last go is chosen as it comes up
             Entry fresh = e;
             fresh.rechoose = false;
+            fresh.paid = false; // (btlai_prc clears the entry's announced flag, +0x3e0: named again)
             enemyChoice(e.actors[0], e.actors[1] >= 0, fresh, actions, e.action);
             fresh.repeats = 1;
             if (fresh.kind == kCmdNone) continue;
@@ -730,6 +731,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         out.actors[0] = e.actors[0];
         out.actors[1] = e.actors[1];
         out.counter = e.counter;
+        out.repeat = e.paid;
         breakFlags &= ~0x3200u; // btl_main 600: per action
         if (e.kind == kCmdEscape) {
             // btlact_escape_init: certain while the pair holds the Break, else by levels

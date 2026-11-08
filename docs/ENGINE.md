@@ -467,7 +467,10 @@ c101/c102/c104/m207a, 2026-10-12).
       the cameras are the original's per menu, target and attack. Attackers run up to their
       target and back; the fallen fade out. `--capture … --battle <group> <stage> --battle-view
       top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
-      (the results that many frames in, after that many taps).
+      (the results that many frames in, after that many taps); `intro@<n>` the opening n battle
+      frames in (btl_main 200 at frame 4, the commands at 36). `CR_BATTLE_STRIKE=1|2` starts the
+      captured battle as a first strike / an ambush; `CR_BATTLE_BANNERLOG=1` prints the top
+      banner's text and the phase each time they change, by battle frame.
 - [x] Every action calc (`btlcalcTbl`, 0..36): fixed and split damage, % of HP, down to 1 HP,
       MP damage, Sacrifice, drains (Steal HP / Humor Siphon), Oz theft (won back with the thief),
       monsters running, MP / % heals, full restores, revives, poison (10% a round) and its cure,

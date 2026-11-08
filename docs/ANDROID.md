@@ -65,6 +65,15 @@ name streak (512, 120, 196, 40) over it at (x, y + 16) (`get_draw_namewin_point`
 atlas needs this separate parchment in every layout, including Auto / iPhone and when used as
 an add-on over iOS data; its atlas alone has only the name streak and a partial panel.
 
+Not everything is centred: `_menub_mainPut` (decomp.c 39354) adds or subtracts the centring
+offset over the 2D scale (gac +0x3d14c / +0x3d150 over +0x3d154; (80, 20) tex2d units on a
+1280 x 720 phone) so the battle's Break badge (- ox, - oy: top left), the pair's rows (- ox,
++ oy: bottom left) and the banner (- oy: top) sit on the phone's own edges, as Omega's 1.1.6
+does. The port's Android layout does the same through `androidEdgeX` / `androidEdgeY` (0 in the
+other layouts). Not done yet: `btlbreak_effect_prc` (22931) offsets its stripes too, and the
+field's corner pieces, the message's marks, the side portraits and the like (Omega's list) are
+unchecked in 1.1.1.
+
 ## Other differences
 
 - The voiced release: `btl_voice_*`, `voicebtl.bin` / `voiceevnt.bin`, `NDKGetLanguage`.
