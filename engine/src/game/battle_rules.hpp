@@ -237,7 +237,7 @@ public:
     // skill was learned (0506)
     bool elementTaken = false, statusTaken = false, learnedNew = false;
     // The story battles' scripted rules (set by the scene from the group, the route and flags):
-    // chk_karaok_dmg_hp - no damage takes a fighter below 1 HP; btlcalc_status_prc - these
+    // chk_karaok_dmg_hp - no damage takes a monster below 1 HP (the pair can fall); btlcalc_status_prc - these
     // fighters are back to full HP as the round ends; +0xa50 - a pair attack (action 18) landed
     // after the third round (btlcalc_0404)
     bool keepAlive = false;

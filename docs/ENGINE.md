@@ -632,7 +632,8 @@ c101/c102/c104/m207a, 2026-10-12).
       moment comes (by group and route: the start, a round, the boss's HP, its fall) until it
       clears the flag, and after the battle it carries on from there (no room entry script).
       Meanwhile the battle waits and its HUD gives way to the portraits and the message box;
-      those bosses can't fall before their last moment (`chk_karaok_dmg_hp`) and some heal whole
+      those bosses can't fall before their last moment (`chk_karaok_dmg_hp`: monsters only - the
+      pair can still fall) and some heal whole
       each round until it (`btlcalc_status_prc`). In other battles the area's EvrStart 2 shows
       the tutorials the first time each thing happens (the first battle, the Break, an element
       taken, a status, a gene learned, the Genes and Defend commands; flags 4081..4085, 4008,

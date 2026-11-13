@@ -568,6 +568,40 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     }
                     if (got == 0 || twice) std::printf("  steal: %d got, %d twice\n", got, twice), ++cbad;
                 }
+                { // chk_karaok_dmg_hp keeps only a monster at 1 HP (+0xa2 > 7): poison takes the member down
+                    cr::BattleRules kr;
+                    for (cr::Fighter& x : kr.f) x = cr::Fighter();
+                    for (int i : {0, 2}) {
+                        cr::Fighter& x = kr.f[size_t(i)];
+                        x.present = true, x.enemy = i >= 2, x.level = 1, x.hp = 1, x.hpMax = 100, x.character = i < 2 ? i : -1;
+                        x.status[cr::kStatusPoison] = 3;
+                    }
+                    kr.keepAlive = true;
+                    kr.endRound();
+                    if (kr.f[0].hp != 0 || kr.f[2].hp != 1) std::printf("  story battle's last HP: member %d, monster %d\n", kr.f[0].hp, kr.f[2].hp), ++cbad;
+                }
+                { // 0413 (Vampire, 222): the pair's drain heals each member by the total over the users (que +0xc2)
+                    cr::BattleRules dr;
+                    dr.seed(7);
+                    for (cr::Fighter& x : dr.f) x = cr::Fighter();
+                    for (int i : {0, 1, 2}) {
+                        cr::Fighter& x = dr.f[size_t(i)];
+                        x.present = true, x.enemy = i >= 2, x.level = 1, x.hp = 1000, x.hpMax = 99999, x.mp = x.mpMax = 400;
+                        x.atk = 100, x.spd = i == 2 ? 1 : 10000 - i, x.character = i < 2 ? i : -1;
+                    }
+                    dr.pair = true;
+                    cr::BattleCommand c2[2];
+                    c2[0].kind = cr::kCmdGene, c2[0].action = 222, c2[0].target = 2;
+                    c2[1] = c2[0];
+                    dr.beginRound(c2, app.battleActions);
+                    cr::BattleTurn tt;
+                    int users = 0;
+                    while (dr.nextTurn(app.battleActions, tt))
+                        if (tt.action == 222) { users = (tt.actors[0] >= 0) + (tt.actors[1] >= 0); break; } // (before the monster's turn)
+                    const int d = 1000 - dr.f[2].hp; // (what the monster lost)
+                    if (users != 2 || d <= 0 || dr.f[0].hp != 1000 + d / 2 || dr.f[1].hp != 1000 + d / 2)
+                        std::printf("  pair drain: %d users, %d taken, healed to %d / %d\n", users, d, dr.f[0].hp, dr.f[1].hp), ++cbad;
+                }
                 std::printf("calcs: fixed, split by targets, to 1, %%HP, MP, Oz stolen, Apples, barrier, revive, poison: %d problems\n", cbad);
                 sbad += cbad;
                 { // btlcalc_0404: resistance 1 is immune; an attacker without an element meets no element resistance

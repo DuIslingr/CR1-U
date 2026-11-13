@@ -1270,7 +1270,8 @@ system text block 3 (54000 + action − 1). Calcs (btlcalcTbl at 0xd2c30, power 
 0 physical (`btlcalc_0404`), 1 genes (0406), 2 p × 100 shared by the targets (0407), 3 p × 100
 (0408), 4 p × 10 MP (0409), 5 p% of the target's HP (0410), 6 p% of its MP (0411), 7 Sacrifice:
 p% of the users' HP above 1, which they lose (0412), 8 drain: p% of the attack sum, the users get
-it back over the targets (0413), 9 down to 1 HP (0414), 10 takes p% of the purse (0415; the thief
+it back - what was taken after Invincible, x2 with skill 155, over the users (que +0xc2) - at the
+last target (0413), 9 down to 1 HP (0414), 10 takes p% of the purse (0415; the thief
 keeps it at +0x9c until it falls), 11 the monster runs: 50 / 70 / 85 / 100% for its level less the
 pair's < −49 / < 0 / < 50 / more, sure while the enemies hold the Break (0416, +0x93), 12 healing
 (0417), 13 MP by the luck formula (bonus 20 / 5, enemies 25 / 5; 0418), 14 all HP and MP (0419), 15
@@ -1366,7 +1367,7 @@ one; 153 guard at a quarter of the HP or less (10 / 20%, `btlord_chk_autoguard`)
 physical hit (10 / 20%, `btlque_add_counter`); 155 healing x2 (items x20 instead of x10); 156
 genes x1.2; 158 −15 off the level difference for genes taught; 159 is read and ignored; 160
 escape always works; 161 / 162 experience / Oz + a fifth (pair mode either member's, else the
-member whose action came up last, +0xaea - set by `btlque_make_que` each action); 163 MP full after the battle. Armor counts too (`chk_gene_btl`, the
+member whose action came up last, +0xaea - set by `btlque_make_que` each action, back to 0 at each round's 500); 163 MP full after the battle. Armor counts too (`chk_gene_btl`, the
 fighter's +0x7c): each character's 222..227 (+28 a character) are 148 / 149 / 150 Blaze / Aqua /
 Gale Resistance, two of each. The critical roll compares the attackers' average level with the
 action's first target's (G+0x7a) for every target. Out of

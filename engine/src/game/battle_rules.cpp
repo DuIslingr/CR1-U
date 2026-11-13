@@ -226,7 +226,9 @@ int BattleRules::attackAction(int fighter) const {
 bool BattleRules::has(int i, int skill) const {
     if (i < 0 || i > 4 || skill < 131 || skill > 186) return false;
     if (f[size_t(i)].skills[size_t(skill - 131)]) return true;
-    return i < 2 && pair && f[size_t(1 - i)].skills[size_t(skill - 131)];
+    // (chk_skill_btl 60306-60360: the pair's either member; with the enemy pair formed, enemies 2 and 3 alike)
+    if (i < 2) return pair && f[size_t(1 - i)].skills[size_t(skill - 131)];
+    return enemyPair && (i == 2 || i == 3) && f[size_t(5 - i)].skills[size_t(skill - 131)];
 }
 
 int BattleRules::geneCost(const BattleActionDef& a, int user) const {
@@ -371,10 +373,11 @@ BattleHit BattleRules::physical(const BattleActionDef& a, const int actors[2], i
             ++n;
         }
     int bonus = bonusFor(actors, false);
-    // skill 135: a plain attack is critical the first time, when every attacker has it
+    // skill 135: a plain attack is critical the first time, when every attacker has it - chk_skill_btl's,
+    // either member's in pair mode (___btlcalc_0404 23858-23866) - and none has used its first
     bool firstCrit = a.id >= 10 && a.id <= 21;
     for (int k = 0; k < 2; ++k)
-        if (actors[k] >= 0) firstCrit &= f[size_t(actors[k])].skills[135 - 131] && f[size_t(actors[k])].firstAttack;
+        if (actors[k] >= 0) firstCrit &= has(actors[k], 135) && f[size_t(actors[k])].firstAttack;
     // btlcalc_critical: the attackers' average level against the target's
     // (against the action's first target's level, whichever target this is)
     const int dl = (n ? levels / n : 0) - f[size_t(firstTarget_ >= 0 ? firstTarget_ : target)].level;
@@ -540,6 +543,7 @@ void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable
     queue_.clear();
     next_ = 0;
     escaped_ = false;
+    soloMember_ = 0; // (btl_main 500, 6262: +0xaea back to member 0 each round)
     // state 500: what the Break must survive, defend takes hold now
     breakFlags = 0;
     if (breakGauge != 0) {
@@ -789,13 +793,13 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         std::vector<int> hitList = resolveTargets(*a, e);
         firstTarget_ = hitList.empty() ? -1 : hitList.front(); // btlcalc_critical reads G+0x7a
         // btlque_make_que: each target's 131 / 136 (20% holding the Break, else 10) - one success
-        // fends off the whole action ("Miss!" on every target); +20 rules the gene dodge out
+        // fends off the whole action ("Miss!" on every target); +20 rules both dodges out
         dodgeHit_ = dodgeGene_ = false;
         for (int t : hitList) {
             if (has(t, 131) && !dodgeHit_ && random(100) < (holdsBreak(t) ? 20 : 10)) dodgeHit_ = true;
             if (has(t, 136) && !dodgeGene_ && random(100) < (holdsBreak(t) ? 20 : 10)) dodgeGene_ = true;
         }
-        if (a->sureGene) dodgeGene_ = false;
+        if (a->sureGene) dodgeHit_ = dodgeGene_ = false; // (make_que 31419-31422: +0x20 clears que +0xb8 and +0xb9)
         // btlact_gene / btlact_item: a hostile gene or item meeting a barrier on any target takes
         // every target's barrier and comes back (0x1004 / 0x100e) - on its users, or with scope 5
         // on all of their side standing - its users' power as before; the Break counts it for the
@@ -836,6 +840,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 h.mp = true;
                 h.amount = calc == 4 ? a->power * 10 : a->power * tx.mp / 100;
                 if (invincible(t)) h.amount = 0; // (FUN_0002a184: Is_invincible)
+                if (h.amount > 0) breakEvent(breakBy, 2, t); // (FUN_0002a184, 23694: MP lost feeds the Break too)
                 tx.mp = std::clamp(tx.mp - h.amount, 0, tx.mpMax);
                 out.hits.push_back(h);
                 continue;
@@ -846,7 +851,6 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 if (calc == 8) base = atkSumOf();
                 h.amount = magicBoost(zoku(a->power * base / 100, *a, e.actors[0], t, true));
                 if (dodgeGene_) h.amount = 0, h.type = kHitMiss, note_ = 57062;
-                if (calc == 8) drained += h.amount;
                 break;
             }
             case 9: h.amount = std::max(0, tx.hp - 1); break; // 0414: down to 1
@@ -945,7 +949,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                             BattleHit self;
                             self.target = k;
                             self.amount = u.hp / 4;
-                            if (keepAlive && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
+                            if (keepAlive && k >= 2 && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
                             if (self.amount > 0) breakEvent(e.actors[0], 2, t);
                             u.hp = std::max(0, u.hp - self.amount);
                             if (u.hp == 0 && u.status[kStatusEndure]) u.status[kStatusEndure] = 0, u.hp = 1;
@@ -1005,7 +1009,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             // _btlcalc_dmg_hp (23744): Is_invincible (a pair's either member) takes the damage to 0 and
             // leaves the result's type - a "0" with the hit's own label, if any
             if (h.amount > 0 && invincible(t)) h.amount = 0;
-            if (keepAlive && h.amount > 0 && tf.hp - h.amount < 1) h.amount = std::max(0, tf.hp - 1); // chk_karaok_dmg_hp
+            // (chk_karaok_dmg_hp - the story battles' last HP - only for a monster: +0xa2 > 7, 23757 / 23996 / 23768)
+            if (keepAlive && t >= 2 && h.amount > 0 && tf.hp - h.amount < 1) h.amount = std::max(0, tf.hp - 1);
+            if (calc == 8) drained += h.amount; // (0413: que +0x80 adds what dmg_hp took - after Invincible)
             if (calc == 0 && round > 3 && h.amount >= 1 && a->id == 18) lateAttack = true; // btlcalc_0404: +0xa50
             if (h.amount > 0) breakEvent(breakBy, 2, t);
             tf.hp = std::clamp(tf.hp - h.amount, 0, tf.hpMax);
@@ -1084,12 +1090,16 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                     f[size_t(k)].hp = 1;
                     out.hits.push_back(self);
                 }
-        if (a->calc == 8 && drained > 0 && !hitList.empty()) // 0413: what was drained heals the users
+        // 0413 (22570-22597): at the last target what was drained (x2 with skill 155) heals each user by
+        // its share - divided by the users (que +0xc2), not the targets
+        int users = 0;
+        for (int k : e.actors) users += k >= 0;
+        if (a->calc == 8 && drained > 0 && !hitList.empty() && users > 0)
             for (int k : e.actors)
                 if (k >= 0 && f[size_t(k)].alive()) {
                     BattleHit back;
                     back.target = k;
-                    back.amount = -recovery(drained) / int(hitList.size());
+                    back.amount = -recovery(drained) / users;
                     f[size_t(k)].hp = std::clamp(f[size_t(k)].hp - back.amount, 0, f[size_t(k)].hpMax);
                     out.hits.push_back(back);
                 }
@@ -1161,7 +1171,7 @@ void BattleRules::endRound() {
         if (regenFull[size_t(i)]) d = x.hp - x.hpMax; // a story boss heals whole until its moment comes
         if (d == 0) continue;
         if (d > 0 && invincible(i)) d = 0;
-        if (keepAlive && d > 0 && x.hp - d < 1) d = std::max(0, x.hp - 1);
+        if (keepAlive && i >= 2 && d > 0 && x.hp - d < 1) d = std::max(0, x.hp - 1);
         x.hp = std::clamp(x.hp - d, 0, x.hpMax);
         if (x.hp == 0 && x.status[kStatusEndure]) x.status[kStatusEndure] = 0, x.hp = 1;
         if (x.hp == 0) fall(i, party, true);
