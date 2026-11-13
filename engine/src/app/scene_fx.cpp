@@ -690,7 +690,13 @@ std::string sysLabel(const App& app, int id, const char* fallback) {
 
 void saveImportAnswer(App& app, bool yes) {
     const bool finished = app.saveImport.state == vitaimport::Session::Result && app.saveImport.succeeded;
+    const bool installing = app.saveImport.state == vitaimport::Session::Confirm && yes;
     app.saveImport.answer(yes, app.saveDirOverride.empty() ? cr::saveDir() : app.saveDirOverride);
+    if (installing && app.saveImport.succeeded) { // (the per-pair files it wrote: the one data.dat made from them)
+        std::vector<std::string> names;
+        for (const auto& f : app.saveImport.plan.files) names.push_back(f.first);
+        foldVitaImport(app, names);
+    }
     if (finished) {
         app.optionsOpen = false;
         app.trackerArmed = false;
@@ -1279,6 +1285,7 @@ void resetAnswer(App& app, bool yes) {
     if (!yes) { menuSound(app, se::kChoose); return; }
     menuSound(app, 13); // (0x9e on Omega's numbering)
     for (int pair = 1; pair <= 4; ++pair) SDL_RemovePath(slotPath(app, pair).c_str());
+    SDL_RemovePath(dataPath(app).c_str());
     SDL_RemovePath(savePath(app, "resume.dat").c_str());
     app.game = cr::GameState();
     app.playSeconds = 0; // (prty_init_all: the play time is in the block it clears)
@@ -2529,7 +2536,7 @@ void drawFrame(App& app, bool present) {
     if (app.mode == Mode::Maps && app.exclamation) drawExclamation(app);
     if (app.mode == Mode::Maps && app.padArt) drawPadArt(app);
     if (app.mode == Mode::Maps && app.battle.active) drawBattleHud(app, W, H);
-    if (app.mode == Mode::Maps && app.titleOpen && !app.optionsOpen && !app.saveScreen.open && !app.resumePrompt &&
+    if (app.mode == Mode::Maps && app.titleOpen && !app.optionsOpen && !app.saveScreen.open && // (the offer's windows over it)
         !app.charSelectOpen && !app.scenariosOpen && !app.manualOpen)
         drawTitleMenu(app);
     if (app.optionsOpen) {
@@ -2639,7 +2646,8 @@ void drawFrame(App& app, bool present) {
             float lx, ly, tx, ty;
             r.toLogical(mx * (ww > 0 ? float(r.frameWidth()) / float(ww) : 1.0f), my * (wh > 0 ? float(r.frameHeight()) / float(wh) : 1.0f), lx, ly);
             logicalToTex2d(app, lx, ly, tx, ty);
-            corner = app.staffRoll.phone ? tx >= 444 && tx < 476 && ty >= 0 && ty < 32 : tx >= 460 && tx < 492 && ty >= -32 && ty < 0;
+            const float ey = app.staffRoll.edgeY; // (Android: the button at y -oy)
+            corner = app.staffRoll.phone ? tx >= 444 && tx < 476 && ty >= -ey && ty < 32 - ey : tx >= 460 && tx < 492 && ty >= -32 && ty < 0;
         }
         app.staffRoll.fast = keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_RETURN] || corner;
         for (app.staffRoll.clock += dt; app.staffRoll.clock >= 1.0f / kFramesPerSecond; app.staffRoll.clock -= 1.0f / kFramesPerSecond)

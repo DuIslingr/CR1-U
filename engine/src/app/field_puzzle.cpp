@@ -3185,9 +3185,7 @@ void stepEvents(App& app) {
     if (skipping && !app.dialogue.empty() && pageTyped(app) && !(pageInfo(app) && pageInfo(app)->closeAfter >= 0))
         advanceDialogue(app);
     if (app.titleOpen) ++app.titleAnim; // the title menu fades in
-    if (app.resumeIn > 0 && --app.resumeIn == 0) { // the Progress Tracker's load, after its black
-        if (!applySave(app, app.resumeData)) { menuSound(app, se::kBuzzer); titleStart(app); }
-    }
+    stepResume(app); // the title's Progress Tracker offer: its message, windows, and the load / Start after the answer
     if (app.titleReturnIn > 0 && --app.titleReturnIn == 0) { app.optionsOpen = false; bootTitle(app); } // Options' Return to Title, after its black
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
     updateVoices(app);

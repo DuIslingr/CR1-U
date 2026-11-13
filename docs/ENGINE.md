@@ -316,7 +316,9 @@ c101/c102/c104/m207a, 2026-10-12).
       expression in at once and clears that side, 0x40 zooms a centre image 200% -> 100% over 4
       frames; in widescreen side portraits keep to the screen's edges)
 - [x] Saves, as the original keeps them (`game/save.cpp`, a small text file in the save folder):
-      one per pair (each pair's story is its own: save1.dat .. save4.dat), saved from the **Camp
+      one file for the four pairs, as 2.2.0's data.dat (`SaveData_Save`: the shared Oz, flags and
+      shared bag, each pair's records, own bag, saved place and "saved" mark; the earlier releases'
+      save1.dat .. save4.dat are folded into it once on the first read and left as they are), saved from the **Camp
       menu** (K on the field, laid out as `__menuu_CampMainPut` draws it: the pair's face
       boards, the clock and the purse, Items / Equip / Genes / Status / Options, and Save) or a script's Util 5/6 - "Save data?" Yes / No, "Save complete.". The
       title's **Start** runs as the boot script has it (j001_t99: Util 0 -> Util 4 -> Util 5):
@@ -331,8 +333,8 @@ c101/c102/c104/m207a, 2026-10-12).
       4 load) with the pair in var 0, so each pair plays its own prologue on d0550 into the Ark
       (97); `--save-screen clear` shows a cleared slot. The script's `LoadPrty` is the original's
       `prty_init_new`: the pair's flags cleared, its members back to level 1 with their
-      starting gear, genes and items; with the pair's clear data the game goes on from it (its
-      Oz kept), and "with your clear data" also keeps each member's stat bonuses, equipment and
+      starting gear, genes and items, on the one save (its Oz, the shared bag - genes, skills,
+      the manual, plates - and the other pairs kept), and "with your clear data" also keeps each member's stat bonuses, equipment and
       gene plates and the bag, less the story's items; `ResetFieldFlag_NewGame` clears the pair's
       field flags (its four blocks of 3000..3063, and 3300..3363). The chara2 sheet (the third and
       fourth pairs) opens once a first story is done (flag 32 or 34). The

@@ -2346,7 +2346,7 @@ int sessionUiSelfTest(App& app) {
     field();
     cr::SaveData save = captureSave(app);
     save.game.oz = 54321;
-    const std::string path = slotPath(app, 1);
+    const std::string path = dataPath(app);
     check(cr::writeSave(path, save), "synthetic save created");
     { // a save cut short is refused, here and in the Vita import's order (the party last, no boxes)
         std::vector<uint8_t> whole;
@@ -2477,7 +2477,7 @@ int clearDataNewGameSelfTest(App& app, const cr::SaveData& base) {
     for (int f : {31, 32, 40, 1100}) sd.game.setFlag(f, true);
     sd.game.vars[0] = 7, sd.game.vars[1] = 4;
     sd.leader = 0;
-    cr::writeSave(slotPath(app, 1), sd);
+    cr::writeSave(dataPath(app), sd);
     app.game = cr::GameState();
     bootTitle(app);
     for (int f = 0; f < 3000 && !app.titleOpen; ++f) stepEvents(app);
@@ -2720,6 +2720,86 @@ int walkCollisionSelfTest(App& app, int& spawned, int& walked, int& mapErrors) {
     return entered;
 }
 
+// The 2026-11-13 audit's menu items, as 2.2.0 has them: the Sexy Pose price (__menuu_ShopPrc 6:
+// price - price / 10), the Camp's healing on the home maps (CampMainSet), the Equip list's grey empty
+// slots (__MuScrList_ScrListEquip_Main), the held-back member's spare jewel (MuComMakeItemData), and
+// the Android staff roll's measures (InitStaffRollMenu)
+int menusAuditSelfTest(App& app) {
+    const cr::GameState keepGame = app.game;
+    const int keepChar = app.playerChar, keepMap = app.mapNumber;
+    int problems = 0;
+    // F8: a price that isn't a multiple of 10 loses its tenth rounded down
+    app.game = cr::GameState();
+    app.playerChar = 0;
+    int priced = 0, posePrice = -1, plainPrice = -1;
+    for (int it = 1; it <= 438 && !priced; ++it)
+        if (const cr::ItemParam* ip = app.itemTable.item(it); ip && ip->price % 10 && ip->price > 10) priced = it;
+    for (int c = 0; c < 2 && posePrice < 0; ++c)
+        for (int pl = cr::kFirstPlate; pl < cr::kFirstPlate + cr::kPlates && posePrice < 0; ++pl) {
+            const auto& e = cr::plateContents(pl);
+            if (std::find(e.begin(), e.end(), 173) == e.end()) continue;
+            app.game.items[173] = 1, app.game.items[pl] = 1, app.game.party[size_t(c)].genes[1] = pl;
+            if (cr::hasSkill(app.game, c, 173)) posePrice = priced ? shopUnitPrice(app, priced) : -1;
+            else app.game.party[size_t(c)].genes[1] = 0;
+        }
+    app.game = cr::GameState();
+    plainPrice = priced ? shopUnitPrice(app, priced) : -1;
+    const bool f8 = priced && plainPrice > 0 && posePrice == plainPrice - plainPrice / 10;
+    problems += !f8;
+    // S7: the Camp opened on a home map (0x61..0x71, 0x53) heals the pair; elsewhere not
+    app.game = cr::GameState();
+    app.game.setFlag(0x38, true);
+    app.game.party[0].hp = 5, app.game.party[1].mp = 3, app.game.party[2].hp = 7;
+    app.mapNumber = 97;
+    openCamp(app);
+    const bool healed = app.game.party[0].hp < 0 && app.game.party[1].mp < 0 && app.game.party[2].hp == 7;
+    app.campOpen = false;
+    app.game.party[0].hp = 5;
+    app.mapNumber = 42;
+    openCamp(app);
+    const bool notHealed = app.game.party[0].hp == 5;
+    app.campOpen = false;
+    problems += !healed + !notHealed;
+    // S8: the empty jewel slot grey without a free jewel, the empty plate slots without a plate to wear
+    app.game = cr::GameState();
+    const bool grey = !campFreeJewel(app) && !campCommonSkill(app);
+    app.game.items[426] = 1;
+    int entry = 0;
+    for (int e : cr::plateContents(cr::kFirstPlate + 2))
+        if ((e >= 0x59 && e <= 0x71) || (e >= 0x8b && e <= 0xba)) { entry = e; break; }
+    app.game.items[cr::kFirstPlate + 2] = 1, app.game.items[entry] = 1;
+    const bool white = campFreeJewel(app) && entry && campCommonSkill(app);
+    problems += !grey + !white;
+    // S9: Musiea held back (flag 0xfed) wearing jewel 426, a spare 426 in the bag: listed for Escher
+    app.game = cr::GameState();
+    app.game.setFlag(0xfed, true);
+    app.game.party[1].equip[cr::kJewel] = 426;
+    app.game.items[426] = 1;
+    bool spare = false;
+    for (int k = 0; k < campui::kCategories; ++k)
+        if (campui::kCategoryKind[k] == 8) {
+            const std::vector<int> l = campItems(app, k);
+            spare = std::find(l.begin(), l.end(), 426) != l.end();
+        }
+    const std::vector<int> eq = campEquipList(app, 0, cr::kJewel);
+    spare = spare && std::find(eq.begin(), eq.end(), 426) != eq.end();
+    problems += !spare;
+    // S10: the Android phone's staff roll (oy 20: a 4:3 screen) - the picture's end, the lines shown
+    App::StaffRoll st;
+    st.phone = true;
+    const bool iphone = staffPicEnd(st) == -575 && staffShown(st) == 17;
+    st.edgeY = 20;
+    const bool android = staffPicEnd(st) == -615 && staffShown(st) == 19;
+    problems += !iphone + !android;
+    std::printf("menus audit: Sexy Pose %d -> %d %s, Camp heals at home %s and not away %s, empty slots grey %s / white %s, "
+                "held-back spare jewel listed %s, Android staff roll %s / %s; %d problems\n",
+                plainPrice, posePrice, f8 ? "ok" : "WRONG", healed ? "ok" : "NO", notHealed ? "ok" : "NO", grey ? "ok" : "NO",
+                white ? "ok" : "NO", spare ? "ok" : "NO", iphone ? "ok" : "WRONG", android ? "ok" : "WRONG", problems);
+    app.game = keepGame;
+    app.playerChar = keepChar, app.mapNumber = keepMap;
+    return problems;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
@@ -2729,6 +2809,61 @@ int runSelfTest(App& app) {
     applyVideo(app);
     app.testNoTutorials = true; // the battles' tutorials only where a test asks for them
     app.renderer.setVSync(false); // as fast as it renders, not at the display's rate
+    if (const char* dir = SDL_getenv("CR_SELFTEST_FOLD")) { // a COPY of a folder of per-pair saves (save1..4.dat, no data.dat):
+        // folded into data.dat once, the files left as they were, each pair loaded from its own place
+        app.saveDirOverride = std::string(dir) + (dir[0] && dir[std::strlen(dir) - 1] == '/' ? "" : "/");
+        if (SDL_GetPathInfo(dataPath(app).c_str(), nullptr)) { std::fprintf(stderr, "fold: %s has a data.dat already\n", dir); return 1; }
+        int problems = 0, pairs = 0;
+        if (const char* vita = SDL_getenv("CR_SELFTEST_FOLD_VITA")) { // first a Vita export imported there (its files only read)
+            try {
+                const vitaimport::Plan plan = vitaimport::prepare(vita, "cr1");
+                vitaimport::install(plan, app.saveDirOverride);
+                std::vector<std::string> names;
+                for (const auto& f : plan.files) names.push_back(f.first);
+                problems += !foldVitaImport(app, names);
+                std::printf("fold: Vita import of %d slot(s) installed and folded\n", plan.slots);
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "fold: Vita import failed: %s\n", e.what());
+                return 1;
+            }
+        }
+        std::vector<uint8_t> was[4], now[4];
+        cr::SaveData own[4];
+        bool have[4] = {};
+        for (int p = 0; p < 4; ++p)
+            if ((have[p] = cr::readSave(slotPath(app, p + 1), own[p]))) cr::readFile(slotPath(app, p + 1), was[p]), ++pairs;
+        cr::SaveData d;
+        problems += !readData(app, d);
+        cr::SaveData written;
+        problems += !cr::readSave(dataPath(app), written);
+        for (int p = 0; p < 4; ++p) {
+            if (!have[p]) { problems += d.places[size_t(p)].has; continue; }
+            cr::readFile(slotPath(app, p + 1), now[p]);
+            problems += now[p] != was[p];
+            const cr::SaveData& o = own[size_t(p)];
+            cr::SaveData l = d;
+            l.takePlace(p), cr::changeRoute(l.game, &app.itemTable, p);
+            int bad = !d.places[size_t(p)].has + (l.area != o.area) + (l.map != o.map) + (l.leader != o.leader);
+            for (int k = 0; k < 2; ++k) {
+                const cr::PartyMember &a = l.game.party[size_t(2 * p + k)], &b = o.game.party[size_t(2 * p + k)];
+                bad += a.level != b.level || a.exp != b.exp || !std::equal(std::begin(a.equip), std::end(a.equip), std::begin(b.equip));
+            }
+            for (const auto& [item, n] : o.game.items) { // the pair's own items as its file had them; the shared at least as many
+                const cr::ItemHome h = cr::itemHome(&app.itemTable, item);
+                const int got = l.game.items.count(item) ? l.game.items.at(item) : 0;
+                if (n > 0 && (h == cr::ItemHome::Shared || h == cr::ItemHome::Gear ? got < n : got != n)) ++bad;
+            }
+            for (size_t w = 0; w < o.game.flags.size(); ++w) bad += (l.game.flags[w] & o.game.flags[w]) != o.game.flags[w];
+            if (!applySave(app, l)) ++bad;
+            else for (int i = 0; i < 2; ++i) drawFrame(app, false);
+            bad += !app.havePlayer || app.mapNumber != o.map;
+            std::printf("fold: pair %d - area %d map %d leader %d, members %d / %d, %zu items in view, Oz %d: %s\n", p + 1, l.area, l.map, l.leader,
+                        l.game.party[size_t(2 * p)].level, l.game.party[size_t(2 * p + 1)].level, l.game.items.size(), l.game.oz, bad ? "WRONG" : "ok");
+            problems += bad;
+        }
+        std::printf("fold: %d per-pair saves into data.dat (in play pair %d, Oz %d); %d problems\n", pairs, d.route() + 1, d.game.oz, problems);
+        return problems ? 1 : 0;
+    }
     if (const char* file = SDL_getenv("CR_SELFTEST_SAVE")) {
         cr::SaveData save;
         std::string error;
@@ -2773,7 +2908,7 @@ int runSelfTest(App& app) {
         setMode(app, Mode::Maps);
         startNewGame(app);
         const int problems = clearDataNewGameSelfTest(app, captureSave(app));
-        for (const char* f : {"save1.dat", "save2.dat", "save3.dat", "save4.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
+        for (const char* f : {"save1.dat", "save2.dat", "save3.dat", "save4.dat", "data.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
         SDL_RemovePath(app.saveDirOverride.c_str());
         app.saveDirOverride = keep;
         return problems ? 1 : 0;
@@ -3384,10 +3519,11 @@ int runSelfTest(App& app) {
             app.saveDirOverride = userDir() + "selftest-reset/";
             SDL_CreateDirectory(app.saveDirOverride.c_str());
             const cr::SaveData sd = captureSave(app);
-            for (int pair = 1; pair <= 2; ++pair) cr::writeSave(slotPath(app, pair), sd);
+            cr::writeSave(dataPath(app), sd);
+            cr::writeSave(slotPath(app, 1), sd); // (an earlier release's)
             cr::writeSave(savePath(app, "resume.dat"), sd);
             auto saves = [&] {
-                int n = 0;
+                int n = int(SDL_GetPathInfo(dataPath(app).c_str(), nullptr));
                 for (int pair = 1; pair <= 4; ++pair) n += SDL_GetPathInfo(slotPath(app, pair).c_str(), nullptr);
                 return n + int(SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr));
             };
@@ -3542,13 +3678,33 @@ int runSelfTest(App& app) {
         app.menuSoundLog.clear();
         titleKey(app, SDLK_RETURN); // the tap: SE 0, the plates
         for (int f = 0; f < 8; ++f) stepEvents(app);
+        app.interruptShown = false; // (a new launch)
         titleKey(app, SDLK_RETURN); // Start
+        // S3 (__menuu_TitlePrc 0xf..0x18): the first offer a launch with flag 0x44 clear reads "About
+        // Progress Tracker" (56036) through first - flags 0x44 and 3 set while it is up -, then
+        // windows 4..7 come in with the question; the answer sends them out before the load
+        int rbad = 0;
+        const size_t noticePages = app.dialogue.size();
+        rbad += app.resumeNotice != 1 || app.resumePrompt || !app.game.flag(0x44) || !app.game.flag(3) || noticePages < 1 ||
+                !app.interruptShown || !app.titleOpen;
+        problems += expectSounds("title tap, Start", {0, 2});
+        for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
+        for (int f = 0; f < 800 && app.resumeNotice == 1; ++f) {
+            stepEvents(app);
+            if (f % 8 == 7) titleKey(app, SDLK_RETURN); // (a page out, then turned)
+        }
+        for (int f = 0; f < 6; ++f) stepEvents(app);
+        rbad += app.game.flag(3) || app.resumeNotice || app.resumePrompt != 1 || app.resumeWin < 1 || app.resumeCursor != 0;
+        for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
         const bool offered = app.resumePrompt == 1;
         problems += !offered;
-        problems += expectSounds("title tap, Start", {0, 2});
         app.menuSoundLog.clear();
         answerResume(app, true);
-        for (int f = 0; f < 14 && app.resumeIn > 0; ++f) stepEvents(app); // (the black, then the load)
+        rbad += app.resumePrompt != 2 || !app.resumeYes;
+        for (int f = 0; f < 4; ++f) stepEvents(app);
+        rbad += app.resumeWin > 0 || !app.titleOpen; // (0x15: the windows out, the black still coming)
+        for (int f = 0; f < 20 && app.resumeIn > 0; ++f) stepEvents(app); // (the black, then the load)
+        rbad += !app.game.flag(0x44) || app.resumePrompt; // (ContData_memcpy: the message seen this launch)
         problems += expectSounds("resume", {2});
         problems += app.titleOpen || app.mapNumber != before.map || SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
         // ... and saved as you go (the Vita's): a scene's end after the load arms it, the next writes it
@@ -3558,11 +3714,45 @@ int runSelfTest(App& app) {
         trackerSceneEnd(app);
         const bool asYouGo = armedOnly && cr::readSave(savePath(app, "resume.dat"), resume) && resume.map == before.map;
         problems += !asYouGo;
+        { // ... a second offer this launch: no message, the question at once; No sends the windows out and
+          // Start goes on (the boot script on to Character Select)
+            bootTitle(app);
+            for (int f = 0; f < 1000 && !app.titleOpen; ++f) stepEvents(app);
+            titleKey(app, SDLK_RETURN);
+            for (int f = 0; f < 8; ++f) stepEvents(app);
+            titleKey(app, SDLK_RETURN); // Start
+            rbad += app.resumeNotice || app.resumePrompt != 1 || !app.dialogue.empty();
+            for (int f = 0; f < 4; ++f) stepEvents(app);
+            answerResume(app, false);
+            rbad += app.resumePrompt != 2 || app.resumeYes;
+            for (int f = 0; f < 20 && app.resumeIn > 0; ++f) stepEvents(app);
+            rbad += app.titleOpen || app.resumePrompt || app.game.flag(0) || SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
+            app.runner.stop();
+            // ... and none while the save holds flag 0x44, a new launch or not
+            cr::SaveData d;
+            if (readData(app, d)) d.game.setFlag(0x44, true), cr::writeSave(dataPath(app), d);
+            else rbad += 1;
+            cr::writeSave(savePath(app, "resume.dat"), resume);
+            app.interruptShown = false;
+            bootTitle(app);
+            for (int f = 0; f < 1000 && !app.titleOpen; ++f) stepEvents(app);
+            titleKey(app, SDLK_RETURN);
+            for (int f = 0; f < 8; ++f) stepEvents(app);
+            titleKey(app, SDLK_RETURN); // Start
+            rbad += app.resumeNotice || app.resumePrompt != 1 || app.interruptShown;
+            bootTitle(app);
+            rbad += app.resumePrompt || app.resumeNotice || app.resumeIn;
+            app.runner.stop();
+            SDL_RemovePath(savePath(app, "resume.dat").c_str());
+            std::printf("title resume: the message %zu page(s) once a launch (flag 0x44), the windows in and out, Yes loads, No starts: %d problems\n",
+                        noticePages, rbad);
+            problems += rbad;
+        }
         SDL_RemovePath(savePath(app, "resume.dat").c_str());
         app.persist = false;
         // The title's New (pair 1, no save): New alone, at 232; Yes hands var 1 = 2 to the boot
         // script, which goes to the opening (map 88) - var 1 = 1 would be the last battle (map 82)
-        for (const char* f : {"save1.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
+        for (const char* f : {"save1.dat", "data.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
         app.game = cr::GameState();
         bootTitle(app);
         for (int f = 0; f < 1000 && !app.titleOpen; ++f) stepEvents(app);
@@ -3589,7 +3779,7 @@ int runSelfTest(App& app) {
             cr::SaveData sd = before;
             for (int f : {31, 32, 34, 36, 38, 39, 40}) sd.game.setFlag(f, true);
             sd.leader = 0;
-            cr::writeSave(slotPath(app, 1), sd);
+            cr::writeSave(dataPath(app), sd);
         }
         app.game = cr::GameState();
         app.chosenPair = 1;
@@ -3613,7 +3803,9 @@ int runSelfTest(App& app) {
             cr::SaveData sd = before;
             for (int f : {31, 32, 34, 36, 38, 39, 40, 1100, 2000, 3000, 3020, 3004, 3310}) sd.game.setFlag(f, true);
             sd.game.items[storyItem] = 1;
-            cr::writeSave(slotPath(app, 1), sd);
+            sd.game.items[95] = 1;                  // a gene (kind 4): the shared bag
+            sd.game.routeBags[1] = {{7, 5}, {22, 2}}; // pair 2's own bag
+            cr::writeSave(dataPath(app), sd);
         }
         ViewerHost host(app);
         app.game = cr::GameState();
@@ -3627,13 +3819,23 @@ int runSelfTest(App& app) {
                     !app.game.flag(3004);
         app.game = cr::GameState();
         host.loadParty(1, false);
+        // (F4, _prty_init_new 67059: the shared bag G+0x30640 - kinds 4 / 5 / 9 / 10 - is not the pair's;
+        // the other pairs' bags stay as they are)
+        const bool sharedKept = app.game.items[95] == 1 && app.game.routeBags[1][7] == 5 && app.game.routeBags[1][22] == 2;
         problems += app.game.party[0].seeds[2] != 0 || app.game.items.count(7) || app.game.items[1] != 3 ||
-                    app.game.oz != 777 || app.game.flag(1100) || !app.game.flag(2000);
-        // a pair without clear data: a fresh start (pair 2: Eluca's leader 2)
+                    app.game.oz != 777 || app.game.flag(1100) || !app.game.flag(2000) || !sharedKept;
+        // another pair's new game on the one save: its own bag and records start over, the Oz, the
+        // shared bag and pair 1's records go on (pair 2: Eluca's leader 2)
         app.game = cr::GameState();
         host.loadParty(2, false);
-        problems += app.game.oz != 0 || app.game.items[21] != 2 || app.playerChar != 2 || app.game.party[2].level != 1;
-        std::printf("new game with clear data: mode 3 carried %d of 11, mode 2 Oz only, a fresh pair fresh\n", carry);
+        const bool pairFresh = app.game.items[21] == 2 && !app.game.items.count(7) && !app.game.items.count(22) &&
+                               app.game.party[2].level == 1 && app.playerChar == 2;
+        const bool restKept = app.game.oz == 777 && app.game.items[95] == 1 && app.game.party[0].seeds[2] == 7 &&
+                              app.game.routeBags[0][7] == 3 && app.game.flag(1100);
+        problems += !pairFresh + !restKept;
+        std::printf("new game with clear data: mode 3 carried %d of 11, mode 2 keeps Oz and the shared bag (%s), "
+                    "another pair's new game: its own fresh %s, the rest kept %s\n",
+                    carry, sharedKept ? "yes" : "NO", pairFresh ? "yes" : "NO", restKept ? "yes" : "NO");
         problems += clearDataNewGameSelfTest(app, before);
         app.game = cr::GameState();
         app.playerChar = 0;
@@ -3643,11 +3845,78 @@ int runSelfTest(App& app) {
             ++frames;
         }
         problems += app.renderer.takeErrors();
+        { // S1: one data.dat (2.2.0 SaveData_Save 0x725d0). The earlier releases' save1 .. save4 fold into
+          // it once and stay as they were; each pair loads its own place and bag; a save keeps the
+          // other pairs' places; Oz and the shared bag are one
+            int fbad = 0;
+            for (const char* f : {"save1.dat", "save2.dat", "save3.dat", "save4.dat", "data.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
+            auto legacy = [&](int pair, int64_t when, int oz, int area, int map) { // an earlier release's file: no places, no other bags
+                cr::SaveData s = before;
+                s.wholeGame = false, s.places = {}, s.game.routeBags = {};
+                s.leader = 2 * (pair - 1), s.game.bagRoute = pair - 1, s.savedAt = when, s.game.oz = oz, s.area = area, s.map = map;
+                s.game.items.clear();
+                s.game.items[95] = pair; // a gene (shared)
+                s.game.items[21] = 10 + pair; // the pair's own Chocolates
+                s.game.items[201 + 56 * (pair - 1)] = 1; // its first member's first weapon (its gear)
+                s.game.party[size_t(2 * (pair - 1))].level = 10 + pair;
+                s.game.setFlag(1100 + 400 * (pair - 1), true);
+                return s;
+            };
+            const cr::SaveData s1 = legacy(1, 300, 111, 7, 97), s2 = legacy(2, 500, 222, 13, 97), s4 = legacy(4, 400, 444, 25, 105);
+            cr::writeSave(slotPath(app, 1), s1), cr::writeSave(slotPath(app, 2), s2), cr::writeSave(slotPath(app, 4), s4);
+            std::vector<uint8_t> was[3], now[3];
+            for (int k = 0; k < 3; ++k) cr::readFile(slotPath(app, k == 2 ? 4 : k + 1), was[k]);
+            cr::SaveData d;
+            fbad += !readData(app, d) || !SDL_GetPathInfo(dataPath(app).c_str(), nullptr);
+            for (int k = 0; k < 3; ++k) cr::readFile(slotPath(app, k == 2 ? 4 : k + 1), now[k]), fbad += was[k].empty() || now[k] != was[k];
+            const bool places = d.places[0].has && d.places[1].has && !d.places[2].has && d.places[3].has && d.places[3].area == 25 &&
+                                d.places[1].area == 13 && d.route() == 1; // (the newest, pair 2's, in play)
+            const bool records = d.game.party[0].level == 11 && d.game.party[2].level == 12 && d.game.party[6].level == 14 &&
+                                 d.game.flag(1100) && d.game.flag(1500) && d.game.flag(2300) && d.game.oz == 222;
+            const bool bags = d.game.items[21] == 12 && d.game.routeBags[0][21] == 11 && d.game.routeBags[3][21] == 14 &&
+                              d.game.items[95] == 4 && d.game.items[201] == 1 && d.game.items[257] == 1 && d.game.items[369] == 1;
+            fbad += !places + !records + !bags;
+            // the title's Load of pair 4: its own place, its own Chocolates, the one Oz
+            app.game = cr::GameState();
+            app.chosenPair = 4;
+            openSaveScreen(app, true);
+            const bool load4 = app.saveScreen.haveSave && app.saveScreen.data.map == 105 && app.saveScreen.data.game.items[21] == 14 &&
+                               app.saveScreen.data.game.oz == 222 && app.saveScreen.data.leader == 6;
+            app.chosenPair = 3;
+            openSaveScreen(app, true);
+            const bool none3 = !app.saveScreen.haveSave; // (no mark: New alone)
+            app.saveScreen.open = false;
+            // a save from pair 4's place: its own place and bag written, pair 2's kept
+            app.chosenPair = 4;
+            openSaveScreen(app, true);
+            cr::SaveData p4 = app.saveScreen.data;
+            app.saveScreen.open = false;
+            app.game = p4.game, app.playerChar = p4.leader, app.area = p4.area, app.mapNumber = 98;
+            app.game.items[21] = 30, app.game.oz = 999;
+            fbad += !saveGame(app);
+            cr::SaveData back;
+            const bool saved = readData(app, back) && back.places[3].map == 98 && back.places[1].map == 97 && back.places[1].area == 13 &&
+                               back.game.items[21] == 30 && back.game.routeBags[1][21] == 12 && back.game.oz == 999 && back.route() == 3;
+            app.mapNumber = -1;
+            fbad += !load4 + !none3 + !saved;
+            // a second read takes data.dat as it is (the old files are folded once only)
+            cr::writeSave(slotPath(app, 1), legacy(1, 900, 5, 7, 97));
+            cr::SaveData again;
+            fbad += !readData(app, again) || again.game.oz != 999;
+            std::printf("one save (data.dat): save1 + save2 + save4 folded, kept as they were; places %s, records %s, bags %s; "
+                        "pair 4 loads its own %s, pair 3 none %s, a save keeps the others %s; %d problems\n",
+                        places ? "ok" : "WRONG", records ? "ok" : "WRONG", bags ? "ok" : "WRONG", load4 ? "ok" : "WRONG",
+                        none3 ? "ok" : "WRONG", saved ? "ok" : "WRONG", fbad);
+            problems += fbad;
+            for (const char* f : {"save1.dat", "save2.dat", "save3.dat", "save4.dat", "data.dat"}) SDL_RemovePath(savePath(app, f).c_str());
+            app.game = cr::GameState();
+            app.playerChar = 0;
+        }
         std::printf("save screen: the title's New -> var 1 = %d, opening map %d; cleared: emblems %u, %zu plates; %d problems so far\n",
                     var1, openingMap, ssc.emblems, savePlates(app).size(), problems);
         ssc.open = false;
         app.menuSoundLog.clear();
-        for (const char* f : {"save1.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
+        for (const char* f : {"save1.dat", "data.dat", "resume.dat"}) SDL_RemovePath(savePath(app, f).c_str());
         SDL_RemovePath(app.saveDirOverride.c_str());
         app.saveDirOverride = keepDir;
         // The Instruction Manual (Options; OptionPrc 0xf..0x16): the manual items held (439..478), a topic's
@@ -3752,7 +4021,7 @@ int runSelfTest(App& app) {
             app.optionsOpen = keepOptions;
             app.game = keepGame;
         }
-        problems += expectSounds("manual", {6, 7, 6, 7, 4, 4, 5, 4, 2, 6, 7, 3});
+        problems += expectSounds("manual", {6, 7, 6, 7, 1, 1, 5, 1, 2, 6, 7, 3}); // (the topics' MuScrList: __effgo(1) a focus change)
         cr::GameState chart;
         chart.setFlag(1092, true);
         chart.setFlag(1093, true);
@@ -3845,7 +4114,7 @@ int runSelfTest(App& app) {
         shopKey(app, SDLK_DOWN);   // Bastard Sword: 1800, too dear
         shopKey(app, SDLK_RETURN);
         problems += app.shop.phase != App::Shop::List;
-        problems += expectSounds("shop: item, count 2 then its end twice, Yes, too dear", {2, 2, 4, 4, 22, 4, 4});
+        problems += expectSounds("shop: item, count 2 then its end twice, Yes, too dear", {2, 2, 4, 4, 22, 1, 4}); // (the list: __effgo(1))
         // Armor for Escher, worn at once: what he wore goes in the bag
         app.game.oz = 2000;
         shopKey(app, SDLK_ESCAPE); // the pair again
@@ -3928,6 +4197,8 @@ int runSelfTest(App& app) {
         app.game.party[0].mp = 10;
         app.game.items[0x59] = 1; // (an ability: CampMainSet's 56010, once)
         app.menuSoundLog.clear();
+        const int campMap = app.mapNumber;
+        app.mapNumber = 42; // (away from the home maps: CampMainSet heals there, and the Plum below wants MP to fill)
         openCamp(app);
         auto key = [&](SDL_Keycode k) { campKey(app, k); };
         auto steps = [&](int n) { for (int f = 0; f < n; ++f) stepCamp(app); };
@@ -3987,6 +4258,7 @@ int runSelfTest(App& app) {
         steps(5);
         problems += app.campOpen + errs;
         problems += expectSounds("camp", {2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 21, 3, 3, 2, 4, 2, 5, 3, 3, 3, 9});
+        app.mapNumber = campMap;
         std::printf("camp: 56010 / 56016 first, 3 seeds +%d attack, Plum to MP %d, Bastard Sword worn, status page and list; %d "
                     "frames, %d render API errors; %d problems\n", atk1 - atk0, app.game.party[0].mp, frames, errs, problems);
         mapErrors += problems;
@@ -5043,6 +5315,7 @@ int runSelfTest(App& app) {
                     st.open ? "NO" : "yes", problems);
         mapErrors += problems;
     }
+    mapErrors += menusAuditSelfTest(app);
     { // The last battle's pair choice (Util 8): four rounds, each pair once; a No goes back to the
       // plates; the camp menu opens for the chosen pair; flag 1 clears after the fourth
         int problems = 0;
@@ -6223,17 +6496,11 @@ void startNewGame(App& app) {
 }
 
 // __menuu_TitleClr's Load_SaveData: the title goes back to the saved block, and the play time is in
-// it - the one save the game keeps for all four pairs; here the newest of their slots (none:
-// prty_init_all's 0). A pair's new game (prty_init_new) leaves it, so it counts on across pairs
+// it - the one save the game keeps for all four pairs, data.dat (none: prty_init_all's 0). A pair's
+// new game (prty_init_new) leaves it, so it counts on across pairs
 double savedPlaySeconds(const App& app) {
-    double seconds = 0;
-    bool any = false;
-    int64_t newest = 0;
-    for (int pair = 1; pair <= 4; ++pair) {
-        cr::SaveData d;
-        if (cr::readSave(slotPath(app, pair), d) && (!any || d.savedAt >= newest)) any = true, newest = d.savedAt, seconds = d.playSeconds;
-    }
-    return seconds;
+    cr::SaveData d;
+    return readData(app, d) ? d.playSeconds : 0;
 }
 
 // The title, as the game boots: area 0 (j001_t99) and its EvrStart 0 - the logos, the title
@@ -6259,7 +6526,8 @@ void bootTitle(App& app) {
     app.itemWindowOpen = app.optionsOpen = app.optionsFromTitle = false;
     app.resetAsk = 0;
     app.saveScreen = App::SaveScreen();
-    app.resumePrompt = app.resumeCursor = 0;
+    app.resumePrompt = app.resumeCursor = app.resumeNotice = app.resumeIn = 0; // (interruptShown: once a launch)
+    app.resumeWin = 0;
     app.saveImport.cancel();
     app.parkedRunner.stop();
     app.renderer.destroy(app.shop.keeper);
@@ -6453,7 +6721,7 @@ int runExplore(App& app, int maxActions) {
             const int p = std::clamp(app.playerChar / 2, 0, 3);
             if (app.game.flag(39)) { stuckReason = 3; break; } // the last battle's ending: the end
             if (!finale && app.game.flag(32 + 2 * p) && !app.runner.running()) {
-                cr::writeSave(slotPath(app, p + 1), captureSave(app));
+                saveGame(app);
                 const cr::GameState all = allPairsFlags(app);
                 const int next = nextPair();
                 std::printf("     pair %d's story done (flags 31..38:%s%s%s%s%s%s%s%s)\n", p + 1,
@@ -7349,7 +7617,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         for (int f : {31, 32, 34, 36, 38, 39, 40}) sd.game.setFlag(f, true);
         sd.leader = 0;
         sd.playSeconds = 3600 * 23 + 60 * 7;
-        cr::writeSave(slotPath(app, 1), sd);
+        cr::writeSave(dataPath(app), sd);
         app.chosenPair = 1;
         app.captureMenu = 3;
     }

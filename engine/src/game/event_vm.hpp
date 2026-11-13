@@ -36,6 +36,11 @@ struct GameState {
     std::array<int, 4> bands{};
     std::array<std::vector<std::array<int, 2>>, 4> treasure;
     int route = 0;
+    // The one save's per-pair bags (2.2.0 data.dat +0x580 + 0x100 route, add_item 0x5fbc0): `items`
+    // holds the shared bag, the gear and the bag of the pair `bagRoute`; each other pair's own items
+    // wait here (game/save.hpp changeRoute)
+    std::array<std::unordered_map<int, int>, 4> routeBags;
+    int bagRoute = 0;
 
     // Cutscene frame data selected by FrmSet / FrmJmp (+0x1dfc / +0x22cc in the original):
     // global, so a scene set up by one script is used by the next. Not part of the save.

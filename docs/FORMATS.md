@@ -1961,7 +1961,8 @@ member: level 1, weapon, armor, jewel, the Human Genes plate, ability 81 + c, sk
 added to the bag but a jewel 0 for characters 0, 3, 4, 6; the pair's first member also 0xce700:
 items 1, 1, 1, 21, 21), then HP / MP full; mode 3 copies the bonuses, equipment and plates back
 from the copy, and the bag, less every item of kind 3 or 9 (+0x11 of its record). Oz (+0xc) is
-never touched. Then `ResetFieldFlag_NewGame`: for the pair's four blocks b ({0, 5, 10, 15},
+never touched, nor the shared bag (G+0x30640: kinds 4, 5, 9 and 10, where `add_item` keeps them)
+or the other pairs' bags. Then `ResetFieldFlag_NewGame`: for the pair's four blocks b ({0, 5, 10, 15},
 {1, 6, 11, 12}, {2, 7, 8, 13}, {3, 4, 9, 14} for pairs 1..4) flags 3000 + 4b .. 3003 + 4b are
 cleared, then flags 3300..3363. Faces: `ComUty_FaceBoardDraw`
 at (0, 24 + 88k); on the title with a save `ComUty_GameTimeAndPlayTimeDraw`: a 50% black board

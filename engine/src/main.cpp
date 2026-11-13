@@ -869,9 +869,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             shopKey(app, event->key.key);
             break;
         }
-        if (app.resumePrompt) {
+        if (app.resumePrompt == 1) {
             switch (event->key.key) {
-            case SDLK_LEFT: case SDLK_RIGHT: case SDLK_A: case SDLK_D: app.resumeCursor ^= 1; menuSound(app, se::kCursor); break;
+            case SDLK_UP: case SDLK_DOWN: case SDLK_W: case SDLK_S: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_A: case SDLK_D:
+                app.resumeCursor ^= 1; menuSound(app, se::kCursor); break;
             case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: answerResume(app, app.resumeCursor == 0); break;
             case SDLK_ESCAPE: case SDLK_BACKSPACE: answerResume(app, false); break;
             default: break;
@@ -1075,14 +1076,8 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             else if (app.worldChoiceOpen) worldSelectClick(app, px, py);
             else if (app.shop.open) shopClick(app, px, py);
             else if (app.mode == Mode::Maps && app.battle.active) battleClick(app, px, py);
-            else if (app.resumePrompt) {
-                float lx, ly;
-                app.renderer.toLogical(px, py, lx, ly);
-                float mx, my;
-    menuPoint(app, lx, ly, mx, my);
-                if (my >= 222 && my < 270 && mx >= 128 && mx < 240) answerResume(app, true);
-                else if (my >= 222 && my < 270 && mx >= 272 && mx < 384) answerResume(app, false);
-            } else titleClick(app, px, py);
+            else if (app.resumePrompt) resumeClick(app, px, py);
+            else titleClick(app, px, py);
             break;
         }
         if (app.staffRoll.open) { // _pad_chk_updw_box(-16, -32, 512, 384): the end card's tap

@@ -21,6 +21,7 @@ cr::SaveData captureSave(const App& app) {
     s.savedAt = int64_t(std::time(nullptr));
     s.game = app.game;
     s.game.frmScene = s.game.frmRecord = 0;
+    cr::changeRoute(s.game, &app.itemTable, s.route()); // (the leader's pair's own items in view)
     return s;
 }
 
@@ -34,10 +35,14 @@ bool applySave(App& app, const cr::SaveData& s) {
     app.booting = false;
     app.titleOpen = false;
     app.game = s.game;
+    // (ContData_memcpy / Load_SaveData: once "About Progress Tracker" was shown this launch, the state
+    // taken up keeps flag 0x44)
+    if (app.interruptShown) app.game.setFlag(0x44, true);
     app.treasureBoxes.clear();
     app.entryArea = -1;
     app.playSeconds = s.playSeconds;
     app.playerChar = std::clamp(s.leader, 0, 7);
+    cr::changeRoute(app.game, &app.itemTable, app.playerChar / 2);
     app.mapNumber = -1; // so the warp loads the field even if it's the one showing
     cr::WarpRequest w;
     w.valid = true;
@@ -95,10 +100,81 @@ std::string dateText(int64_t when) {
     return b;
 }
 
-// One save per pair (each pair's story is its own): save1.dat .. save4.dat
+// The per-pair saves of the earlier releases (save1.dat .. save4.dat): read once, to fold into
+// data.dat, and left as they are
 std::string slotPath(const App& app, int pair) {
     const std::string name = "save" + std::to_string(std::clamp(pair, 1, 4)) + ".dat";
     return savePath(app, name.c_str());
+}
+
+// The one save, as 2.2.0's data.dat (SaveData_Save 0x725d0): the four pairs' records and bags, the
+// shared Oz, bag and flags, each pair's own place and "saved" mark (cr::SaveData::places)
+std::string dataPath(const App& app) { return savePath(app, "data.dat"); }
+
+namespace {
+// Per-pair saves (`files`: paths) folded into one, oldest first, each newer one's pair taking its
+// own records, bag and place from its file (cr::foldPairSave)
+bool foldPairSaves(const App& app, const std::vector<std::string>& files, cr::SaveData& d) {
+    std::vector<cr::SaveData> slots;
+    for (const std::string& f : files) {
+        cr::SaveData s;
+        if (cr::readSave(f, s)) slots.push_back(std::move(s));
+    }
+    if (slots.empty()) return false;
+    std::stable_sort(slots.begin(), slots.end(), [](const cr::SaveData& a, const cr::SaveData& b) { return a.savedAt < b.savedAt; });
+    d = slots[0];
+    d.places = {};
+    d.places[size_t(d.route())] = d.placeInPlay();
+    for (size_t i = 1; i < slots.size(); ++i) cr::foldPairSave(d, slots[i], &app.itemTable);
+    d.wholeGame = true;
+    return true;
+}
+} // namespace
+
+// Reads data.dat. Without one, the earlier releases' per-pair saves are folded into it once (the
+// files themselves are kept): the newest is the base, each pair's own records, bag and place from
+// its own file, the flags added together
+bool readData(const App& app, cr::SaveData& d) {
+    if (cr::readSave(dataPath(app), d)) {
+        d.wholeGame = true;
+        return true;
+    }
+    std::vector<std::string> files;
+    for (int pair = 1; pair <= 4; ++pair) files.push_back(slotPath(app, pair));
+    if (!foldPairSaves(app, files, d)) return false;
+    cr::writeSave(dataPath(app), d);
+    return true;
+}
+
+// A Vita import's save1 .. save4 and resume.dat (the per-pair files of one Vita save): data.dat made
+// anew from the files it wrote; one already there is kept beside them as data-before-import-<time>.dat
+bool foldVitaImport(App& app, const std::vector<std::string>& written) {
+    std::vector<std::string> files;
+    for (const std::string& name : written)
+        if (name.size() == 9 && name.compare(0, 4, "save") == 0 && name.compare(5, 4, ".dat") == 0) files.push_back(savePath(app, name.c_str()));
+    cr::SaveData active; // (all stamped the same second: the Vita's pair in play - its resume.dat's - folded last)
+    if (std::find(written.begin(), written.end(), "resume.dat") != written.end() && cr::readSave(savePath(app, "resume.dat"), active)) {
+        const std::string last = slotPath(app, active.route() + 1);
+        const auto it = std::find(files.begin(), files.end(), last);
+        if (it != files.end()) std::rotate(it, it + 1, files.end());
+    }
+    cr::SaveData d;
+    if (!foldPairSaves(app, files, d)) return false;
+    if (SDL_GetPathInfo(dataPath(app).c_str(), nullptr)) {
+        const std::string keep = savePath(app, ("data-before-import-" + std::to_string(int64_t(std::time(nullptr))) + ".dat").c_str());
+        if (!SDL_CopyFile(dataPath(app).c_str(), keep.c_str())) return false;
+    }
+    return cr::writeSave(dataPath(app), d);
+}
+
+// SaveData_Save: the whole game into data.dat with the pair in play's place and "saved" mark (the
+// other pairs' places kept)
+bool saveGame(App& app) {
+    cr::SaveData s = captureSave(app);
+    cr::SaveData old;
+    if (readData(app, old)) s.places = old.places;
+    s.places[size_t(s.route())] = s.placeInPlay();
+    return cr::writeSave(dataPath(app), s);
 }
 
 int currentPair(const App& app) { return app.playerChar / 2 + 1; }
@@ -117,10 +193,19 @@ void openSaveScreen(App& app, bool load) {
     ss = App::SaveScreen();
     ss.open = true;
     ss.load = load;
-    ss.haveSave = cr::readSave(slotPath(app, load ? app.chosenPair : currentPair(app)), ss.data);
-    if (load) { // __menuu_SaveLoadSet, the title's: the emblems and plates from every save's flags
+    // the one save as the pair would load it (SaveData_Load_chk: its "saved" mark, +0xc14 + p;
+    // Set_Prtyno + SaveData_Load_init: its own place and bag)
+    const int pair = std::clamp((load ? app.chosenPair : currentPair(app)) - 1, 0, 3);
+    cr::SaveData d;
+    ss.haveSave = readData(app, d) && d.places[size_t(pair)].has;
+    if (ss.haveSave) {
+        d.takePlace(pair);
+        cr::changeRoute(d.game, &app.itemTable, pair);
+        ss.data = d;
+    }
+    if (load) { // __menuu_SaveLoadSet, the title's: the emblems and plates from the save's flags
         const cr::GameState sys = allPairsFlags(app);
-        const int p = std::clamp(app.chosenPair - 1, 0, 3);
+        const int p = pair;
         const int emblem[3] = {31 + 2 * p, 32 + 2 * p, 39};
         for (int k = 0; k < 3; ++k)
             if (sys.flag(emblem[k])) ss.emblems |= 1u << k;
@@ -163,9 +248,8 @@ void saveScreenYes(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     if (ss.toTitle && ss.askLeave) { saveScreenToTitle(app); return; } // leaving unsaved (SaveLoadPrc 0xc -> Yes)
     if (ss.pending == 1) {
-        const cr::SaveData s = captureSave(app);
-        if (cr::writeSave(slotPath(app, currentPair(app)), s)) {
-            ss.data = s;
+        if (saveGame(app)) {
+            ss.data = captureSave(app);
             ss.haveSave = true;
             ss.message = 57082; // Save complete.
             menuSound(app, se::kSaved);
@@ -195,20 +279,16 @@ void saveScreenYes(App& app) {
     } else if (ss.pending == 3) { // New: the boot script carries on with var 1 = the pair
         menuSound(app, se::kLoaded); // SaveLoadPrc plays it for any Yes in load mode
         ss.open = false;
-        if (ss.kind == 1) { // Set_Prtyno(0): the last battle is the first pair's - on the one save the game keeps
-            app.chosenPair = 1;  // for all four (here a slot each: their flags together, each pair's own two)
-            cr::GameState g = app.game;
-            for (int pair = 1; pair <= 4; ++pair) {
-                cr::SaveData d;
-                if (!cr::readSave(slotPath(app, pair), d)) continue;
-                if (pair == 1) g.items = d.game.items, g.oz = d.game.oz, g.openedBoxes = d.game.openedBoxes;
-                for (size_t i = 0; i < g.flags.size() && i < d.game.flags.size(); ++i) g.flags[i] |= d.game.flags[i];
-                for (int k = 0; k < 2; ++k) g.party[size_t(2 * (pair - 1) + k)] = d.game.party[size_t(2 * (pair - 1) + k)];
-                g.walkExp[size_t(pair - 1)] = d.game.walkExp[size_t(pair - 1)];
-                g.noEncounters[size_t(pair - 1)] = d.game.noEncounters[size_t(pair - 1)];
+        if (ss.kind == 1) { // Set_Prtyno(0): the last battle is the first pair's, on the one save
+            app.chosenPair = 1;
+            cr::SaveData d;
+            if (readData(app, d)) {
+                cr::GameState g = d.game;
+                cr::changeRoute(g, &app.itemTable, 0);
+                for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own flags
+                for (const auto& [k, v] : app.game.vars) g.vars[k] = v; // and the variables it has set
+                app.game = std::move(g);
             }
-            for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own
-            app.game = std::move(g);
         }
         if (app.booting && app.runner.running()) {
             app.game.vars[1] = ss.kind; // SaveLoadClr: SetVar(1, the choice) - the boot script branches on it
@@ -260,7 +340,7 @@ float menuFontSize(const App& app) {
     return l >= 0 && l <= 7 && ((1 << l) & 0xe1) ? 14.0f : 13.0f;
 }
 
-void drawSaveDate(App& app, cr::MenuPainter& m, const cr::SaveData& d, float a) {
+void drawSaveDate(App& app, cr::MenuPainter& m, const cr::SaveData& d, float a, float dx = 0) { // dx: the window's slide
     (void)app;
     const time_t when = time_t(d.savedAt);
     struct tm tm {};
@@ -270,28 +350,28 @@ void drawSaveDate(App& app, cr::MenuPainter& m, const cr::SaveData& d, float a) 
     localtime_r(&when, &tm);
 #endif
     const float dark[4] = {0, 0, 0, 0.5f * a}, white[4] = {1, 1, 1, a};
-    m.quad(324, 12, 148, 64, dark, dark);
-    m.picture(125, 372, 12, a);
-    m.quad(325, 28, 146, 1, white, white);
-    m.picture(126 + std::clamp(tm.tm_mon + 1, 1, 12), 336, 38, a);
-    drawShopNumber(m, tm.tm_mday, 378, 38, 2, 12, a);
-    m.picture(139, 400, 38, a);
-    drawShopNumber(m, tm.tm_year + 1900, 410, 38, 4, 12, a);
+    m.quad(324 + dx, 12, 148, 64, dark, dark);
+    m.picture(125, 372 + dx, 12, a);
+    m.quad(325 + dx, 28, 146, 1, white, white);
+    m.picture(126 + std::clamp(tm.tm_mon + 1, 1, 12), 336 + dx, 38, a);
+    drawShopNumber(m, tm.tm_mday, 378 + dx, 38, 2, 12, a);
+    m.picture(139, 400 + dx, 38, a);
+    drawShopNumber(m, tm.tm_year + 1900, 410 + dx, 38, 4, 12, a);
     const int digit[4] = {tm.tm_hour / 10, tm.tm_hour % 10, tm.tm_min / 10, tm.tm_min % 10};
     static const float kAt[4] = {0, 12, 36, 48};
     for (int i = 0; i < 4; ++i)
-        if (i || tm.tm_hour >= 10) drawShopNumber(m, digit[i], 368 + kAt[i], 58, 1, 12, a);
-    m.picture(75, 392, 58, a);
+        if (i || tm.tm_hour >= 10) drawShopNumber(m, digit[i], 368 + dx + kAt[i], 58, 1, 12, a);
+    m.picture(75, 392 + dx, 58, a);
     const int secs = int(std::max(0.0, d.playSeconds));
     const int hours = std::min(999, secs / 3600), mins = std::min(59, secs / 60 % 60);
-    m.quad(324, 84, 148, 40, dark, dark);
-    m.picture(126, 344, 88, a);
-    m.quad(325, 100, 146, 1, white, white);
+    m.quad(324 + dx, 84, 148, 40, dark, dark);
+    m.picture(126, 344 + dx, 88, a);
+    m.quad(325 + dx, 100, 146, 1, white, white);
     const int pd[5] = {hours / 100, hours % 100 / 10, hours % 10, mins / 10, mins % 10};
     static const float kPlay[5] = {32, 44, 56, 80, 92};
     for (int i = 0; i < 5; ++i)
-        if (i || pd[i]) drawShopNumber(m, pd[i], 324 + kPlay[i], 84 + 22, 1, 12, a);
-    m.picture(75, 324 + 68, 84 + 22, a);
+        if (i || pd[i]) drawShopNumber(m, pd[i], 324 + dx + kPlay[i], 84 + 22, 1, 12, a);
+    m.picture(75, 324 + dx + 68, 84 + 22, a);
 }
 
 void drawSaveScreen(App& app) {
@@ -507,7 +587,8 @@ int shopUnitPrice(const App& app, int item) {
     if (app.shop.selling) return cr::sellPrice(*p);
     const int pr = shopRoute(app) * 2; // 173 Sexy Pose on either member: 10% off
     const bool pose = cr::hasSkill(app.game, pr, 173) || cr::hasSkill(app.game, pr + 1, 173);
-    return pose ? cr::buyPrice(*p) * 9 / 10 : cr::buyPrice(*p);
+    const int price = cr::buyPrice(*p);
+    return pose ? price - price / 10 : price; // (__menuu_ShopPrc 6: the tenth rounded down comes off)
 }
 
 int shopMaxCount(const App& app, int item) {
@@ -976,7 +1057,7 @@ void shopKey(App& app, SDL_Keycode key) {
         if ((up || down) && n > 0) {
             s.listCursor = (s.listCursor + (up ? n - 1 : 1)) % n;
             s.listTop = s.listCursor; // (the focus row on the line)
-            menuSound(app, se::kCursor);
+            menuSound(app, se::kListFocus);
         } else if ((left || right) && shopEquipment(app)) shopSwitchMember(app);
         else if (enter) shopChooseItem(app, s.listCursor);
         else if (back) shopBack(app);
@@ -1036,7 +1117,7 @@ void shopClick(App& app, float px, float py) {
         using namespace shopui;
         const bool arrows = shopEquipment(app) && my >= kBackY && my < kBackY + 24;
         const int n = int(s.list.size());
-        auto focusTo = [&](int i) { s.listCursor = s.listTop = i; menuSound(app, se::kCursor); };
+        auto focusTo = [&](int i) { s.listCursor = s.listTop = i; menuSound(app, se::kListFocus); };
         if (rx >= kRowX && rx < kRowX + 256 && my >= kClipTop && my < kClipBottom) {
             // MuScrList_Proc: the row on the line is chosen; another comes to it; over the first row the down
             // pill's box jumps to the end, under the last the up pill's to the top
@@ -1192,11 +1273,10 @@ void memberHpMp(const App& app, int c, int& hp, int& hpMax, int& mp, int& mpMax,
 }
 
 // MuComMakeItemHaveData (0x51f1c): what the bag holds of a category - weapons / armor (kinds 6 / 7)
-// the first member's, or the second's unless held back (flag 0xfed + route); with the second held
-// back, the one jewel they wear stays out of the jewels' list (a second copy of it is listed)
-int campAbsentJewel(const App& app) {
-    return campMembers(app) > 1 ? 0 : app.game.party[size_t(campCharacter(app, 1))].equip[cr::kJewel];
-}
+// the first member's, or the second's unless held back (flag 0xfed + route). With the second held
+// back, MuComMakeItemData leaves the jewel they wear out while GetItemCnt counts 1 of it - 2.2.0's
+// bag counts what is worn, so that one is theirs and a second is listed; the port's bag holds only
+// what isn't worn, so every jewel in it is a spare and listed
 
 std::vector<int> campItems(const App& app, int category) {
     std::vector<int> out;
@@ -1210,17 +1290,34 @@ std::vector<int> campItems(const App& app, int category) {
     default: break;
     }
     const int route = campRoute(app), bits = (1 << (2 * route)) | (campMembers(app) > 1 ? 2 << (2 * route) : 0);
-    const int absentJewel = kind == 8 ? campAbsentJewel(app) : 0;
     for (int n = from; n <= to; ++n) {
         const int count = ownedCount(app, n);
         if (count <= 0) continue;
         const cr::ItemParam* p = app.itemTable.item(n);
         if (category == 2 && (!p || p->kind != cr::kKindWeapon || !(p->owners & bits))) continue;
         if (category == 3 && (!p || p->kind != cr::kKindArmor || !(p->owners & bits))) continue;
-        if (n == absentJewel && count == 1) continue;
         out.push_back(n);
     }
     return out;
+}
+
+// FUN_00055768 (0x55768) for the empty jewel slot (0x1da): 2.2.0 sums the bag's jewels 425..438 - worn
+// ones counted - and takes 2 or more, or 1 the other member doesn't wear; the port's bag holds only the
+// unworn, so: any jewel in it
+bool campFreeJewel(const App& app) {
+    for (int n = 425; n <= 438; ++n)
+        if (ownedCount(app, n) > 0) return true;
+    return false;
+}
+// MuCom_GetCommonSkill (0x517e8): an ability 0x59..0x71 or a skill 0x8b..0xba known that a plate in the
+// bag holds (GetPlateNumFromSkill: the table at 0xc78b0, plates 0x1df..0x1f4)
+bool campCommonSkill(const App& app) {
+    for (int p = cr::kFirstPlate; p < cr::kFirstPlate + cr::kPlates; ++p) {
+        if (ownedCount(app, p) <= 0) continue;
+        for (int e : cr::plateContents(p))
+            if (((e >= 0x59 && e <= 0x71) || (e >= 0x8b && e <= 0xba)) && ownedCount(app, e) > 0) return true;
+    }
+    return false;
 }
 
 // The plates in the bag, 479.. in id order: the Genes page's list (MuComMakeGenePlate(10, 1))
@@ -1246,8 +1343,8 @@ bool campWears(const App& app, int character, int plate) { // MuScrList_IsNowEqu
 bool campPlateLocked(const App& app, int item) { return cr::isPlate(item) && cr::plateLearned(app.game, item) == 0; }
 
 // What can go in member c's slot (EquipProc 0xb / 0xf / 0x13 / 0x17 -> __MuCampScrListComInit 0x675e8):
-// weapons / armor / jewels (MuComMakeItemData(c, 6 / 7 / 8): the bag's of the kind that c may wear, the
-// absent member's one jewel left out), the Human Genes slot the bag's 479..480 (kind 0xb), a plate slot
+// weapons / armor / jewels (MuComMakeItemData(c, 6 / 7 / 8): the bag's of the kind that c may wear - the
+// absent member's worn jewel isn't in the port's bag), the Human Genes slot the bag's 479..480 (kind 0xb), a plate slot
 // the bag's 481..500 with a known entry (MuComMakeGenePlate(0xc, ..)). "Remove" (item 200) comes last for
 // a jewel or a plate slot that is worn (their flag: the slot empty); __ChangeEquipItem (0x677fc) wears what
 // is chosen whoever else wears it
@@ -1265,11 +1362,9 @@ std::vector<int> campEquipList(const App& app, int c, int slot) {
         return out;
     }
     const int kind = slot == cr::kWeapon ? cr::kKindWeapon : slot == cr::kArmor ? cr::kKindArmor : cr::kKindJewel;
-    const int absentJewel = slot == cr::kJewel ? campAbsentJewel(app) : 0;
     for (int n = 201; n <= 438; ++n) {
         const cr::ItemParam* p = app.itemTable.item(n);
         if (!p || p->kind != kind || ownedCount(app, n) <= 0 || !(p->owners & (1 << c))) continue;
-        if (n == absentJewel && ownedCount(app, n) == 1) continue;
         out.push_back(n);
     }
     if (slot == cr::kJewel && pm.equip[cr::kJewel] > 0) out.push_back(campui::kRemove);
@@ -1348,7 +1443,7 @@ void campScrollBy(App& app, int rows) {
     cursor = std::clamp(cursor + rows, 0, std::max(0, n - 1));
     int& top = campSlotList(app) ? c.slotTop : c.listTop; // (kept for the Status lists' memory)
     top = cursor;
-    if (before != cursor) menuSound(app, se::kCursor);
+    if (before != cursor) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1) as the focus row changes)
 }
 int campFocus(const App& app) { return campSlotList(app) ? app.camp.slot : app.camp.listCursor; }
 // Which list is up: a new one (a page, a phase, a category, a member, a Status view) starts settled
@@ -1372,6 +1467,7 @@ void stepCampScroll(App& app) {
 
 int campEntries(const App& app) { return app.renderer.phoneLayout() ? campui::kEntries - 1 : campui::kEntries; }
 float campBackY(const App& app) { return app.renderer.phoneLayout() ? campui::kPhoneBackY : campui::kBackY; }
+void campEquipRefill(App& app);
 void openCamp(App& app) {
     App::Camp& c = app.camp;
     app.campOpen = true;
@@ -1382,6 +1478,7 @@ void openCamp(App& app) {
     c.plateArt = std::move(art);
     c.statusArt = std::move(portraits);
     c.cursor = campEntries(app) - 1;
+    campEquipRefill(app); // (CampMainSet: opened on a home map, the pair healed - pcparam_hpmp_recovery)
     // __menuu_CampMainSet (0x635e8): the first time an ability 0x59..0x71 or a skill 0x8b..0xba is in the
     // bag (flag 0x38), message 56010 ("Gene Plates") comes before the Camp's windows (CampMain 0-2, then 3)
     if (!app.game.flag(0x38))
@@ -1576,8 +1673,8 @@ int campSeedLimit(const App& app, int character, int item) {
     return std::clamp(std::min(ownedCount(app, item), cr::seedRoom(pm, cr::Stat(cr::kAttack + item - 3))), 1, 999);
 }
 
-// __menuu_CampMainSet: on the home maps 0x61..0x71 and 0x53 (DAT_000d2e30) whatever __ChangeEquipItem
-// wears refills the pair's HP and MP (pcparam_hpmp_recovery)
+// __menuu_CampMainSet: on the home maps 0x61..0x71 and 0x53 (DAT_000d2e30) the Camp's opening and
+// whatever __ChangeEquipItem wears refill the pair's HP and MP (pcparam_hpmp_recovery)
 void campEquipRefill(App& app) {
     if ((app.mapNumber >= 0x61 && app.mapNumber <= 0x71) || app.mapNumber == 0x53) ViewerHost(app).recoverPair();
 }
@@ -1918,9 +2015,9 @@ void campClick(App& app, float px, float py) {
             if (row >= 0 && row < n) {
                 if (row == cursor) {
                     if (c.page != App::Camp::Status && !(c.page == App::Camp::Equip && c.phase == App::Camp::Entries)) campChoose(app);
-                } else { cursor = row; menuSound(app, se::kCursor); }
-            } else if (n > 2 && row < 0 && cursor < 2) { cursor = n - 1; c.scrollKey = -1; menuSound(app, se::kCursor); }
-            else if (n > 2 && row >= n && cursor >= n - 2) { cursor = 0; c.scrollKey = -1; menuSound(app, se::kCursor); }
+                } else { cursor = row; menuSound(app, se::kListFocus); }
+            } else if (n > 2 && row < 0 && cursor < 2) { cursor = n - 1; c.scrollKey = -1; menuSound(app, se::kListFocus); }
+            else if (n > 2 && row >= n && cursor >= n - 2) { cursor = 0; c.scrollKey = -1; menuSound(app, se::kListFocus); }
             return;
         }
     }
@@ -2131,7 +2228,13 @@ void drawGeneBoard(App& app, cr::MenuPainter& m, float x, float y, int plate, fl
 int staffLines(const App& app) { // the scripts': 2.2.0's and the Vita's (voiced: sys.evt's +0x40) or 1.0.1's
     return app.phoneData || !app.battleVoiceTable.empty() ? staffroll::kPhoneLines : staffroll::kLines;
 }
-float staffPicEnd(const App::StaffRoll& st) { return st.phone ? staffroll::kPhonePicEnd : staffroll::kPicEnd; }
+// Android 1.1.1's staff roll (InitStaffRollMenu's Open / Prc / Put, 0x6a5d0..0x6ae20) measures the phone's
+// screen, oy (edgeY) beyond the 320 above and below: the picture drawn oy higher, scrolled to
+// -(895 - (320 + 2 oy)) at that over 4600 a frame; the lines from 320 + oy, recycled past -20 - oy,
+// (340 + 2 oy) / 20 of them; the panel from -oy down past the bottom; the fast button at y -oy. 0 on
+// the iPhone, so 2.2.0's numbers
+float staffPicEnd(const App::StaffRoll& st) { return st.phone ? staffroll::kPhonePicEnd - 2 * st.edgeY : staffroll::kPicEnd; }
+int staffShown(const App::StaffRoll& st) { return st.phone ? std::clamp(int((340 + 2 * st.edgeY) / 20), 1, 32) : 21; }
 
 void staffWin(App& app, int w, bool on) { app.staffRoll.winTo[w] = on ? 1.0f : 0.0f; }
 
@@ -2142,10 +2245,11 @@ void openStaffRoll(App& app, int mode) {
     st.open = true;
     st.mode = std::clamp(mode, 0, 2);
     st.phone = app.renderer.phoneLayout();
-    const int shown = st.phone ? staffroll::kPhoneShown : 21;
+    st.edgeY = st.phone ? androidEdgeY(app) : 0;
+    const int shown = staffShown(st);
     st.next = shown;
     for (int i = 0; i < shown; ++i)
-        st.lines[i] = st.phone ? App::StaffRoll::Line{true, 320.0f + 20.0f * float(i), i} : App::StaffRoll::Line{true, 800.0f + 40.0f * float(i), i};
+        st.lines[i] = st.phone ? App::StaffRoll::Line{true, 320.0f + st.edgeY + 20.0f * float(i), i} : App::StaffRoll::Line{true, 800.0f + 40.0f * float(i), i};
     cr::Image img;
     static const char* const kBack[3] = {"EndBack01", "EndBack02", "EndBack03"}; // _hd (iPad), else the iPhone's
     if (loadImage(app, std::string(kBack[st.mode]) + "_hd.mct", img) || loadImage(app, std::string(kBack[st.mode]) + ".mct", img))
@@ -2169,23 +2273,24 @@ void stepStaffRoll(App& app) {
         break;
     case 2:
         if (st.countdown < 1) {
-            const int total = staffLines(app), shown = st.phone ? kPhoneShown : 21;
+            const int total = staffLines(app), shown = staffShown(st);
             if (st.next <= total) {
                 const int steps = st.fast ? 10 : 1;
                 for (int i = 0; i < shown; ++i) {
                     auto& l = st.lines[i];
                     for (int k = 0; k < steps; ++k) {
                         l.y -= st.phone ? kPhoneLine : kLine;
-                        if (l.y > (st.phone ? -20 : -40)) continue;
+                        if (l.y > (st.phone ? -20 - st.edgeY : -40)) continue;
                         const int e = st.next++;
-                        l.y = st.phone ? 320 : 800;
+                        l.y = st.phone ? 320 + st.edgeY : 800;
                         l.on = e < total && staffLine(app, e).size() >= 3;
                         l.entry = e;
                     }
                 }
             }
             const float end = staffPicEnd(st);
-            st.picY = std::max(end, st.picY - (st.phone ? (st.fast ? kPhonePicFast : kPhonePic) : (st.fast ? kPicFast : kPic)));
+            const float phonePic = (-kPhonePicEnd + 2 * st.edgeY) / 4600.0f; // (Android: [0xb8e94] / 4600; 0.125 at oy 0)
+            st.picY = std::max(end, st.picY - (st.phone ? (st.fast ? 10 * phonePic : phonePic) : (st.fast ? kPicFast : kPic)));
             if (st.next > total && st.picY == end) st.countdown = 100;
         } else {
             if (st.countdown == 5) staffWin(app, 3, false), staffWin(app, 2, false);
@@ -2227,9 +2332,9 @@ void drawStaffRoll(App& app) {
         r.setOrigin(ox);
         if (st.tex.id && st.win[0] > 0) {
             const float k = float(st.tex.width) / 1024.0f;
-            r.drawQuadUV(st.tex, 32, 64 + 2 * st.picY, 1024, 1790, 0, 0, 1024 * k, 1790 * k, 1, 1, 1, st.win[0]);
+            r.drawQuadUV(st.tex, 32, 64 + 2 * (st.picY - st.edgeY), 1024, 1790, 0, 0, 1024 * k, 1790 * k, 1, 1, 1, st.win[0]);
         }
-        if (st.win[1] > 0) r.fillRect(32 + 2 * st.panel, 64, 560, 640, 0, 0, 0, st.win[1]);
+        if (st.win[1] > 0) r.fillRect(32 + 2 * st.panel, 64 - 2 * st.edgeY, 560, 640 + 4 * st.edgeY, 0, 0, 0, st.win[1]);
         r.setOrigin(0);
     } else {
     if (st.tex.id && st.win[0] > 0) { // picture 10: (0, 0, 1024, 1790) of the 1024 x 2048 sheet
@@ -2244,11 +2349,11 @@ void drawStaffRoll(App& app) {
     if (st.win[3] > 0)
         for (const auto& l : st.lines) {
             if (!l.on) continue;
-            if (st.phone) { if (l.y > -20 && l.y < 320) m.text(staffLine(app, l.entry), 16 + 16, l.y + 32, false, st.win[3], 13); }
+            if (st.phone) { if (l.y > -20 - st.edgeY && l.y < 320 + st.edgeY) m.text(staffLine(app, l.entry), 16 + 16, l.y + 32, false, st.win[3], 13); }
             else if (l.y > -40 && l.y < 800) m.text(staffLine(app, l.entry), 16, l.y / 2, false, st.win[3], 13);
         }
     if (st.win[2] > 0 && app.windowTex.id) // the fast button (2.2.0: (444, 0))
-        m.picture(114, (st.phone ? 444 : 460) + 16, (st.phone ? 0 : -32) + 32, st.win[2]);
+        m.picture(114, (st.phone ? 444 : 460) + 16, (st.phone ? -st.edgeY : -32) + 32, st.win[2]);
     if (st.tex.id && st.win[4] > 0) { // the end card: picture 11 (0, 1936, 1024, 112) / 12 (0, 1824, 1024, 114)
         const float k = float(st.tex.width) / 1024.0f;
         r.setOrigin(0);
@@ -2337,6 +2442,7 @@ void stepLastBattle(App& app) {
     case 5: if (lb.timer-- < 0) lb.state = 6; break;
     case 6: // Set_Prtyno, ModeCampMenu(1), SetCampMainMenu
         app.playerChar = 2 * lb.chosen;
+        cr::changeRoute(app.game, &app.itemTable, lb.chosen); // (Set_Prtyno: the pair's bag)
         app.playerByReadMdl = true; // (Set_Prtyno: read_mdl)
         openCamp(app);
         lb.state = 7;
@@ -2424,8 +2530,8 @@ void lastBattleKey(App& app, SDL_Keycode key) {
     if (lb.state == 3) {
         const int n = int(lb.pairs.size());
         if (n <= 0) return;
-        if (key == SDLK_UP || key == SDLK_W) lb.cursor = (lb.cursor + n - 1) % n, menuSound(app, se::kCursor);
-        else if (key == SDLK_DOWN || key == SDLK_S) lb.cursor = (lb.cursor + 1) % n, menuSound(app, se::kCursor);
+        if (key == SDLK_UP || key == SDLK_W) lb.cursor = (lb.cursor + n - 1) % n, menuSound(app, se::kListFocus);
+        else if (key == SDLK_DOWN || key == SDLK_S) lb.cursor = (lb.cursor + 1) % n, menuSound(app, se::kListFocus);
         else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) lastBattleChoose(app, lb.cursor);
     } else if (lb.state == 10) {
         if (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_W || key == SDLK_S) lb.confirm ^= 1, menuSound(app, se::kCursor);
@@ -2761,11 +2867,11 @@ void worldSelectKey(App& app, SDL_Keycode key) {
     const bool back = key == SDLK_ESCAPE || key == SDLK_BACKSPACE || key == SDLK_AC_BACK;
     if (ws.state == 1) {
         const int n = int(ws.worlds.size());
-        if ((up || down) && n > 0) ws.cursor = (ws.cursor + (up ? n - 1 : 1)) % n, menuSound(app, se::kCursor);
+        if ((up || down) && n > 0) ws.cursor = (ws.cursor + (up ? n - 1 : 1)) % n, menuSound(app, se::kListFocus);
         else if (enter) worldSelectChoose(app, ws.cursor);
         else if (back) worldSelectChoose(app, -1);
     } else if (ws.state == 6) {
-        if (up || down) ws.levelCursor = (ws.levelCursor + (up ? ws.levels - 1 : 1)) % ws.levels, menuSound(app, se::kCursor);
+        if (up || down) ws.levelCursor = (ws.levelCursor + (up ? ws.levels - 1 : 1)) % ws.levels, menuSound(app, se::kListFocus);
         else if (enter) worldSelectLevel(app, ws.levelCursor);
         else if (back) worldSelectLevel(app, -1);
     } else if (ws.state == 4 || ws.state == 8) {
@@ -2797,11 +2903,11 @@ void worldSelectClick(App& app, float px, float py) {
         if (in(kListX, campui::kListTop, 256, campui::kListBottom - campui::kListTop)) {
             const int row = int(std::floor((my - campui::kFocusY + scroll) / kListStep));
             if (row >= 0 && row < n) {
-                if (row != focus) { focus = row; menuSound(app, se::kCursor); }
+                if (row != focus) { focus = row; menuSound(app, se::kListFocus); }
                 else if (ws.state == 1) worldSelectChoose(app, row);
                 else worldSelectLevel(app, row);
-            } else if (n > 2 && row < 0 && focus < 2) focus = n - 1, menuSound(app, se::kCursor);
-            else if (n > 2 && row >= n && focus >= n - 2) focus = 0, menuSound(app, se::kCursor);
+            } else if (n > 2 && row < 0 && focus < 2) focus = n - 1, menuSound(app, se::kListFocus);
+            else if (n > 2 && row >= n && focus >= n - 2) focus = 0, menuSound(app, se::kListFocus);
             return;
         }
     } else if (ws.state == 4 || ws.state == 8) {
@@ -2969,11 +3075,13 @@ void drawCamp(App& app) {
             right();
             // __MuCampScrListEquipInit (0x67a2c): a scrolling list of the seven - weapon, armor, jewel (else item
             // 0x1da, "Jewel"), the Human Genes and three plates (else 0x1db.., their names) - what is worn yellow
-            // (__MuScrList_ScrListEquip_Main), an empty slot white
+            // (__MuScrList_ScrListEquip_Main 0x579cc); the empty jewel slot white while a jewel is free for it
+            // (FUN_00055768) and the empty plate slots while MuCom_GetCommonSkill finds a plate to wear, else grey
+            const int jewelTone = campFreeJewel(app) ? 0 : 2, plateTone = campCommonSkill(app) ? 0 : 2;
             scrollList(kRowX, kEquipSlots, [&](int slot, float x, float y, bool lit) {
                 const int worn = slot < 3 ? pm.equip[slot] : pm.genes[slot - 3];
                 const int shown = worn > 0 ? worn : slot == 2 ? 0x1da : slot >= 3 ? 0x1db + (slot - 3) : 0;
-                drawCampRow(app, m, x, y, shown, 0, lit, ease, worn > 0 ? 3 : 0);
+                drawCampRow(app, m, x, y, shown, 0, lit, ease, worn > 0 ? 3 : shown == 0x1da ? jewelTone : slot >= 4 ? plateTone : 0);
             });
             left();
         } else if (c.slot >= 3 && c.phase == App::Camp::Entries) { // EquipProc 0x1c: the chosen plate's picture, its
@@ -3259,24 +3367,84 @@ void drawTrophyNotice(App& app) {
     m.textTint("You have earned a trophy!", (x + 106 * s) / 2, (y + 38.4f * s) / 2, ink, ink, ink, 1, line2 / 2);
 }
 
-// At the title: "You have save data from your last session. Resume game from last saved point?"
+// ---- The title's Progress Tracker offer (__menuu_TitlePrc 0xf..0x18, TitlePut windows 4..7) ----
+// Start with a resume point (TitlePrc 4: MuCom_ChackInterruptData): first, while flag 0x44 is clear
+// and the message hasn't been shown this launch (DAT_000d3370, outside TitleSet's memset), flags 0x44
+// and 3 set and "About Progress Tracker" (MsgUty_WinOpen / SetMsg(0x24): 56036) read through
+// (0xf..0x12); then (0x13, ContData_memcpy: the interrupted game in play) its pair's face boards come
+// in from x -240 at (0, 24 + 88k) (window 6), its date and play time from +360 (window 5), Yes / No
+// from +360 at (336, 126) / (336, 176) (window 4, ComUty_YesNoChoicePosProc(.., 0x150, 0x7e, 0x150,
+// 0xb0)) and the message board up from +160 at y 220 with 57092 / 57093 (window 7). An answer sends
+// the four windows out (0x15); Yes then stops the music and fades to black over 500 ms (0x16:
+// __bgmgo(0x8000000), SetFade 10 frames) before the load, No waits 4 and Start goes on. The resume
+// point is used up either way
+void openResumePrompt(App& app) { // TitlePrc 0x13
+    app.resumePrompt = 1;
+    app.resumeCursor = 0;
+    app.resumeWin = 0;
+    app.resumeMark = 0;
+}
+
 void offerResume(App& app) {
-    if (app.resumePrompt || !app.persist) return;
-    if (cr::readSave(savePath(app, "resume.dat"), app.resumeData)) {
-        app.resumePrompt = 1;
-        app.resumeCursor = 0;
+    if (app.resumePrompt || app.resumeNotice || !app.persist) return;
+    if (!cr::readSave(savePath(app, "resume.dat"), app.resumeData)) return;
+    cr::SaveData d; // (an earlier release's: one pair's, folded into the one save as its newest)
+    if (!app.resumeData.wholeGame && readData(app, d)) cr::foldPairSave(d, app.resumeData, &app.itemTable), app.resumeData = d;
+    if (!allPairsFlags(app).flag(0x44) && !app.game.flag(0x44) && !app.interruptShown) { // 0xf
+        app.game.setFlag(0x44, true);
+        app.interruptShown = true;
+        app.game.setFlag(3, true); // 0x10: SetFlag(3), MsgUty_WinOpen(0x24)
+        app.dialogue.clear();
+        showMessages(app, {kManualFirstPage + 0x24});
+        app.resumeNotice = 1;
+        return;
     }
+    openResumePrompt(app);
 }
 
 void answerResume(App& app, bool yes) {
-    app.resumePrompt = 0;
+    if (app.resumePrompt != 1) return;
+    app.resumePrompt = 2; // 0x15: the windows go
+    app.resumeYes = yes;
     SDL_RemovePath(savePath(app, "resume.dat").c_str()); // used up either way, as the original's
-    menuSound(app, se::kChoose); // Yes and No alike (TitlePrc's ComUty_YesNoChoicePosProc)
-    if (!yes) { titleStart(app); return; } // No: on with Start (TitleClr: Load_SaveData, flag 0 clear)
-    // Yes (TitlePrc 0x16 / 0x17): the music off, black over 500 ms, ten frames, then the load (stepEvents)
+    menuSound(app, se::kChoose); // Yes and No alike (ComUty_YesNoChoicePosProc)
+    if (!yes) { app.resumeIn = 6; return; } // 0x16: 4, counted below zero (0x17), then Start
+    // Yes (0x16): the music off, black over 500 ms (10 frames), ten counted below zero, then the load
     playBgm(app, 1u << 27);
     app.fadeGrey = 0, app.fadeFrom = 0, app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
-    app.resumeIn = 11;
+    app.resumeIn = 12;
+}
+
+// The boxes 136 x 40 at (336, 126) - Yes - and (336, 176) - No (widescreen: on the screen's right, as drawn)
+void resumeClick(App& app, float px, float py) {
+    if (app.resumePrompt != 1) return;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, wideRight(app), mx, my);
+    for (int k = 0; k < 2; ++k)
+        if (mx >= 336 && mx < 336 + 136 && my >= 126 + 50 * k && my < 126 + 50 * k + 40) {
+            app.resumeCursor = k;
+            answerResume(app, k == 0);
+            return;
+        }
+}
+
+// One 20 Hz frame of the offer: the message read through (0x11: flag 3 clear, MsgUty_WinClose), the
+// windows' slide (4 frames), the board's mark, the answer's countdown
+void stepResume(App& app) {
+    if (app.resumeNotice == 1 && app.dialogue.empty()) {
+        app.game.setFlag(3, false);
+        app.resumeNotice = 0;
+        openResumePrompt(app);
+    }
+    if (app.resumePrompt == 1) app.resumeWin = std::min(1.0f, app.resumeWin + 0.25f);
+    else if (app.resumePrompt == 2) app.resumeWin = std::max(0.0f, app.resumeWin - 0.25f);
+    if (app.resumePrompt) ++app.resumeMark;
+    if (app.resumeIn > 0 && --app.resumeIn == 0) {
+        app.resumePrompt = 0;
+        if (!app.resumeYes) titleStart(app);
+        else if (!applySave(app, app.resumeData)) { menuSound(app, se::kBuzzer); titleStart(app); }
+    }
 }
 
 void drawResumePrompt(App& app) {
@@ -3284,40 +3452,61 @@ void drawResumePrompt(App& app) {
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
-    r.setOrigin(0);
-    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.6f);
+    const float w = app.resumeWin, e = 1 - (1 - w) * (1 - w), a = w, out = 1 - e;
+    // Window 6: the interrupted game's pair (ComUty_CharInfoInit: one while flag 0xfed + route holds
+    // the second back), as its state has them
+    const cr::GameState& g = app.resumeData.game;
+    const int route = app.resumeData.route();
+    r.setOrigin(wideLeft(app));
+    for (int k = 0; k < (g.flag(4077 + route) ? 1 : 2); ++k) {
+        const int ch = 2 * route + k;
+        int hp, hpMax, mp, mpMax;
+        memberHpMp(app, ch, hp, hpMax, mp, mpMax, &g);
+        drawFaceBoard(app, m, -240 * out, 24 + 88.0f * float(k), ch, hp, hpMax, mp, mpMax, a, &g);
+    }
+    r.setOrigin(wideRight(app));
+    drawSaveDate(app, m, app.resumeData, a, 360 * out);                    // window 5
+    m.plate(336 + 360 * out, 126, 0, 0, app.resumeCursor == 0, a, false); // window 4: Yes
+    m.plate(336 + 360 * out, 176, 1, 1, app.resumeCursor == 1, a, false); // No
     r.setOrigin(r.uiX());
-    const float po = r.phoneLayout() ? 1.0f : 0.0f; // (the panel bypasses the menu's iPhone offset)
-    drawWinPiece(app, kWinSmallPanel, 64 * 2 + 32 * po, 140 * 2 + 64 * po, 384 * 2, 72 * 2);
-    m.textCentred(sysText(app, 57092), 84, 160, false, 1, 15);
-    m.textCentred(sysText(app, 57093), 84, 188, false, 1, 15);
-    m.button(128, 230, 0, "", app.resumeCursor == 0, 1, app.resumeCursor == 0);
-    m.button(272, 230, 1, "", app.resumeCursor == 1, 1, app.resumeCursor == 1);
+    const float by = 220 + 160 * out; // window 7: ComUty_MsgBoardDraw, its mark out and back, the lines once still
+    m.picture(12, 0, by, a);
+    const short* mark = cr::kMenuPicture[13];
+    m.piece(458, by + 78, float(mark[0] + 20 * pictAnimFrame(app.resumeMark, 1, 4)), mark[1], mark[2], mark[3], a);
+    if (w >= 1) {
+        m.text(sysText(app, 57092), 24, by + 14, false, a, menuFontSize(app));
+        m.text(sysText(app, 57093), 24, by + 30, false, a, menuFontSize(app));
+    }
 }
 
-// The flags of every pair's story at once: what the original keeps in its system data (the
-// Scenarios chart, the second Character Select sheet). Ours: the pairs' saves and the resume point
-// prty_init_new(pair - 1, mode): a new game for the pair. Its flags 1001 + 400p .. 1400 + 400p
-// are cleared, its two members start over from their records (0xcb3f0: level 1, their weapon,
-// armor and jewel, the Human Genes, their own ability and skill), its bag holds the starting
-// items (those and 0xce700: 3 Emergency Exits, 2 Chocolates). With the pair's clear data (flag
-// 40 + p, its slot) the game goes on from that data - Oz and the flags outside the range kept -
-// and mode 3 (var 1 = 3, "with your clear data") also keeps each member's stat bonuses (seeds
-// and level-up skills' points: +0x0c HP, +0x16 MP, +0x1c..+0x28), equipment and gene plates, and
-// the bag, less its kind 3 and 9 items (the story's)
+// prty_init_new(pair - 1, mode) (0x6b82c), on the state the title runs on (TitleClr's Load_SaveData:
+// data.dat, or prty_init_all's without one): a new game for the pair. Its flags 1001 + 400p ..
+// 1400 + 400p are cleared, its two members start over from their records (0xcb3f0: level 1, their
+// weapon, armor and jewel, the Human Genes, their own ability and skill), its bag (+0x580 + 0x100p:
+// its own items and its members' gear) is emptied and holds the starting items (those and 0xce700:
+// 3 Emergency Exits, 2 Chocolates). The rest of the save goes on: the Oz, the shared bag (kinds 4, 5,
+// 9, 10: genes, skills, the manual, plates), the other pairs, the flags outside the range. Mode 3
+// (var 1 = 3, "with your clear data", offered with the pair's clear flag 40 + p) also keeps each
+// member's stat bonuses (seeds and level-up skills' points: +0x0c HP, +0x16 MP, +0x1c..+0x28),
+// equipment and gene plates, and the pair's bag less its kind 3 and 9 items (the story's)
 void newPairParty(App& app, int pair, bool clearData) {
     const int p = std::clamp(pair, 1, 4) - 1;
-    cr::SaveData slot;
-    const bool fromClear = allPairsFlags(app).flag(40 + p) && cr::readSave(slotPath(app, p + 1), slot);
-    cr::GameState g = fromClear ? slot.game : app.game;
-    if (fromClear) {
+    cr::SaveData data;
+    const bool haveData = readData(app, data);
+    const bool ng = haveData && clearData && data.game.flag(40 + p);
+    cr::GameState g = haveData ? data.game : app.game;
+    if (haveData) {
         for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own
         // (and its variables: prty_init_new leaves the work alone - the vars the boot script has set
-        // this session, the pair 0, the choice 1 and the rest, stay over the clear data's)
+        // this session, the pair 0, the choice 1 and the rest, stay over the save's)
         for (const auto& [k, v] : app.game.vars) g.vars[k] = v;
-        g.openedBoxes.clear();
+        // (the pair's opened boxes, as its field flags: the areas of its story, 2 + 6p .. 7 + 6p)
+        g.openedBoxes.erase(std::remove_if(g.openedBoxes.begin(), g.openedBoxes.end(),
+                                           [p](int b) { return b / 1000 >= 2 + 6 * p && b / 1000 <= 7 + 6 * p; }),
+                            g.openedBoxes.end());
         app.treasureBoxes.clear();
     }
+    cr::changeRoute(g, &app.itemTable, p); // (Set_Prtyno: the pair's bag in view)
     for (int f = 1001 + 400 * p; f <= 1400 + 400 * p; ++f) g.setFlag(f, false);
     // ResetFieldFlag_NewGame: the pair's four blocks of field flags (3000 + 4b .. 3003 + 4b), then
     // 3300..3363
@@ -3329,7 +3518,7 @@ void newPairParty(App& app, int pair, bool clearData) {
     for (int k = 0; k < 2; ++k) {
         const size_t c = size_t(2 * p + k);
         cr::PartyMember m = fresh[c];
-        if (fromClear && clearData) {
+        if (ng) {
             const cr::PartyMember& old = g.party[c];
             std::copy(std::begin(old.seeds), std::end(old.seeds), m.seeds);
             std::copy(std::begin(old.boosts), std::end(old.boosts), m.boosts);
@@ -3342,33 +3531,35 @@ void newPairParty(App& app, int pair, bool clearData) {
         m.hp = m.mp = -1;
         g.party[c] = m;
     }
-    if (fromClear && clearData) {
-        for (auto it = g.items.begin(); it != g.items.end();) {
-            const cr::ItemParam* ip = app.itemTable.item(it->first);
-            if (ip && (ip->kind == 3 || ip->kind == 9)) it = g.items.erase(it);
-            else ++it;
-        }
-        cr::ensureStartingGenes(g);
-    } else {
-        g.items.clear();
-        cr::giveStartingItems(g);
+    // The pair's bag: mode 3 keeps it less kinds 3 and 9 (del_item over its slots); otherwise it is
+    // emptied (memset) - its own items and its members' gear. Abilities and skills 81..88 / 131..138
+    // are flags outside the cleared range, and the shared bag is not the pair's: both stay
+    for (auto it = g.items.begin(); it != g.items.end();) {
+        const cr::ItemHome h = cr::itemHome(&app.itemTable, it->first);
+        const cr::ItemParam* ip = app.itemTable.item(it->first);
+        const bool own = h == cr::ItemHome::Route || (h == cr::ItemHome::Gear && (it->first - 201) / 56 == p);
+        if (own && (ng ? ip && (ip->kind == 3 || ip->kind == 9) : true)) it = g.items.erase(it);
+        else ++it;
     }
-    if (!fromClear) g.walkExp = {}, g.noEncounters = {};
+    if (ng) cr::ensureStartingGenes(g);
+    else cr::giveStartingItems(g);
+    if (!haveData) g.walkExp = {}, g.noEncounters = {};
+    if (app.interruptShown) g.setFlag(0x44, true); // (TitleClr's Load_SaveData: the Progress Tracker's message seen)
     app.game = std::move(g);
     app.playerChar = 2 * p;
 }
 
+// The flags the title and its menus run on (the Scenarios chart, the second Character Select
+// sheet, the Load's emblems): the one save's (TitleClr's Load_SaveData), the game's own while one
+// is on, and the prompts seen outside a save
 cr::GameState allPairsFlags(const App& app) {
     cr::GameState g;
     auto take = [&](const cr::GameState& s) {
         for (size_t i = 0; i < g.flags.size() && i < s.flags.size(); ++i) g.flags[i] |= s.flags[i];
     };
-    for (int pair = 1; pair <= 4; ++pair) {
-        cr::SaveData d;
-        if (cr::readSave(slotPath(app, pair), d)) take(d.game);
-    }
     cr::SaveData d;
-    if (cr::readSave(savePath(app, "resume.dat"), d)) take(d.game);
+    if (readData(app, d)) take(d.game);
+    else if (cr::readSave(savePath(app, "resume.dat"), d)) take(d.game); // (a resume point alone)
     if (!app.booting) take(app.game);
     for (int f : app.seenFlags) g.setFlag(f, true); // (the prompts seen outside a save)
     return g;
@@ -3846,8 +4037,8 @@ void manualKey(App& app, SDL_Keycode key) {
     const int n = int(manualTopics(app).size());
     int& c = app.manualCursor;
     switch (key) {
-    case SDLK_UP: case SDLK_W: c = std::max(0, c - 1); menuSound(app, se::kCursor); break;
-    case SDLK_DOWN: case SDLK_S: c = std::min(n - 1, c + 1); menuSound(app, se::kCursor); break;
+    case SDLK_UP: case SDLK_W: if (c > 0) --c, menuSound(app, se::kListFocus); break;
+    case SDLK_DOWN: case SDLK_S: if (c < n - 1) ++c, menuSound(app, se::kListFocus); break;
     case SDLK_PAGEUP: c = std::max(0, c - kManualRows); menuSound(app, se::kPage); break; // a list flicked a page
     case SDLK_PAGEDOWN: c = std::min(n - 1, c + kManualRows); menuSound(app, se::kPage); break;
     case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: app.manualOpen = false; menuSound(app, se::kBack); return;
@@ -4033,7 +4224,7 @@ void drawTitleMenu(App& app) {
     drawTitleArt(app, plates ? std::max(0.0f, 1 - t) : t, plates ? 1.0f : t);
     m.begin(app.renderer, app.windowTex, &app.font);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
-    if (plates) {
+    if (plates && !app.resumeNotice && !app.resumePrompt) { // (Start with a resume point: window 3 off, the strip stays)
         const float pt = std::clamp((app.titleAnim - 6) / 10.0f, 0.0f, 1.0f), ease = 1 - (1 - pt) * (1 - pt);
         app.renderer.setOrigin(wideRight(app)); // (widescreen: the emblems and plates to the screen's right)
         m.picture(155, 320, 16, pt);
@@ -4043,7 +4234,7 @@ void drawTitleMenu(App& app) {
                     !titleChoiceReady(i));
     }
     app.renderer.setOrigin(wideLeft(app));
-    if (keyHints(app)) // (our key hints)
+    if (keyHints(app) && !app.resumeNotice && !app.resumePrompt) // (our key hints)
         m.text(plates ? "Up/Down  Enter  V: Options  Esc: quit" : "Enter: start  Esc: quit", 20, 360, false, t * 0.8f, 9);
     app.renderer.setOrigin(app.renderer.uiX());
 }
@@ -4078,12 +4269,17 @@ void titleChoose(App& app, int i) {
     if (i == 1) { openScenarios(app); return; }  // SetHistoryMenu
     // Start (TitlePrc 4 -> 0xf .. 0x14): the Progress Tracker's offer first, when there is a resume point
     offerResume(app);
-    if (app.resumePrompt) return;
+    if (app.resumePrompt || app.resumeNotice) return;
     titleStart(app);
 }
 
 // Keys on the title; false = quit
 bool titleKey(App& app, SDL_Keycode key) {
+    if (app.resumeNotice) { // "About Progress Tracker": a page out, or the next
+        if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) tapDialogue(app);
+        return true;
+    }
+    if (app.resumePrompt) return true; // (its windows going: nothing to answer)
     if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { titleTap(app); return true; }
     if (!titlePlatesLive(app) && key != SDLK_ESCAPE && key != SDLK_AC_BACK) return true;
     switch (key) {
@@ -4099,6 +4295,8 @@ bool titleKey(App& app, SDL_Keycode key) {
 void titleClick(App& app, float px, float py) {
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
+    if (app.resumeNotice) { tapDialogue(app); return; } // (the message window: a tap anywhere)
+    if (app.resumePrompt) return;
     if (app.titleStage == 0) { titleTap(app); return; } // (a tap anywhere: _pad_chk_trg_up_box0(0, 0, 480, 320))
     if (!titlePlatesLive(app)) return;
     float mx, my;

@@ -62,7 +62,7 @@ reported and skipped, and resume uses the valid manual save instead.
 
 | Game / Vita title | Input | Output |
 | --- | --- | --- |
-| CR1 / `PCSG00497` | `SAVEDATA0001.bin`, optional `0002` suspend | `save1.dat`…`save4.dat` for routes with saved positions, and `resume.dat` |
+| CR1 / `PCSG00497` | `SAVEDATA0001.bin`, optional `0002` suspend | `save1.dat`…`save4.dat` for routes with saved positions, and `resume.dat` (the game's import makes its one `data.dat` from them at once, keeping an earlier `data.dat` as `data-before-import-<time>.dat`; a staged copy is folded on the next title visit when no `data.dat` is there) |
 | Omega / `PCSG00499` | `SAVEDATA0011.bin`, optional `0012` suspend | `save1.dat`, `save2.dat` for scenarios with saved positions, and `resume.dat` |
 | CR2 / `PCSG00498` | `SAVEDATA0020.bin` system, `0021` play, optional `0022` suspend | `system.txt`, `save1.txt`, `cont.txt` |
 | CR3 / `PCSG00457` | `SAVEDATA0030.bin` system, any `0031`…`0033` play slots | Matching `save1.txt`…`save3.txt`, plus each slot's original decoded JSON |

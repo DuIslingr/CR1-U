@@ -490,7 +490,13 @@ struct App {
         Camp::Phase phase = Camp::List;
     } campPointer;
     float saveClock = 0;
-    int resumePrompt = 0;                  // 1: "You have save data from your last session" (Yes / No)
+    // The title's Progress Tracker offer (__menuu_TitlePrc 0xf..0x18, TitlePut windows 4..7)
+    int resumePrompt = 0;                  // 1: "You have save data from your last session" (Yes / No, 0x14); 2: its windows going (0x15..)
+    int resumeNotice = 0;                  // 1: "About Progress Tracker" (56036, MsgUty_WinOpen(0x24)) being read (0x10..0x12)
+    float resumeWin = 0;                   // windows 4..7 (ComUty_WinDispOn / Off): 0 out .. 1 in
+    int resumeMark = 0;                    // the board's tap mark (ComUty_PictAnim: 1 tick a frame, out and back)
+    bool resumeYes = false;                // DAT_000d338c: Yes chosen (the music off and the black, then the load)
+    bool interruptShown = false;           // DAT_000d3370 (MuTitle_GetInInterruptFlg): the message shown this launch
     // Prompts seen outside a save ("Option", OptionSet's flag 0x43): 2.2.0 sets it in the flags in
     // memory, which only a later save keeps - with no save written after it, it came back each launch.
     // Kept in settings.ini (seen_flags=) too and read as the saves' (allPairsFlags)
@@ -983,7 +989,8 @@ struct App {
         float panel = 0;                   // +0x1c: the black panel's x (tex2d), sliding to -280
         float picY = 0;                    // +0x174: the picture's y (logical pixels), up to -1022
         bool phone = false;                // the iPhone layout (2.2.0): tex2d units, 17 lines, its timing
-        struct Line { bool on = false; float y = 0; int entry = 0; } lines[21];
+        float edgeY = 0;                   // the Android phone's edges beyond the 320 (androidEdgeY; 0 else)
+        struct Line { bool on = false; float y = 0; int entry = 0; } lines[32];
         float win[5] = {}, winTo[5] = {};  // ComUty_WinDispOn / Off: each window's alpha
         cr::Texture tex;                   // EndBack0<mode + 1>_hd.mct
         float clock = 0;
@@ -1045,6 +1052,9 @@ constexpr uint32_t kPaid = 22;   // ShopPrc
 constexpr uint32_t kVolume = 40; // MuOptionSetInfo: the SE gauge let go (the BGM gauge is silent)
 // The original is touch-only, so it has no cursor sound; keyboard cursor moves are the port's own
 constexpr uint32_t kCursor = 4;
+// MuScrList_Draw (2.2.0 0x57b28): __effgo(1) whenever another row comes to a list's focus line -
+// every MuScrList list (the Camp's, the shop's, the World Select's, the manual's, the battle's)
+constexpr uint32_t kListFocus = 1;
 } // namespace se
 
 // Control Hints (Options, Game; F3): the port's own menu help. The iPhone layout has no room below.
@@ -1380,6 +1390,10 @@ cr::SaveData captureSave(const App& app);
 bool applySave(App& app, const cr::SaveData& s);
 bool languageSheet(App& app);
 std::string slotPath(const App& app, int pair);
+std::string dataPath(const App& app);
+bool readData(const App& app, cr::SaveData& d);
+bool saveGame(App& app);
+bool foldVitaImport(App& app, const std::vector<std::string>& files);
 int currentPair(const App& app);
 std::vector<int> savePlates(const App& app);
 void openSaveScreen(App& app, bool load);
@@ -1415,6 +1429,12 @@ float campEase(const App& app);
 float campListX(const App& app);
 int campScrollCount(const App& app);
 void campScrollBy(App& app, int rows);
+int shopUnitPrice(const App& app, int item);
+std::vector<int> campItems(const App& app, int category);
+std::vector<int> campEquipList(const App& app, int c, int slot);
+bool campFreeJewel(const App& app);
+bool campCommonSkill(const App& app);
+int staffShown(const App::StaffRoll& st);
 int campFocus(const App& app);
 int campEntries(const App& app);
 void openCamp(App& app);
@@ -1466,6 +1486,8 @@ void stepTrophies(App& app, float dt);
 void drawTrophyNotice(App& app);
 void answerResume(App& app, bool yes);
 void drawResumePrompt(App& app);
+void stepResume(App& app);
+void resumeClick(App& app, float px, float py);
 void newPairParty(App& app, int pair, bool clearData);
 cr::GameState allPairsFlags(const App& app);
 void openScenarios(App& app);

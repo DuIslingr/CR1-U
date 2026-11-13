@@ -3305,7 +3305,7 @@ void battleKey(App& app, SDL_Keycode key) {
                 const cr::BattleActionDef* act = app.battleActions.get(b.targetAction);
                 cameraForTarget(app, b.picks[size_t(b.pick)], act && b.rules.isGroupScope(*act), true); // (eased 1/2, held)
             }
-            menuSound(app, se::kCursor);
+            menuSound(app, targets ? se::kCursor : se::kListFocus); // (the items' / genes' MuScrList: __effgo(1))
         } else if (enter && n > 0) {
             if (targets) battleChooseTarget(app, b.picks[size_t(b.pick)]);
             else if (b.menu == App::Battle::Genes) battleChooseGene(app, b.picks[size_t(b.pick)]);
