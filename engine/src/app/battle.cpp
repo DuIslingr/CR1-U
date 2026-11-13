@@ -836,7 +836,6 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     // (prty+0xc10[pair], the byte btl_enemy_init_lv levels the monsters by) picks 8, or 9 from band 5
     const auto v58 = app.game.vars.find(58);
     const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : worldBand < 5 ? 8 : 9;
-    b.fieldTrack = app.music.current();
     playBgm(app, uint32_t(track));
     app.dialogue.clear();
     ++app.battlesFought;
@@ -889,7 +888,6 @@ void endBattle(App& app, bool won) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.sound.stopBattleLines(); // _btlvoice_stop_all
     App::Battle& b = app.battle;
-    const bool wasEvent = b.eventBattle;
     settleBattle(app);
     std::string names;
     for (const auto& a : b.actors)
@@ -906,14 +904,13 @@ void endBattle(App& app, bool won) {
     app.renderer.destroy(b.gameOver);
     b.lostTap = false;
     { // fldread_prc's return from a battle (the load flag's bit 3): var 60 says what plays - 998 nothing
-      // (the battle's music faded out at its end), under 29 that track, else the field's last (gac+0x35530,
-      // which __EvtBattle zeroes: a scene's battle without a var 60 gets track 0)
+      // (the battle's music faded out at its end), under 29 that track, else the field's last request
+      // (G+0x358e0, which __EvtBattle zeroes: a scene's battle without a var 60 gets track 0)
         const auto v60 = app.game.vars.find(60);
         const int after = v60 != app.game.vars.end() ? v60->second : 999;
         if (after == 998) playBgm(app, 1u << 29);
         else if (after >= 0 && after < 29) playBgm(app, uint32_t(after));
-        else if (wasEvent) playBgm(app, 0);
-        else playBgm(app, b.fieldTrack >= 0 ? uint32_t(b.fieldTrack) : 1u << 29);
+        else playBgm(app, app.bgmNo);
     }
     cr::EncounterTable table;
     const bool have = cr::encounterTable(app.events, app.mapNumber, table);

@@ -258,6 +258,7 @@ void SoundSystem::play(uint32_t id) {
             }
         return;
     }
+    if ((id & 0x10000) && !standIns_) return; // (__effplay: with the voices on, these stay silent)
     if (!device_ || entry >= int(bank_.size()) || bank_[entry].data.empty()) return;
     const PcmSound& s = bank_[entry];
     SDL_AudioSpec spec{};

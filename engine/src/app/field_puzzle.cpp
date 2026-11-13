@@ -229,9 +229,11 @@ bool npcDrawn(const App& app, size_t index) {
 }
 
 // Loads the area's event file if needed, the map's NPC list, and the trigger-box overlay.
-// _bgmgo: the music command; a play request (no stop / fade bits) is the track Uty_GetBgmNo reports
+// __bgmgo: the music command. A play request (no stop / fade bits) made on the field (G+0x2c0 bit
+// 6: not in a battle) is kept in G+0x358e0 - what Uty_GetBgmNo reads and the field plays again after a
+// battle; it restarts the track even when that one plays already (_setbgm_caf)
 void playBgm(App& app, uint32_t v) {
-    if (!(v & 0x2e000000u)) app.bgmNo = int(v & 0xff);
+    if (!(v & 0x2e000000u) && !app.battle.active) app.bgmNo = v;
     app.music.command(v);
 }
 
@@ -283,20 +285,8 @@ void enterMap(App& app) {
     app.pendingEntry = app.area != app.entryArea ? App::Entry::Area : App::Entry::Room;
     if (app.area != app.entryArea) app.game.frmScene = app.game.frmRecord = 0; // offsets into the old file
     app.entryArea = app.area;
-    // Music: each area's usual track (what its entry script mostly plays: dungeons d01-d04 ->
-    // 2-5, d05 -> 17, towns -> 15, puzzle rooms -> 6; event 0 itself isn't run yet). Scripts
-    // change it with Bgm.
-    if (app.area != app.musicArea) {
-        app.musicArea = app.area;
-        const std::string ev = cr::kAreaEventFile[app.area];
-        int track = -1;
-        if (ev.compare(5, 2, "d0") == 0) track = ev[7] == '5' ? 17 : ev[7] - '1' + 2;
-        else if (ev.compare(5, 3, "t01") == 0) track = 15;
-        else if (ev.compare(5, 3, "p01") == 0) track = 6;
-        else if (ev.compare(5, 3, "t91") == 0) track = 1;
-        else if (ev.compare(5, 3, "d91") == 0) track = 4;
-        if (track >= 0) playBgm(app, uint32_t(track));
-    }
+    // Music: none here - _fldread_prc plays a track only on the way back from a battle; a map or
+    // area change leaves it to the entry scripts (their Bgm)
     // Treasure boxes (TreasureBoxManager): a dungeon's (any area but the boot area, the puzzle
     // rooms, the four Arks and t91) are drawn again each time the World Select leads into one
     // (fldread_prc -> _InitDungeon -> randomSelect), at the route's band, the draw kept in the save
@@ -367,7 +357,8 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     const auto it = std::find(app.maps.begin(), app.maps.end(), std::string(cr::kMapCollisionFile[w.map]));
     if (it == app.maps.end()) return false;
     const int fromMap = app.mapNumber;
-    if (w.map != app.mapNumber || area != app.area) {
+    const bool reload = w.map != app.mapNumber || area != app.area;
+    if (reload) {
         showMap(app, int(it - app.maps.begin()), w.map, area);
         // FieldScene::onLoading calls SetMask2(1): retain the outgoing mask's
         // colour and reveal the loaded field over 500 ms. Area-changing scripts
@@ -399,7 +390,9 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
         p = q;
     }
     app.walker.pos = p;
-    app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f; // FieldPCCtrl::reset: DegToRad
+    // (__EvtWarp to the map in play writes the position alone - gac+0xd6c..0xd74 - the facing kept;
+    // a load turns the leader as FieldPCCtrl::reset does: DegToRad)
+    if (reload) app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f;
     app.walker.gait = cr::Gait::Stand;
     // (lastKick as it was - the warping box's id: a box of another id where he lands kicks once the
     // scripts end)
@@ -793,9 +786,11 @@ void animate(App& app, LoadedModel& lm, float dt) {
         if (app.mode == Mode::Models) lm.blend.reset(); // (the viewer shows a chosen action at once)
         if (!lm.blend.step(lm.action, lm.time, dt * kFramesPerSecond * app.speed, lm.actions))
             lm.time += dt * kFramesPerSecond * app.speed;
-        if (lm.loopFrom > 0 && lm.loopFrom < act->duration && lm.time >= act->duration)
-            lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), act->duration - float(lm.loopFrom));
-        else if (act->duration > 0) lm.time = std::fmod(lm.time, act->duration);
+        const float end = lm.loopTo > 0 && lm.loopTo < act->duration ? float(lm.loopTo) : act->duration;
+        if (lm.once) lm.time = std::min(lm.time, act->duration); // (played once, its end held)
+        else if (lm.loopFrom > 0 && lm.loopFrom < end && lm.time >= end)
+            lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), end - float(lm.loopFrom));
+        else if (end > 0 && lm.time >= end) lm.time = std::fmod(lm.time, end);
     }
     poseWorld(m.skeleton, lm.actions, act, lm.time, lm.blend, lm.world);
     for (size_t i = 0; i < m.meshes.size(); ++i) {
@@ -873,17 +868,41 @@ std::vector<App::NpcDraw*> ViewerHost::npc(int id) {
 void ViewerHost::showMessage(int id) { showMessages(app, {id}); }
 bool ViewerHost::messageOpen() { return !app.dialogue.empty(); }
 bool ViewerHost::tapped() { const bool t = app.tapPending; app.tapPending = false; return t; }
-void ViewerHost::showItemWindow(int item) {
+// _Uty_GetItem_Init (2.2.0 0x25434): the sound (0x10 for items 61..80, else 0xf; the Oz's 0xf), the
+// icon (GetIconNoFromItemNo - 1; the Oz 0x3f) and message 6 / 10 (6 / 0x5e for item 0x1b6, 6 / 0x55
+// for the Oz: "You got n/OZ!"), flag 0 cleared - the band comes down from the top (_Put)
+void ViewerHost::showItemWindow(int item, bool oz) {
     app.game.setFlag(0, false); // confirmation belongs to this item window, not the previous interaction
     app.itemWindowOpen = true;
     app.itemWindowItem = item;
+    App::ItemWin& w = app.itemWin;
+    w = App::ItemWin();
+    w.oz = oz;
+    const cr::ItemParam* p = oz ? nullptr : app.itemTable.item(item);
+    w.icon = oz ? 0x3f : p ? p->icon : -1;
+    w.message = 57000 + (oz ? 0x55 : item == 0x1b6 ? 0x5e : 10);
+    const uint32_t se = !oz && item >= 0x3d && item < 0x3d + 0x14 ? 0x10 : 0xf;
+    app.sound.play(se);
+    app.soundLog.push_back(se);
 }
+// Anim (__EvtAnim -> mdl_set_act_motion_loop(mdl, slot, 2, a, b)): a new action blends in over 2
+// frames (MotionBlend::step sees the change) with the loop a..b; the action already playing goes on
+// as it is, its loop too. Npc 0 is the leader's model (gac + 0x83c)
 void ViewerHost::playAnim(int id, int slot, int loopFrom, int loopTo) {
     int action = slot; // a slot LoadAct filled, else the model's own action of that number
     if (auto a = app.actorSlots.find(id); a != app.actorSlots.end())
         if (auto it = a->second.find(slot); it != a->second.end()) action = it->second;
+    if (id == 0) {
+        App::PlayerAnim& pa = app.playerAnim;
+        if (pa.on && pa.action == action) return;
+        if (!pa.on && app.player.action == action) pa = App::PlayerAnim{true, action, false, 0, 0}; // (the gait's, looped whole)
+        else pa = App::PlayerAnim{true, action, loopFrom < 0, std::max(loopFrom, 0), loopTo};
+        return;
+    }
     for (auto* d : npc(id)) {
-        if (d->action != action) { d->action = action; d->time = 0; } // the same action keeps running
+        if (d->action == action) continue; // the same action keeps running, and its loop
+        d->action = action;
+        d->time = 0;
         d->once = loopFrom < 0;
         d->loopFrom = loopFrom;
         d->loopTo = loopTo;
@@ -1010,6 +1029,10 @@ void ViewerHost::screenFade(float grey, float from, float to, int frames) {
     app.fadeGrey = grey; app.fadeFrom = from; app.fadeTo = to; app.fadeFrames = std::max(frames, 1); app.fadeT = 0;
 }
 bool ViewerHost::screenFading() { return app.fadeT < app.fadeFrames; }
+void ViewerHost::backFade(float grey, float from, float to, int frames) { // _SetFade_back (PutMask: 50 ms a frame)
+    app.backFade = App::BackFade{grey, from, to, std::max(frames, 1), 0};
+}
+bool ViewerHost::backFading() { return app.backFade.t < app.backFade.frames; } // _ChkFade_back
 void ViewerHost::warp(const cr::WarpRequest& w) { performWarp(app, w, app.runner.eventNo()); }
 void ViewerHost::playSound(uint32_t id) {
     const bool speech = (id & 0x400000) || app.sound.isVoice(int(id & 0xfff));
@@ -1037,6 +1060,16 @@ void ViewerHost::nowLoading(bool on) { // NowLoadStart / NowLoadEnd
     if (on && !app.nowLoading.on) app.nowLoading = App::NowLoading{true, 0};
     else if (!on) app.nowLoading.on = false;
 }
+// Dir 2000 ("face the way it moves": __EvtSetc / __EvtFrmAdjc, 2.2.0 18226-18241): turns =
+// (1 - dz / len) / 4, and 1 - that when dx < 0 - linear in the cosine, not atan2: a 45-degree
+// move faces 26.4 degrees
+float travelYaw(float dx, float dz) {
+    const float len = std::sqrt(dx * dx + dz * dz);
+    if (len <= 0) return 0;
+    float t = (1.0f - dz / len) * 0.25f;
+    if (dx < 0) t = 1.0f - t;
+    return t * 2.0f * 3.14159265f;
+}
 void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
     cr::Vec3 old;
     if (!actorPos(app, id, old)) return;
@@ -1044,7 +1077,7 @@ void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
     float yaw = yawDeg * kDeg;
     if (facing == Facing::Travel) {
         if (std::fabs(p.x - old.x) + std::fabs(p.z - old.z) < 1e-4f) facing = Facing::Keep;
-        else yaw = std::atan2(p.x - old.x, p.z - old.z);
+        else yaw = travelYaw(p.x - old.x, p.z - old.z);
     }
     setActor(app, id, p, facing == Facing::Keep ? nullptr : &yaw, false);
 }
@@ -1057,7 +1090,7 @@ void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, in
     m.frames = std::max(frames, 1);
     float yawNow = id == 0 ? app.walker.heading : findNpc(app, id)->angle;
     if (facing == Facing::Travel && std::fabs(m.to.x - m.from.x) + std::fabs(m.to.z - m.from.z) > 1e-4f) {
-        const float yaw = std::atan2(m.to.x - m.from.x, m.to.z - m.from.z);
+        const float yaw = travelYaw(m.to.x - m.from.x, m.to.z - m.from.z);
         setActor(app, id, m.from, &yaw, true);
     } else if (facing == Facing::Yaw) {
         m.turn = true;
@@ -1082,7 +1115,12 @@ void ViewerHost::tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3
         app.renderer.destroy(p.tex);
         p = App::Portrait();
         cr::Image img;
-        if (loadImage(app, cr::kTex2dImage[image], img)) p.tex = app.renderer.upload(img);
+        // (__EvtTex2d: image 11, the map's title card, from the language's own sheet - MAPtitle_fr,
+        // _de, _es, _cs, _ct, _kr for languages 2..7 - else MAPtitle)
+        static const char* const kTitleLang[6] = {"fr", "de", "es", "cs", "ct", "kr"};
+        const bool own = image == 11 && app.language >= 2 && app.language <= 7 &&
+                         loadImage(app, std::string("MAPtitle_") + kTitleLang[app.language - 2] + "_hd.mct", img);
+        if (own || loadImage(app, cr::kTex2dImage[image], img)) p.tex = app.renderer.upload(img);
         p.image = image;
         // (0x8000 only sizes it - a full-screen card; a load alone shows nothing: tex2d_img_prc
         // draws a slot once 0x200 / 0x400 has turned it on - Uty_TexDisp draws loaded ones itself)
@@ -1394,6 +1432,7 @@ void ViewerHost::lookAtNpc(int npc) { // SetFreeCamera, SetScroll3D(the npc's pl
 }
 void ViewerHost::battle(int group, int stage, int flags) { // starts when this frame's script step ends
     app.battle.requested = true;
+    app.bgmNo = 0; // (__EvtBattle: G+0x358e0 = 0 - after it the field plays track 0 unless var 60 says)
     app.battle.request = {group, stage, -1, 0};
     app.battle.requestFlags = flags;
 }
@@ -3196,6 +3235,7 @@ void stepEvents(App& app) {
     stepTutoTex(app);
     stepMsgWin(app);
     if (app.fadeT < app.fadeFrames) ++app.fadeT;
+    if (app.backFade.t < app.backFade.frames) ++app.backFade.t;
     for (auto& d : app.npcDraws)
         if (d.fadeLeft > 0) {
             --d.fadeLeft;
@@ -3251,8 +3291,15 @@ void stepEvents(App& app) {
             p.scale = 2.0f - float(p.zoomT) / float(p.zoomFrames);
         }
     }
-    // The item window closes once the script raises flag 0 after the tap, and clears it
-    if (app.itemWindowOpen && app.game.flag(0)) { app.itemWindowOpen = false; app.game.setFlag(0, false); }
+    // The item band (_Uty_GetItem_Proc): down from the top in two frames; once the script raises
+    // flag 0 (after the tap) it slides on down and fades for five frames more, then clears flag 0
+    if (app.itemWindowOpen) {
+        App::ItemWin& w = app.itemWin;
+        if (app.game.flag(0)) {
+            if (w.slide > 6) { app.itemWindowOpen = false; app.game.setFlag(0, false); }
+            else ++w.slide, ++w.fade;
+        } else if (w.slide <= 1) ++w.slide;
+    }
     if (!app.runner.running() && app.pendingEntry != App::Entry::None) {
         const bool area = app.pendingEntry == App::Entry::Area;
         app.pendingEntry = App::Entry::None;
@@ -3534,14 +3581,20 @@ void updatePlayer(App& app, float dt, float camYaw) {
     // Actions 0/1/2 = stand / walk / run (mdl_set_act_motion in FieldPCCtrl::operate); while a
     // block is held, slot 3 looped from frame 2 (Psychokinesis::onCheckTouch's
     // mdl_set_act_motion_loop(leader, 3, 2, 2))
+    // A scene's Anim on npc 0 holds the leader's action while the scene holds the field
     const bool hold = app.puzzle.pkState != 0 && app.player.actions.size() > 3;
-    const int want = hold ? 3 : std::min(int(app.walker.gait), int(app.player.actions.size()) - 1);
+    App::PlayerAnim& pa = app.playerAnim;
+    if (pa.on && !fieldSceneRunning(app)) pa.on = false;
+    const bool scripted = pa.on && !hold && pa.action >= 0 && pa.action < int(app.player.actions.size());
+    const int want = hold ? 3 : scripted ? pa.action : std::min(int(app.walker.gait), int(app.player.actions.size()) - 1);
     if (want != app.player.action) {
         app.player.action = want;
         app.player.time = 0;
         app.footPrev = 0;
     }
-    app.player.loopFrom = hold ? 2 : -1;
+    app.player.loopFrom = hold ? 2 : scripted ? pa.loopFrom : -1;
+    app.player.loopTo = scripted ? pa.loopTo : 0;
+    app.player.once = scripted && pa.once;
     animate(app, app.player, dt);
     playFootsteps(app);
 }

@@ -123,3 +123,13 @@ The Vita's puzzle code is 2.2.0's (re/vita/decomp.c has the same `_ArrowOff`, `C
 | Retry (`PuzzleScene::reset` 0x5353c: `_SetMask`, 500 ms, the pad lock 24; FieldPCCtrl::reset) | 10 626.55-627.55 s, mean brightness per game frame: 10 steps down to black, 1 black, 10 steps up; at 627.6 s the leader stands at the room's entry facing in, the count back to the room's 4 (5 after the first gem, 629 s) | Confirmed: the port's 10 + 10 frame fades, the leader back where and as it came in, standing, the room rebuilt |
 | The pad lock (gac + 0x3cde6), CheckTap's 5 frames, the windows, ScrollCamera's second finger | - | Code reading only (2.2.0 0x45700 / 0x7b514 / 0x6c364 / 0x453a8 / 0x7b7c4); not visible on video |
 | The clouds (p0001_fog: 2.2.0 `_ScnEffectProc` 0x63424 draws the band from tex2d y 64; Android 1.1.1 64 + oy / scale; 1.0.1 HD's iPad 128) | 10 600-630 s (Vita layout): the clouds densest along the screen's bottom | Consistent: the port's phone layouts now draw from 64 (`--layout iphone --scene-fx 5 11 40 --capture p0001_10.cmp`: dense at the screen's bottom, as the iPad layout's 128 was already); not position-compared (Vita layout) |
+
+## Scripts (the 2026-11-13 audit's script and field items)
+
+Port captures: `CR_CAPTURE_SIZE=1280x720 CR_CAPTURE_AT=0x1cfb CR_CAPTURE_VARS=9:2000 --capture p0001_10.cmp
+out.bmp --area 1 --event 0 --frames 4` (the puzzle reward's Uty_GetItem with flag 10).
+
+| Behaviour (source) | Video, time | Result |
+|---|---|---|
+| Uty_GetItem's Oz credit (`_Uty_GetItem_Init` 0x25434: flag 10, var 9 into the purse, SE 0xf, icon 0x3f, 6 / 0x55) and `_Put`'s band (0x25654: black 0x90 the screen's width, 32 high at tex2d y 32, the text centred on x 240) | 01 1040.1-1041.2 s: "You got 2000/OZ!" in a dark band across the top; then it moves down and fades (1041.2-1041.4 s) | Consistent: band rows 72..143 of 720 on both (video 71..143), the text's centre at x 636 (video) / 639 (port), its width 110 units (port) / 112 (video, Vita px / 2); the band's darkening 0.58 (video) vs 0x90 = 0.56. The Vita's icon is smaller and nearer the text (23 units, 25 left of it) than 2.2.0's code draws (32, 34): not taken. Self-test `scripts 2.2.0:` and `stepped chest band:` |
+| Op 58's back mask (`__EvtScreen` 0x3a: `_SetFade_back`, `_ChkFade_back` for Wait 0xFFFC), the d05 hint scenes | - | Code reading only; self-test (j001_d05 0xab44: 68 over 20 frames, the front fade untouched, the wait 20 frames) |

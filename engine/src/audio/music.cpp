@@ -285,7 +285,7 @@ void MusicPlayer::command(uint32_t v) {
     const int fadeFrames = (v & 0x02000000) ? 40 : (v & 0x04000000) ? 10 : (v & 0x08000000) ? 20 : 0;
     if (fadeFrames) { fadeStep_ = -1.0f / float(fadeFrames); return; } // update() stops at 0
     const int t = int(v & 0xff);
-    if (t >= kBgmTracks || (t == track_ && impl_->stream)) return;
+    if (t >= kBgmTracks) return; // (_setbgm_caf starts the track over even when it is the one playing)
     std::string err;
 #ifdef CR_HAVE_ATRAC9
     { // the Vita's cr_mNN.at9 for bgmNN

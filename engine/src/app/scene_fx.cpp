@@ -715,7 +715,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
         r.value = *v;
         r.sound = sound; // hear the new level
         r.act = [&app, v](int dir) {
-            *v = std::clamp(*v + dir * 5, 0, 100);
+            *v = std::clamp((*v + 5) / 10 * 10 + dir * 10, 0, 100); // (FUN_000493b4, the gauges: steps of 10)
             applyMix(app);
             saveMix(app);
         };
@@ -1422,7 +1422,7 @@ void optionsClick(App& app, float px, float py) {
         case OptControl::Gauge: { // set the value where the track was hit (knob at x + 11 + v x 2.03)
             if (!inX(224, 444) || !r.gauge) return;
             const float design = kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale; // back to design units
-            *r.gauge = std::clamp(int(std::lround((design - 235) / 2.03f)), 0, 100);
+            *r.gauge = std::clamp(int(std::lround((design - 235) / 2.03f / 10)) * 10, 0, 100); // (steps of 10)
             applyMix(app);
             saveMix(app);
             if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
@@ -1613,6 +1613,12 @@ void drawExclamation(App& app) {
     if (!app.windowTex.id) return;
     app.menu.begin(r, app.windowTex, &app.font);
     app.menu.piece(220 + 16, 180 + 32, 468, 440, 44, 48, 1);
+}
+
+float backFadeAlpha(const App& app) { // PutMask's back quad: from + (to - from) x t / ms; gone once it ends at 0
+    const App::BackFade& f = app.backFade;
+    if (f.frames <= 0) return 0;
+    return f.from + (f.to - f.from) * std::min(1.0f, float(f.t) / float(f.frames));
 }
 
 float screenFadeAlpha(const App& app) {
@@ -2199,6 +2205,41 @@ void settleMenuMask(App& app) { // (captures: the menu's mask as it stands once 
     app.menuMask.t = app.menuMask.ms;
 }
 
+// _Uty_GetItem_Put (2.2.0 0x25654), in tex2d units (menu units less (16, 32)): a black band 0x90
+// over the screen's width, 32 high at y = slide x 32 - 32; the icon at (206 - w / 2, y + 1) and
+// the message (w wide) at (240 - w / 2, y + 8) - centred on x 240. Fading out, the band loses
+// 0x12 a frame, the icon and text 0x32
+std::string itemBandText(const App& app) { // FUN_00039a5c(0, 0, 0, 6, n, 0x10): var 9 the Oz, string 9 the item's name
+    std::vector<std::vector<std::string>> pages;
+    const int item = app.itemWindowItem;
+    if (app.systemText.message(app.itemWin.message, app.language, [&](int n) {
+            const auto it = app.game.vars.find(n);
+            return n == 9 ? item : it == app.game.vars.end() ? 0 : int(it->second);
+        }, pages,
+                               nullptr, [&](int) { return itemName(app, item); }) &&
+        !pages.empty() && !pages[0].empty())
+        return pages[0][0];
+    return "You got " + itemName(app, item) + "!";
+}
+void drawItemBand(App& app) {
+    const App::ItemWin& w = app.itemWin;
+    cr::Renderer& r = app.renderer;
+    const float y = float(w.slide) * 32 - 32;
+    const float band = float(std::max(0, 0x90 - 0x12 * w.fade)) / 255.0f, a = float(std::max(0, 0xff - 0x32 * w.fade)) / 255.0f;
+    const float keep = r.origin();
+    r.setOrigin(0);
+    r.fillRect(0, (y + 32) * 2, r.screenW(), 64, 0, 0, 0, band); // (the full width, widescreen too)
+    r.setOrigin(keep);
+    const std::string text = itemBandText(app);
+    if (!app.windowTex.id || a <= 0) return;
+    cr::MenuPainter& m = app.menu;
+    m.begin(r, app.windowTex, &app.font);
+    r.setOrigin(r.uiX());
+    const float tw = m.textWidth(text);
+    if (w.icon >= 0) m.piece(16 + 206 - tw / 2, 32 + y + 1, float(w.icon % 16 * 32), 248 + float(w.icon / 16 * 32), 32, 32, a);
+    m.text(text, 16 + 240 - tw / 2, 32 + y + 8, false, a);
+}
+
 // PutMask's quad (tex2d-space +-512 x +-384 at z -1: over the 3D, under the 2D); widescreen
 // carries the shapes out to the screen's sides
 void drawMenuMask(App& app) {
@@ -2464,6 +2505,8 @@ void drawFrame(App& app, bool present) {
         // (Screen's fade (189): drawFrontFade, over the portraits and the message window, under the text)
         for (app.menuMask.clock += dt; app.menuMask.clock >= 1.0f / kFramesPerSecond; app.menuMask.clock -= 1.0f / kFramesPerSecond)
             stepMenuMask(app);
+        if (const float ba = backFadeAlpha(app); ba > 0.001f) // (Screen op 58's back mask: under all the 2D)
+            r.fillRect(0, 0, SW, H, app.backFade.grey, app.backFade.grey, app.backFade.grey, ba);
         drawMenuMask(app);
     }
     r.setOrigin(r.uiX()); // the game's 2D from here on: its 1024 x 768 layout, centred
@@ -2506,16 +2549,7 @@ void drawFrame(App& app, bool present) {
                              p.shade, p.shade, p.alpha); // right-hand portraits are mirrored (slot +0xe)
                 app.order2d.portrait = ++app.order2d.seq;
             }
-        if (app.itemWindowOpen) { // Uty_GetItem
-            std::vector<std::vector<std::string>> name;
-            const std::string item = itemName(app, app.itemWindowItem);
-            if (app.windowTex.id) {
-                drawWinPiece(app, kWinSmallPanel, W / 2 - 256, H / 2 - 60, 512, 120);
-                app.itemHud.drawAt(r, {"Obtained", "  " + item}, W / 2 - 210, H / 2 - 30, 2.0f, 0, 0, 0.0f);
-            } else {
-                app.itemHud.drawAt(r, {"Obtained:", "  " + item, "", "          [E]"}, W / 2 - 180, H / 2 - 60, 2.0f, 360, 100);
-            }
-        }
+        if (app.itemWindowOpen) drawItemBand(app); // Uty_GetItem
         if (!messageNow) drawFrontFade(app);
     }
     if (fieldMenuWanted(app)) { // the corner button and its bar

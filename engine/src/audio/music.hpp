@@ -42,7 +42,8 @@ public:
     ~MusicPlayer();
     bool init(const std::string& dataDir); // false: no decoder or no audio device
     // _bgmgo(v): bit 29 stop now; bits 25 / 26 / 27 fade out over 40 / 10 / 20 frames and stop;
-    // otherwise play track v & 0xff (0..kBgmTracks - 1, _BGM_FILE), unless it is already playing.
+    // otherwise play track v & 0xff (0..kBgmTracks - 1, _BGM_FILE) from its start - the same track
+    // again too (_setbgm_caf).
     void command(uint32_t v);
     void update(float dt);   // decode ahead, fades
     int current() const { return track_; }

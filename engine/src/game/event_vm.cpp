@@ -29,7 +29,7 @@ struct EventRunner::Vm {
     const std::vector<uint8_t>& d;
     GameState& gs;
     int eventNo, area, map;
-    enum class Wait { None, Frames, Fade, Message, Npc, Choice, Logo, Window } wait = Wait::None;
+    enum class Wait { None, Frames, Fade, Message, Npc, Choice, Logo, Window, BackFade } wait = Wait::None;
     int waitFrames = 0, waitNpc = -1;
     FieldNpc self;             // NPC whose script runs: flag(-1) / flag(-2) name its flags
     size_t pc = 0;
@@ -123,7 +123,7 @@ struct EventRunner::Vm {
         case 33: case 34: case 42: break;
         case 38: { // ___ITEM: `item[-1] = n` gives item n, `item[-2] = n` takes one away
             const int n = eval();
-            if (n == -1) { ++gs.items[v]; }
+            if (n == -1) { if (gs.items[v] < 99) ++gs.items[v]; } // (_add_item: a stack stops at 99)
             else if (n == -2) { auto it = gs.items.find(v); if (it != gs.items.end() && it->second > 0) --it->second; }
             break;
         }
@@ -230,7 +230,8 @@ int EventRunner::eventNo() const { return vm_ ? vm_->eventNo : -1; }
 std::string EventRunner::where() const {
     if (!vm_) return "idle";
     static const char* const kWait[] = {"running", "waiting frames", "waiting for fade", "waiting for message",
-                                        "waiting for npc", "waiting for a choice", "showing a logo", "waiting for the window"};
+                                        "waiting for npc", "waiting for a choice", "showing a logo", "waiting for the window",
+                                        "waiting for the back fade"};
     char buf[64];
     std::snprintf(buf, sizeof buf, "pc %#zx, %s", vm_->pc, kWait[int(vm_->wait)]);
     return buf;
@@ -284,6 +285,10 @@ bool EventRunner::step(EventHost* host) {
         case Vm::Wait::Frames: if (--vm.waitFrames > 0) return true; break;
         case Vm::Wait::Fade: // (__EvtWait 0xFFFF: the fade over, one frame more before going on)
             if (host->screenFading()) return true;
+            vm.wait = Vm::Wait::Frames, vm.waitFrames = 1;
+            return true;
+        case Vm::Wait::BackFade: // (0xFFFC: _ChkFade_back, the same way)
+            if (host->backFading()) return true;
             vm.wait = Vm::Wait::Frames, vm.waitFrames = 1;
             return true;
         case Vm::Wait::Message: if (host->messageOpen()) return true; break;
@@ -361,8 +366,12 @@ bool EventRunner::step(EventHost* host) {
             if (id == 2001) state.vars[0] = host ? host->tapped() : 1;                       // touch_up_chk
             else if (id == 2004 && host) host->fadeNpc(eventNo, 1, 0, 20);                  // mdl_fadeout
             else if (id == 2010 && host) host->fadeNpc(eventNo, 0, 1, 20);                  // mdl_fadein
-            else if (id == 2005 && host) host->showItemWindow(vm.var(9));                   // GetItem window
-            else if (id == 2011) { ++state.items[a0]; res.itemsGained.push_back(a0); }       // AddItem
+            else if (id == 2005) { // _Uty_GetItem_Init: flag 10 makes var 9 an Oz credit (MuCom_AddOz's cap)
+                const bool oz = state.flag(10);
+                if (oz) state.oz = int(std::min<int64_t>(int64_t(state.oz) + vm.var(9), 9999999));
+                if (host) host->showItemWindow(vm.var(9), oz);
+            }
+            else if (id == 2011) { if (state.items[a0] < 99) ++state.items[a0]; res.itemsGained.push_back(a0); } // AddItem (_add_item: 99 at most)
             else if (id == 2012) { if (state.items[a0] > 0) --state.items[a0]; }            // DelItem
             else if (id == 2013) { // Uty_ChkItem: var (the first push) = how many of the item (the last) - a gold box's key
                 const auto it = state.items.find(vm.arg(1));
@@ -424,8 +433,8 @@ bool EventRunner::step(EventHost* host) {
             if (w == 0xFFFD) {
                 vm.waitNpc = vm.resolve(vm.u16());
                 if (host) return yield(Vm::Wait::Npc);
-            } else if (w == 0xFFFF || w == 0xFFFC) {
-                if (host) return yield(Vm::Wait::Fade);
+            } else if (w == 0xFFFF || w == 0xFFFC) { // _ChkFade / _ChkFade_back
+                if (host) return yield(w == 0xFFFF ? Vm::Wait::Fade : Vm::Wait::BackFade);
             } else if (host) {
                 vm.waitFrames = w == 0xFFFE || w == 0 ? 1 : w;
                 return yield(Vm::Wait::Frames);
@@ -534,7 +543,10 @@ bool EventRunner::step(EventHost* host) {
                 if (last == 2) host->moveNpc(n, v, v[4], EventHost::Facing::Keep, frames, 2);
                 else host->moveNpc(n, v, v[4], !rot ? EventHost::Facing::Keep : last == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw, frames, 0);
             } else {
-                float yaw; const auto f = facingFor(last, yaw);
+                // __EvtFrmAdjc: a degree (or 0 for an unknown dir) and 2000's way are written to the
+                // actor's angle as the move is set up (npc ctl +0x24 / gac+0xd7c) - no turn over it
+                float yaw; auto f = facingFor(last, yaw);
+                if (f == EventHost::Facing::Yaw) f = EventHost::Facing::Snap;
                 host->moveNpc(n, v, yaw, f, frames, 0);
             }
             break;
@@ -578,12 +590,14 @@ bool EventRunner::step(EventHost* host) {
         }
         case 16: case 58: { // Screen: u32 colour (R | G << 8 | B << 16), u8 from alpha, u8 to alpha, s8 frames
             // (__EvtScreen: frames < 0 (the "..., 255" form) is no fade - it toggles the field's drawing
-            // (gac + 0x39c3e: drawBack / mdl_put skip while set), the fade left as it is)
+            // (gac + 0x39c3e: drawBack / mdl_put skip while set), the fade left as it is. Op 16 is the
+            // front fade (_SetFade), op 58 the back mask (_SetFade_back, its shape G+0x3a0b0 = 0))
             vm.u16();
             const uint16_t colour = vm.u16();
             const uint8_t from = vm.u8(), to = vm.u8();
             const int8_t frames = int8_t(vm.u8());
             if (host && frames < 0) host->toggleFieldHidden();
+            else if (host && op == 58) host->backFade(float(colour & 255) / 255.0f, from / 255.0f, to / 255.0f, frames);
             else if (host) host->screenFade(float(colour & 255) / 255.0f, from / 255.0f, to / 255.0f, frames);
             break;
         }

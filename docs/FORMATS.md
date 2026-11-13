@@ -704,16 +704,24 @@ Checked over 12,241 English messages, structure only:
 ### Playing scripts over time
 
 `EventRunner` runs a script a frame (20 Hz) at a time and waits where the original waits:
-- **`Wait n`:** n frames. 0xFFFF/0xFFFC wait for the screen fade, 0xFFFD + npc for an NPC's
-  animation, and 0xFFFE (loading) doesn't wait.
+- **`Wait n`:** n frames. 0xFFFF waits for the screen fade (`_ChkFade`), 0xFFFC for the back
+  mask (`_ChkFade_back`), 0xFFFD + npc for an NPC's animation, and 0xFFFE (loading) doesn't wait.
 - **`Msg`:** waits until the dialogue box closes.
 - **Taps:** `touch_up_chk` loops wait for the action key.
 
 It asks the host to:
-- show messages and the `GetItem` window (it closes when the script raises flag 0 after the tap);
+- show messages and the `GetItem` band (`_Uty_GetItem_Init` / `_Proc` / `_Put`, 2.2.0 0x25434): SE 0xf
+  (0x10 for items 61..80), message 6 / 10 "You got <item>!" (6 / 0x5e for item 0x1b6) with the item's
+  icon - or, flag 10 set, var 9 Oz added to the purse (9,999,999 at most), icon 0x3f and 6 / 0x55
+  "You got n/OZ!". A black band (alpha 0x90) the screen's width, 32 high, comes down from the top
+  (tex2d y -32, 0, 32), the icon at (206 - w / 2, y + 1) and the text centred on x 240 at y + 8; once
+  the script raises flag 0 (after the tap) it slides on down for five frames, the band losing 0x12
+  a frame and the rest 0x32, then clears flag 0 (the script waits for that);
 - play NPC actions (`Anim`, `Anim2`) and fade NPCs (`NpcFade`, `mdl_fadein`/`fadeout`);
 - show and hide NPCs (`Born` / `Kill`);
-- fade the screen (`Screen u16, u16 grey, u8 from, u8 to, u8 frames`);
+- fade the screen (`Screen u16, u16 grey, u8 from, u8 to, u8 frames`): op 16 the front fade
+  (`_SetFade`, over the portraits and the message window), op 58 the back mask (`_SetFade_back`, its
+  shape G+0x3a0b0 = 0: over the 3D, under all the 2D - 83 uses in the d05 areas' hint scenes);
 - warp. The script continues on the new field unless the area changed.
 
 Self-test, frame by frame:
@@ -742,8 +750,8 @@ NPC scripts play).
 | `FrmSet n` | scene n, its first record |
 | `FrmJmp f` | the record with frame f, else the nearer neighbour, else the last |
 | `FrmSetc2 npc, flag` | place the actor from the current record (position, Y rotation), y snapped to the floor (`get_floor`) |
-| `FrmSetc npc, dir` | place from the current record; `dir` −4499…999 = degrees, 1000 keep the facing, 2000 face the way it moved, else 0 |
-| `FrmAdjc npc, f, n, dir` | walk to record f's position over n frames in a straight line (`npc_autoctl_set_fream`), facing per `dir` |
+| `FrmSetc npc, dir` | place from the current record; `dir` −4499…999 = degrees, 1000 keep the facing, 2000 face the way it moved (turns = (1 − dz / len) / 4, 1 − that when dx < 0: linear in the cosine, so a 45° move faces 26.4°), else 0 |
+| `FrmAdjc npc, f, n, dir` | walk to record f's position over n frames in a straight line (`npc_autoctl_set_fream`); the facing per `dir` is written as the move starts - no turn over it |
 | `FrmAdjc2 npc, f, n, mode` | the same; mode 0 turns to the record's angles at once and moves (`__EvtFrmAdjc2` writes the rotation, `npc_autoctl_set_fream` mode 1), 2 moves in y too without turning (mode 4), anything else (1, 10 / 20) turns to them over the move (mode 2) |
 | `SetDir a, b` | a turns to face b |
 | `Wait 0xFFFD, npc` | wait until the actor's move ends (`npc_autoctl_chk`; animations don't count) |
@@ -755,7 +763,7 @@ for a scene and `Born 0` shows it again.
 |---|---|
 | `LoadAct npc, a, slot` | load action file a (table of 205 `.mca` names at 0xd4a00, `kActionFile`) into the actor's slot (`read_act_set`); a negative npc picks the other loader. A model's own actions fill slots 0… (stand, walk, run); event actions go in 4 and up |
 | `UnloadAct npc, slot` | free the slot |
-| `Anim npc, slot, a, b` | `mdl_set_act_motion_loop`: play the slot's action, then loop frames a..b; a = −1 plays it once and holds the last frame (chest lids), a = b = 0 loops it whole. The action already playing isn't restarted. `Anim2 npc, slot, a, b, start, blend` (`mdl_set_act_motion_loop_frm`) has the same first four operands, then the frame it starts from and the cross-fade's frames (0: a cut) - and always starts the action over, the one playing too |
+| `Anim npc, slot, a, b` | `mdl_set_act_motion_loop`: play the slot's action, then loop frames a..b; a = −1 plays it once and holds the last frame (chest lids), a = b = 0 loops it whole; a new action blends in over 2 frames. The action already playing isn't restarted and keeps its loop. Npc 0 is the leader's model (gac + 0x83c). `Anim2 npc, slot, a, b, start, blend` (`mdl_set_act_motion_loop_frm`) has the same first four operands, then the frame it starts from and the cross-fade's frames (0: a cut) - and always starts the action over, the one playing too |
 | `NpcMdlRead npc` | load an NPC from the NPC table even if the room's list lacks it (e.g. 501 = `t0152bt.bin`, the 3D hall the opening is filmed in): `__EvtNpcMdlRead` puts it at the origin, facing 0, scale from row +0x26, hidden (+0x8c bit 0) when its create flags fail or its id is 400 or more - a `Born` shows it. A negative npc re-reads the model of one already there, at its list entry's place |
 | `Setc npc, x, y, z, dir` | place at world coordinates (shorts); `dir` as for `FrmSetc` |
 | `CameraFree` / `CameraPlayer` | a script drives the camera / the stage camera again (`SetFreeCamera`, `SetPlayerCamera`) |
@@ -839,7 +847,7 @@ gives 27,010/27,010 entries with no misaligned jump targets):
 | 13 | Rept | expression, u32 end (loop head; jump to end and pop if zero) |
 | 14 | Wait | u16 frames; 0xFFFD + u16 waits for an NPC; 0xFFFF / 0xFFFE / 0xFFFC wait for fades / loading |
 | 15 | Call | u16 native function |
-| 16, 58 | Screen (fade) | 7 bytes |
+| 16, 58 | Screen (fade: 16 the front, 58 the back mask) | 7 bytes |
 | 17, 59 | Warp, Warp2 | 6 × u16 |
 | 18 | Push | expression (argument) |
 | 19, 20 | PushBP, PopBP | — |
@@ -961,7 +969,8 @@ screen and the "!" (468, 440, 44 × 48) at tex2d (220, 180). Tex2d flag 0x8000 o
 (1024 × 768 at (−32, −64), else 480 × 320); a slot is drawn once 0x200 (at once), 0x400 (show) or
 a 0x4 / 0x8 / 0x20 animation turned it on - a 0x8001 load alone shows nothing. 2018: `pcparam_hpmp_recovery` - the
 current pair's two (G+0x30548 the pair 0..3; `pcparam_hpmp_all_recovery` all eight). 2024: var
-[arg 0] = G+0x35530, the music last asked for. 2025: arg 0 = 2 ends the shop
+[arg 0] = G+0x358e0, the last play request `__bgmgo` took on the field (G+0x2c0 bit 6; `__EvtBattle`
+zeroes it). 2025: arg 0 = 2 ends the shop
 (`SetShopBgmNoRecovery`, `__mc_SetMenuStat(7, 4)`). 2026: `_bgmgo(var[arg 0])`. 2027: var[arg 0] =
 the pair. 2029 `ChkLogo_flg`: var 0 still 0 takes the run's "logos played" byte, which is then
 set. 2008 `DrawController`: flag 0 set; until it clears the cross key (1864, 1584, 144 × 144 of
@@ -969,8 +978,8 @@ window_hd's pixels) at (64, 384) and its centre (1864, 1448, 96 × 96) at (88, 4
 frame. 2002 `init_tex2d` (texture setup) and 2021 `LoadData` (the continue / save data into the
 work area) do nothing visible. 2028: flag 4086 set `NowLoadStart`, else `NowLoadEnd` - `NowLoadProc` draws (820 + 24
 (n % 8), 96, 24 × 24) of the window sheet at tex2d (464, 320), n + 1 a frame. 2030 / 2031
-(`Uty_Btl_ParamUp01` / `02`): bytes +0x13b..+0x13e / +0x8b..+0x8e of the battle work = 6 -
-fighter 1 / 0's attack, defense, speed and luck ups (statuses 2..5, 0xb0 a fighter) for 6 rounds;
+(`Uty_Btl_ParamUp01` / `02`): bytes +0x143..+0x146 / +0x8b..+0x8e of the battle work = 6 -
+fighter 1 / 0's attack, defense, speed and luck ups (statuses 2..5, 0xb8 a fighter) for 6 rounds;
 called by the story scripts 201 / 301 of areas 12 and 24 (the port keeps them for the next battle
 when none is on). 2035
 (`Uty_Battle_first_anm_Init`): `btl_anm_load(arg)`. The shop (`ShopSet`) keeps var 0 and plays
@@ -2019,14 +2028,19 @@ about 130 kb/s, in a CAF container with these chunks:
 The original streams them with `GBMusicTrack` (AudioQueue).
 
 - **`_bgmgo(v)`:** bit 29 = stop now; bits 25 / 26 / 27 = fade out over 40 / 10 / 20 frames, then
-  stop; otherwise play track `v & 0xff`. Scripts use `Bgm a, b` = `_bgmgo(a | b << 16)`, so
+  stop; otherwise play track `v & 0xff` from its start - the track playing too (`_setbgm_caf`). Scripts use `Bgm a, b` = `_bgmgo(a | b << 16)`, so
   `Bgm 0, 2048` is a 20-frame fade-out.
 - **`setbgm_caf`:** track → file through `_BGM_FILE` (0xcfa40: bgm01…bgm31). The loop start
   (`setRepeatFrame:`) comes from `_BGM_REPEAT` (0xcb4a0), in AAC packets, e.g. bgm01 loops from
   packet 957 (22.2 s). Tracks 28/29 don't loop.
-- **Field music:** the last track a script played (+0x35530), resumed by `fldread_prc`. Area
-  entry scripts set it (dungeons d01–d04 → tracks 2–5, d05 mostly 17, towns 15, puzzle rooms 6;
-  24 appears in many and is probably cutscene music).
+- **Field music:** the last play request made on the field (+0x358e0, flags and all), which
+  `__EvtBattle` zeroes; after a battle `fldread_prc` plays var 60 (998: nothing, under 29 that track)
+  or else that request. A map or area change plays nothing - the entry scripts' `Bgm` does (dungeons
+  d01–d04 → tracks 2–5, d05 mostly 17, towns 15, puzzle rooms 6).
+- **Volumes** (`_sound_init` 0xab6c): the BGM at 0.2 of its option (G+0x3a428 = 20), sound effects at
+  0.3 (G+0x3a42c = 30), voices at 1.0 (`__voice_resume`); the options default to 80 (+0x32161 /
+  +0x32162 / +0x32165) and their gauges move in steps of 10 (FUN_000493b4). `__effplay` plays a sound
+  flagged 0x10000 only while the voices are off (option 0).
 
 The engine decodes with FAAD2. All 29 tracks decode without errors, and bgm01 matches ffmpeg's
 decode to within 1 LSB. FAAD2 drops the first frame's output; the loop restart decodes the

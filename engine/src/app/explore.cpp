@@ -3161,6 +3161,7 @@ int runSelfTest(App& app) {
         int lidAnimFrame = -1, windowFrame = -1, fadedFrame = -1, endFrame = -1, frames = 0;
         bool staleItemFlagCleared = false, itemWindowClosedEarly = false;
         bool itemWindowHeldForRead = false, playerStoppedAtChest = false;
+        int bandDown = -1, flagFrame = -1, closeFrame = -1; // (_Uty_GetItem_Proc: down in 2 frames, out 6 after flag 0)
         const cr::FieldNpc* box = nullptr;
         for (const cr::FieldNpc& n : app.npcs)
             if ((n.treasure & 3) && npcActive(app, n)) { box = &n; break; }
@@ -3197,6 +3198,9 @@ int runSelfTest(App& app) {
                     staleItemFlagCleared = !app.game.flag(0);
                 }
                 if (windowFrame >= 0 && frames - windowFrame < 30 && !app.itemWindowOpen) itemWindowClosedEarly = true;
+                if (windowFrame >= 0 && frames - windowFrame == 5) bandDown = app.itemWin.slide == 2 && app.itemWin.fade == 0;
+                if (flagFrame < 0 && app.itemWindowOpen && app.game.flag(0)) flagFrame = frames;
+                if (flagFrame >= 0 && closeFrame < 0 && !app.itemWindowOpen) closeFrame = frames;
                 if (app.itemWindowOpen && frames - windowFrame == 10 && app.havePlayer && app.player.actions.size() > 2) {
                     app.player.action = 2; // simulate reaching the chest while the run action is active
                     app.player.time = 1;
@@ -3223,8 +3227,12 @@ int runSelfTest(App& app) {
                         playerStoppedAtChest ? "yes" : "NO", fadedFrame, endFrame,
                         app.game.items.size() > itemsBefore || !app.game.items.empty() ? "gained" : "MISSING",
                         lidGone ? "removed" : "STILL THERE");
+            const bool getSound = std::any_of(app.soundLog.begin(), app.soundLog.end(), [](uint32_t id) { return id == 0xf || id == 0x10; });
+            std::printf("stepped chest band: down %s, out %d frames after flag 0, SE 0xf / 0x10 %s\n", bandDown == 1 ? "yes" : "NO",
+                        closeFrame - flagFrame, getSound ? "yes" : "NO");
             if (lidAnimFrame < 0 || windowFrame < 0 || endFrame < 0 || !lidGone ||
-                !staleItemFlagCleared || itemWindowClosedEarly || !itemWindowHeldForRead || !playerStoppedAtChest)
+                !staleItemFlagCleared || itemWindowClosedEarly || !itemWindowHeldForRead || !playerStoppedAtChest ||
+                bandDown != 1 || closeFrame - flagFrame < 5 || closeFrame - flagFrame > 7 || !getSound)
                 ++mapErrors;
         }
         // exit: walk into trigger 2's box and let the script play
@@ -3402,11 +3410,11 @@ int runSelfTest(App& app) {
         optionsKey(app, SDLK_DOWN);  // BGM
         const int music = app.mix.music;
         optionsKey(app, SDLK_LEFT);
-        problems += app.mix.music != std::max(0, music - 5);
+        problems += app.mix.music != std::max(0, (music + 5) / 10 * 10 - 10); // (steps of 10)
         optionsKey(app, SDLK_DOWN);  // Sound Effects
         const int effects = app.mix.effects;
         optionsKey(app, SDLK_LEFT);
-        problems += app.mix.effects != std::max(0, effects - 5);
+        problems += app.mix.effects != std::max(0, (effects + 5) / 10 * 10 - 10);
         problems += expectSounds("options gauges", {4, 4, 40}); // the BGM's is silent
         { // the < Back > bar's parts: the arrows turn the page, Back alone closes (ComUty_CmdBack 2)
             const bool parts = optionsBackPart(200, kOptBackY + 12) == -1 && optionsBackPart(300, kOptBackY + 12) == 0 &&
@@ -5943,6 +5951,147 @@ int runSelfTest(App& app) {
         app.events = keepEvents;
         app.typeOn = keepType, app.language = keepLanguage, app.msgWin = keepWin;
     }
+    { // Scripts as 2.2.0's (audit 2026-11-13): op 58's back mask and Wait 0xFFFC, FrmAdjc's facing,
+      // _add_item's 99, Uty_GetItem's Oz credit and band, Anim keeping a playing action's loop, a
+      // same-map warp keeping the facing, Uty_GetBgmNo's field request (__EvtBattle zeroes it)
+        int problems = 0;
+        auto check = [&](bool ok, const char* what) {
+            if (!ok) ++problems, std::printf("scripts 2.2.0 FAILED: %s\n", what);
+        };
+        const cr::EventFile keepEvents = app.events;
+        const cr::GameState keepGame = app.game;
+        ViewerHost host(app);
+        // j001_d05 (area 6) 0xab44: Screen(58) 0, 0, 0 -> 68 over 20 / Wait 0xFFFC - the back mask, the
+        // front fade untouched, the script waiting until the back fade is over
+        int backWait = -1;
+        bool backSet = false;
+        if (app.events.load(app.dataDir, 6)) {
+            app.backFade = App::BackFade();
+            const int frontFrames = app.fadeFrames, frontT = app.fadeT;
+            const float frontTo = app.fadeTo;
+            cr::EventRunner r;
+            if (r.startAt(app.events, 0xab44, 0, app.game, 6, app.mapNumber)) {
+                r.step(&host);
+                backSet = std::fabs(app.backFade.to - 68.0f / 255.0f) < 1e-4f && app.backFade.frames == 20 &&
+                          app.fadeFrames == frontFrames && app.fadeT == frontT && app.fadeTo == frontTo;
+                for (backWait = 0; backWait < 40 && r.running() && r.where().find("back fade") != std::string::npos; ++backWait) {
+                    if (app.backFade.t < app.backFade.frames) ++app.backFade.t;
+                    r.step(&host);
+                }
+                r.stop();
+            }
+            app.backFade = App::BackFade();
+        }
+        check(backSet, "op 58 sets the back mask (68 over 20 frames), not the front fade");
+        check(backWait == 20, "Wait 0xFFFC holds until the back fade is over");
+        // j001_d01 (area 2) 0x1d76, the chest's end: AddItem var 9 (a stack stops at 99) and Uty_GetItem
+        int stack99 = -1, stack6 = -1;
+        if (app.events.load(app.dataDir, 2)) {
+            for (const int had : {99, 5}) {
+                cr::GameState gs = keepGame;
+                gs.vars[9] = 21, gs.items[21] = had;
+                cr::EventRunner r;
+                if (r.startAt(app.events, 0x1d76, 0, gs, 2, 0))
+                    while (r.step(nullptr)) {}
+                (had == 99 ? stack99 : stack6) = gs.items[21];
+            }
+        }
+        check(stack99 == 99 && stack6 == 6, "_add_item: a stack stops at 99");
+        // j001_p01 (area 1) 0x1cfb: flag 10, Uty_GetItem - var 9 Oz into the purse (9,999,999 at most),
+        // SE 0xf, the Oz's icon 0x3f and "You got 2000/OZ!" (6 / 0x55) in the band (reference 01 1040 s)
+        int ozAfter = -1, ozCapped = -1;
+        bool ozBand = false;
+        std::string ozText;
+        if (app.events.load(app.dataDir, 1)) {
+            for (const int purse : {100, 9999000}) {
+                app.game = keepGame;
+                app.game.vars[9] = 2000, app.game.oz = purse;
+                app.soundLog.clear();
+                cr::EventRunner r;
+                if (r.startAt(app.events, 0x1cfb, 0, app.game, 1, 0)) r.step(&host);
+                (purse == 100 ? ozAfter : ozCapped) = app.game.oz;
+                if (purse == 100) {
+                    ozBand = app.itemWindowOpen && app.itemWin.oz && app.itemWin.icon == 0x3f && app.itemWin.message == 57085 &&
+                             std::find(app.soundLog.begin(), app.soundLog.end(), 0xfu) != app.soundLog.end();
+                    ozText = itemBandText(app);
+                }
+                r.stop();
+                app.itemWindowOpen = false;
+            }
+        }
+        check(ozAfter == 2100 && ozCapped == 9999999, "Uty_GetItem with flag 10: var 9 Oz into the purse, capped");
+        check(ozBand && ozText.find("2000") != std::string::npos, "the Oz band: SE 0xf, icon 0x3f, 6 / 0x55 with the amount");
+        // FrmAdjc's dir: j003_d01's 211 moves npc 401 to frame 230 with dir 90 - the angle set as the
+        // move starts (no turn over it); dir 2000's way as _NpcSetDirConv computes it
+        struct Mover : cr::EventHost {
+            int facing = -1;
+            float yaw = 0;
+            void moveNpc(int npc, const float*, float y, Facing f, int, int) override {
+                if (npc == 401 && y == 90) facing = int(f), yaw = y; // (its dir-2000 walks before)
+            }
+            bool tapped() override { return true; }
+        } mover;
+        if (app.events.load(app.dataDir, 8)) {
+            cr::GameState gs = keepGame;
+            cr::EventRunner r;
+            if (const uint32_t at = app.events.scriptEntry(211); at && r.startAt(app.events, at, 211, gs, 8, 0))
+                for (int f = 0; f < 6000 && r.step(&mover) && mover.facing < 0; ++f) {}
+        }
+        check(mover.facing == int(cr::EventHost::Facing::Snap) && mover.yaw == 90, "FrmAdjc's degree: set at once");
+        const float k = 180.0f / SDL_PI_F;
+        check(std::fabs(travelYaw(1, 1) * k - 26.36f) < 0.05f && std::fabs(travelYaw(0, 1)) < 1e-4f &&
+                  std::fabs(travelYaw(1, 0) * k - 90) < 1e-3f && std::fabs(travelYaw(-1, 0) * k - 270) < 1e-3f,
+              "dir 2000: turns = (1 - dz / len) / 4 (a 45-degree move faces 26.4)");
+        app.events = keepEvents;
+        app.game = keepGame;
+        // Anim on an action already playing keeps its loop; another one takes the new loop; npc 0 the leader
+        bool keptLoop = true, newLoop = true;
+        if (!app.npcDraws.empty()) {
+            App::NpcDraw& d = app.npcDraws[0];
+            const App::NpcDraw keep = d;
+            int slot = d.action; // (a slot no LoadAct changed: the model's own action of that number)
+            if (auto a = app.actorSlots.find(d.id); a != app.actorSlots.end() && a->second.count(slot)) slot = -1;
+            if (slot >= 0) {
+                d.loopFrom = 2, d.loopTo = 8, d.once = false;
+                host.playAnim(d.id, slot, 0, 0);
+                keptLoop = d.loopFrom == 2 && d.loopTo == 8;
+                host.playAnim(d.id, slot + 1, 3, 5);
+                newLoop = d.action != keep.action && d.loopFrom == 3 && d.loopTo == 5 && d.time == 0;
+            }
+            for (App::NpcDraw& o : app.npcDraws)
+                if (o.id == keep.id) o = keep;
+        }
+        check(keptLoop && newLoop, "Anim: the playing action keeps its loop, another starts with its own");
+        const App::PlayerAnim keepAnim = app.playerAnim;
+        app.playerAnim = App::PlayerAnim();
+        host.playAnim(0, 1, 0, 0);
+        check(app.playerAnim.on && app.playerAnim.action == 1, "Anim on npc 0: the leader's model");
+        app.playerAnim = keepAnim;
+        // A warp to the map in play: the position alone (__EvtWarp writes gac+0xd6c..0xd74)
+        if (app.havePlayer && app.mapNumber >= 0) {
+            const cr::FieldWalker keepWalker = app.walker;
+            app.walker.heading = 1.0f;
+            cr::WarpRequest w;
+            w.valid = true, w.area = -1, w.map = app.mapNumber, w.angleDegrees = 180;
+            w.pos[0] = app.walker.pos.x, w.pos[1] = app.walker.pos.y, w.pos[2] = app.walker.pos.z;
+            performWarp(app, w, -1);
+            check(app.walker.heading == 1.0f, "a same-map warp keeps the facing");
+            app.walker = keepWalker;
+        }
+        // Uty_GetBgmNo: the field's last play request; __EvtBattle zeroes it
+        const uint32_t keepBgm = app.bgmNo;
+        playBgm(app, 7);
+        const bool asked = app.bgmNo == 7;
+        host.battle(1, 0, 0);
+        check(asked && app.bgmNo == 0 && host.bgmNo() == 0, "Uty_GetBgmNo: the field's request, zeroed by __EvtBattle");
+        app.battle.requested = false;
+        app.bgmNo = keepBgm;
+        playBgm(app, 1u << 29);
+        std::printf("scripts 2.2.0: back mask %s (Wait 0xFFFC %d frames), stacks %d / %d, Oz %d / %d \"%s\", FrmAdjc facing %d at %.0f; "
+                    "%d problems\n", backSet ? "yes" : "NO", backWait, stack99, stack6, ozAfter, ozCapped, ozText.c_str(),
+                    mover.facing, mover.yaw, problems);
+        mapErrors += problems;
+    }
     { // The calcs' queued messages (btl_add_msgque / menub_mainPut): a monster's poison queues
       // "<name> was poisoned!" for its target (one per fighter); the banner shows each 60 frames
       // once free and the battle waits for the queue before the next action
@@ -6575,7 +6724,6 @@ void bootTitle(App& app) {
     app.mapNumber = cr::kAreaFirstMap[0];
     app.entryArea = 0;
     app.pendingEntry = App::Entry::None;
-    app.musicArea = -1;
     app.fieldHidden = false; // (the boot script toggles it on at its start and off before the warp out)
     app.msgWin = App::MsgWin();
     playBgm(app, 1u << 29); // the script starts the title music

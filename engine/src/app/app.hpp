@@ -87,6 +87,8 @@ struct LoadedModel {
     int action = -1;                     // -1 = rest pose
     float time = 0;
     int loopFrom = -1;                   // after its end, frames loopFrom.. again (mdl_set_act_motion_loop); -1 whole
+    int loopTo = 0;                      // ... up to this frame (0: its end)
+    bool once = false;                   // played once, its end held (Anim's loop from -1)
     cr::MotionBlend blend;               // the 2-frame cross-fade into a new action (the player's)
     std::vector<char> slotOn;            // a battle model's package slots _btl_anm_load loads (empty: all)
     cr::Vec3 center;
@@ -204,10 +206,9 @@ struct App {
     cr::EventRunner runner;                // the script being played, a frame at a time
     cr::SoundSystem sound;                 // sndeff.bin through SDL audio
     cr::MusicPlayer music;                 // bgmNN.caf (AAC) through FAAD2 + SDL audio
-    int musicArea = -1;                    // area whose default track is playing
-    // Mixer, 0..100 like the original's Options sliders (music and effects default to 80 there;
-    // master and voice are additions - the original has no voice audio)
-    struct Mix { int master = 100, music = 80, effects = 80, voice = 100; } mix;
+    // Mixer, 0..100 in steps of 10 like the original's Options gauges (BGM, SE and voice 80 by
+    // default - _InitSystemData; master is an addition)
+    struct Mix { int master = 100, music = 80, effects = 80, voice = 80; } mix;
     bool optionsOpen = false;              // V: the Options screen (__menuu_Option*, plus our pages)
     int optionsPage = 0;                   // Game, Sound, Display, Graphics
     int optionsRow = 0;                    // the cursor: a row, or kOptionsBackRow
@@ -369,6 +370,12 @@ struct App {
     };
     Portrait portraits[16];
     bool itemWindowOpen = false;           // Uty_GetItem
+    struct ItemWin {                       // its slot (_Uty_GetItem_Proc / _Put): +0 the slide (the band at
+        int slide = 0, fade = 0;           // tex2d y slide x 32 - 32), +2 the fade-out once flag 0 is up
+        int icon = -1;                     // +4: the item's icon (GetIconNoFromItemNo - 1), 0x3f the Oz
+        int message = 0;                   // FUN_00039a5c(.., 6, n): 57010, 57085 (Oz) or 57094 (item 0x1b6)
+        bool oz = false;
+    } itemWin;
     // The skip corner: _PrcMsg turns a page (and ends typing) on every frame _pad_chk_circle(476, -16, 20)
     // finds a touch held there - pages turn while it's held and stop with the finger. skipHeld: 1 the X
     // key, 2 the pad's square, 4 a pointer held on the corner; skipScene = any of them
@@ -533,6 +540,11 @@ struct App {
     int itemWindowItem = 0;
     bool tapPending = false;               // action key while a script waits for a tap
     float fadeGrey = 0, fadeFrom = 0, fadeTo = 0; // Screen
+    // Screen's op 58 (_SetFade_back: G+0x3a0a0, the shape 0 - the whole screen): over the 3D, under
+    // every 2D (the back mask's draw order -100); Wait 0xFFFC waits for it
+    struct BackFade { float grey = 0, from = 0, to = 0; int frames = 0, t = 0; } backFade;
+    // Anim / Anim2 on npc 0 (the leader's model, gac + 0x83c) while a scene holds the field
+    struct PlayerAnim { bool on = false; int action = 0; bool once = false; int loopFrom = 0, loopTo = 0; } playerAnim;
     // The menus' mask (MuCom_MenuSetMask / ClrMask: SetFade_back(black, 0 <-> 0xa0, 400 ms) with
     // G+0x39c60 its shape - 0 the screen, 1 its left past a slant, 2 its right, 3 fading downward)
     struct MenuMask {
@@ -614,7 +626,6 @@ struct App {
         std::map<std::string, LoadedModel> models;
         int frames = 0;
         float clock = 0;
-        int fieldTrack = -1;               // music to resume afterwards
         bool requested = false;            // a script's Battle, started once its step ends
         bool eventBattle = false;          // G+0xa4e: a running script started it - it waits, and goes
                                            // on in the battle's talks and after it
@@ -875,7 +886,9 @@ struct App {
     cr::Vec3 puzzleStart;                  // where the leader came into the puzzle room (FieldPCCtrl::reset)
     struct CrystalCam { int npc = -1; int phase = 0; } crystalCam; // Uty_WarpCrystalCamera: 0 to the crystal, 1 back
     bool puzzleStartPending = false;
-    int bgmNo = 0;                         // G+0x35530: the music last asked for (Uty_GetBgmNo)
+    // G+0x358e0: the last play request __bgmgo took on the field (G+0x2c0 bit 6), the flags with it;
+    // __EvtBattle zeroes it. Uty_GetBgmNo reads it and the field plays it again after a battle
+    uint32_t bgmNo = 0;
     struct NowLoading { bool on = false; int frame = 0; } nowLoading; // NowLoadProc's spinner
     struct VitaLogo {                      // the Vita's boot opcodes 0x47..0x4a: a full-screen logo
         cr::Texture tex[2];                // by slot (0x47's slot + 16 in the original's Tex2d)
@@ -1141,7 +1154,7 @@ struct ViewerHost : cr::EventHost {
     void showMessage(int id) override;
     bool messageOpen() override;
     bool tapped() override;
-    void showItemWindow(int item) override;
+    void showItemWindow(int item, bool oz) override;
     void playAnim(int id, int slot, int loopFrom, int loopTo) override;
     void playAnim2(int id, int slot, int loopFrom, int loopTo, int start, int blend) override;
     void loadAction(int id, int action, int slot) override;
@@ -1153,6 +1166,8 @@ struct ViewerHost : cr::EventHost {
     void showNpc(int id, bool shown) override;
     void screenFade(float grey, float from, float to, int frames) override;
     bool screenFading() override;
+    void backFade(float grey, float from, float to, int frames) override;
+    bool backFading() override;
     void warp(const cr::WarpRequest& w) override;
     void playSound(uint32_t id) override;
     void playMusic(uint32_t v) override;
@@ -1370,6 +1385,9 @@ void stepTutoTex(App& app);
 void stepTutoFrames(App::TutoTex& t);
 void drawTutoPicture(App& app, const App::TutoTex& t);
 float screenFadeAlpha(const App& app);
+float backFadeAlpha(const App& app);
+void drawItemBand(App& app);
+std::string itemBandText(const App& app);
 void updateVoices(App& app);
 int androidCutinWidth(float wv);
 void drawMessageBox(App& app, const std::vector<std::string>& page, const std::string& speaker, bool next, const std::string& pageNo);
@@ -1524,6 +1542,7 @@ void titleClick(App& app, float px, float py);
 void showMap(App& app, int index, int forcedMap, int forcedArea);
 void showMap(App& app, int index);
 bool playerShown(const App& app);
+float travelYaw(float dx, float dz); // dir 2000's facing (radians) for a move by (dx, dz)
 bool npcActive(const App& app, const cr::FieldNpc& n);
 void resetFieldNpcs(App& app);
 bool npcVisible(const App& app, size_t index);

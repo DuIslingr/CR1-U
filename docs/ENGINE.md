@@ -244,7 +244,10 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] Sound effects (sndeff.bin, 253 sounds): script sounds (chests, crystals, …) and
       footsteps by floor surface; dialogue and item windows use the game's own window panels
 - [x] Music: the 29 AAC tracks (FAAD2 on Linux), looping from the game's repeat points, with
-      script BGM changes and fades; each area starts its usual track
+      script BGM changes and fades (a request restarts the track, as `_setbgm_caf` does); the
+      entry scripts choose each area's track, and a battle gives back the field's last request.
+      The mix is the original's (BGM 0.2, effects 0.3, voices 1.0 of their 80-by-default options,
+      raised together), the gauges in steps of 10
 - [x] Music on macOS / Windows: the bundled FAAD2 (`engine/third_party/faad2`) builds where no
       system one is found; verified on Linux by forcing it (`-DCR_BUNDLED_FAAD2=ON`: same frames,
       PCM within 1 LSB). Not yet built on an actual Mac or Windows machine

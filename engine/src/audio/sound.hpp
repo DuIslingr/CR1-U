@@ -44,6 +44,9 @@ public:
     // Gains (0..1) for effects and for voice clips (the language-variant sounds, bit 22), applied
     // to playing sounds too. The mixer's master volume is already multiplied in.
     void setVolumes(float effects, float voice);
+    // __effplay: a sound flagged 0x10000 (a stand-in for a voice) plays only while the voices are
+    // off (their option 0) - false here mutes them
+    void setVoiceStandIns(bool on) { standIns_ = on; }
     // Bank entries that are voice clips (the game stores them among the effects and plays them
     // the same way; which ones they are is marked by the player in the sound test).
     void setVoiceEntries(const std::vector<int>& entries) { voiceEntries_ = entries; }
@@ -91,6 +94,7 @@ private:
     // (a fade, __eff_vol2 / __eff_vol_fadein: over `fadeMs` from `fadeAt`, in or out - out ends it)
     struct Voice { SDL_AudioStream* stream = nullptr; int entry = -1; bool loop = false, voice = false, fadeIn = false; uint64_t fadeAt = 0; int fadeMs = 0; };
     float effects_ = 0.8f, voice_ = 0.8f;
+    bool standIns_ = true;
     std::vector<int> voiceEntries_;
     std::vector<PcmSound> bank_;
     std::vector<Voice> voices_; // 16, like the original's OpenAL sources

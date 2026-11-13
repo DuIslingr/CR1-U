@@ -87,7 +87,9 @@ public:
     virtual void toggleFieldHidden() {}                   // Screen with frames < 0: the field's drawing on / off
     virtual bool messageOpen() { return false; }         // the script waits while true
     virtual bool tapped() { return false; }              // action key pressed this frame (touch_up_chk)
-    virtual void showItemWindow(int /*item*/) {}         // Uty_GetItem
+    // Uty_GetItem (_Uty_GetItem_Init): var 9's item - or, flag 10 set, var 9 Oz (already added to
+    // the purse by the runner) - in the band at the top until flag 0 is raised
+    virtual void showItemWindow(int /*item*/, bool /*oz*/) {}
     // Anim npc, slot, a, b (mdl_set_act_motion_loop): play the action in `slot`, then loop frames
     // a..b; a = -1 plays it once and holds the end, a = b = 0 loops it whole
     virtual void playAnim(int /*npc*/, int /*slot*/, int /*loopFrom*/ = 0, int /*loopTo*/ = 0) {}
@@ -104,7 +106,11 @@ public:
     // bit 0); npc 0 is the player
     virtual void showNpc(int /*npc*/, bool /*shown*/) {}
     virtual void screenFade(float /*grey*/, float /*fromAlpha*/, float /*toAlpha*/, int /*frames*/) {}
-    virtual bool screenFading() { return false; }        // Wait 0xFFFF / 0xFFFC
+    virtual bool screenFading() { return false; }        // Wait 0xFFFF (_ChkFade)
+    // Op 58 (__EvtScreen's 0x3a: _SetFade_back, the shape G+0x3a0b0 = 0): the back mask - over the
+    // 3D, under all the 2D - not the front fade; Wait 0xFFFC waits for it (_ChkFade_back)
+    virtual void backFade(float /*grey*/, float /*fromAlpha*/, float /*toAlpha*/, int /*frames*/) {}
+    virtual bool backFading() { return false; }
     virtual void warp(const WarpRequest& /*w*/) {}       // the script continues on the new field
     virtual void playSound(uint32_t /*id*/) {}           // Eff: _effgo(u16 | u16 << 16)
     virtual void playMusic(uint32_t /*v*/) {}            // Bgm: _bgmgo(u16 | u16 << 16)
@@ -166,7 +172,7 @@ public:
     virtual bool vitaLogoBusy() { return false; }
     virtual void padArt() {}                      // Uty_DrawController: the pad's picture until flag 0 clears            // Uty_DrawExclamationMark: until flag 0 clears
     virtual void recoverPair() {}               // Uty_HpMpRecovery: the pair's HP / MP (pcparam_hpmp_recovery)
-    virtual int bgmNo() { return 0; }           // Uty_GetBgmNo: the music last asked for
+    virtual int bgmNo() { return 0; }           // Uty_GetBgmNo: the field's last play request (G+0x358e0)
     virtual void endMenu(int /*kind*/) {}       // Uty_EndMenu: 2 ends the shop, its music not put back
     virtual int pairNo() { return 0; }          // Uty_GetPartyNo: the pair, 0..3
     virtual void nowLoading(bool /*on*/) {}     // Uty_NowLoading: flag 4086 shows the spinner // Uty_PuzzleStart: the "Puzzle Start" banner (var 0 / flags 0, 1 drive it)

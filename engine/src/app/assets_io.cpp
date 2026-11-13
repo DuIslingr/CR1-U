@@ -669,11 +669,15 @@ void showModel(App& app, int index) {
     updateTitle(app);
 }
 
-// Mixer: master scales the three channels; saved to settings.ini in the user's save folder
+// Mixer: master scales the three channels; saved to settings.ini in the user's save folder.
+// _sound_init (2.2.0 0xab6c): the BGM plays at 0.2 of its option (G+0x3a428 = 20), sound effects at
+// 0.3 (G+0x3a42c = 30), voices at 1.0 (__voice_resume) - the original's balance, scaled up together
+// so the loudest channel the data has (the voices, else the effects) reaches full gain
 void applyMix(App& app) {
-    const float m = app.mix.master / 100.0f;
-    app.music.setVolume(m * app.mix.music / 100.0f);
-    app.sound.setVolumes(m * app.mix.effects / 100.0f, m * app.mix.voice / 100.0f);
+    const float m = app.mix.master / 100.0f, k = app.sound.hasVoices() ? 1.0f : 1.0f / 0.3f;
+    app.music.setVolume(m * k * 0.2f * app.mix.music / 100.0f);
+    app.sound.setVolumes(m * k * 0.3f * app.mix.effects / 100.0f, m * k * app.mix.voice / 100.0f);
+    app.sound.setVoiceStandIns(app.mix.voice == 0 || !app.sound.hasVoices()); // (__effplay's 0x10000 sounds)
 }
 
 // The user's folder - or CR_SAVE_DIR's (tests and captures keep everything of theirs there)
@@ -691,7 +695,8 @@ void loadMix(App& app) {
         int* fields[4] = {&app.mix.master, &app.mix.music, &app.mix.effects, &app.mix.voice};
         const char* keys[4] = {"master=", "music=", "effects=", "voice="};
         for (int i = 0; i < 4; ++i)
-            if (const char* at = SDL_strstr(text, keys[i])) *fields[i] = std::clamp(SDL_atoi(at + SDL_strlen(keys[i])), 0, 100);
+            if (const char* at = SDL_strstr(text, keys[i])) // (the gauges' steps of 10: an older file's 5s rounded up)
+                *fields[i] = std::clamp((SDL_atoi(at + SDL_strlen(keys[i])) + 5) / 10 * 10, 0, 100);
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
         // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
         if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
