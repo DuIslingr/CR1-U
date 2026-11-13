@@ -182,6 +182,12 @@ endif()
 
 set(GAME_SOURCES
     src/main.cpp
+    src/app/assets_io.cpp
+    src/app/scene_fx.cpp
+    src/app/menus.cpp
+    src/app/field_puzzle.cpp
+    src/app/battle.cpp
+    src/app/explore.cpp
     src/platform/paths.cpp
     src/platform/setup.cpp
     src/gfx/gl.cpp
