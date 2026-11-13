@@ -865,6 +865,210 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                             why.c_str());
                 problems += sp;
             }
+            { // The battle's cameras as 2.2.0's (CRO's 34d96cb / e7b084d, checked against CR1's code):
+              // _btlact_attack_init's cameras (attacker +0x84, target +0x8e) and spots, the attack's second
+              // camera, the gene / item hit frame and hit cameras, the roll, the target cursor's easing, the
+              // cancelled action's camera, 10001 / 10002 ending, the boss fall's hold, the white-out's -100
+                app.game = saved;
+                int cp = 0;
+                std::string why;
+                auto check = [&](bool ok, const char* what) { if (!ok) ++cp, why += std::string(" ") + what; };
+                int group = 1;
+                for (int g = 1; g <= app.battleData.groupCount(); ++g) { // two or more monsters, not formation 2
+                    const std::array<int, 3> ids = app.battleData.group(g);
+                    const cr::MonsterDef *m0 = app.battleData.monster(ids[0]), *m1 = app.battleData.monster(ids[1]);
+                    if (m0 && m1 && m0->model >= 0 && m1->model >= 0 && m0->model < cr::kNumBattleModels &&
+                        m1->model < cr::kNumBattleModels && app.battleData.formation(ids) != 2) {
+                        group = g;
+                        break;
+                    }
+                }
+                App::Battle& b = app.battle;
+                app.rng.seed(7);
+                startBattle(app, {group, 0, -1, 0}, 0);
+                std::string spots;
+                if (b.active) {
+                    for (int f = 0; f < kIntroWhite + 60 && b.active && b.phase == App::Battle::Intro; ++f) stepBattle(app);
+                    const bool keepPair = b.rules.pair, keepEPair = b.rules.enemyPair;
+                    b.rules.pair = b.rules.enemyPair = false;
+                    const int s2 = enemyCameraSlot(app, 2);
+                    // B1: the attacker's (+0x84) and the target's (+0x8e) parts of the camera
+                    cr::BattleTurn t;
+                    t.kind = cr::kCmdAttack, t.action = b.rules.attackAction(0), t.actors[0] = 0;
+                    t.hits.resize(1);
+                    t.hits[0].target = 2;
+                    auto atk = [&](int user, int target, bool pair, bool epair) {
+                        b.rules.pair = pair, b.rules.enemyPair = epair;
+                        t.actors[0] = user, t.actors[1] = pair && user < 2 ? 1 : epair && user >= 2 ? 3 : -1, t.hits[0].target = target;
+                        cameraForTurn(app, t);
+                        b.rules.pair = b.rules.enemyPair = false;
+                        return b.attackVariant >= 0 && b.attackVariant < 3 ? b.cam : -1;
+                    };
+                    check(atk(0, 2, false, false) == s2 * 4 + 0x78 + b.attackVariant, "atk-member0");
+                    check(atk(1, 2, false, false) == s2 * 4 + 0xe0 + b.attackVariant, "atk-member1");
+                    check(atk(0, 2, true, false) == s2 * 4 + 0x148 + b.attackVariant, "atk-pair");
+                    check(atk(2, 0, false, false) == s2 * 3 + 0x1b0, "atk-at-member0");
+                    check(atk(2, 1, false, false) == s2 * 3 + 0x1b1, "atk-at-member1");
+                    check(atk(2, 0, true, false) == s2 * 3 + 0x1b2, "atk-at-pair");
+                    check(atk(2, 1, false, true) == 0x19 * 3 + 0x1b1, "atk-enemy-pair");
+                    // B7: the formation table's spots
+                    cr::Vec3 sp;
+                    const short* e3 = cr::kBattlePosition[b.formation][3];
+                    check(attackSpot(app, 0, 0, 2, sp) && sp.x == e3[0] && sp.z == e3[1], "spot-member");
+                    b.rules.pair = true;
+                    const short *e6 = cr::kBattlePosition[b.formation][6], *e7 = cr::kBattlePosition[b.formation][7];
+                    check(attackSpot(app, 0, 0, 2, sp) && sp.x == e6[0] && sp.z == e6[1] && attackSpot(app, 1, 1, 2, sp) && sp.x == e7[0] &&
+                              sp.z == e7[1],
+                          "spot-pair");
+                    const int size2 = monsterSize(app, 2);
+                    const float adj = size2 == 3 ? -10.0f : size2 == 2 ? 5.0f : 0.0f; // (z - 10 size 3, + 5 size 2)
+                    check(attackSpot(app, 2, 0, 0, sp) && sp.x == cr::kBattlePosition[1][3][0] && sp.z == cr::kBattlePosition[1][3][0] + adj, "spot-vs-pair");
+                    b.rules.pair = false;
+                    check(attackSpot(app, 2, 0, 1, sp) && sp.x == cr::kBattlePosition[0][4][0] && sp.z == cr::kBattlePosition[0][4][1] + adj, "spot-monster");
+                    // B3: a member's blow drawn variant 2 cuts to slot x 4 + 0x7b as its approach ends (que +0x10)
+                    {
+                        b.turn = cr::BattleTurn();
+                        b.turn.kind = cr::kCmdAttack, b.turn.action = b.rules.attackAction(0), b.turn.actors[0] = 0;
+                        b.turn.hits.resize(1);
+                        b.turn.hits[0].target = 2, b.turn.hits[0].amount = 1;
+                        b.phase = App::Battle::Acting, b.turnOn = true;
+                        startTurn(app);
+                        const App::Battle::Actor* u = battleActor(app, 0);
+                        const int first = b.cam, at = b.attackCam2At;
+                        b.attackVariant = 2;
+                        bool cut = false;
+                        for (int f = 0; f < 200 && b.turnOn && b.turnFrame < at; ++f) stepBattle(app);
+                        cut = b.turnFrame == at && b.cam == s2 * 4 + 0x7b;
+                        spots = u ? std::to_string(int(u->to.x)) + "," + std::to_string(int(u->to.z)) : "?";
+                        check(at > 0 && first >= s2 * 4 + 0x78 && first <= s2 * 4 + 0x7a && cut && u && u->to.x == e3[0] && u->to.z == e3[1], "atk-second-camera");
+                        for (int f = 0; f < 600 && b.turnOn; ++f) stepBattle(app);
+                        b.phase = App::Battle::Command, b.turnOn = false;
+                    }
+                    // B2 / B3: a gene lands at its cast slot's loop start + 30, cutting to its target
+                    int gene = -1;
+                    for (int id = 1; id < app.battleActions.count() && gene < 0; ++id)
+                        if (const cr::BattleActionDef* d = app.battleActions.get(id); d && d->cls == 11 && d->motion != 1 && d->scope != 3 &&
+                                                                                      d->scope != 5 && id != 0xe4 &&
+                                                                                      !((id >= 0xd7 && id <= 0xd9) || id == 0xde || id == 0xe8 || id == 0x197 || id == 0x19a || id == 0x1b1))
+                            gene = id;
+                    if (const App::Battle::Actor* u = battleActor(app, 0); u && gene >= 0) {
+                        b.turn = cr::BattleTurn();
+                        b.turn.kind = cr::kCmdGene, b.turn.action = gene, b.turn.actors[0] = 0;
+                        b.turn.hits.resize(1);
+                        b.turn.hits[0].target = 2, b.turn.hits[0].amount = 1;
+                        b.phase = App::Battle::Acting, b.turnOn = true;
+                        startTurn(app);
+                        const int want = app.battleData.anim(u->modelId, realSlot(b.models[u->model], 11)).loopStart + 30;
+                        check(b.hitFrame == want && b.cam == 0x49 && b.camHold == 25, "gene-hit-frame");
+                        // the cast camera turns over its 25 frames and ends (10001 no longer holds)
+                        int ended = -1;
+                        for (int f = 1; f < 40 && ended < 0; ++f) {
+                            stepBattle(app);
+                            if (!b.camLive) ended = f;
+                        }
+                        check(ended == 25 || (want <= 25 && b.cam != 0x49), "cast-10001-ends");
+                        for (int f = 0; f < 200 && b.turnOn && !b.hitsShown; ++f) stepBattle(app);
+                        const int sz = monsterSize(app, 2);
+                        check(b.hitsShown && b.turnFrame == want && b.cam == (sz == 1 ? 0x60 : sz + 0x61) && b.camActor == 2, "gene-hit-camera");
+                        for (int f = 0; f < 600 && b.turnOn; ++f) stepBattle(app);
+                        b.phase = App::Battle::Command, b.turnOn = false;
+                    } else
+                        check(false, "no-gene");
+                    { // the hit cameras' cases
+                        cr::BattleTurn g;
+                        g.kind = cr::kCmdGene, g.action = gene, g.actors[0] = 0;
+                        setBattleCamera(app, 0x49, 0);
+                        hitCamera(app, g, 0, false);
+                        check(b.cam == 0x49, "hitcam-self-keeps");
+                        hitCamera(app, g, 1, false);
+                        check(b.cam == 0x5e && b.camActor == 1, "hitcam-member");
+                        b.rules.pair = true;
+                        hitCamera(app, g, 1, false);
+                        check(b.cam == 0x5f && b.camActor == 0, "hitcam-pair");
+                        b.rules.pair = false;
+                        hitCamera(app, g, 0, true);
+                        check(b.cam == 0x5d && b.camActor == 0, "hitcam-bounce");
+                        g.action = 0x1b1;
+                        hitCamera(app, g, 2, false);
+                        check(!app.battleActions.get(0x1b1) || b.cam == b.formation + 0xc, "hitcam-still");
+                        int wide = -1;
+                        for (int id = 1; id < app.battleActions.count() && wide < 0; ++id)
+                            if (const cr::BattleActionDef* d = app.battleActions.get(id); d && (d->scope == 3 || d->scope == 5)) wide = id;
+                        g.action = wide;
+                        hitCamera(app, g, 2, false);
+                        check(wide >= 0 && b.cam == (size2 == 1 ? 0x69 : b.formation + 0x67), "hitcam-wide");
+                    }
+                    // B6: the roll - a still camera's raw[6], a moving one's raw[6] -> raw[13]
+                    setBattleCamera(app, 0xc3, 0);
+                    stepBattleCamera(app);
+                    const cr::BattleCamera* rc = app.battleData.camera(0xc3);
+                    const float stillRoll = b.camRoll;
+                    check(rc && b.camRoll == rc->raw[6] && rc->raw[6] != 0, "roll-still");
+                    setBattleCamera(app, 0x210, 0);
+                    const cr::BattleCamera* mc = app.battleData.camera(0x210);
+                    for (int f = 0; mc && f < mc->raw[15] / 2; ++f) stepBattleCamera(app);
+                    check(mc && std::fabs(b.camRoll - (mc->raw[6] + (mc->raw[13] - mc->raw[6]) * float(mc->raw[15] / 2) / float(mc->raw[15]))) < 0.01f,
+                          "roll-moving");
+                    // B8: the target cursor eases by a half and holds it
+                    setBattleCamera(app, b.formation + 12, 0);
+                    stepBattleCamera(app);
+                    cameraForTarget(app, 3, false, true);
+                    const cr::Vec3 e0 = b.camEye;
+                    stepBattleCamera(app);
+                    const cr::Vec3 d1 = b.camWantEye - b.camEye, d0 = b.camWantEye - e0;
+                    check(b.camHeld && b.camEase == 2 && std::fabs(std::sqrt(cr::dot(d1, d1)) * 2 - std::sqrt(cr::dot(d0, d0))) < 0.01f, "cursor-eased");
+                    // B9: a cancelled action's camera: the item's cast one on its user
+                    b.turn = cr::BattleTurn();
+                    b.turn.kind = cr::kCmdGene, b.turn.cancelled = true, b.turn.actors[0] = 2;
+                    b.phase = App::Battle::Acting, b.turnOn = true;
+                    startTurn(app);
+                    check(b.cam == (size2 == 1 ? 2 + 0x54 : size2 + 0x57) && b.camActor == 2 && b.camHold == 25, "cancel-monster");
+                    b.turn.actors[0] = 1;
+                    startTurn(app);
+                    check(b.cam == 0x54 && b.camActor == 1, "cancel-member");
+                    b.phase = App::Battle::Command, b.turnOn = false;
+                    // B21: actor -100 - one step of a turning camera, then over
+                    setBattleCamera(app, 0x45, -100);
+                    const int dur = b.camDur;
+                    stepBattleCamera(app);
+                    check(dur == -90 && b.camActor == 0 && !b.camLive, "white-out-step");
+                    (void)stillRoll;
+                    b.rules.pair = keepPair, b.rules.enemyPair = keepEPair;
+                    endBattle(app, false);
+                } else
+                    check(false, "no-battle");
+                // B15: a boss's fall - +0xae0 = its slot 6's last frame + 20, the 10000 camera turning over it
+                int bossGroup = -1, hold = 0, want = 0;
+                for (int g = 1; g <= app.battleData.groupCount() && bossGroup < 0; ++g) {
+                    const std::array<int, 3> ids = app.battleData.group(g);
+                    const cr::MonsterDef* m0 = app.battleData.monster(ids[0]);
+                    if (m0 && m0->strongGrowth && m0->model >= 0 && m0->model < cr::kNumBattleModels && app.battleData.formation(ids) != 2) bossGroup = g;
+                }
+                app.game = saved;
+                if (bossGroup > 0) {
+                    startBattle(app, {bossGroup, 0, -1, 0}, 0);
+                    if (b.active) {
+                        for (int k = 2; k < 5; ++k) b.rules.f[size_t(k)].hp = 0;
+                        battleVictory(app);
+                        if (const App::Battle::Actor* m2 = battleActor(app, 2)) {
+                            const LoadedModel& lm = b.models[m2->model];
+                            const int fall = battleAction(lm, realSlot(lm, btlui::kSlotDown));
+                            want = (fall >= 0 ? int(lm.actions[size_t(fall)].duration) - 1 : 0) + 20;
+                        }
+                        hold = b.camHold;
+                        const cr::BattleCamera* bc = app.battleData.camera(b.cam);
+                        check(b.phase != App::Battle::BossDown || (hold == want && bc && (bc->raw[15] != 10000 || b.camDur == want)), "boss-hold");
+                        endBattle(app, false);
+                    }
+                }
+                app.runner.stop();
+                app.game = saved;
+                cp += app.renderer.takeErrors();
+                std::printf("battle cameras: attacks (attacker / target, pair, enemy pair), spots (%s), the second camera, gene hit at loop start + 30 "
+                            "and its cameras, roll, cursor 1/2 held, cancelled, 10001 ends, boss hold %d (want %d), white-out -100; %d problems%s\n",
+                            spots.c_str(), hold, want, cp, why.c_str());
+                problems += cp;
+            }
             // a plain hit (btlcalc_0404) shakes the screen for 5 frames
             app.game = saved;
             startBattle(app, {1, 0, -1, 0}, 0);

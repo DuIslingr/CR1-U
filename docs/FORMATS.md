@@ -1462,11 +1462,19 @@ the first time in the battle (+0xaa) it comes up it cancels the targets' command
 (+0xa9) it's Break event 0x20.
 
 Cameras (`btlcamera_prc`): a camera either stands, moves from its first eye / target to the
-second (+14..+24) over +30 frames, or turns +28 degrees about its target over them. The menus use
-formation + 12 (the first menu), 28 + member / 30 (choosing), a target's (enemy: target + 29, or
-size + 32 for bigger ones; the pair 28 + k / 30); attacks slot × 3 + 432 + attacker (the pair's
-+2) on the pair's side, random(3) + slot × 4 + 120 / 224 (/ 328 for two) on the enemies'; genes
-73 + k / 75, items 83 + k / 85; losing 72 (a slow full turn).
+second (+14..+24) over +30 frames, or turns +28 degrees about its target over them; raw[6] rolls
+the view (degrees about its axis, `gluLookAt` under flag 0x100; a moving camera's goes to raw[13]).
+A turning camera's 10000..10002 frames are btl +0xae0 (25 for the casts, a boss's fall + 20),
+10003 is 40; only 0x48 starts over, the rest end. The menus use formation + 12 (the first menu),
+28 + member / 30 (choosing), a target's (enemy: target + 29, or size + 32 for bigger ones; the pair
+28 + k / 30; moving the cursor eases by a half, held); attacks (`_btlact_attack_init`, que +0x84
+the attacker, +0x8e the target) at a member the attacker's slot × 3 + 432 + the member hit (the
+pair 434; an enemy pair slot 25), at a monster random(3) + the target's slot × 4 + 120 for member
+0's blow, 224 for member 1's (328 the pair's); a variant-2 member blow cuts to the slot's fourth
+(+ 123 / 227 / 331) as its approach ends. Genes 73 + k / 75, items 83 + k / 85 as they cast (a
+cancelled action the item's); at the hit (loop start of the cast slot + 30) the target's 93 + k /
+95 (monster + 94, enemy pair 98, size + 97), a side-wide action 103 / 104 (monsters 105 / 106,
+formation + 103), some formation + 12; losing 72 (a slow full turn).
 
 ## Puzzle rooms (`PuzzleScene`, `PuzzleManager`, `PuzzleObject`s)
 

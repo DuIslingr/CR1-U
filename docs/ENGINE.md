@@ -531,8 +531,9 @@ c101/c102/c104/m207a, 2026-10-12).
       strikes and ambushes, experience, levels and Oz on the results screen, losing back to
       the title. The HUD is the original's (`menub_mainPut`): the badge, the members' HP / MP
       rows, the command buttons, the action banner and the damage numbers with their labels;
-      the cameras are the original's per menu, target and attack. Attackers run up to their
-      target and back; the fallen fade out. `--capture … --battle <group> <stage> --battle-view
+      the cameras are the original's per menu, target, attack and gene / item hit (with their
+      roll). Attackers run up to the formation table's spot before their target and back; the
+      fallen fade out. `--capture … --battle <group> <stage> --battle-view
       top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
       (the results that many frames in, after that many taps); `intro@<n>` the opening n battle
       frames in (btl_main 200 at frame 4, the commands at 36), `top@<n>` n frames after the first

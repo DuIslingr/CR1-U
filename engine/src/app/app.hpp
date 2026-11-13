@@ -601,6 +601,7 @@ struct App {
             float alpha = 1;
             std::vector<Actor> actors[2];
             cr::Vec3 eye[2], target[2];
+            float roll[2] = {};
             int cam[2] = {-1, -1};
         } between;
         std::map<std::string, LoadedModel> models;
@@ -699,6 +700,9 @@ struct App {
         int camSets = 0;                   // btlcamera_set calls (tests)
         float camEase = 1;                 // +0xfc / +0x100: the shown camera's divisor (5 eased)
         bool camSnapped = false;           // _Clr_evcv this frame: the shown camera cut to the wanted
+        float camRoll = 0;                 // +0xf8: degrees about the view (btl_prc's gluLookAt under flag 0x100)
+        int attackVariant = -1;            // que +0xc: _btlact_attack_init's random(3) (the camera's variant)
+        int attackCam2At = -1;             // que +0x10: the approach's move end (a variant-2 member blow's second camera)
         cr::Vec3 camEye{488, 12, 555}, camTarget{500, 4, 498}, camWantEye{488, 12, 555}, camWantTarget{500, 4, 498};
         std::vector<Effect> effects;       // eff3d: playing effects (32 at most)
         // The voiced releases' battle lines (2.2.0's _btlvoice_*): each fighter's next variant of
@@ -1624,7 +1628,15 @@ int battleAction(const LoadedModel& lm, int slot);
 App::Battle::Actor* battleActor(App& app, int fighter);
 float actorDuration(App& app, const App::Battle::Actor& a);
 void setBattleCamera(App& app, int id, int actor = 0, bool held = false);
-void castCamera(App& app, int kind, int user, bool userPair);
+void castCamera(App& app, int kind, int user);
+void stepBattleCamera(App& app);
+int monsterSize(const App& app, int fighter);
+int enemyCameraSlot(const App& app, int fighter);
+void cameraForTarget(App& app, int target, bool group, bool cursor = false);
+void cameraForTurn(App& app, const cr::BattleTurn& t);
+void hitCamera(App& app, const cr::BattleTurn& t, int target, bool bounce);
+bool attackSpot(const App& app, int user, int k, int target, cr::Vec3& out);
+void battleVictory(App& app);
 LoadedModel* effectModel(App& app, int id);
 cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);
 void spawnEffect(App& app, int id, int fighter);
