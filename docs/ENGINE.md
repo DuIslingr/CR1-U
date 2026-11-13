@@ -275,7 +275,9 @@ c101/c102/c104/m207a, 2026-10-12).
       flow_hd.mct, every number from the binary's tables): a column per pair, its ten chapters in
       the order that pair meets the gates - "?" until reached, the picture once reached, a star
       when cleared, padlocks on the ways not yet open - the finale across the bottom once all four
-      stories are done, the later pairs' strips silhouetted until a first story is finished, and
+      stories are done, the bonus row (each pair's tenth: reached with flag 39 and its nine flags,
+      cleared by the tenth) kept below the chart's end and unmarked until 39, the later pairs'
+      strips silhouetted until a first story is finished, and
       Achievements % (each chapter's points). It reads every pair's saves together, as the
       original's system data; Up/Down, the wheel or a drag scroll it. Options opens the screen
       below in title mode. `--viewer` (or `--map`,
@@ -294,7 +296,8 @@ c101/c102/c104/m207a, 2026-10-12).
       mouse clicks buttons, gauges, the page number and Back. Saved to settings.ini. From the title
       it is in title mode, as in the original: Reset Data instead of Return to Title. Return to
       Title works. The **Instruction Manual** (`__menuu_OptionPrc` 0xf..0x16): the manual items held
-      (439..478) in label bars; a topic opens its page (system message 56000 + item - 439) in the
+      (439..478, then 501 / 502; new data holds 19 of them - `prty_init_all`'s 0xc4fd0) in label bars;
+      a topic opens its page (system message 56000 + item - 439, 501 / 502 item - 0x1d2) in the
       standard message window (style 8, at `_mwin[4]` with a picture, else `_mwin[5]`), paged by tap,
       five of them with their tutorial picture (MsgUty_SetMsg's table at 0xbe100), and closes back to
       the list at that topic. The first Options of a game (flag 0x43) open on 56035 "Option" in that
@@ -351,7 +354,8 @@ c101/c102/c104/m207a, 2026-10-12).
       `--scenarios` (`--at y` scrolls), `--manual` (`--at n p` opens topic n's page p) capture them, `--title-new p` goes through the title as a player would (pair 1 / 2, New)
 - [x] **Shops** (Util 2, `__menuu_Shop*`; the Ark's shopkeeper, script 251 of areas 7/13/19/25):
       Talk / Buy / Sell, then Items / Weapons / Armor / Jewel, the list, how many with Yes / No,
-      and "Equip it?" after buying gear - laid out from ShopPut and the ComUty_* pieces it calls
+      and "Equip it?" after buying gear (any, one worn already too; Yes refills the pair's HP and
+      MP, `pcparam_hpmp_recovery`) - laid out from ShopPut and the ComUty_* pieces it calls
       (all its windows sit at 0, 0) and checked against the reference playthrough: the shopkeeper's
       art on the plates' screens; in equipment lists the character's board (`ComUty_StateBoardDraw`:
       face, LV, HP / MP / NEXT bars, EXP and the stats, the highlighted item's change) and

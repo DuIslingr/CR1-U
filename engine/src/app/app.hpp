@@ -219,7 +219,7 @@ struct App {
     float optionsClock = 0;
     bool environmentEffects = true;        // the original's Environment Effects (weather; stored)
     bool lockLandscapeFlipped = false; // the landscape direction retained by the orientation lock
-    bool lockOrientation = false;          // Lock Screen Orientation (an iPad setting; stored)
+    bool lockOrientation = true;           // Lock Screen Orientation (stored; on for new data: 2.2.0 71928 sets +0x32163 bit 0)
     cr::MenuPainter menu;
     bool persist = true;                   // settings.ini is written (not by tests and captures)
     // The title: the boot script (j001_t99's EvrStart 0: the logos, the title picture and music,
@@ -1259,7 +1259,6 @@ extern const short kMapMark[4][25][2][3];
 constexpr int kFlagBase = 2601, kFlagStride = 50, kSteps = 25;
 } // namespace mapui
 
-constexpr float kPhoneHistoryLowest = 285 - (62 + 636 + 40) - 8; // the vertical scroll's end (tex2d)
 constexpr int kManualFirstItem = 439, kManualLastItem = 478;
 extern const float kWinMessagePanel[4];
 extern const float kWinSmallPanel[4];
@@ -1513,6 +1512,7 @@ cr::GameState allPairsFlags(const App& app);
 void openScenarios(App& app);
 void closeScenarios(App& app);
 int scenarioState(const cr::GameState& g, int i);
+float scenarioLowest(const App& app);
 int scenarioPercent(const cr::GameState& g);
 void drawScenarios(App& app);
 void scenariosScrollBy(App& app, float d);

@@ -3991,6 +3991,7 @@ int runSelfTest(App& app) {
             app.typeOn = false;
             app.optionsOpen = false;
             for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items.erase(item);
+            app.game.items.erase(501), app.game.items.erase(502);
             for (int item : {439, 440, 441, 448, 451, 473}) app.game.items[item] = 1;
             app.game.setFlag(0x43, false);
             const std::vector<int> keepSeen = app.seenFlags;
@@ -4040,6 +4041,23 @@ int runSelfTest(App& app) {
             problems += aboutHeld != 5;
             std::printf("options: \"Option\" (56035) alone in the message window, the page after it, from the field and "
                         "the title: %d/5\n", aboutHeld);
+            { // new data (prty_init_all): 19 topics, "Option" and "Progress Tracker" last; 502 opens 56036
+                const cr::GameState held = app.game;
+                const std::vector<uint32_t> heldSounds = app.menuSoundLog;
+                app.game = cr::GameState();
+                cr::giveDataItems(app.game);
+                const std::vector<int> fresh = manualTopics(app);
+                openManual(app, 0);
+                app.manualCursor = int(fresh.size()) - 1;
+                manualKey(app, SDLK_RETURN);
+                const bool ok = fresh.size() == 19 && fresh[17] == 501 && fresh[18] == 502 && app.manualMsg.id == 56036;
+                if (!ok) std::printf("options: new data's manual NOT as prty_init_all's (%zu topics, page %d)\n", fresh.size(), app.manualMsg.id);
+                problems += !ok;
+                app.manualMsg = App::ManualMsg();
+                app.manualOpen = false;
+                app.game = held;
+                app.menuSoundLog = heldSounds;
+            }
             openManual(app, 0);
             const std::vector<int> topics = manualTopics(app);
             manualKey(app, SDLK_DOWN);
@@ -4089,6 +4107,17 @@ int runSelfTest(App& app) {
         chart.setFlag(1093, true);
         problems += scenarioState(chart, 0) != 3 || scenarioState(chart, 1) != 1 || scenarioState(chart, 2) != 0 ||
                     scenarioState(chart, 40) != 0 || scenarioPercent(chart) != 3;
+        { // the bonus row (HistorySet 0xbe7b0): reached with 39 and 1052..1060, cleared by 1061
+            cr::GameState bonus;
+            for (int f = 1052; f <= 1060; ++f) bonus.setFlag(f, true);
+            const int before = scenarioState(bonus, 9);
+            bonus.setFlag(39, true);
+            const int reached = scenarioState(bonus, 9), other = scenarioState(bonus, 19);
+            bonus.setFlag(1061, true);
+            const bool ok = before == 0 && reached == 2 && other == 0 && scenarioState(bonus, 9) == 3;
+            if (!ok) std::printf("scenarios: the bonus row NOT as HistorySet's (%d %d %d)\n", before, reached, other);
+            problems += !ok;
+        }
         openScenarios(app);
         problems += !app.scenariosOpen || !app.scenariosSheet.id;
         app.lastTicks = 0;
@@ -4171,12 +4200,16 @@ int runSelfTest(App& app) {
         for (int k = 0; k < 3; ++k) shopKey(app, SDLK_RIGHT); // as many as the Oz buy: 2, then past the end
         problems += app.shop.phase != App::Shop::Count || app.shop.count != 2 ||
                     shopMessage(app).find(itemName(app, 201)) == std::string::npos;
-        shopKey(app, SDLK_RETURN); // Yes (Escher wears one already: no "Equip it?")
-        problems += app.game.oz != 100 || app.game.items[201] != 2 || app.shop.phase != App::Shop::List;
+        app.game.party[0].hp = 1; // (worn already, yet asked - ShopPrc 7 asks after any equipment: Yes refills the pair)
+        shopKey(app, SDLK_RETURN); // Yes: "Equip it?"
+        problems += app.game.oz != 100 || app.game.items[201] != 2 || app.shop.phase != App::Shop::EquipAsk;
+        shopKey(app, SDLK_RETURN); // Yes: worn (the one worn back in the bag), HP and MP refilled (pcparam_hpmp_recovery)
+        problems += app.game.items[201] != 2 || app.game.party[0].equip[0] != 201 || app.game.party[0].hp != -1 ||
+                    app.shop.phase != App::Shop::List;
         shopKey(app, SDLK_DOWN);   // Bastard Sword: 1800, too dear
         shopKey(app, SDLK_RETURN);
         problems += app.shop.phase != App::Shop::List;
-        problems += expectSounds("shop: item, count 2 then its end twice, Yes, too dear", {2, 2, 4, 4, 22, 1, 4}); // (the list: __effgo(1))
+        problems += expectSounds("shop: item, count 2 then its end twice, Yes, Equip it? Yes, too dear", {2, 2, 4, 4, 22, 21, 1, 4}); // (the list: __effgo(1))
         // Armor for Escher, worn at once: what he wore goes in the bag
         app.game.oz = 2000;
         shopKey(app, SDLK_ESCAPE); // the pair again
@@ -5537,7 +5570,7 @@ int runSelfTest(App& app) {
         openScenarios(app); // 2.2.0's chart scrolls sideways too, to -120, and down to its own end
         for (int k = 0; k < 5; ++k) scenariosKey(app, SDLK_RIGHT);
         for (int k = 0; k < 8; ++k) scenariosKey(app, SDLK_PAGEDOWN);
-        const bool chart = app.scenariosHScroll == -120 && app.scenariosScroll == 2 * kPhoneHistoryLowest;
+        const bool chart = app.scenariosHScroll == -120 && app.scenariosScroll == scenarioLowest(app);
         drawFrame(app, false);
         errs += r.takeErrors();
         closeScenarios(app);
@@ -6711,6 +6744,7 @@ double savedPlaySeconds(const App& app) {
 void bootTitle(App& app) {
     endFieldTasks(app); // stop puzzle/reset/actor timers before releasing their NPCs
     app.trackerArmed = false; // (SaveData_Load_init: a load or a new game starts it again)
+    cr::giveDataItems(app.game); // (_Load_SaveData: the data's items - 0xc4fd0's from its making - for the title's manual)
     app.playSeconds = savedPlaySeconds(app);
     endSceneEffects(app); // MuCom_PreReturnTitle: ScnEffectEnd
     app.renderer.resetHistory(); // a cut: the upscaler starts over

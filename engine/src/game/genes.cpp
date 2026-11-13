@@ -99,6 +99,13 @@ void giveStartingItems(GameState& gs) {
     gs.items[21] += 2; // Chocolate
 }
 
+void giveDataItems(GameState& gs) {
+    static const int kDataItems[21] = {439, 440, 441, 442, 443, 448, 449, 450, 451, 452, 453,
+                                       454, 455, 457, 458, 464, 465, 479, 480, 501, 502};
+    for (int item : kDataItems)
+        if (owned(gs, item) <= 0) gs.items[item] = 1;
+}
+
 void ensureStartingGenes(GameState& gs) {
     for (int c = 0; c < 8; ++c) {
         PartyMember& m = gs.party[size_t(c)];

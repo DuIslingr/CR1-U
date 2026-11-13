@@ -897,6 +897,14 @@ std::vector<OptRow> optionRows(App& app, int page) {
         gauge(sysLabel(app, 58085, "BGM"), &app.mix.music, -1);
         gauge(sysLabel(app, 58086, "Sound Effects"), &app.mix.effects, int(se::kVolume));
         gauge("Voice Volume", &app.mix.voice, -1);
+        { // (OptionPrc's gauges, 71108-71113: a changed voice level speaks - __voicego(0x200075, 0))
+            auto act = rows.back().act;
+            rows.back().act = [&app, act](int dir) {
+                const int was = app.mix.voice;
+                act(dir);
+                if (app.mix.voice != was && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
+            };
+        }
         char test[32];
         SDL_snprintf(test, sizeof test, "%03d", app.soundTestEntry);
         value("Sound Test", test, [&app](int dir) {
@@ -1288,6 +1296,7 @@ void resetAnswer(App& app, bool yes) {
     SDL_RemovePath(dataPath(app).c_str());
     SDL_RemovePath(savePath(app, "resume.dat").c_str());
     app.game = cr::GameState();
+    cr::giveDataItems(app.game); // (prty_init_all: 0xc4fd0's items)
     app.playSeconds = 0; // (prty_init_all: the play time is in the block it clears)
 }
 

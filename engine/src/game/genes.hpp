@@ -55,6 +55,9 @@ void levelUpBoosts(GameState& gs, int character, int levels);
 int plateDrop(int model);
 // prty_init_new's genes and items; ensureStartingGenes only adds what an older save lacks
 void giveStartingItems(GameState& gs);
+// _prty_init_all (2.2.0 0x6bee0, 67160-67176): new data holds one of each of 0xc4fd0's 21 items - the
+// manual topics 439..465 / 501 / 502 and the Human Genes plates 479 / 480 - in the shared bag
+void giveDataItems(GameState& gs);
 void ensureStartingGenes(GameState& gs);
 
 } // namespace cr

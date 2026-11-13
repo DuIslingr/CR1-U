@@ -35,6 +35,7 @@ bool applySave(App& app, const cr::SaveData& s) {
     app.booting = false;
     app.titleOpen = false;
     app.game = s.game;
+    cr::giveDataItems(app.game); // (2.2.0's data holds them from its making: a port save from before may not)
     // (ContData_memcpy / Load_SaveData: once "About Progress Tracker" was shown this launch, the state
     // taken up keeps flag 0x44)
     if (app.interruptShown) app.game.setFlag(0x44, true);
@@ -755,8 +756,8 @@ void shopPay(App& app) {
     }
     menuSound(app, se::kPaid);
     const cr::ItemParam* p = app.itemTable.item(item);
-    if (!s.selling && p && cr::equipSlot(p->kind) >= 0 && (p->owners >> shopCharacter(app) & 1) &&
-        app.game.party[size_t(shopCharacter(app))].equip[cr::equipSlot(p->kind)] != item) {
+    // (ShopPrc 7, 65990: asked after any equipment bought - DAT_000d30c8 is the category - one worn already too)
+    if (!s.selling && p && cr::equipSlot(p->kind) >= 0 && (p->owners >> shopCharacter(app) & 1)) {
         s.phase = App::Shop::EquipAsk;
         s.message = 57076; // Equip [item]?
         s.confirm = 0;
@@ -765,7 +766,8 @@ void shopPay(App& app) {
     shopBackToList(app);
 }
 
-// Yes to "Equip it?": worn by the board's character, what they wore goes back in the bag
+// Yes to "Equip it?": worn by the board's character, what they wore goes back in the bag, and the pair's
+// HP and MP refilled (ShopPrc 0xd, 66076: pcparam_hpmp_recovery, as Camp's __ChangeEquipItem)
 void shopEquip(App& app) {
     App::Shop& s = app.shop;
     const int item = s.list[size_t(s.listCursor)];
@@ -776,6 +778,7 @@ void shopEquip(App& app) {
         --app.game.items[item];
         slot = item;
         menuSound(app, shopui::kSoundEquip);
+        ViewerHost(app).recoverPair(); // (anywhere: not the Camp's home-map test)
     }
     shopBackToList(app);
 }
@@ -3552,6 +3555,7 @@ void newPairParty(App& app, int pair, bool clearData) {
     else cr::giveStartingItems(g);
     if (!haveData) g.walkExp = {}, g.noEncounters = {};
     if (app.interruptShown) g.setFlag(0x44, true); // (TitleClr's Load_SaveData: the Progress Tracker's message seen)
+    cr::giveDataItems(g); // (_Load_SaveData: no data -> prty_init_all)
     app.game = std::move(g);
     app.playerChar = 2 * p;
 }
@@ -3659,9 +3663,27 @@ int scenarioState(const cr::GameState& g, int i) {
             if (!g.flag(c)) return 0;
         return 2;
     }
+    if (i % 10 == 9) { // the bonus chapters (HistorySet 0x7bb5c..0x7bbc0, 0xbe7b0 {39, 10 flags}): cleared by the
+        // last flag, reached with 39 and the nine before it
+        static constexpr short kFirst[4] = {1052, 1452, 2252, 1852};
+        const int b = kFirst[i / 10];
+        if (g.flag(b + 9)) return 3;
+        if (!g.flag(39)) return 0;
+        for (int n = b; n < b + 9; ++n)
+            if (!g.flag(n)) return 0;
+        return 2;
+    }
     int st = f(kHistoryState[i][1]) ? 3 : f(kHistoryState[i][0]) ? 2 : 0;
     if (f(kHistoryNext[i][0]) && !f(kHistoryNext[i][1])) st = 1;
     return st;
+}
+
+// HistorySet (77639-77645): before flag 39 the bonus row has no way-in marks (+0xd37d8 = 1) and the chart
+// stops above it, -407 (tex2d; -453 with 39)
+bool scenarioNoMark(const cr::GameState& g, int i) { return i < 40 && i % 10 == 9 && !g.flag(39); }
+float scenarioLowest(const App& app) {
+    const bool all = app.scenariosFlags.flag(39);
+    return app.renderer.phoneLayout() ? 2.0f * (all ? -453 : -407) : kHistoryBottom - (1272 + 40 + 80) - 16 + (all ? 0 : 92);
 }
 
 int scenarioPercent(const cr::GameState& g) {
@@ -3726,7 +3748,8 @@ void drawScenarios(App& app) {
                     else at(31, tx - 6 + kOpen[k], ty - 10);
             } else {
                 piece(st <= 1 ? (e[2] == 1 ? 12 : 11) : e[3], x, y);
-                if (st != 0) at(31, tx + 61, ty - 10);
+                if (scenarioNoMark(g, i)) {
+                } else if (st != 0) at(31, tx + 61, ty - 10);
                 else if (ty - 17 < 91) over.push_back({31, tx + 61, ty - 10}); // (by the strips: the open one)
                 else if (ty - 17 < 280) over.push_back({32, tx + 54, ty - 17});
                 else at(32, tx + 54, ty - 17);
@@ -3742,7 +3765,7 @@ void drawScenarios(App& app) {
         r.fillRect(32, 2 * 285 + 64, 960, 70, 0, 0, 0, 1);      // (0, 285, 480, 35)
         at(0, 8, 4);
         if (vs < 0) at(1, 218, 92);
-        if (vs > kPhoneHistoryLowest) at(2, 218, 276);
+        if (2 * vs > scenarioLowest(app)) at(2, 218, 276);
         if (hs < 0) at(3, 0, 174);
         if (hs > -120) at(4, 469, 174);
         at(36, 4, 296);
@@ -3785,7 +3808,8 @@ void drawScenarios(App& app) {
                 else piece(31, x + 121 + 256.0f * float(k), y - 20);
         } else {
             piece(st <= 1 ? (e[2] == 1 ? 12 : 11) : e[3], x, y);
-            if (st != 0) piece(31, x + 122, y - 20); // the way in: open / shut (the open one by the strips)
+            if (scenarioNoMark(g, i)) {
+            } else if (st != 0) piece(31, x + 122, y - 20); // the way in: open / shut (the open one by the strips)
             else if (y - 34 < 97) over.push_back({31, x + 122, y - 20});
             else if (y - 34 < 688) over.push_back({32, x + 108, y - 34});
             else piece(32, x + 108, y - 34);
@@ -3818,7 +3842,7 @@ void drawScenarios(App& app) {
 }
 
 void scenariosScrollBy(App& app, float d) {
-    const float lowest = app.renderer.phoneLayout() ? 2 * kPhoneHistoryLowest : kHistoryBottom - (1272 + 40 + 80) - 16;
+    const float lowest = scenarioLowest(app);
     app.scenariosScroll = std::clamp(app.scenariosScroll + d, lowest, 0.0f);
 }
 void scenariosScrollSideways(App& app, float d) { // the iPhone layout's chart (tex2d)
@@ -3849,6 +3873,8 @@ void scenariosKey(App& app, SDL_Keycode key) {
 std::vector<int> manualTopics(const App& app) { // the items
     std::vector<int> items;
     for (int item = kManualFirstItem; item <= kManualLastItem; ++item)
+        if (ownedCount(app, item) > 0) items.push_back(item);
+    for (int item : {501, 502}) // (make_item_list kind 9, 60556-60570: then 0x1f5 / 0x1f6 - "Option", "Progress Tracker")
         if (ownedCount(app, item) > 0) items.push_back(item);
     return items;
 }
@@ -3960,7 +3986,8 @@ void manualChoose(App& app) { // OptionPrc 0x10: a topic chosen - the list's win
     if (app.manualCursor < 0 || app.manualCursor >= int(topics.size())) return;
     menuSound(app, se::kChoose); // (__ScrListSelectSePlay)
     App::ManualMsg& mm = app.manualMsg;
-    mm.id = kManualFirstPage + topics[size_t(app.manualCursor)] - kManualFirstItem;
+    const int item = topics[size_t(app.manualCursor)]; // (OptionPrc 0x12: item - 0x1b7 below 0x1b7 + 0x28, else - 0x1d2)
+    mm.id = kManualFirstPage + item - (item <= kManualLastItem ? kManualFirstItem : 0x1d2);
     mm.state = 1, mm.count = 4;
 }
 
