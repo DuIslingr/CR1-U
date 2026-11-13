@@ -3444,11 +3444,18 @@ int runSelfTest(App& app) {
             optionsKey(app, SDLK_RIGHT); // wraps to Off
             problems += app.video.upscaler != 0 || app.video.msaa != 1;
         }
-        // FSR 3.1 where it runs (Vulkan): frames come out the frame's size, not black, error free
+        // FSR 3.1 where it runs (Vulkan): frames come out the frame's size, error free, and look like
+        // the same scene drawn without the upscaler. The scene itself, not the screen: the battle pass
+        // leaves endBattle's fade at black, and the Control Hints (on unless a Release build) were all
+        // that showed through it - so the fade is lifted and the hints hidden for these frames
         int upscaled = 0;
         if (app.renderer.upscalerProblem(cr::Upscaler::Fsr3).empty()) {
-            for (int mode : {0, 1, 3}) {
-                app.video.upscaler = 1;
+            const int keepFadeT = app.fadeT, keepFadeFrames = app.fadeFrames;
+            const bool keepHud = app.showHud;
+            app.fadeT = app.fadeFrames = 0;
+            app.showHud = false;
+            auto frameSum = [&](int upscaler, int mode, int& w, int& h) {
+                app.video.upscaler = upscaler;
                 app.video.upscaleMode = mode;
                 applyVideo(app);
                 app.optionsOpen = false;
@@ -3458,17 +3465,28 @@ int runSelfTest(App& app) {
                     ++frames;
                 }
                 std::vector<uint8_t> px;
-                int w = 0, h = 0;
                 uint64_t sum = 0;
+                w = h = 0;
                 if (app.renderer.readPixels(px, w, h))
                     for (size_t i = 0; i < px.size(); i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+                return sum;
+            };
+            int w = 0, h = 0;
+            const uint64_t plain = frameSum(0, 0, w, h);
+            app.renderer.takeErrors();
+            for (int mode : {0, 1, 3}) {
+                const uint64_t sum = frameSum(1, mode, w, h);
                 const int errs = app.renderer.takeErrors();
-                if (!sum || errs || w != app.renderer.frameWidth()) {
-                    std::printf("FSR 3.1 %s: %d errors, %dx%d, %s\n", kUpscaleModes[mode].name, errs, w, h, sum ? "drawn" : "black");
+                const bool alike = plain && sum * 10 >= plain * 9 && sum * 10 <= plain * 11; // within 10 %
+                if (!alike || errs || w != app.renderer.frameWidth()) {
+                    std::printf("FSR 3.1 %s: %d errors, %dx%d, brightness %.3f of the plain frame's%s\n", kUpscaleModes[mode].name, errs,
+                                w, h, plain ? double(sum) / double(plain) : 0.0, plain ? "" : " (the plain frame is black)");
                     ++problems;
                 }
                 ++upscaled;
             }
+            app.fadeT = keepFadeT, app.fadeFrames = keepFadeFrames;
+            app.showHud = keepHud;
         }
         { // Smooth Models + HD textures: battles load and draw with them, HD textures keep the
           // original's layout size
