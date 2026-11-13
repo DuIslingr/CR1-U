@@ -1003,8 +1003,9 @@ battle.
   (280, 112) / 0x8d below), a scroll gauge (`ComUty_GuageBarDraw`), Back and a HELP window.
 - **World choice** (`_menuu_WldChoice*`): a list of gates, then a level and a yes/no. On close
   `_menuu_WldChoiceClr` sets flag 0 if cancelled; otherwise var 0 = gate (0 = 1st), var 1 = level,
-  var 2 = the party (route), flag 1 = the second choice (cleared for gates 4 and 5), and
-  G+0x30540[pair] = the level. The Ark's script returns when flag 0 is set, else warps: gate 0 →
+  var 2 = the party (route), flag 1 set for the second choice (cleared for gates 4 and 5), and
+  G+0x30540[pair] = var 1. It only ever sets flags 0 / 1: the Ark's script clears both before
+  `Util 1` (j001_t01 0x4f8 / 0x504). The Ark's script returns when flag 0 is set, else warps: gate 0 →
   area 2 (d01) map 0, gate 1 → area 3 map 14, …
   Set: the pair's gates in its order (0xca7d0, 6 bytes a pair: 0 1 2 3 4 5 / 1 2 0 3 4 5 / 2 0 1
   3 4 5 / 3 2 1 0 4 5), each offered when flag 0xca810[pair] + gate is set (1076 / 1476 / 1876 /
@@ -1312,6 +1313,8 @@ immune).
   the results (`MbResultPut`): "Results" (19) at (8, 4), the pair's boards 88 apart, EXP Gained
   (68) at (288, 76) and OZ Earned (69) at (288, 132), the totals at (358, 98 / 154). Each member
   takes the whole battle's EXP - half if down at the end (`MbResultSet`), none if not there.
+  The count ticks (SE 0x13 every third frame) unless no HP bar refills and either every member is
+  level 100 or nothing was earned (`MbResultSet` 58480-58527, DAT_000d2aea).
   Losing (0x4b1) sets flag 0xffd and shows "<leader> lost the battle..." (57016); a tap after
   0x513's picture ends the battle and `btl_lose` (from the frame loop) takes over: a script's
   battle starts the game over (area 0, the title); any other goes back to the pair's Ark - area
@@ -1395,8 +1398,10 @@ next frame 48 / 16 to the right (`ComUty_PictAnimInit(…, 2, 6, step)`). The pa
 table 0xc7b20[map] (s16 x, y; −1 for the 3D rooms) − (24, 20). The story's two markers: the
 first of the pair's 25 flags 2601 + 50 × pair + k that is set picks table 0xc7c30[gate][k][0..1]
 (s32 x, y, kind; 600 bytes a gate), each at (x − 8, y − 16) when both stay ≥ 0 (kind 1: drawn
-nearer, z −1 instead of −3). A tap anywhere (`_pad_chk_updw_box(0, 0, 480, 320)`) closes it,
-sound 2.
+nearer, z −1 instead of −3). The pair's marker pulses (`MapPrc` 76487: alpha 0 for 3 frames,
++51 a frame, 255 for 11, −51 a frame; `MapPut`'s colour alpha << 24 | 0xffffff); the story's stay
+opaque. After 4 frames (`MapPrc` 1) a tap anywhere (`_pad_chk_updw_box(0, 0, 480, 320)`) closes
+it, sound 2.
 
 Effects (`eff3d_set_with_pos_and_ang`, `eff3d_prc`): `eff.bin` (G+0x3bfd4) is 100 × (u32 offset,
 u32 size) then the packages (98 used), each a model read with `read_mdl_mem`, up to 32 at once,

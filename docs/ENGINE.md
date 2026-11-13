@@ -355,7 +355,10 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] **Shops** (Util 2, `__menuu_Shop*`; the Ark's shopkeeper, script 251 of areas 7/13/19/25):
       Talk / Buy / Sell, then Items / Weapons / Armor / Jewel, the list, how many with Yes / No,
       and "Equip it?" after buying gear (any, one worn already too; Yes refills the pair's HP and
-      MP, `pcparam_hpmp_recovery`) - laid out from ShopPut and the ComUty_* pieces it calls
+      MP, `pcparam_hpmp_recovery`); the buy list's names yellow for what the board's character
+      wears, grey past the purse or at 99, "New!" (picture 0x73) on the stock just added
+      (`_MuCom_IsShopNewState`: flag 4091, level 3 up); an empty Items / Jewel sale refused (SE 4)
+      - laid out from ShopPut and the ComUty_* pieces it calls
       (all its windows sit at 0, 0) and checked against the reference playthrough: the shopkeeper's
       art on the plates' screens; in equipment lists the character's board (`ComUty_StateBoardDraw`:
       face, LV, HP / MP / NEXT bars, EXP and the stats, the highlighted item's change) and
@@ -370,6 +373,7 @@ c101/c102/c104/m207a, 2026-10-12).
       from selling and battles; Sexy Pose's 10% off and the seeds' and genes' stat bonuses apply
       (see Skills).
       `--capture t0108_10.cmp <out> --shop main|category|buy|items|sell|count|equip|talk`
+      (`CR_SHOP_LEVEL=n`: the shop at that level with its "New!" marks on)
 - [x] Message windows as the script's `Open` picks them (`__EvtOpen` / `PutWin` / `PutMsg`: its
       style byte and lines choose a rect from 0xd3d30 and the look): style 2, the speech, on the
       torn parchment (window_hd 1024,248 1024x280, the name on the blue streak painted into it,

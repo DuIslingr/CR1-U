@@ -394,6 +394,7 @@ struct App {
         bool open = false, load = false, haveSave = false;
         int cursor = 0, phase = 0, confirm = 0, message = 0, timer = 0, anim = 0;
         int pending = 0;                   // what Yes does: 1 save, 2 load, 3 new game
+        bool startAfter = false;           // the last battle / clear data's start waits out 57083's 20 frames
         bool toTitle = false;              // Util 6's (SetModeSaveLoadMenu 3 / 4): the title follows, saved or not (SaveLoadClr)
         bool askLeave = false;             // ... its "return to the title without saving?" (0x3c) after a No
         int kind = 0;                      // the title's choice, var 1 on the way out (SaveLoadClr):
@@ -710,6 +711,7 @@ struct App {
             float exp[2] = {}, expTo[2] = {}, expStep[2] = {};
             float shownExp = 0, shownOz = 0, shownPurse = 0;
             int expTotal = 0, ozTotal = 0, purseTo = 0;
+            bool tick = true;              // DAT_000d2aea: the count's SE 0x13 every third frame
             std::vector<std::pair<int, int>> ups, items; // (member, levels), (item, how many)
             size_t upNext = 0, itemNext = 0;
         } result;
@@ -993,6 +995,9 @@ struct App {
         int spot[2] = {-1, -1};            // the pair's marker's top-left (tex2d), -1 none
         int marks[2][2] = {{-1, -1}, {-1, -1}}; // the story's two markers
         int blink = 0;                     // ComUty_PictAnimDraw's counter: 2 frames of 6
+        int wait = 0;                      // MapPrc 1: 4 frames before taps count (and the pulse runs)
+        int pulse = 0, pulseCount = 0;     // MapPrc's d3708 / d3710: the pair's spot fading in and out
+        float pulseAlpha = 0;              // d370c (0..255)
     } mapScreen;
     struct StaffRoll {                     // __menuu_StaffRoll* (Util 7): the credits over the ending's picture
         bool open = false;
@@ -1418,6 +1423,7 @@ std::vector<int> savePlates(const App& app);
 void openSaveScreen(App& app, bool load);
 void closeSaveScreen(App& app);
 void saveScreenYes(App& app);
+void saveScreenStart(App& app);
 void saveScreenChoose(App& app, int i);
 void drawSaveScreen(App& app);
 void stepSaveScreen(App& app);

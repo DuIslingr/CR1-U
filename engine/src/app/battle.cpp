@@ -872,6 +872,12 @@ void settleBattle(App& app) {
     rs.count = (most + 1) * 60;
     rs.expTotal = b.rules.expGained * (b.rules.doubleExp ? 2 : 1);
     rs.ozTotal = b.rules.ozGained * (b.rules.doubleOz ? 2 : 1);
+    // (MbResultSet 58480-58527, DAT_000d2aea: the count ticks unless no HP bar refills and either every
+    // member is level 100 or nothing - no EXP, no Oz - was earned)
+    bool refill = false, all100 = true;
+    for (int k = 0; k < 2; ++k)
+        if (rs.character[k] >= 0) refill |= rs.hp0[k] != b.rules.f[size_t(k)].hpMax, all100 &= rs.level[k] == 100;
+    rs.tick = refill || (!all100 && (rs.expTotal > 0 || rs.ozTotal > 0));
     rs.purseTo = app.game.oz;
     rs.shownPurse = float(std::max(0, rs.purseTo - (b.rules.outcome() == 2 ? rs.ozTotal : 0)));
     auto addItem = [&](int item) {
@@ -3007,7 +3013,7 @@ void stepResults(App& app) {
     // compares DAT_000d2db8 with DAT_000d2d2c, not the new purse): a fuller purse holds until the settle
     if (rs.shownPurse < float(rs.ozTotal)) rs.shownPurse = std::min(9999999.0f, rs.shownPurse + float(rs.ozTotal / 60));
     --rs.count;
-    if (rs.count % 3 == 0 && (rs.expTotal > 0 || rs.ozTotal > 0)) app.sound.play(se::kMenuBase + 0x13); // (__effgo 0x13 every third)
+    if (rs.count % 3 == 0 && rs.tick) app.sound.play(se::kMenuBase + 0x13); // (__effgo 0x13 every third)
     if (rs.count < 1) resultsSettle(rs);
 }
 

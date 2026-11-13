@@ -279,6 +279,22 @@ void saveScreenYes(App& app) {
         }
     } else if (ss.pending == 3) { // New: the boot script carries on with var 1 = the pair
         menuSound(app, se::kLoaded); // SaveLoadPrc plays it for any Yes in load mode
+        if (ss.kind == 1 || ss.kind == 3) { // (SaveLoadPrc 4, 73551-73559: any Yes but a plain new game shows
+            ss.message = 57083;             // 0x53 for 20 frames - state 5 - before it goes on)
+            ss.phase = 2, ss.timer = 0, ss.startAfter = true;
+            return;
+        }
+        saveScreenStart(app);
+        return;
+    }
+    ss.phase = 2;
+    ss.timer = 0;
+}
+
+// The title's choice taken up (SaveLoadClr): var 1 for the boot script, or a new game started
+void saveScreenStart(App& app) {
+    App::SaveScreen& ss = app.saveScreen;
+    {
         ss.open = false;
         if (ss.kind == 1) { // Set_Prtyno(0): the last battle is the first pair's, on the one save
             app.chosenPair = 1;
@@ -298,10 +314,7 @@ void saveScreenYes(App& app) {
             app.runner.stop();
             startNewGame(app);
         }
-        return;
     }
-    ss.phase = 2;
-    ss.timer = 0;
 }
 
 void saveScreenChoose(App& app, int i) { // the title's plates (savePlates): the last battle, Load, New
@@ -466,6 +479,11 @@ void stepSaveScreen(App& app) {
     if (!ss.open) return;
     ++ss.anim;
     if (ss.phase == 2 && ++ss.timer >= 20) { // SaveLoadPrc 4 / 8: 0x14 frames of "Save complete." or the load's message
+        if (ss.startAfter) {
+            ss.startAfter = false;
+            saveScreenStart(app);
+            return;
+        }
         ss.open = false;
         if (ss.load && ss.message > 0) app.titleOpen = false; // loaded: on with the game
         if (ss.toTitle) saveScreenToTitle(app); // (SaveLoadPrc 0xb: PreReturnTitle, then SaveLoadClr's ReturnTitle)
@@ -592,6 +610,25 @@ int shopUnitPrice(const App& app, int item) {
     return pose ? price - price / 10 : price; // (__menuu_ShopPrc 6: the tenth rounded down comes off)
 }
 
+// _MuCom_IsShopNewState (0x51ac4): the buy list's "NEW" (picture 0x73) - flag 0xffb set and the shop past
+// level 2: a consumable whose 0xbc150 level is the shop's or higher (the seeds 3..6 always: the loop's
+// own exit after the first row), gear whose (n - 201) % 14 + 1 is
+void plateText(cr::MenuPainter& m, const std::string& s, float x, float y, int style, float a);
+bool shopNewState(const App& app, int item) {
+    static constexpr short kNew[15][2] = {{1, 2},  {21, 2}, {28, 2}, {2, 3},  {22, 3}, {29, 3}, {32, 3}, {33, 4},
+                                          {34, 4}, {35, 4}, {36, 5}, {37, 5}, {38, 5}, {30, 6}, {31, 6}};
+    const int level = app.shop.level;
+    if (!app.game.flag(0xffb) || level < 3) return false;
+    if (item >= 1 && item <= 80) {
+        for (const auto& e : kNew) {
+            if (e[0] == item && level <= e[1]) return true;
+            if (item >= 3 && item <= 6) return true;
+        }
+        return false;
+    }
+    return item >= 201 && item <= 438 && level <= (item - 201) % 14 + 1;
+}
+
 int shopMaxCount(const App& app, int item) {
     if (app.shop.selling) return std::min(ownedCount(app, item), cr::kMaxItemCount);
     return cr::maxPurchase(shopUnitPrice(app, item), app.game.oz, ownedCount(app, item));
@@ -683,6 +720,12 @@ void shopChooseMain(App& app, int i) {
 bool shopAsksMember(const App& app) { return app.shop.category != 0; }
 void shopChooseCategory(App& app, int c) {
     App::Shop& s = app.shop;
+    // (ShopPrc's sale 2, 66123-66131: FUN_0006ae80 sounds 4 for an empty Items / Jewel, and __CheckItemList
+    // keeps the category menu up; Weapons and Armor always open)
+    if (s.selling && (c == 0 || c == 3) && cr::sellableItems(app.game, app.itemTable, shopCharacter(app), c).empty()) {
+        menuSound(app, se::kBuzzer);
+        return;
+    }
     s.category = c;
     s.listCursor = s.listTop = 0;
     s.scroll = 0;
@@ -981,11 +1024,20 @@ void drawShop(App& app) {
             const int it = s.list[size_t(index)];
             const float x = kRowX + 160 * slide, y = kFocusY + kRowH * float(index) - s.scroll;
             if (y + kRowH <= kClipTop || y >= kClipBottom) continue;
-            const float ra = shopMaxCount(app, it) > 0 ? a : a * 0.55f; // unaffordable rows dim (our addition)
+            // (ShopPut's rows, 55665-55695: the name yellow (style 3) for what the board's character wears,
+            // grey (2) when it costs more than the purse or 99 are held; the plate and icon as they are)
+            int style = 0;
+            if (!s.selling) {
+                const cr::PartyMember& pm = app.game.party[size_t(shopCharacter(app))];
+                if (std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip)) style = 3;
+                if (shopUnitPrice(app, it) > app.game.oz || ownedCount(app, it) > 98) style = 2;
+            }
+            const float ra = a;
             m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
             if (const cr::ItemParam* p = app.itemTable.item(it); p && p->icon >= 0)
                 m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, ra);
-            m.text(itemName(app, it), x + 56, y + 12, false, ra, 14);
+            plateText(m, itemName(app, it), x + 56, y + 12, style, ra);
+            if (!s.selling && shopNewState(app, it)) m.picture(0x73, x + 8, y + 4, ra); // (ComPlate: 0x73 at (x + 8, y + 4))
             drawShopNumber(m, shopUnitPrice(app, it), x + 158, y + 30, 6, 10, ra);
             m.picture(101, x + 226, y + 34, ra);
         }
@@ -2659,13 +2711,15 @@ void closeWorldSelect(App& app) { // __menuu_WldChoiceClr
     App::WorldSelect& ws = app.worldSelect;
     for (cr::Texture& t : ws.maps) app.renderer.destroy(t);
     app.worldChoiceOpen = false;
-    app.game.setFlag(0, ws.cancelled);
-    if (ws.cancelled) return;
+    // (49265-49283: flags 0 / 1 only ever set here - a cancel sets 0, a skip 1, worlds 4 and 5 clear 1 -
+    // and the band takes var 1's value, d1b48, whatever the world)
+    if (ws.cancelled) { app.game.setFlag(0, true); return; }
     app.game.vars[0] = ws.world;
     app.game.vars[1] = ws.world == 5 ? 0 : ws.level;
     app.game.vars[2] = ws.pair;
-    app.game.setFlag(1, ws.skip && ws.world != 4 && ws.world != 5);
-    app.game.bands[size_t(std::clamp(ws.pair, 0, 3))] = ws.level; // (AppCtl +0xc10 + route)
+    if (ws.skip) app.game.setFlag(1, true);
+    if (ws.world == 4 || ws.world == 5) app.game.setFlag(1, false);
+    app.game.bands[size_t(std::clamp(ws.pair, 0, 3))] = app.game.vars[1]; // (AppCtl +0x308d0 + route)
     app.treasureReroll = true; // MuCom_BitSet(0x40000000): the next area loaded draws its boxes again
 }
 

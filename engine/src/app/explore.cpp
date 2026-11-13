@@ -2564,7 +2564,10 @@ int clearDataNewGameSelfTest(App& app, const cr::SaveData& base) {
         saveScreenChoose(app, int(newPlate - plates.begin())); // New: with the clear data?
         const bool clearQuestion = app.saveScreen.kind == 3;
         saveScreenYes(app);
-        var1 = clearQuestion ? app.game.vars[1] : -2;
+        // (SaveLoadPrc 4 -> 5: "Load complete." (0x53) for 20 frames before it goes on)
+        const bool shown = app.saveScreen.phase == 2 && app.saveScreen.message == 57083;
+        for (int f = 0; f < 25 && app.saveScreen.startAfter; ++f) stepSaveScreen(app);
+        var1 = clearQuestion && shown ? app.game.vars[1] : -2;
         for (int f = 0; f < 1500 && opening < 0; ++f) {
             stepEvents(app);
             if (!app.booting && app.mapNumber >= 0) opening = app.mapNumber;
@@ -4495,7 +4498,12 @@ int runSelfTest(App& app) {
         const App::MapScreen& ms = app.mapScreen;
         problems += !ms.open || ms.gate != 0 || !ms.tex.id || ms.spot[0] != 48 || ms.spot[1] != 196 ||
                     ms.marks[0][0] != 84 || ms.marks[1][0] != 104;
+        closeMapScreen(app); // (MapPrc 1: no tap for 4 frames)
+        problems += ms.closing;
         for (int f = 0; f < 6; ++f) stepMapScreen(app);
+        const float hidden = ms.pulseAlpha; // (the pulse: 0 for its first frames)
+        for (int f = 0; f < 7; ++f) stepMapScreen(app);
+        if (hidden != 0 || ms.pulseAlpha != 255) std::printf("  map spot pulse %.0f -> %.0f (want 0 -> 255)\n", hidden, ms.pulseAlpha), ++problems;
         app.lastTicks = 0;
         drawFrame(app, false);
         const int mapErrs = app.renderer.takeErrors();
@@ -6457,6 +6465,7 @@ int runSelfTest(App& app) {
         finish();
         const bool back = !app.worldChoiceOpen && app.game.flag(0);
         app.game.setFlag(1122, true); // the first gate asks to skip its first half
+        app.game.setFlag(0, false), app.game.setFlag(1, false); // (j001_t01 0x4f8 / 0x504: the script's own, before Util 1)
         openWorldSelect(app);
         settle();
         worldSelectChoose(app, 0);
@@ -7763,6 +7772,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         app.game.items[202] = 1;
         openShop(app);
         App::Shop& s = app.shop;
+        if (const char* lv = SDL_getenv("CR_SHOP_LEVEL")) // the shop at that level with its NEW marks on (flag 0xffb)
+            s.level = std::clamp(SDL_atoi(lv), 2, 7), app.game.setFlag(0xffb, true);
         const std::string& p = app.captureShop; // main category buy items sell count equip talk
         if (p == "talk") {
             shopChooseMain(app, 0);

@@ -2041,10 +2041,11 @@ void openMapScreen(App& app) {
     ms.fade = 0;
     ms.blink = 0;
     ms.clock = 0;
+    ms.wait = 4, ms.pulse = ms.pulseCount = 0, ms.pulseAlpha = 0;
 }
 
 void closeMapScreen(App& app) {
-    if (!app.mapScreen.open || app.mapScreen.closing) return;
+    if (!app.mapScreen.open || app.mapScreen.closing || app.mapScreen.wait > 0) return; // (MapPrc 1: not for 4 frames)
     menuSound(app, se::kChoose); // __effgo(2)
     app.mapScreen.closing = true;
 }
@@ -2055,8 +2056,20 @@ void stepMapScreen(App& app) {
     ms.blink = (ms.blink + 1) % 12;
     if (ms.closing) {
         if (--ms.fade <= 0) ms.open = false, ms.closing = false;
-    } else
-        ms.fade = std::min(4, ms.fade + 1);
+        ms.pulseAlpha = 0;
+        return;
+    }
+    ms.fade = std::min(4, ms.fade + 1);
+    if (ms.wait > 0) { --ms.wait; return; }
+    // __menuu_MapPrc (76487-76530): the spot's alpha 0 for 3 frames, +51 a frame for 6, 255 for 11, -51 for 6
+    int& c = ms.pulseCount;
+    switch (ms.pulse) {
+    case 0: ms.pulseAlpha = 0; if (c > 2) ms.pulse = 1, c = 0; break;
+    case 1: if (c > 5) c = 0, ms.pulse = 2, ms.pulseAlpha = 255; else ms.pulseAlpha += 51; break;
+    case 2: ms.pulseAlpha = 255; if (c > 10) c = 0, ms.pulse = 3; break;
+    case 3: if (c > 5) c = 0, ms.pulse = 0, ms.pulseAlpha = 0; else ms.pulseAlpha -= 51; break;
+    }
+    c = (c + 1) & 0xff;
 }
 
 void drawMapScreen(App& app) {
@@ -2075,7 +2088,10 @@ void drawMapScreen(App& app) {
     const int frame = ms.blink / 6;
     for (const auto& mk : ms.marks)
         if (mk[0] >= 0) m.imagePiece(ms.tex, float(mk[0]) + 16, float(mk[1]) + 32, float(16 * frame), 368, 16, 16, a);
-    if (ms.spot[0] >= 0) m.imagePiece(ms.tex, float(ms.spot[0]) + 16, float(ms.spot[1]) + 32, float(48 * frame), 320, 48, 48, a);
+    // (MapPut 76565-76573: the spot's colour alpha << 24 | 0xffffff, the pulse; the story's marks opaque)
+    if (ms.spot[0] >= 0)
+        m.imagePiece(ms.tex, float(ms.spot[0]) + 16, float(ms.spot[1]) + 32, float(48 * frame), 320, 48, 48,
+                     a * std::clamp(ms.pulseAlpha, 0.0f, 255.0f) / 255);
 }
 
 // ---- Puzzle rooms (PuzzleScene, PuzzleManager, the touch abilities, the PuzzleObjects) ----
