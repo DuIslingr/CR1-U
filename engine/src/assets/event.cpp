@@ -310,7 +310,7 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
         if (u == 0x1e) { // voice clip, played from this page on
             uint16_t v = 0;
             rd(data, q + 2, v);
-            if (info && v != 0xFFFF) info->voices.push_back({int(pages.size()), v});
+            if (info) info->voices.push_back({int(pages.size()), v == 0xFFFF ? -1 : int(v)}); // (0xffff: -1, keep the clip over the next tap)
             q += 2;
             continue;
         }

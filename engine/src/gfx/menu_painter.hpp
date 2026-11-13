@@ -61,6 +61,8 @@ public:
     void stretch(int pict, float x, float y, float w, float h, float alpha = 1);
     // Plain colour quad, colours per left / right edge (tex2d_add4 on slot 45)
     void quad(float x, float y, float w, float h, const float* left, const float* right);
+    // The same as a parallelogram: the top edge `lean` to the right of the bottom (the battle bars, tex2d_add4)
+    void slant(float x, float y, float w, float h, float lean, const float* left, const float* right);
     // Text with its top-left at (x, y), 14 units high; dark = black (style 1), else white
     void text(const std::string& s, float x, float y, bool dark, float alpha = 1, float size = 14);
     float textWidth(const std::string& s, float size = 14);

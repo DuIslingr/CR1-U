@@ -2277,6 +2277,17 @@ int sceneAudioSelfTest(App& app) {
             ++app.dialogueSerial;
             updateVoices(app);
             check(!app.sound.linePlaying(), "an unvoiced replacement stops the previous page's line");
+            app.dialogue = {{"Kept"}, {"Next"}}; // _PrcMsg 0x1e 0xffff: the clip goes on over the next tap
+            app.dialogueVoices = {{clip, -1}, {}};
+            ++app.dialogueSerial;
+            app.dialoguePage = 0;
+            updateVoices(app);
+            app.dialoguePage = 1;
+            updateVoices(app);
+            check(app.sound.linePlaying() && !app.voiceKeep, "0x1e 0xffff keeps the clip over the page turn");
+            app.dialogue.clear();
+            updateVoices(app);
+            check(!app.sound.linePlaying(), "the closing tap cuts an unkept clip");
             app.voiceQueue = {clip};
         }
     }
@@ -5708,6 +5719,156 @@ int runSelfTest(App& app) {
         std::printf("battle messages: poison queued for its target %s, one per fighter %s, shown %d frames, the next action after "
                     "frame %d, waited %s; %d problems\n", queued ? "yes" : "NO", oneEach ? "yes" : "NO", held, nextAt,
                     waited ? "yes" : "NO", problems);
+        mapErrors += problems;
+        app.runner.stop();
+        app.game = keepGame;
+    }
+    { // Battle presentation as 2.2.0's: __dmg_prc's labels, slots and places, the rows' rolling numbers,
+      // _btlcalc_chk_dead's reactions, _btlcalc_0404's gating, the invincible's "0", +0xaea (the member
+      // whose action came up last), the talk's HUD slide, an enemy pair's pair attack with one left
+        int problems = 0;
+        std::string what;
+        auto fail = [&](bool bad, const char* name) {
+            if (bad) ++problems, what += std::string(" ") + name;
+        };
+        const cr::GameState keepGame = app.game;
+        app.game = cr::GameState();
+        cr::giveStartingItems(app.game);
+        showMap(app, 0, 0, 2);
+        app.pendingEntry = App::Entry::None;
+        app.runner.stop();
+        fail(hitLabel(1) != 0 || hitLabel(3) != 2 || hitLabel(5) != 5 || hitLabel(6) != 6 || hitLabel(7) != 7, "labels");
+        startBattle(app, {1, 0, -1, 0}, 0);
+        App::Battle& b = app.battle;
+        if (b.active) {
+            for (int f = 0; f < 60 && b.phase != App::Battle::Command; ++f) stepBattle(app);
+            // the places (480 x 320 units)
+            for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+            b.popups[0].on = true, b.popups[0].amount = 50;
+            float x = 10, y = 300;
+            placePopup(b, 0, x, y, 0);
+            fail(x != 64 || y != 272, "slot0-clamp");
+            b.popups[1].on = true, b.popups[1].amount = 123;
+            x = 470, y = 100;
+            placePopup(b, 1, x, y, 0);
+            fail(x != 420 || y != 148, "slot1-under-slot0");
+            b.popups[3].on = true, b.popups[3].amount = -5;
+            x = 200, y = 10;
+            placePopup(b, 3, x, y, 0);
+            fail(y != 72 + 28, "slot3-heal");
+            b.popups[2].on = true, b.popups[2].amount = -5;
+            x = 200, y = 280;
+            placePopup(b, 2, x, y, 0);
+            fail(y != 242 || b.popups[2].y != 272, "slot2-heal-near-slot0");
+            // five slots, a sixth dropped; nothing taken - no reaction, still jolting under 0404
+            for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+            const cr::BattleActionDef* atk = app.battleActions.get(14);
+            fail(!atk || atk->calc != 0, "action14-calc");
+            App::Battle::Actor* m2 = battleActor(app, 2);
+            App::Battle::Actor* u0 = battleActor(app, 0);
+            App::Battle::Actor* u1 = battleActor(app, 1);
+            b.turn = cr::BattleTurn();
+            b.turn.action = 14;
+            b.turn.actors[0] = 0;
+            for (int i = 0; i < 6; ++i) {
+                cr::BattleHit h;
+                h.target = 2, h.amount = 0, h.type = cr::kHitMiss;
+                b.turn.hits.push_back(h);
+            }
+            if (m2) playSlot(app, *m2, btlui::kSlotIdle);
+            b.quake = {};
+            showHits(app);
+            int on = 0;
+            for (const App::Battle::Popup& p : b.popups) on += p.on;
+            fail(on != 5, "five-slots");
+            fail(m2 && m2->slot != btlui::kSlotIdle, "no-reaction-for-0");
+            fail(b.quake.mode != 1, "0404-miss-jolts");
+            b.turn.hits.assign(1, b.turn.hits[0]);
+            b.turn.hits[0].type = cr::kHitGuard;
+            b.quake = {};
+            for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+            showHits(app);
+            fail(b.quake.mode != 0, "0404-fended-off-still");
+            // a blow on a defending member: no flinch; on one standing: 5 then 0; a revive: 7 then 0; a
+            // monster's fall: 5 then standing as it fades
+            if (u0 && u1 && m2) {
+                playSlot(app, *u0, btlui::kSlotGuard);
+                const bool guards = u0->slot == btlui::kSlotGuard;
+                playSlot(app, *u1, btlui::kSlotIdle);
+                b.turn.hits.clear();
+                cr::BattleHit h;
+                h.target = 0, h.amount = 10;
+                b.turn.hits.push_back(h);
+                h.target = 1;
+                b.turn.hits.push_back(h);
+                for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+                showHits(app);
+                fail(guards && u0->slot != btlui::kSlotGuard, "defending-no-flinch");
+                fail(u1->slot != btlui::kSlotHit || u1->then != btlui::kSlotIdle, "hit-5-then-0");
+                b.turn.hits.clear();
+                h = cr::BattleHit();
+                h.target = 1, h.amount = -100, h.revived = true;
+                b.turn.hits.push_back(h);
+                for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+                showHits(app);
+                fail(u1->then != btlui::kSlotIdle || (u1->slot != btlui::kSlotRise && u1->slot != btlui::kSlotIdle), "revive-7-then-0");
+                if (b.rules.f[2].def && !b.rules.f[2].def->strongGrowth) {
+                    b.turn.hits.clear();
+                    h = cr::BattleHit();
+                    h.target = 2, h.amount = 10, h.fell = true;
+                    b.turn.hits.push_back(h);
+                    for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+                    showHits(app);
+                    fail(m2->slot != btlui::kSlotHit || m2->then != btlui::kSlotIdle || !m2->fading, "monster-fall-5-then-0");
+                }
+            }
+            // the rows roll: a fifth of the gap a frame, 1 within 4
+            b.rollHp[0] = 1000, b.shownHp[0] = 0, b.rollMp[0] = 3, b.shownMp[0] = 0;
+            rollPartyNumbers(b);
+            fail(b.rollHp[0] != 800 || b.rollMp[0] != 2, "roll");
+            // the talk's slide: 120 a frame to 480 and back
+            app.game.setFlag(battletalk::kFlag, true);
+            std::string slide;
+            for (int f = 0; f < 5; ++f) stepMenuView(app), slide += std::to_string(b.hudSlide) + " ";
+            app.game.setFlag(battletalk::kFlag, false);
+            for (int f = 0; f < 2; ++f) stepMenuView(app), slide += std::to_string(b.hudSlide) + " ";
+            fail(slide != "120 240 360 480 480 360 240 ", "talk-slide");
+            endBattle(app, false);
+        } else
+            fail(true, "no-battle");
+        { // the rules: Is_invincible's 0 keeps the type; +0xaea follows the members as they act; a lone
+          // monster's pair attack (18) becomes its own ((model - 73) / 2 + 10)
+            cr::GameState fresh;
+            cr::giveStartingItems(fresh);
+            cr::BattleRules k;
+            k.seed(3);
+            k.setupParty(fresh, app.itemTable, 0);
+            k.setupEnemies(app.battleData, app.battleData.group(1), 0);
+            k.f[2].hp = k.f[2].hpMax = 99999;
+            k.f[2].lck = -1000;
+            k.f[2].status[cr::kStatusInvincible] = 3;
+            cr::MonsterDef paired = k.f[2].def ? *k.f[2].def : cr::MonsterDef();
+            paired.model = 77;
+            k.f[2].def = &paired;
+            k.forceAction = 18;
+            cr::BattleCommand cmd[2];
+            cmd[0].kind = cr::kCmdAttack, cmd[0].target = 2;
+            cmd[1].kind = cr::kCmdAttack, cmd[1].target = 2;
+            k.beginRound(cmd, app.battleActions);
+            cr::BattleTurn tt;
+            int members = 0, followed = 0, zero = 0, lone = 0;
+            while (k.nextTurn(app.battleActions, tt)) {
+                if (tt.actors[0] >= 0 && tt.actors[0] < 2) ++members, followed += k.soloMember() == tt.actors[0];
+                for (const cr::BattleHit& hh : tt.hits)
+                    if (hh.target == 2 && tt.actors[0] < 2) zero += hh.amount == 0 && hh.type != cr::kHitNoEffect;
+                if (tt.actors[0] == 2) lone += tt.action == (77 - 73) / 2 + 10;
+            }
+            fail(members < 1 || followed != members, "0xaea");
+            fail(zero < 1, "invincible-0");
+            fail(lone != 1, "enemy-pair-attack-alone");
+        }
+        std::printf("battle presentation (2.2.0): labels, slots, places, reactions, 0404 gating, rows' roll, talk slide, "
+                    "invincible 0, +0xaea, lone pair attack; %d problems%s\n", problems, what.c_str());
         mapErrors += problems;
         app.runner.stop();
         app.game = keepGame;

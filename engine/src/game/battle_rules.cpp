@@ -627,8 +627,6 @@ void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable
         if (const BattleActionDef* d = actions.get(e.action)) e.actionSpeed = d->speed;
     for (Entry& e : queue_) // Asura Lotus strikes 2..5 times (2..3 in pair mode)
         if (e.action == 207) e.repeats = random(e.actors[0] < 2 ? (pair ? 2 : 4) : (enemyPair ? 2 : 4)) + 2;
-    for (const Entry& e : queue_) // btlque_make_que +0xa4a: the party member queued last
-        if (e.actors[0] >= 0 && e.actors[0] < 2) soloMember_ = e.actors[0];
 }
 
 size_t BattleRules::pickNext() {
@@ -720,9 +718,17 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             if (a >= 0 && !f[size_t(a)].alive()) a = -1;
         if (e.actors[0] < 0) std::swap(e.actors[0], e.actors[1]);
         if (e.actors[0] < 0 || e.done) continue;
-        // btlque_make_que: a pair attack (18..21) with one member left becomes that one's own
-        // (+0xa2 + 10: the character's), announced anew
-        if (e.action >= 18 && e.action <= 21 && e.actors[0] < 2 && e.actors[1] < 0) e.action = f[size_t(e.actors[0])].character + 10;
+        // btlque_make_que (31236-31258): a pair attack (18..21) with one actor left becomes that one's
+        // own - a member's +0xa2 + 10 (the character's), a monster's (model - 73) / 2 + 10 (the enemy
+        // pair's) - announced anew
+        if (e.action >= 18 && e.action <= 21 && e.actors[1] < 0) {
+            const Fighter& x = f[size_t(e.actors[0])];
+            if (e.actors[0] < 2) e.action = x.character + 10;
+            else if (x.def) e.action = (x.def->model - 73) / 2 + 10;
+        }
+        // btlque_make_que (31328-31330): +0xaea - the party member whose entry comes up, each action in
+        // speed order (the victory's camera and voice, the EXP / Oz skills out of pair mode read it)
+        if (e.actors[0] < 2) soloMember_ = e.actors[0];
         out = BattleTurn();
         notices_.clear();
         note_ = 0, noteValue_ = 0;
@@ -996,7 +1002,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             Fighter& tf = f[size_t(t)];
             const int before = tf.hp;
             if (h.type == kHitKill) h.amount = tf.hp;
-            if (h.amount > 0 && invincible(t)) h.amount = 0, h.type = kHitNoEffect; // Is_invincible (a pair's either member)
+            // _btlcalc_dmg_hp (23744): Is_invincible (a pair's either member) takes the damage to 0 and
+            // leaves the result's type - a "0" with the hit's own label, if any
+            if (h.amount > 0 && invincible(t)) h.amount = 0;
             if (keepAlive && h.amount > 0 && tf.hp - h.amount < 1) h.amount = std::max(0, tf.hp - 1); // chk_karaok_dmg_hp
             if (calc == 0 && round > 3 && h.amount >= 1 && a->id == 18) lateAttack = true; // btlcalc_0404: +0xa50
             if (h.amount > 0) breakEvent(breakBy, 2, t);
@@ -1175,7 +1183,7 @@ void BattleRules::fall(int t, const int actors[2], bool itemsAndGenes) {
     tf.guarding = false;
     if (tf.enemy && !tf.rewarded) {
         tf.rewarded = true;
-        // chk_dead: pair mode either member's skill, else the member +0xa4a names
+        // chk_dead (24569-24600): pair mode either member's skill, else the member +0xaea names (the last to act)
         auto member = [&](int skill) { return pair ? has(0, skill) || has(1, skill) : has(soloMember_, skill); };
         const bool expUp = member(161), ozUp = member(162);
         expGained += tf.exp + (expUp ? tf.exp / 5 : 0);

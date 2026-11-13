@@ -275,6 +275,7 @@ struct App {
     std::vector<std::vector<int>> dialogueVoices; // per page: voice clips it starts (0x1e)
     int dialogueSerial = 0, voicedSerial = -1, voicedPage = -1; // which page's voices were started
     std::vector<int> voiceQueue;           // further clips of the same page
+    bool voiceKeep = false;                // PrcMsg 0x1e 0xffff (G+0x337f0): the clip goes on past the next tap
     int voicesPlayed = 0;                  // for tests
     int soundTestEntry = 0;
     std::vector<int> voiceEntries;         // bank entries marked as voice (sound test, T)
@@ -659,8 +660,8 @@ struct App {
         int turnFrame = 0, hitFrame = 0;
         int bounceAt = -1;                 // a reflected gene's turn: when it comes back (-1 not yet met)
         bool hitsShown = false;
-        struct Popup { cr::Vec3 at; int amount = 0, type = 0, timer = 0; bool mp = false; };
-        std::vector<Popup> popups;         // __dmg_set's five numbers
+        struct Popup { cr::Vec3 at; int amount = 0, type = 0, timer = 0; bool mp = false, on = false; float y = 0; };
+        Popup popups[5];                   // __dmg_set's five slots (+0x988, 0x28 apart; a sixth is dropped), y as last put
         std::string banner;                // the top bar: the action, the target prompt, messages
         int bannerFrames = 0;
         // ... as drawn: a font slot's text shows from the frame after it is set (font_set_utf16; drawfont_btl a
@@ -668,6 +669,8 @@ struct App {
         std::string bannerShown;
         std::vector<cr::BattleNotice> notices; // G+0xa14: the calcs' messages, one per free banner
         int shownHp[5] = {}, shownMp[5] = {}; // what the HUD shows (changes as the hits land)
+        int rollHp[2] = {}, rollMp[2] = {};   // the rows' numbers and bars rolling toward those (+0x60 / +0x68)
+        int hudSlide = 0;                     // the left HUD's offset to the left while a talk runs (+0x3c: 120 a frame to 480)
         int gaugeShown = 0;                // the badge's gauge, a step every other frame toward the rules'
         float breakPop = 0;
         uint32_t steps = 0;                // battle steps taken (CRView::prc's +0x3c6a8 count: its parity paces the gauge)
@@ -711,6 +714,7 @@ struct App {
         bool voiceSpeaks[5] = {};
         bool commandSaid[2] = {};
         int voiceRound = -1;
+        int voiceStanding[2] = {};         // FUN_00026e5c's count per side (party, monsters) as an action's blows land
         uint32_t voiceRng = 1;
         struct Quake {                     // Quake (StartQuake / EndQuake): the 3D jolts a few pixels
             int mode = 0;                  // 0 still, 1 to its end, 2 held until EndQuake
@@ -1254,8 +1258,8 @@ constexpr float kItemPitch = 48;
 constexpr int kBannerFrames = 40;  // font_set_utf16's 0x28 (the action's name)
 constexpr int kMessageFrames = 60; // 0x3c: the calcs' messages and the queued ones
 // Action slots (BattleAnim): 0 standing, 1 victory, 3 back to place, 4 defending, 5 hit,
-// 6 fallen, 7 evading; attacks use their class (8-10), genes 11, items 12
-constexpr int kSlotIdle = 0, kSlotWin = 1, kSlotReturn = 3, kSlotGuard = 4, kSlotHit = 5, kSlotDown = 6, kSlotEvade = 7;
+// 6 fallen, 7 getting up; attacks use their class (8-10), genes 11, items 12
+constexpr int kSlotIdle = 0, kSlotWin = 1, kSlotReturn = 3, kSlotGuard = 4, kSlotHit = 5, kSlotDown = 6, kSlotRise = 7; // (7: getting up - btlcalc_0424)
 } // namespace btlui
 
 constexpr int kIntroWhite = 4; // the steps under the encounter's white before btl_main 200 (10, 100, 199 - then 200)
@@ -1687,6 +1691,11 @@ void victory(App& app);
 } // namespace btlvoice
 void startTurn(App& app);
 void showHits(App& app);
+void playSlot(App& app, App::Battle::Actor& a, int slot, int then = -1);
+int hitLabel(int type);
+void placePopup(App::Battle& b, int slot, float& x, float& y, float wide);
+void rollPartyNumbers(App::Battle& b);
+void stepMenuView(App& app);
 void startBreakFx(App& app);
 bool stepBreakFx(App& app);
 void endRound(App& app);

@@ -72,7 +72,7 @@ App::Battle::Actor* battleActor(App& app, int fighter) {
 }
 
 // Plays action slot `slot` from its start; `then` >= 0 follows it once it ends (else it loops)
-void playSlot(App& app, App::Battle::Actor& a, int slot, int then = -1) {
+void playSlot(App& app, App::Battle::Actor& a, int slot, int then) {
     const LoadedModel& lm = app.battle.models[a.model];
     slot = realSlot(lm, slot);
     a.slot = slot;
@@ -745,7 +745,8 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.view = {};
     b.page = 0, b.viewState = 0, b.slide = battleSlideDistance(app), b.slideHold = 0, b.menuGone = 100, b.roundWait = false;
     b.turnOn = false;
-    b.popups.clear();
+    for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
+    b.hudSlide = 0;
     b.banner.clear();
     b.bannerFrames = 0;
     b.bannerShown.clear();
@@ -822,6 +823,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     for (int i = 0; i < 5; ++i) {
         b.shownHp[i] = rules.f[size_t(i)].hp;
         b.shownMp[i] = rules.f[size_t(i)].mp;
+        if (i < 2) b.rollHp[i] = b.shownHp[i], b.rollMp[i] = b.shownMp[i];
     }
     setBattleCamera(app, std::max(0, b.formation - 2), -1); // (under the white; btl_main 200 sets it again)
     stepBattleCamera(app);
@@ -1584,28 +1586,52 @@ void pickSpeakers(App& app) {
     if (!foes.empty()) b.voiceSpeaks[size_t(foes[size_t(rnd(app, int(foes.size())))])] = true;
 }
 
-bool mayReact(const App& app, int k) { // a side acting as a pair reacts through its speaker only
+// _btlvoice_side_is_pair (79035-79057): a side acting as a pair - or any side under an action over a
+// whole side (the action's scope 3 / 5) - reacts through its picked speaker only
+bool mayReact(const App& app, int k) {
     const App::Battle& b = app.battle;
     const bool pairSide = k < 2 ? b.rules.pair : b.rules.enemyPair;
-    return !pairSide || b.voiceSpeaks[size_t(k)];
+    const cr::BattleActionDef* act = app.battleActions.get(b.turn.action);
+    const bool allOf = act && (act->scope == 3 || act->scope == 5);
+    return (!pairSide && !allOf) || b.voiceSpeaks[size_t(k)];
 }
 
-// _btlvoice_listed_battle: these battles' monsters coming back say 0x1f..0x21 instead
-bool listedBattle(const App& app) {
+// FUN_00026e5c: how many of fighter k's side are still on the field - _IsDead counts the left (+0x93)
+// and those whose models are gone, not the HP, so the ones an action fells still count while it lands
+int sideStanding(const App& app, int k) {
+    const App::Battle& b = app.battle;
+    int n = 0;
+    for (const App::Battle::Actor& a : b.actors)
+        if (a.fighter >= 0 && a.fighter < 5 && (a.fighter < 2) == (k < 2) && b.rules.f[size_t(a.fighter)].present && !a.fading) ++n;
+    return n;
+}
+void markStanding(App& app) { // (taken before an action's blows start the fallen fading)
+    app.battle.voiceStanding[0] = sideStanding(app, 0);
+    app.battle.voiceStanding[1] = sideStanding(app, 2);
+}
+
+// _btlvoice_listed_battle: in these battles the last monster standing says 0x1f..0x21 as it falls
+// (FUN_00026e5c(k) == 1: the side's last)
+bool listedBattle(const App& app, int k) {
     static const int kList[] = {260, 261, 262, 280, 281, 282, 300, 374, 302, 320, 321, 322};
-    return std::find(std::begin(kList), std::end(kList), app.battle.start.group) != std::end(kList);
+    return k >= 2 && app.battle.voiceStanding[1] == 1 &&
+           std::find(std::begin(kList), std::end(kList), app.battle.start.group) != std::end(kList);
 }
 
-// _btlvoice_hp_change (from btlcalc_chk_dead): fighter k's HP goes from `before` to `after`
-void hpChange(App& app, int k, int before, int after) {
+// _btlvoice_hp_change (79291-79364, from btlcalc_chk_dead): fighter k took a blow of `damage` (the
+// damage, not the HP: 0 for a miss, a guard, the invincible): nothing taken 0x22..0x24, felled
+// 0x1c..0x1e (0x1f..0x21 the listed battles' last foe), standing above a quarter of its HP 0x16..0x18,
+// else 0x19..0x1b. Action 0x1b5 only while the HP left equals the damage
+void hpChange(App& app, int k, int damage) {
     if (!on(app) || speaker(app, k) < 0 || !mayReact(app, k)) return;
     const cr::Fighter& f = app.battle.rules.f[size_t(k)];
-    if (after <= 0) play(app, k, 0x22, 0x23, 0x24); // down
-    else if (before <= 0) {
-        if (k >= 2 && listedBattle(app)) play(app, k, 0x1f, 0x20, 0x21);
+    if (app.battle.turn.action == 0x1b5 && f.hp != damage) return;
+    if (damage == 0) play(app, k, 0x22, 0x23, 0x24);
+    else if (f.hp <= 0) {
+        if (listedBattle(app, k)) play(app, k, 0x1f, 0x20, 0x21);
         else play(app, k, 0x1c, 0x1d, 0x1e);
-    } else if (before > f.hpMax / 4) play(app, k, 0x16, 0x17, 0x18); // hit
-    else play(app, k, 0x19, 0x1a, 0x1b);                             // hit, low already
+    } else if (f.hp > f.hpMax / 4) play(app, k, 0x16, 0x17, 0x18);
+    else play(app, k, 0x19, 0x1a, 0x1b);
 }
 
 void healed(App& app, int k) { // _btlvoice_healed: to full, or not
@@ -1615,15 +1641,18 @@ void healed(App& app, int k) { // _btlvoice_healed: to full, or not
     else play(app, k, 0x25, 0x26, 0x27);
 }
 
-// _btlvoice_attack: how the targets fared - 0 struck, 1 a critical, 2 one fell, 3 a miss or a
-// guard, 4 a strong one fell
+// _btlvoice_attack (79620-79725): only when the action has no line of its own (the record's party slot
+// +10 for a member, the monster slot +0x10 for a monster, is -1 - else _btlvoice_turn's line was it):
+// how the targets fared - 0 struck, 1 a critical, 2 one fell, 3 nothing taken or fended off (type 6),
+// 4 one fell that was the last of its side (FUN_00026e5c(target) == 1)
 void attack(App& app, const cr::BattleTurn& t) {
     if (!on(app) || speaker(app, t.actors[0]) < 0) return;
+    if (const cr::BattleActionDef* a = app.battleActions.get(t.action); a && a->voice[t.actors[0] < 2 ? 0 : 3] != -1) return;
     int how = 0;
     for (const cr::BattleHit& h : t.hits) {
         const cr::Fighter& f = app.battle.rules.f[size_t(std::clamp(h.target, 0, 4))];
-        if (h.type == cr::kHitMiss || h.type == cr::kHitGuard || h.amount == 0) how = std::max(how, 3);
-        if (f.hp <= 0 || h.fell) how = std::max(how, f.def && f.def->strongGrowth ? 4 : 2);
+        if (h.amount == 0 || h.type == cr::kHitGuard) how = std::max(how, 3);
+        if (f.hp <= 0) how = std::max(how, sideStanding(app, h.target) == 1 ? 4 : 2);
         else if (h.type == cr::kHitCritical && how == 0) how = 1;
     }
     static const int kLine[5] = {0x2e, 0x31, 0x34, 0x37, 0x3a};
@@ -1659,7 +1688,7 @@ void command(App& app, int member) {
     playSide(app, member, kLine[idx], kLine[idx] + 1, kLine[idx] + 2);
 }
 
-// _btlvoice_turn: as a round's order is made, its first actor's action lines (the record's
+// _btlvoice_turn (from btlque_make_que, an entry's first go): the actor's action lines (the record's
 // +10.. for the party and the voiced characters, +16.. for the other monsters)
 void turn(App& app, int k, int action) {
     if (!on(app)) return;
@@ -1672,8 +1701,10 @@ void turn(App& app, int k, int action) {
     play(app, who, v[0], v[1], v[2]);
 }
 
-// _btlvoice_victory: scripted battles' own lines (0xc93d0, by the pair), else 500..502 / with
-// someone down or at a quarter HP or less 503..505
+// _btlvoice_victory (79844-79988): scripted battles' own lines (0xc93d0, by the pair), else said by
+// the member who acted last (+0xaea; either of the pair in pair mode): 500..502, "hurt" (that member
+// down or at a quarter of its HP or less - in pair mode either member) 503..505, +6 when a strong-
+// growth monster was in the battle (+0xafb: 506..511)
 void victory(App& app) {
     if (!on(app)) return;
     App::Battle& b = app.battle;
@@ -1686,15 +1717,19 @@ void victory(App& app) {
     int line = 0;
     for (const auto& e : kScripted[route])
         if (e[0] == b.start.group) line = e[1];
-    const int who = chooseSpeaker(app, 99);
+    const int leader = std::clamp(b.rules.soloMember(), 0, 1);
+    const int who = chooseSpeaker(app, leader);
     const int sp = speaker(app, who);
     if (sp < 0) return;
     if (!line) {
-        bool hurt = false;
+        bool hurt = false, strong = false;
         for (int k = 0; k < 2; ++k)
-            if (b.rules.f[size_t(k)].present) hurt |= !living(app, k) || b.rules.f[size_t(k)].hp <= b.rules.f[size_t(k)].hpMax / 4;
+            if (b.rules.f[size_t(k)].present && (b.rules.pair || k == leader))
+                hurt |= !living(app, k) || b.rules.f[size_t(k)].hp <= b.rules.f[size_t(k)].hpMax / 4;
+        for (int k = 2; k < 5; ++k)
+            if (const cr::Fighter& f = b.rules.f[size_t(k)]; f.present && f.def && f.def->strongGrowth) strong = true;
         int& v = b.voiceVariant[size_t(who)];
-        line = (hurt ? 503 : 500) + v;
+        line = 500 + (strong ? 6 : 0) + (hurt ? 3 : 0) + v;
         v = (v + 1) % 3;
     }
     const int clip = clipFor(app, sp, line);
@@ -1706,12 +1741,14 @@ void victory(App& app) {
 void startTurn(App& app) {
     App::Battle& b = app.battle;
     const cr::BattleTurn& t = b.turn;
-    if (b.voiceRound != b.rules.round) { // btlque_make_que: the round's order made
+    if (!t.cancelled) { // btlque_make_que (31461-31465), each action: an entry's first go (not a counter's)
+        // says its action line, and the sides' speakers are picked afresh
         b.voiceRound = b.rules.round;
-        btlvoice::turn(app, t.actors[0], t.action);
+        if (!t.repeat && !t.counter) btlvoice::turn(app, t.actors[0], t.action);
         btlvoice::pickSpeakers(app);
     }
-    if (t.kind == cr::kCmdEscape && t.escaped) btlvoice::playSide(app, 0, 0x13, 0x14, 0x15); // btlact_escape_init
+    // btlact_escape_init (44998-45002): the pair flag set for the call - either member says it
+    if (t.kind == cr::kCmdEscape && t.escaped) btlvoice::playSide(app, 99, 0x13, 0x14, 0x15);
     else if (t.kind == cr::kCmdAttack) btlvoice::attack(app, t);                 // btlact_attack_init
     if (t.kind == cr::kCmdAttack) { // btlact_attack_init's __effgo: actions 302 / 303's own, each attacker's swing
         if (t.action == 0x12e) app.sound.play(0xbb);
@@ -1853,36 +1890,45 @@ void showHits(App& app) {
             b.notices.push_back(n);
     if (b.turn.gone) // the monster leaves
         if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) u->fading = true;
+    btlvoice::markStanding(app); // (FUN_00026e5c's count as the blows land)
     for (const cr::BattleHit& h : b.turn.hits) {
         App::Battle::Actor* a = battleActor(app, h.target);
         const cr::Fighter& f = b.rules.f[size_t(h.target)];
-        const int hpBefore = b.shownHp[h.target];
         if (h.revived) btlvoice::playSide(app, h.target, 0x2b, 0x2c, 0x2d); // btlcalc_0424
-        else if (h.amount < 0 && !h.mp) btlvoice::healed(app, h.target);   // btlcalc_dmg_hp
-        else if (h.amount > 0 && !h.mp) btlvoice::hpChange(app, h.target, hpBefore, f.hp); // btlcalc_chk_dead
+        else if (!h.mp && h.type != cr::kHitQuiet) {
+            if (h.amount < 0) btlvoice::healed(app, h.target);           // btlcalc_dmg_hp
+            else btlvoice::hpChange(app, h.target, h.amount);            // btlcalc_chk_dead (a miss's 0 too)
+        }
         b.shownHp[h.target] = f.hp;
         b.shownMp[h.target] = f.mp;
         if (!a || h.type == cr::kHitQuiet) continue;
-        App::Battle::Popup p;
-        p.at = actorHead(app, *a);
-        p.amount = h.amount;
-        p.type = h.type;
-        p.mp = h.mp;
-        p.timer = btlui::kPopupTime;
-        b.popups.push_back(p);
-        if (h.revived) playSlot(app, *a, btlui::kSlotIdle);
+        for (App::Battle::Popup& p : b.popups) { // __dmg_set: the first free of five slots, else none
+            if (p.on) continue;
+            p = App::Battle::Popup();
+            p.on = true;
+            p.at = actorHead(app, *a);
+            p.amount = h.amount;
+            p.type = h.type;
+            p.mp = h.mp;
+            p.timer = btlui::kPopupTime;
+            break;
+        }
+        // _btlcalc_chk_dead (24466-24560) / _btlcalc_0424 (23084): a revive gets up (7, then 0); a fall -
+        // a member hit, then down looping (5, 6), a monster hit, then standing as it fades (5, 0), a
+        // strong-growth one down (5, 6) when of size 1, else standing (5, 0); a blow on one standing -
+        // 5 then 0, unless nothing was taken (a miss, fended off, the invincible's 0) or its model is
+        // defending (slot 4 playing)
+        if (h.revived) playSlot(app, *a, btlui::kSlotRise, btlui::kSlotIdle);
         else if (h.fell) {
-            const cr::MonsterDef* def = a->enemy ? b.rules.f[size_t(h.target)].def : nullptr;
-            if (def && def->strongGrowth) // btlcalc_chk_dead: a boss stays - hit, then down (size 1) or standing
+            const cr::MonsterDef* def = a->enemy ? f.def : nullptr;
+            if (def && def->strongGrowth)
                 playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle);
             else {
-                if (a->enemy) a->fading = true; // monsters fade out over 20 frames
-                playSlot(app, *a, a->enemy ? btlui::kSlotHit : btlui::kSlotDown, a->enemy ? -2 : -1);
+                if (a->enemy) a->fading = true; // monsters fade out over 20 frames (mdl_set_alpha(.., 0, 0x14))
+                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown);
             }
-        } else if (h.amount > 0)
-            playSlot(app, *a, btlui::kSlotHit, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
-        else if (h.type == cr::kHitGuard)
-            playSlot(app, *a, btlui::kSlotEvade, f.guarding ? btlui::kSlotGuard : btlui::kSlotIdle);
+        } else if (h.amount > 0 && a->slot != btlui::kSlotGuard)
+            playSlot(app, *a, btlui::kSlotHit, btlui::kSlotIdle);
     }
     // The calcs' sounds (__effgo in btlcalc_*, a target at a time; each heard once an action)
     std::vector<uint32_t> sounds;
@@ -1894,13 +1940,14 @@ void showHits(App& app) {
     auto calcSound = [&](int calc, const cr::BattleHit& h, int user, int ue, bool area, int element) {
         const int t = h.target;
         switch (calc) {
-        case 0: // 0404: fended off 0x5d; a critical 0x56, the weapon's element 0x74 + it, else 0x53..0x55
+        case 0: // 0404 (22104-22132): fended off (type 6) 0x5d; any other result - a miss, no damage, the
+            // invincible's 0 too - a critical 0x56, the weapon's element 0x74 + it, else 0x53..0x55
             if (h.type == cr::kHitGuard) sound(0x5d);
-            else if (h.amount > 0 && h.type != cr::kHitMiss)
-                sound(h.type == cr::kHitCritical ? 0x56 : ue > 0 ? 0x74 + uint32_t(ue) : 0x53 + uint32_t(b.rules.random(3)));
+            else sound(h.type == cr::kHitCritical ? 0x56 : ue > 0 ? 0x74 + uint32_t(ue) : 0x53 + uint32_t(b.rules.random(3)));
             break;
-        case 1: // 0406: an element's gene - 0x64 + 2e a target, its burst over a side 0x65 + 2e once
-            if (element > 0 && h.amount >= 0 && h.type != cr::kHitGuard && h.type != cr::kHitMiss) {
+        case 1: // 0406 (22252-22273): whenever the damage is 0 or more - an element's gene 0x64 + 2e a target,
+            // its burst over a side (scope 5) 0x65 + 2e once; actions 0x1b2 / 0x1b3 none
+            if (element > 0 && h.amount >= 0 && b.turn.action != 0x1b2 && b.turn.action != 0x1b3) {
                 if (!area) sound(0x64 + 2 * uint32_t(element));
                 else if (!areaSounded) sound(0x65 + 2 * uint32_t(element)), areaSounded = true;
             }
@@ -1935,15 +1982,19 @@ void showHits(App& app) {
             const int t = h.target;
             int id = -1;
             switch (act->calc) {
-            case 0: // btlcalc_0404: the element's hit, or the plain / critical one
-                if (h.type == cr::kHitGuard || h.type == cr::kHitMiss || h.amount <= 0) break;
+            case 0: // btlcalc_0404 (22104-22132): the element's hit, or the plain / critical one - for every
+                // result but the fended off (type 6: its sound only); a miss, no damage or the invincible's 0
+                // still jolt and show it
+                if (h.type == cr::kHitGuard) break;
                 id = h.type == cr::kHitCritical ? kCritical : ue > 0 ? 0x25 + 3 * ue : kHit;
                 startQuake(app, 3, 100, 0, 5, false); // and the screen jolts (StartQuake(3, 100, 0, 5))
                 break;
-            case 1: // 0406: elemental genes - one burst over a whole side, else on each target
-                if (h.amount >= 0 && h.type != cr::kHitGuard && h.type != cr::kHitMiss) startQuake(app, 3, 100, 0, 5, false);
-                if (act->element <= 0 || h.amount < 0) break;
-                if (act->scope == 5 || act->scope == 3) {
+            case 1: // 0406 (22252-22273): elemental genes - one burst over a whole side (scope 5), else on each
+                // target; the jolt, the effect and the sound whenever the damage is 0 or more (0x1b2 / 0x1b3 the jolt only)
+                if (h.amount < 0) break;
+                startQuake(app, 3, 100, 0, 5, false);
+                if (act->element <= 0 || b.turn.action == 0x1b2 || b.turn.action == 0x1b3) break;
+                if (act->scope == 5) {
                     if (!area) spawnEffectAt(app, 0x24 + 3 * act->element, {500, 0, t < 2 ? 523.0f : 472.0f});
                     area = true;
                 } else
@@ -1962,7 +2013,7 @@ void showHits(App& app) {
             default: break;
             }
             if (id >= 0) spawnEffect(app, id, t);
-            calcSound(act->calc, h, user, ue, act->scope == 5 || act->scope == 3, act->element);
+            calcSound(act->calc, h, user, ue, act->scope == 5, act->element);
             if (h.fell && t >= 2) { // btlcalc_chk_dead: monsters without strong growth burst
                 const cr::Fighter& f = b.rules.f[size_t(t)];
                 if (f.def && !f.def->strongGrowth) spawnEffect(app, kFall, t), app.sound.play(0x5e);
@@ -2191,10 +2242,10 @@ void endRound(App& app) {
         break;
     default: // btl_main 800 -> 899: thirty frames on the formation's camera (btlcamera_set(formation - 2)), then
         // the commands (400) and chk_karaok_between
-        // (0x320, decomp 6131-6154: the pair standing - not evading, slot 7 - and formation 2's first two
+        // (0x320, decomp 6131-6154: the pair standing - not getting up, slot 7 - and formation 2's first two
         // monsters back to their idles, mdl_set_act_nextanm 0: a cast's loop ends here)
         for (int k = 0; k < (b.formation == 2 ? 4 : 2); ++k)
-            if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive() && a->slot != btlui::kSlotEvade && a->slot != btlui::kSlotIdle)
+            if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive() && a->slot != btlui::kSlotRise && a->slot != btlui::kSlotIdle)
                 playSlot(app, *a, btlui::kSlotIdle);
         b.phase = App::Battle::RoundEnd;
         b.phaseFrames = 0;
@@ -2212,10 +2263,12 @@ int battleSlideDistance(const App& app) { return app.renderer.androidScreen() ? 
 
 // __menub_mainPrc's slides: the page shown follows the logic's - it goes out (a quarter a frame), is held
 // out a while (Defend's 20 frames), and the next comes in (state 1's sound 0x22 for the first page); with
-// none to show (a talk, the round, Options) it stays out
+// none to show (a talk, the round, Options) it stays out. The left HUD (+0x3c, 11767-11775) goes 480 to
+// the left, 120 a frame, while a talk runs (__menub_karaok_on) and comes back the same way after
 void stepMenuView(App& app) {
     App::Battle& b = app.battle;
     App::Battle::MenuView& v = b.view;
+    b.hudSlide = battletalk::on(app) ? std::min(480, b.hudSlide + 120) : std::max(0, b.hudSlide - 120);
     const int dist = battleSlideDistance(app);
     const int want = b.phase == App::Battle::Command && !battletalk::on(app) && !app.optionsOpen ? b.page : -1;
     auto live = [&]() { // the page as the logic has it
@@ -2268,7 +2321,19 @@ bool battleMenuReady(const App& app) {
 
 // One 20 Hz battle frame: the actors' motions and moves, the round, the HUD's counters
 
+// FUN_00031820 / FUN_000318f4 (29228-29330, from __menub_mainPut every frame): the party's shown HP / MP
+// step toward the value by a fifth of the gap, or by 1 within 4
+void rollPartyNumbers(App::Battle& b) {
+    auto roll = [](int& shown, int want) {
+        const int d = want - shown;
+        if (d == 0) return;
+        shown += std::abs(d) <= 4 ? (d > 0 ? 1 : -1) : d / 5;
+    };
+    for (int k = 0; k < 2; ++k) roll(b.rollHp[k], b.shownHp[k]), roll(b.rollMp[k], b.shownMp[k]);
+}
+
 void stepBattle(App& app) {
+    rollPartyNumbers(app.battle);
     App::Battle& b = app.battle;
     if (SDL_getenv("CR_BATTLE_BANNERLOG")) { // the top banner's changes, by battle frame (the last frame's state)
         static std::string shown;
@@ -2342,9 +2407,8 @@ void stepBattle(App& app) {
         else if (const App::Battle::Actor* u = battleActor(app, n.fighter)) name = u->name;
         setBanner(app, sysText(app, 57000 + n.entry, name), btlui::kMessageFrames);
     }
-    for (App::Battle::Popup& p : b.popups) p.timer -= 16;
-    b.popups.erase(std::remove_if(b.popups.begin(), b.popups.end(), [](const App::Battle::Popup& p) { return p.timer < 0; }),
-                   b.popups.end());
+    for (App::Battle::Popup& p : b.popups) // (__dmg_prc: 16 off a frame, the slot freed below 0)
+        if (p.on && (p.timer -= 16) < 0) p.on = false;
 
     battletalk::rules(app);
     if (app.game.flag(battletalk::kFlag)) { // a talk: the script runs (its fades with it), the battle waits
@@ -2412,7 +2476,7 @@ void stepBattle(App& app) {
             if (b.rules.nextTurn(app.battleActions, b.turn)) {
                 b.turnOn = true;
                 startTurn(app);
-            } else if (b.popups.empty())
+            } else if (std::none_of(std::begin(b.popups), std::end(b.popups), [](const App::Battle::Popup& p) { return p.on; }))
                 endRound(app);
             break;
         }
@@ -2724,6 +2788,26 @@ void drawBattle(App& app, float dt) {
 
 // ---- The HUD (menub_mainPut, __dmg_prc, MbResultPut) ----
 
+// __dmg_prc's label (51790): the piece type - 1 for types 1..3 (Blowout! Critical! Weak!), the type
+// itself from 4 - 5 Guard!, 6 Miss!, 7 Block! (the fended off is 6, the neutralized 7)
+int hitLabel(int type) { return type < 4 ? type - 1 : type; }
+
+// __dmg_prc's place for slot `slot` (x, y in the 480 x 320 screen's units; `wide` the widescreen margin
+// beyond the 1024 layout, which the screen's clamps move out by): y 72..272, x 64 and over; slots 1 and 3
+// 48 lower (28 for a heal) while slot 0 is up; x at most 460 - 20 a digit past the first; y kept as put
+// (+0x99c); slot 2's heal within 20 of slot 0's kept y drawn 30 higher
+void placePopup(App::Battle& b, int slot, float& x, float& y, float wide) {
+    App::Battle::Popup& p = b.popups[slot];
+    y = std::clamp(y, 72.0f, 272.0f);
+    x = std::max(x, 64.0f - wide);
+    if ((slot == 1 || slot == 3) && b.popups[0].on) y += p.amount < 0 ? 28 : 48;
+    int right = 460;
+    for (int v = std::abs(p.amount); v > 9; v /= 10) right -= 20;
+    x = std::min(x, float(right) + wide);
+    p.y = y;
+    if (slot == 2 && p.amount < 0 && y - 20 <= b.popups[0].y && b.popups[0].y <= y + 20) y -= 30;
+}
+
 // cmd_number: `digits` places 10 apart, right-aligned; the HP's red under a quarter, the
 // level's orange style (width 3)
 void drawBattleNumber(cr::MenuPainter& m, int value, float x, float y, int digits, bool low, float a, bool level = false) {
@@ -2758,17 +2842,20 @@ void drawBattleButton(cr::MenuPainter& m, float x, float y, int icon, int word, 
     m.piece(x + 40, y + 8, float(word % 5 * 88), float(word / 5 * 24 + 512), 88, 24, a, c, c, c);
 }
 
-// The red -> orange HP bar of the plates and rows (tex2d_add4 on slot 45), `w` long when full
+// The red -> orange HP bar of the plates and rows (FUN_0001b840 / FUN_0001b6c4, 13472-13560: tex2d_add4
+// on slot 45), `w` long when full: a parallelogram 3 high leaning right by 3 - the top (x + 3, y)..(x + 3 +
+// fill), the bottom (x, y + 3)..(x + fill) - fill = w x value / most (at least 1, none at 0), its right
+// end coloured that far to the full colour; under it the black one (value 1 of 1) 1 right and 1 down
 void drawBattleHpBar(cr::MenuPainter& m, float x, float y, float w, int value, int most, bool mp, float a) {
     const float black[4] = {0, 0, 0, a};
-    m.quad(x + 1, y + 1, w, 3, black, black);
+    m.slant(x + 1, y + 1, w, 3, 3, black, black);
     if (value <= 0 || most <= 0) return;
     const float f = std::clamp(float(value) / float(most), 0.0f, 1.0f);
-    const float fill = std::max(1.0f, w * f);
+    const float fill = float(std::max(1, int(w) * std::min(value, most) / most));
     const float left[4] = {mp ? 0x07 / 255.f : 0xdd / 255.f, mp ? 0xaf / 255.f : 0x02 / 255.f, mp ? 0x73 / 255.f : 0, a};
     const float right[4] = {left[0] + (1 - left[0]) * f, left[1] + (0xc3 / 255.f - left[1]) * f,
                             left[2] + (0x73 / 255.f - left[2]) * f, a};
-    m.quad(x, y, fill, 3, left, right);
+    m.slant(x, y, fill, 3, 3, left, right);
 }
 
 // menub_param_put: the element, then each status on, 20 apart
@@ -2795,7 +2882,7 @@ void drawBattlePlate(App& app, cr::MenuPainter& m, float x, float y, int fighter
     m.piece(x + 240, y, face + 28, 184, 16, 40, a);
     m.piece(x + 6, y + 25, 116, 14, 38, 10, a); // "Lv"
     drawBattleNumber(m, f.level, x + 6, y + 12, 3, false, a, true);
-    drawBattleHpBar(m, x + 96, y + 25, 100, b.shownHp[fighter], f.hpMax, false, a);
+    drawBattleHpBar(m, x + 96, y + 25, 96, b.shownHp[fighter], f.hpMax, false, a); // (_cmd_bottom_teki 13718-13720: 0x60 wide)
     std::string name;
     for (const App::Battle::Actor& ac : b.actors)
         if (ac.fighter == fighter) name = ac.name;
@@ -2817,10 +2904,12 @@ void drawBattleRow(App& app, cr::MenuPainter& m, int k, bool dimmed, float a) {
     m.piece((k == 0 ? 52 : 0) + (phone ? 16 - ex : 0), 328 + dy, float(f.character * 48), 440, 48, 48, a, c, c, c);
     m.piece(2 + dx, 370 + dy, 0, 14, 22, 10, a); // "HP"
     m.piece(86 + dx, 370 + dy, 22, 14, 22, 10, a); // "MP"
-    drawBattleNumber(m, b.shownHp[k], 24 + dx, 364 + dy, 5, b.shownHp[k] <= f.hpMax / 4, a);
-    drawBattleNumber(m, b.shownMp[k], 108 + dx, 364 + dy, 4, false, a);
-    drawBattleHpBar(m, 20 + dx, 376 + dy, 59, b.shownHp[k], f.hpMax, false, a);
-    drawBattleHpBar(m, 100 + dx, 376 + dy, 49, b.shownMp[k], f.mpMax, true, a);
+    // the numbers and bars as they roll (+0x60 / +0x68); cmd_number(hp, max, 5) red at a quarter or less,
+    // cmd_number(mp, mp, 4) red at 0
+    drawBattleNumber(m, b.rollHp[k], 24 + dx, 364 + dy, 5, b.rollHp[k] <= f.hpMax / 4, a);
+    drawBattleNumber(m, b.rollMp[k], 108 + dx, 364 + dy, 4, b.rollMp[k] <= 0, a);
+    drawBattleHpBar(m, 20 + dx, 376 + dy, 59, b.rollHp[k], f.hpMax, false, a);
+    drawBattleHpBar(m, 100 + dx, 376 + dy, 49, b.rollMp[k], f.mpMax, true, a);
     drawBattleStatus(m, f, 152 + dx, 364 + dy, a);
 }
 
@@ -2955,14 +3044,16 @@ void drawBattleHud(App& app, float W, float H) {
     App::Battle& b = app.battle;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    if (battletalk::on(app)) return; // a talk: the portraits and the message box instead
+    // a talk: the portraits and the message box instead - the left HUD sliding out first (+0x3c); the
+    // damage numbers go on (__dmg_prc runs in btl_prc whatever the menu does)
+    const bool talk = battletalk::on(app);
     m.begin(r, app.windowTex, &app.font);
-    if (b.phase == App::Battle::Results) {
+    if (b.phase == App::Battle::Results && !talk) {
         drawBattleResults(app, m, std::min(1.0f, float(b.phaseFrames + 1) / 8.0f));
         r.setOrigin(r.uiX());
         return;
     }
-    if (b.phase == App::Battle::Lost && b.eventBattle && b.gameOver.id && b.phaseFrames >= 10) {
+    if (b.phase == App::Battle::Lost && b.eventBattle && b.gameOver.id && b.phaseFrames >= 10 && !talk) {
         // btl_main's put: tex2d_add(1, 112, 32, -10, 0, 0, 256, 256) - the screen's (256, 128), 512 x 512 -
         // at (frames x 255 / 20) alpha, full from the 20th
         r.setOrigin(r.uiX());
@@ -2980,25 +3071,30 @@ void drawBattleHud(App& app, float W, float H) {
     // rows (- ex, + ey) (bottom left), the banner - ey (top); the menus stay centred
     const float ex = androidEdgeX(app), ey = androidEdgeY(app);
 
-    // Damage numbers (__dmg_prc): over their targets, projected from the 3D across the screen
+    // Damage numbers (__dmg_prc 51605-51870): over their targets, projected from the 3D across the screen
+    // and put in the 480 x 320 screen's units (tex2d's: the 1024 layout's (32, 64) + 2x) - y kept to
+    // 72..272, x to 64 and over and at most 460 less 20 a digit past the first (widescreen: the margins
+    // beyond the 1024 layout added); slots 1 and 3 48 lower (a heal 28) while slot 0 shows, slot 2's heal
+    // within 20 of slot 0's put 30 higher. Drawn opaque (tex2d_add's own colour, not the HUD's fade)
     r.setOrigin(0);
-    for (const App::Battle::Popup& p : b.popups) {
+    for (int slot = 0; slot < 5; ++slot) {
+        App::Battle::Popup& p = b.popups[slot];
+        if (!p.on) continue;
         const float* v = b.vp.m;
         const float cx = v[0] * p.at.x + v[4] * p.at.y + v[8] * p.at.z + v[12];
         const float cy = v[1] * p.at.x + v[5] * p.at.y + v[9] * p.at.z + v[13];
-        const float cw = v[3] * p.at.x + v[7] * p.at.y + v[11] * p.at.z + v[15];
-        if (cw <= 0.01f) continue;
+        float cw = v[3] * p.at.x + v[7] * p.at.y + v[11] * p.at.z + v[15];
+        if (std::fabs(cw) < 0.01f) cw = 0.01f;
         const std::string t = std::to_string(std::abs(p.amount));
-        const int width = int(t.size()) < 2 ? 20 : 20 * int(t.size()); // kept on the screen
         float px = (cx / cw * 0.5f + 0.5f) * r.screenW(), py = (1 - (cy / cw * 0.5f + 0.5f)) * cr::Renderer::kLogicalH;
-        px = std::clamp(px, 64.0f, r.screenW() - float(width));
-        py = std::clamp(py, 72.0f, 672.0f);
         r.screenToLayout(px, py); // (the iPhone layout draws 2D scaled; the projection is the screen's)
-        const float x = px / 2, y = py / 2;
+        float tx = (px - r.uiX() - 32) / 2, ty = (py - 64) / 2;
+        placePopup(b, slot, tx, ty, r.uiX() / 2);
+        const float x = tx + 16 + r.uiX() / 2, y = ty + 32, a = 1;
         const int step = (kPopupTime - p.timer) >> 4;
-        if (p.type >= 1 && p.type <= 7) { // the label: Blowout! Critical! Weak! / No Effect! Guard! Miss!
+        if (p.type >= 1 && p.type <= 7) { // the label: Blowout! Critical! Weak! / Guard! Miss! Block!
             float lx = x - 72, ly = y - 24, la = 1;
-            const int idx = p.type - 1;
+            const int idx = hitLabel(p.type);
             if (p.type < 4) { // __dmg_prc: Blowout / Critical / Weak slide in from the right (x + 18k while the timer is
                 // over 0x140) and out to the left (x - 18k under 0x40); the hop table is the others'
                 if (p.timer >= 320) { const int k = 4 - (step); lx += 18.0f * float(std::max(0, k)); la = 1 - 0.25f * float(std::max(0, k)); }
@@ -3020,30 +3116,42 @@ void drawBattleHud(App& app, float W, float H) {
         }
     }
 
-    // Top left: the Break badge - the ring, a piece per point, the holder's name
+    // Top left: the Break badge - the ring, a piece per point, the holder's name (at x - +0x3c: a talk's slide)
     const int g = b.gaugeShown;
+    const float hud = -float(b.hudSlide);
+    if (talk && b.hudSlide >= 480) {
+        r.setOrigin(r.uiX());
+        return;
+    }
     r.setOrigin(edge);
-    m.setOffset(phone ? 16.0f - ex : 0.0f, phone ? 32.0f - ey : 0.0f);
+    m.setOffset((phone ? 16.0f - ex : 0.0f) + hud, phone ? 32.0f - ey : 0.0f);
     m.piece(0, 0, 0, 120, 64, 64, a);
     for (int i = 0; i < std::min(8, std::abs(g)); ++i) {
         const short* t = kBreakTick[i];
         if (g > 0) m.piece(t[0], t[1], t[2], t[3], 32, 32, a, 0x38 / 255.f, 1, 0xe3 / 255.f);
         else m.piece(t[0], t[1], t[2], t[3], 32, 32, a, 1, 0x14 / 255.f, 0x23 / 255.f);
     }
-    if (g != 0 && b.breakPop > 1.0f) { // the label pops in large
-        const float s = b.breakPop, sz = 64 * s;
-        m.pieceTo(32 - sz / 2, 32 - sz / 2, sz, sz, g < 0 ? 512 : 384, 240, 128, 128, a * std::min(1.0f, 2.0f / s));
+    if (g != 0 && b.breakPop > 1.0f) { // the label pops in large (12840-12902: tex2d_add_sca at the badge +
+        // (32 (s - 1), 10 (s - 1)), x s about its centre, opaque)
+        const float s = b.breakPop, sz = 64 * s, cx = 32 + (s - 1) * 32, cy = 32 + (s - 1) * 10;
+        m.pieceTo(cx - sz / 2, cy - sz / 2, sz, sz, g < 0 ? 512 : 384, 240, 128, 128, a);
     } else
         m.piece(0, 0, g == 0 ? 320 : g < 0 ? 256 : 192, 120, 64, 64, a);
     m.setOffset(0, 0);
 
     r.setOrigin(r.uiX());
-    drawBreakFx(app, m); // btl_main 0x5dc
+    if (!talk) drawBreakFx(app, m); // btl_main 0x5dc
     r.setOrigin(edge);
     // Bottom left: the pair's rows (the one not choosing dimmed)
     const bool choosing = b.phase == App::Battle::Command && b.menu != App::Battle::Top && b.menu != App::Battle::EscapeAsk;
+    m.setOffset(hud, 0);
     for (int k = 1; k >= 0; --k)
         drawBattleRow(app, m, k, choosing && !b.rules.pair && b.member != k, a);
+    m.setOffset(0, 0);
+    if (talk) { // (the banner and the menus are the talk's to cover)
+        r.setOrigin(r.uiX());
+        return;
+    }
 
     // The banner: the action's name, the target prompt, the messages
     r.setOrigin(r.uiX());

@@ -75,6 +75,21 @@ void MenuPainter::quad(float x, float y, float w, float h, const float* left, co
     }
 }
 
+void MenuPainter::slant(float x, float y, float w, float h, float lean, const float* left, const float* right) {
+    if (!r_) return;
+    const int strips = left[3] == right[3] && left[0] == right[0] && left[1] == right[1] && left[2] == right[2]
+                           ? 1 : std::max(1, int(w * kScale / 4));
+    for (int i = 0; i < strips; ++i) {
+        const float t = (i + 0.5f) / strips;
+        float c[4];
+        for (int k = 0; k < 4; ++k) c[k] = left[k] + (right[k] - left[k]) * t;
+        const float x0 = x + w * i / strips, x1 = x + w * (i + 1) / strips + (i + 1 < strips ? 0.01f : 0.0f);
+        const float xy[8] = {X(x0 + lean) * kScale, Y(y) * kScale,     X(x1 + lean) * kScale, Y(y) * kScale,
+                             X(x1) * kScale,        Y(y + h) * kScale, X(x0) * kScale,        Y(y + h) * kScale};
+        r_->fillQuad(xy, c[0], c[1], c[2], c[3]);
+    }
+}
+
 MenuPainter::Cached& MenuPainter::rasterise(const std::string& s, float size) {
     const std::string key = s + '\x01' + std::to_string(int(size * 10));
     Cached& c = text_[key];

@@ -1635,9 +1635,16 @@ void drawFrontFade(App& app) {
 // One 20 Hz frame of the running script and of the things it set going.
 // Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e), one
 // after another; a new page's line replaces one still playing.
+// The taps that turn a page (0x12) or close the window (0) cut the line (__voicego(0x20100000)) - unless
+// the page said 0x1e 0xffff (G+0x337f0), which keeps it over that one tap; a page's clip waits for a kept
+// one to finish (0x1e: _voice_evnt_is_playing)
 void updateVoices(App& app) {
     if (app.dialogue.empty()) {
         app.voiceQueue.clear(); // a closed/replaced scene cannot restart its remaining clips
+        if (app.voicedPage >= 0 && app.sound.hasVoices()) { // the closing tap
+            if (!app.voiceKeep) app.sound.stopLine();
+            app.voiceKeep = false, app.voicedPage = -1;
+        }
         return;
     }
     if (!app.sound.hasVoices()) return;
@@ -1646,12 +1653,20 @@ void updateVoices(App& app) {
         app.voicedSerial = app.dialogueSerial;
         app.voicedPage = page;
         app.voiceQueue.clear();
-        app.sound.stopLine(); // an unvoiced page replaces the previous page too
+        const bool kept = app.voiceKeep;
+        if (!kept) app.sound.stopLine(); // an unvoiced page replaces the previous page too (a kept clip goes on)
+        app.voiceKeep = false;
         if (page < int(app.dialogueVoices.size()) && !app.dialogueVoices[page].empty()) {
-            const auto& clips = app.dialogueVoices[page];
-            app.sound.playLine(clips[0]);
-            ++app.voicesPlayed;
-            app.voiceQueue.assign(clips.begin() + 1, clips.end());
+            std::vector<int> clips;
+            for (int c : app.dialogueVoices[page])
+                if (c < 0) app.voiceKeep = true; // the page's 0x1e 0xffff
+                else clips.push_back(c);
+            if (!clips.empty() && kept && app.sound.linePlaying()) app.voiceQueue = clips; // (after the kept one)
+            else if (!clips.empty()) {
+                app.sound.playLine(clips[0]);
+                ++app.voicesPlayed;
+                app.voiceQueue.assign(clips.begin() + 1, clips.end());
+            }
         }
     }
     if (!app.voiceQueue.empty() && !app.sound.linePlaying()) {

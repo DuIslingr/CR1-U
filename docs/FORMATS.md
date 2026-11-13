@@ -688,7 +688,7 @@ Text is UTF-16LE, terminated by 0. Control codes, from `PrcMsg`'s jump table (co
 | 0x1c s | speaking side: 1 = the left-hand portraits (0x1000 slots) speak and the right-hand ones dim to 128/255 (slot +0x28/+0x2a), 2 = the reverse |
 | 0x01, 0x03, 0x16, 0x1a, 0x1b | one parameter; display state |
 | 0x02 | one parameter: insert the value of var(param) |
-| 0x1e n | voice clip n of `voiceevnt.bin`, numbered across all areas (j001_d04 uses 1–35, j001_d05 from 36, j001_t01 from 512, …); 65535 = none. Voiced builds only; 1.0.1 skips it (one parameter) |
+| 0x1e n | voice clip n of `voiceevnt.bin`, numbered across all areas (j001_d04 uses 1–35, j001_d05 from 36, j001_t01 from 512, …); 65535 plays none but keeps the playing clip over the next tap (a page's or the closing one, which otherwise cut it). Voiced builds only; 1.0.1 skips it (one parameter) |
 | 0x10, 0x11 | line break |
 | 0x12 | wait for a tap (new page) |
 | 0x00, 0x13, 0x14 | end |
@@ -1314,12 +1314,20 @@ command buttons (`cmd_bottom`: base (0, 184), face (52 / 96 lit, 184), icon at +
 at (344, 128 + 48k) - Solo, Pair, Escape, Options, then Attack, Genes, Items, Defend; the
 targets' plates (`cmd_bottom_teki`, 256 wide, level, name centred at +146, HP bar) at (224, 312 −
 48 (n − i)); Back (`cmd_back`) at (208, 320); the members' rows from (0, 328) - portrait (c × 48,
-440), HP / MP digits 10 apart (red under a quarter), bars 59 / 49 long - actor 0 40 right and 24
-up; the top bar (88..487, 4..28) with the action's name or the target prompt (57066 + scope).
-Damage numbers (`__dmg_set` / `__dmg_prc`, 24 frames): 24 × 24 digits 19 apart at (d × 24 + 240
-(style & 1), 24 + 24 (style / 2)) - white, red (weak), grey (resisted), green (healing) - with a
-hop per digit, and the labels Blowout! Critical! Weak! / No Effect! Guard! Miss! (144 × 24 from
-(0, 72)).
+440), HP / MP digits 10 apart (HP red at a quarter or less, MP red at 0), bars 59 / 49 long -
+actor 0 40 right and 24 up; the numbers and bars roll toward the value a fifth of the gap a frame,
+1 within 4 (FUN_00031820 / 318f4); the bars (and the plates', 96 long at +0x60, +0x19) are
+parallelograms 3 high leaning right by 3 over a black one 1 right and 1 down; while a talk runs
+the badge and the rows slide 480 to the left, 120 a frame (+0x3c); the Break label pops opaque
+at the badge + ((s − 1) 32, (s − 1) 10), × s about its centre; the top bar (88..487, 4..28) with
+the action's name or the target prompt (57066 + scope).
+Damage numbers (`__dmg_set` / `__dmg_prc`, 24 frames, five slots, a sixth dropped): 24 × 24
+digits 19 apart at (d × 24 + 240 (style & 1), 24 + 24 (style / 2)) - white, red (weak), grey
+(resisted), green (healing) - with a hop per digit, and the labels (144 × 24 from (0, 72), piece
+type − 1 for 1..3, the type from 4): Blowout! Critical! Weak! / Guard! (5) Miss! (6: fended off)
+Block! (7: neutralized). In 480 × 320 units y is kept to 72..272 and x to 64..460 − 20 a digit
+past the first; slots 1 and 3 go 48 lower (a heal 28) while slot 0 shows, slot 2's heal within
+20 of slot 0 30 higher. An invincible target's damage is 0 with the result's own type ("0").
 
 Genes (`chk_gene`, `MuCom_IsSkillEquip`, `GetSkillAddrFromPlate`): abilities are items 81..130
 (known = owned; action = item + 120, MP its +4), skills 131..186, plates 479..500 (0xd3890: 8 s16
@@ -1349,7 +1357,7 @@ one; 153 guard at a quarter of the HP or less (10 / 20%, `btlord_chk_autoguard`)
 physical hit (10 / 20%, `btlque_add_counter`); 155 healing x2 (items x20 instead of x10); 156
 genes x1.2; 158 −15 off the level difference for genes taught; 159 is read and ignored; 160
 escape always works; 161 / 162 experience / Oz + a fifth (pair mode either member's, else the
-member queued last, +0xa4a); 163 MP full after the battle. Armor counts too (`chk_gene_btl`, the
+member whose action came up last, +0xaea - set by `btlque_make_que` each action); 163 MP full after the battle. Armor counts too (`chk_gene_btl`, the
 fighter's +0x7c): each character's 222..227 (+28 a character) are 148 / 149 / 150 Blaze / Aqua /
 Gale Resistance, two of each. The critical roll compares the attackers' average level with the
 action's first target's (G+0x7a) for every target. Out of
@@ -1746,14 +1754,18 @@ The iPhone release 2.2.0 (`ChaosRings.app/data`, unencrypted, stripped) and the 
   tag speaker × 1000 (`__voicego(clip | 0x200000)`), stopping that speaker's last; each actor
   cycles three variants (+0xd3, random at the battle's start). Situations: 1..3 a member's
   commands open (solo, once a round), 4..6 at half HP or less, 13..15 / 16..18 the partner
-  down; 7..9 / 10..12 the pair's (and battles 356..359); 0x13..0x15 escaping; 0x16..0x18 hit,
-  0x19..0x1b hit at a quarter HP or less, 0x22..0x24 down, 0x1c..0x1e revived (0x1f..0x21 in
-  battles 260..262, 280..282, 300, 302, 320..322, 374), 0x25..0x27 healed, 0x28..0x2a to full,
-  0x2b..0x2d revived by a gene (0424); attacks 0x2e (struck), 0x31 (critical), 0x34 (one
-  fell), 0x37 (a miss / guard), 0x3a (a strong one fell); a round's first action its record's
-  +10.. lines; the victory 500..502, 503..505 someone down or at a quarter HP, scripted
-  battles' own (0xc93d0: battle, line by pair: 621..630); defeat 0x1f..0x21. A side acting as
-  a pair speaks (reacts) through one of the two, picked each round.
+  down; 7..9 / 10..12 the pair's (and battles 356..359); 0x13..0x15 escaping (either member);
+  a blow (`_btlvoice_hp_change`, by the damage): 0x22..0x24 nothing taken, 0x1c..0x1e felled
+  (0x1f..0x21 the side's last in battles 260..262, 280..282, 300, 302, 320..322, 374), 0x16..0x18
+  standing above a quarter of the HP, 0x19..0x1b at a quarter or less; 0x25..0x27 healed,
+  0x28..0x2a to full, 0x2b..0x2d revived by a gene (0424); attacks without a line of their own
+  0x2e (struck), 0x31 (critical), 0x34 (one fell), 0x37 (nothing taken / fended off), 0x3a (the
+  side's last fell); an entry's first go its record's +10.. lines (`btlque_make_que`, each
+  action); the victory by the member who acted last (+0xaea; either in pair mode) 500..502,
+  503..505 that member (pair: either) down or at a quarter HP, + 6 with a strong-growth monster
+  in the battle (+0xafb), scripted battles' own (0xc93d0: battle, line by pair: 621..630). A
+  side acting as a pair - or any side under an action over a whole side (scope 3 / 5) - reacts
+  through one of the two, picked each action.
 - **Languages:** area files have 8 text sections at +0x28 (0 Japanese, 1 English, 2 French,
   3 German, 4 Spanish, 5 Chinese simplified, 6 Chinese traditional, 7 Korean) and `sys.evt` 8
   header entries; 1.0.1 leaves 2–7 at 0.

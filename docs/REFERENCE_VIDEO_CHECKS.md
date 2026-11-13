@@ -25,6 +25,8 @@ at 2 frames a second is in ~/.cache/cro-issue/cr1-ref/ocr-NN.
 | Android layout: the Break badge, the rows and the banner on the phone's edges (`_menub_mainPut`) | - (the videos are the Vita's: its own screen layout, not Android's) | Code reading only (Android 1.1.1: - ox - oy, - ox + oy, - oy), and a port capture (`--layout android --battle-view top@3`, the 16:9 band in a 1024 x 768 frame - no CR_CAPTURE_SIZE in CR1:U yet) with them in the band's corners. A first version of this row took video 02 for the Android release - wrong; nothing here is confirmed on video |
 | Floor shadows under the fighters (_btl_shadow) | 02 676.0 s: soft dark ellipses under the pair and the monsters | Consistent: the port's captures show the same ellipses under each fighter (sizes not measured) |
 | The Break ring a tick every other frame, the results' totals and purse, the boss's end, "Counter", an entry announced once, the banner a frame late, the turning, the cast loops | - | Code reading only (2.2.0 and Android 1.1.1 decomps) |
+| A neutralized gene's label (`__dmg_prc` 51790: the piece is type - 1 for types 1..3, the type itself from 4; `dodgeGene_` gives type 7 with 57062) | 06 85.0 s: "Neutralized magical damage!" over two "Block!" labels | Contradicted, fixed: the port drew piece type - 1 ("Miss!"); the fended off (type 6) shows "Miss!", not "Guard!" |
+| The rows' HP / MP bars (FUN_0001b840 / 0001b6c4: parallelograms leaning right by 3 over a black one) | 06 85.0 s: the bars' ends slanted | Contradicted, fixed: the port drew rectangles |
 
 ## The Camp and the menu screens (backport of CRO-U's 2026-11-07 / 08 Camp and menu passes)
 
