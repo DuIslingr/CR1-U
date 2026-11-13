@@ -2226,6 +2226,8 @@ void drawGeneBoard(App& app, cr::MenuPainter& m, float x, float y, int plate, fl
 // mode 2: 12 - at (0, 328): the sheet's strips below the picture), and after 4 frames a tap (sound
 // 2) fades it all out and the menu ends. Sheet 1 (MuTex_GetTexInfo 1, 0xca490): 8 shorts a picture.
 int staffLines(const App& app) { // the scripts': 2.2.0's and the Vita's (voiced: sys.evt's +0x40) or 1.0.1's
+    // (Android 1.1.1 takes entries 0..0x1ab: 0x6aabe cmp r7, #427 - its own text's)
+    if (app.androidOnly) return staffroll::kAndroidLines;
     return app.phoneData || !app.battleVoiceTable.empty() ? staffroll::kPhoneLines : staffroll::kLines;
 }
 // Android 1.1.1's staff roll (InitStaffRollMenu's Open / Prc / Put, 0x6a5d0..0x6ae20) measures the phone's
@@ -2246,6 +2248,11 @@ void openStaffRoll(App& app, int mode) {
     st.mode = std::clamp(mode, 0, 2);
     st.phone = app.renderer.phoneLayout();
     st.edgeY = st.phone ? androidEdgeY(app) : 0;
+    // (Android 1.1.1 0x6aa40..0x6aa68: ((screen h / scale) x 20 / 320 + 315) x 20 / 4600 - 1.457 on a
+    // 3:2 screen, as the screen's height asks; 2.2.0 1.9217 on the iPhone, 2.826 on the iPad)
+    st.lineStep = !st.phone ? staffroll::kLine
+                  : app.renderer.androidScreen() ? ((320 + 2 * st.edgeY) * 20 / 320 + 315) * 20 / 4600.0f
+                                                 : staffroll::kPhoneLine;
     const int shown = staffShown(st);
     st.next = shown;
     for (int i = 0; i < shown; ++i)
@@ -2279,7 +2286,7 @@ void stepStaffRoll(App& app) {
                 for (int i = 0; i < shown; ++i) {
                     auto& l = st.lines[i];
                     for (int k = 0; k < steps; ++k) {
-                        l.y -= st.phone ? kPhoneLine : kLine;
+                        l.y -= st.lineStep;
                         if (l.y > (st.phone ? -20 - st.edgeY : -40)) continue;
                         const int e = st.next++;
                         l.y = st.phone ? 320 + st.edgeY : 800;

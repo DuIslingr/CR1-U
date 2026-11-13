@@ -277,6 +277,7 @@ struct App {
     int dialogueSerial = 0, voicedSerial = -1, voicedPage = -1; // which page's voices were started
     std::vector<int> voiceQueue;           // further clips of the same page
     bool voiceKeep = false;                // PrcMsg 0x1e 0xffff (G+0x337f0): the clip goes on past the next tap
+    bool voiceCloseKeeps = false;          // the message shown ends with 0x13 / 0x14: its close leaves the clip
     int voicesPlayed = 0;                  // for tests
     int soundTestEntry = 0;
     std::vector<int> voiceEntries;         // bank entries marked as voice (sound test, T)
@@ -1003,6 +1004,7 @@ struct App {
         float picY = 0;                    // +0x174: the picture's y (logical pixels), up to -1022
         bool phone = false;                // the iPhone layout (2.2.0): tex2d units, 17 lines, its timing
         float edgeY = 0;                   // the Android phone's edges beyond the 320 (androidEdgeY; 0 else)
+        float lineStep = 0;                // the lines' rise a frame (the layout's: kLine, kPhoneLine, Android's)
         struct Line { bool on = false; float y = 0; int entry = 0; } lines[32];
         float win[5] = {}, winTo[5] = {};  // ComUty_WinDispOn / Off: each window's alpha
         cr::Texture tex;                   // EndBack0<mode + 1>_hd.mct
@@ -1248,7 +1250,7 @@ constexpr int kLines = 336;
 // 2.2.0's (tex2d units): 17 lines 20 apart from y 320 (x 16), rising 1.9217 a frame, the next at
 // 320 past -20; the picture 0.125 (1.25) a frame up to -575; its block 9 has 434 lines
 constexpr float kPhoneLine = 1.92174f, kPhonePic = 0.125f, kPhonePicFast = 1.25f, kPhonePicEnd = -575;
-constexpr int kPhoneShown = 17, kPhoneLines = 434;
+constexpr int kPhoneShown = 17, kPhoneLines = 434, kAndroidLines = 428;
 }
 
 namespace mapui {
@@ -1681,6 +1683,7 @@ void cameraForTarget(App& app, int target, bool group, bool cursor = false);
 void cameraForTurn(App& app, const cr::BattleTurn& t);
 void hitCamera(App& app, const cr::BattleTurn& t, int target, bool bounce);
 bool attackSpot(const App& app, int user, int k, int target, cr::Vec3& out);
+int attackSlot(const App& app, const cr::BattleTurn& t, int k, int model, int cls);
 void battleVictory(App& app);
 LoadedModel* effectModel(App& app, int id);
 cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);

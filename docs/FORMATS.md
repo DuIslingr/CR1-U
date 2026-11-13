@@ -691,7 +691,7 @@ Text is UTF-16LE, terminated by 0. Control codes, from `PrcMsg`'s jump table (co
 | 0x1e n | voice clip n of `voiceevnt.bin`, numbered across all areas (j001_d04 uses 1–35, j001_d05 from 36, j001_t01 from 512, …); 65535 plays none but keeps the playing clip over the next tap (a page's or the closing one, which otherwise cut it). Voiced builds only; 1.0.1 skips it (one parameter) |
 | 0x10, 0x11 | line break |
 | 0x12 | wait for a tap (new page) |
-| 0x00, 0x13, 0x14 | end |
+| 0x00, 0x13, 0x14 | end; only 0x00's closing tap cuts a voice clip (`_PrcMsg` 25239-25247): a 0x13 / 0x14 end leaves it playing |
 | other codes below 0x20 | display state only |
 
 Typical messages start `1c 01 15 07`: the left-hand speaker, name plate 7.
@@ -1766,7 +1766,8 @@ The iPhone release 2.2.0 (`ChaosRings.app/data`, unencrypted, stripped) and the 
   down; 7..9 / 10..12 the pair's (and battles 356..359); 0x13..0x15 escaping (either member);
   a blow (`_btlvoice_hp_change`, by the damage): 0x22..0x24 nothing taken, 0x1c..0x1e felled
   (0x1f..0x21 the side's last in battles 260..262, 280..282, 300, 302, 320..322, 374), 0x16..0x18
-  standing above a quarter of the HP, 0x19..0x1b at a quarter or less; 0x25..0x27 healed,
+  standing above a quarter of the HP, 0x19..0x1b at a quarter or less (all 0xa8 / 0xa6 while the
+  queue entry's +0xc5 / +0xc6 is set - nothing in 2.2.0 ever sets them, so never); 0x25..0x27 healed,
   0x28..0x2a to full, 0x2b..0x2d revived by a gene (0424); attacks without a line of their own
   0x2e (struck), 0x31 (critical), 0x34 (one fell), 0x37 (nothing taken / fended off), 0x3a (the
   side's last fell); an entry's first go its record's +10.. lines (`btlque_make_que`, each
@@ -1813,7 +1814,8 @@ The iPhone release 2.2.0 (`ChaosRings.app/data`, unencrypted, stripped) and the 
   12 at (0, 220), its plates (336, 104) / (336, 160). The message box spans the screen (960 ×
   256 parchment at (32, 2 (y + 16) + 64), the name at (80, 462), the text from (104, …)); the
   staff roll scrolls 17 lines from 320, 20 apart, 1.92174 a frame, its picture 0.125 / 1.25 to
-  −575, the fast button (444, 0); Now loading (448, 288); no controller art.
+  −575, the fast button (444, 0) (Android 1.1.1: ((screen height) × 20 / 320 + 315) × 20 / 4600
+  a frame - 1.457 at 3:2 - and entries 0..427); Now loading (448, 288); no controller art.
   History (`__menuu_HistoryPut`): 2.2.0 halves the chart and scrolls it sideways as well
   (0..−120): entries from 0xbe3d0 ({x, y, kind, picture} × 41: columns 6 / 158 / 310 / 462, rows
   48..636, the finale (6, 552)) at (h + x, v + 62 + y); the strips (h + 150k, 58) at z −4 over the

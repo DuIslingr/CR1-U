@@ -107,6 +107,9 @@ struct MessageInfo {
     struct Pause { int page; int at; int frames; };
     std::vector<Pause> pauses;
     int closeAfter = -1;
+    // Only a 0 end cuts the clip at the closing tap (__voicego(0x20100000), _PrcMsg 25239-25247: the cut
+    // is under uVar11 == 0); a message ended by 0x13 / 0x14 leaves it playing
+    bool closeCutsVoice = true;
     // 0x1a n then 0x10: the window clears by itself n frames after that page is out - the page turns
     struct Turn { int page; int frames; };
     std::vector<Turn> turns;

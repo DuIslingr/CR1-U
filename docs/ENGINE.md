@@ -537,7 +537,9 @@ c101/c102/c104/m207a, 2026-10-12).
       the title. The HUD is the original's (`menub_mainPut`): the badge, the members' HP / MP
       rows, the command buttons, the action banner and the damage numbers with their labels;
       the cameras are the original's per menu, target, attack and gene / item hit (with their
-      roll). Attackers run up to the formation table's spot before their target and back; the
+      roll). Attackers run up to the formation table's spot before their target and back (a
+      monster over size 3 swings slot 9 where it stands; the swing slots as `_btlact_attack_init`'s:
+      8, j008 and m-models 0x28..0x2a / 0x57 / 0x58 10, the j007 + j008 / m008 pairs' joint 0xd); the
       fallen fade out. `--capture … --battle <group> <stage> --battle-view
       top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
       (the results that many frames in, after that many taps); `intro@<n>` the opening n battle

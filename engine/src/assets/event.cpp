@@ -274,6 +274,7 @@ bool decodeMessage(const std::vector<uint8_t>& data, size_t msg, const std::func
         rd(data, q, u);
         if (u == 0 || u == 0x13 || u == 0x14) {
             if (info && u == 0x14) info->closeAfter = std::max(0, lastPause);
+            if (info) info->closeCutsVoice = u == 0;
             break;
         }
         if (u == 0x1a) { // a timed pause in the typing

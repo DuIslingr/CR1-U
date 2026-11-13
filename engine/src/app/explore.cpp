@@ -925,6 +925,26 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     check(attackSpot(app, 2, 0, 0, sp) && sp.x == cr::kBattlePosition[1][3][0] && sp.z == cr::kBattlePosition[1][3][0] + adj, "spot-vs-pair");
                     b.rules.pair = false;
                     check(attackSpot(app, 2, 0, 1, sp) && sp.x == cr::kBattlePosition[0][4][0] && sp.z == cr::kBattlePosition[0][4][1] + adj, "spot-monster");
+                    // _btlact_attack_init's swing slots: 8, the pair's j007 + j008 / m008's joint 0xd, j008 (or a
+                    // class-10 action) and m-models 0x28..0x2a / 0x57 / 0x58 10, a monster over size 3 9
+                    {
+                        cr::BattleTurn st;
+                        st.kind = cr::kCmdAttack, st.actors[0] = 0, st.actors[1] = 1;
+                        b.rules.pair = true;
+                        const bool pairOk = attackSlot(app, st, 0, 0, 8) == 8 && attackSlot(app, st, 1, 1, 8) == 8 &&
+                                            attackSlot(app, st, 0, 6, -1) == 0xd && attackSlot(app, st, 1, 7, -1) == 0xd;
+                        b.rules.pair = false;
+                        st.actors[1] = -1;
+                        const bool soloOk = attackSlot(app, st, 0, 6, 8) == 8 && attackSlot(app, st, 0, 7, 10) == 10 && attackSlot(app, st, 0, 3, 10) == 10;
+                        st.actors[0] = 2;
+                        const int sz = monsterSize(app, 2);
+                        const bool monOk = attackSlot(app, st, 0, 0x29, 8) == (sz > 3 ? 9 : 10) && attackSlot(app, st, 0, 0x20, 10) == (sz > 3 ? 9 : 8);
+                        b.rules.enemyPair = true;
+                        st.actors[1] = 3;
+                        const bool epOk = attackSlot(app, st, 1, 0x57, 8) == 0xd && attackSlot(app, st, 1, 0x30, 8) == 8;
+                        b.rules.enemyPair = false;
+                        check(pairOk && soloOk && monOk && epOk, "attack-slots");
+                    }
                     // B3: a member's blow drawn variant 2 cuts to slot x 4 + 0x7b as its approach ends (que +0x10)
                     {
                         b.turn = cr::BattleTurn();
@@ -2288,6 +2308,22 @@ int sceneAudioSelfTest(App& app) {
             app.dialogue.clear();
             updateVoices(app);
             check(!app.sound.linePlaying(), "the closing tap cuts an unkept clip");
+            {   // a message ended by 0x13 / 0x14: its close leaves the clip playing (_PrcMsg's cut is a 0 end's)
+                const std::vector<cr::MessageInfo> keepInfo = app.dialogueInfo;
+                cr::MessageInfo mi;
+                mi.closeCutsVoice = false;
+                app.dialogue = {{"Ends with 0x13"}};
+                app.dialogueInfo = {mi};
+                app.dialogueVoices = {{clip}};
+                ++app.dialogueSerial;
+                app.dialoguePage = 0;
+                updateVoices(app);
+                app.dialogue.clear();
+                updateVoices(app);
+                check(app.sound.linePlaying() && !app.voiceCloseKeeps, "a 0x13 / 0x14 end leaves the clip at the close");
+                app.sound.stopLine();
+                app.dialogueInfo = keepInfo;
+            }
             app.voiceQueue = {clip};
         }
     }

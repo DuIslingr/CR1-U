@@ -1735,6 +1735,22 @@ void victory(App& app) {
 
 } // namespace btlvoice
 
+// _btlact_attack_init (2.2.0 0x15548; 10669-10760, ARM 0x15964..0x15b48; 10833-10960): an attack's
+// swing slot. A user over size 3 (its def +0x1a) swings 9 where it stands (state 0x76c); a member of
+// model 7 (+0xa6) or with a class-10 action (+0x17), or an enemy of model 0x28..0x2a / 0x57 / 0x58,
+// 10; model 6 in pair mode (+0xae8) or 0x55 / 0x56 in an enemy pair (+0xaec) 0xd; anyone else 8 -
+// a monster's class-10 action and 302 / 303's class 9 aren't read. The pair's second (unit 1 / 3)
+// swings 8 at its own spot, or with model 7 / 0x57 / 0x58 the joint 0xd beside the first's.
+int attackSlot(const App& app, const cr::BattleTurn& t, int k, int model, int cls) {
+    const App::Battle& b = app.battle;
+    const int user = t.actors[0];
+    if (k == 1) return (user < 2 ? model == 7 : model == 0x57 || model == 0x58) ? 0xd : 8;
+    if (user >= 2 && monsterSize(app, user) > 3) return 9;
+    if (user < 2 ? model == 7 || cls == 10 : (model >= 0x28 && model <= 0x2a) || model == 0x57 || model == 0x58) return 10;
+    if ((model == 6 && b.rules.pair) || ((model == 0x55 || model == 0x56) && b.rules.enemyPair)) return 0xd;
+    return 8;
+}
+
 void startTurn(App& app) {
     App::Battle& b = app.battle;
     const cr::BattleTurn& t = b.turn;
@@ -1807,13 +1823,18 @@ void startTurn(App& app) {
         if (it != app.game.items.end() && --it->second <= 0) app.game.items.erase(it);
     }
     const int target = !t.barriers.empty() ? t.barriers[0] : t.hits.empty() ? -1 : t.hits[0].target; // (reflected: at the barrier)
-    const bool melee = a && a->motion == 1 && target >= 0 && (target < 2) != (t.actors[0] < 2);
+    // (a monster over size 3 swings where it stands, unturned: _btlact_attack_init's 0x76c branch)
+    const bool inPlace = t.kind == cr::kCmdAttack && t.actors[0] >= 2 && monsterSize(app, t.actors[0]) > 3;
+    const bool melee = a && a->motion == 1 && target >= 0 && (target < 2) != (t.actors[0] < 2) && !inPlace;
     for (int k = 0; k < 2; ++k) {
         App::Battle::Actor* u = t.actors[k] >= 0 ? battleActor(app, t.actors[k]) : nullptr;
         if (!u) continue;
         int slot = a && a->cls >= 8 && a->cls < cr::kBattleAnimSlots ? a->cls : 8;
-        if (t.kind == cr::kCmdAttack && t.actors[1] >= 0 && k == 1) slot = 9; // the pair attack's second
-        if (target >= 0 && t.kind == cr::kCmdAttack && !melee) faceFighter(app, *u, target); // (gene_init / item_init turn no one)
+        if (t.kind == cr::kCmdAttack) slot = attackSlot(app, t, k, u->modelId, a ? a->cls : -1);
+        // (the joint 0xd's second stays at home, turned to the target: mdl_ang_y(it, target), no setpos)
+        const bool joint = t.kind == cr::kCmdAttack && k == 1 && slot == 0xd;
+        const bool moves = melee && !joint;
+        if (target >= 0 && t.kind == cr::kCmdAttack && !moves && !inPlace) faceFighter(app, *u, target); // (gene_init / item_init turn no one)
         u->turnHome = false, u->approached = false;
         if ((t.kind == cr::kCmdGene || t.kind == cr::kCmdItem) && !melee) {
             // _btlact_gene_init / _btlact_item_init (0x3ef28 / 0x4033c): _mdl_set_act_motion_loop(slot, 2,
@@ -1823,7 +1844,7 @@ void startTurn(App& app) {
             const cr::BattleAnim ca = app.battleData.anim(u->modelId, u->slot);
             if (ca.loopEnd > ca.loopStart) u->loopFrom = ca.loopStart, u->loopTo = ca.loopEnd;
         } else
-            playSlot(app, *u, slot, melee ? btlui::kSlotReturn : btlui::kSlotIdle);
+            playSlot(app, *u, slot, moves ? btlui::kSlotReturn : btlui::kSlotIdle);
         const cr::BattleAnim an = app.battleData.anim(u->modelId, slot);
         // (_btlact_gene_init / _btlact_item_init: the hit at the cast slot's loop start + 30 - the item's
         // slot 12, the gene's its class)
@@ -1834,7 +1855,7 @@ void startTurn(App& app) {
                          : t.kind == cr::kCmdAttack ? 18
                                                     : 30;
         u->moveFrom = u->moveTo = 0;
-        if (melee) { // an attack: _btlact_attack_init's btlmove_setpos_angy to the formation table's spot (attackSpot)
+        if (moves) { // an attack: _btlact_attack_init's btlmove_setpos_angy to the formation table's spot (attackSpot)
             const App::Battle::Actor* tv = battleActor(app, target);
             cr::Vec3 spot;
             if (tv && t.kind == cr::kCmdAttack && attackSpot(app, t.actors[k], k, target, spot)) {
@@ -1861,6 +1882,15 @@ void startTurn(App& app) {
             }
         }
     }
+    // (_btlact_attack_init 10838-10900 / 10920-10958: the pair's blow lands - que +0xb0 - at the second's
+    // hit frame when theirs is the joint 0xd or the second is model 1 (an enemy pair's 0x4b / 0x4c))
+    if (t.kind == cr::kCmdAttack && t.actors[1] >= 0)
+        if (const App::Battle::Actor* u2 = battleActor(app, t.actors[1])) {
+            const int m = u2->modelId;
+            const int slot2 = attackSlot(app, t, 1, m, a ? a->cls : -1);
+            const bool second = slot2 == 0xd || (t.actors[0] < 2 ? m == 1 : m == 0x4b || m == 0x4c);
+            if (const int h = app.battleData.anim(m, slot2).hit; second && h > 0) b.hitFrame = h;
+        }
 }
 
 // The hits land: the numbers, the targets' reactions, the HP the HUD shows

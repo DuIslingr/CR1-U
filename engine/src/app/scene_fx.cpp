@@ -1648,18 +1648,20 @@ void drawFrontFade(App& app) {
 // One 20 Hz frame of the running script and of the things it set going.
 // Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e), one
 // after another; a new page's line replaces one still playing.
-// The taps that turn a page (0x12) or close the window (0) cut the line (__voicego(0x20100000)) - unless
+// The taps that turn a page (0x12) or close the window (0; not a 0x13 / 0x14 end) cut the line (__voicego(0x20100000)) - unless
 // the page said 0x1e 0xffff (G+0x337f0), which keeps it over that one tap; a page's clip waits for a kept
 // one to finish (0x1e: _voice_evnt_is_playing)
 void updateVoices(App& app) {
     if (app.dialogue.empty()) {
         app.voiceQueue.clear(); // a closed/replaced scene cannot restart its remaining clips
         if (app.voicedPage >= 0 && app.sound.hasVoices()) { // the closing tap
-            if (!app.voiceKeep) app.sound.stopLine();
+            if (!app.voiceKeep && !app.voiceCloseKeeps) app.sound.stopLine();
             app.voiceKeep = false, app.voicedPage = -1;
         }
+        app.voiceCloseKeeps = false;
         return;
     }
+    app.voiceCloseKeeps = !app.dialogueInfo.empty() && !app.dialogueInfo.back().closeCutsVoice;
     if (!app.sound.hasVoices()) return;
     const int page = int(std::min(app.dialoguePage, app.dialogue.size() - 1));
     if (app.dialogueSerial != app.voicedSerial || page != app.voicedPage) {
