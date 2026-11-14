@@ -1966,6 +1966,7 @@ cr::Mat4 npcWorld(const cr::FieldNpc& n);
 cr::FieldNpc* findNpc(App& app, int id);
 bool actorPos(App& app, int id, cr::Vec3& out);
 void setActor(App& app, int id, cr::Vec3 p, const float* yaw, bool keepY);
+bool scriptFloor(const App& app, cr::Vec3 p, float r, float& y);
 void buildNpcDraws(App& app);
 std::vector<cr::WalkBody> walkBodies(const App& app);
 void animateNpcs(App& app, float dt);

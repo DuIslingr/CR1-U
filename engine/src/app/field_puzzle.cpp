@@ -1179,7 +1179,14 @@ void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
         if (std::fabs(p.x - old.x) + std::fabs(p.z - old.z) < 1e-4f) facing = Facing::Keep;
         else yaw = travelYaw(p.x - old.x, p.z - old.z);
     }
-    setActor(app, id, p, facing == Facing::Keep ? nullptr : &yaw, false);
+    if (id == 0) setActor(app, id, p, facing == Facing::Keep ? nullptr : &yaw, false); // (the leader: the three
+    // ops' leader branches write gac+0xd6c.. with no floor call (19452-19468), FieldPCCtrl's getFloor 1000 takes it down)
+    else { // an NPC: __EvtSetc / __EvtFrmSetc / __EvtFrmSetc2 (2.2.0 18005 / 18422 / 19490) call _get_floor(x, y, z, 10) -
+        cr::Vec3 at = p; // y the floor's only when its KD node lists one within 20 of the record's y, else the record's own
+        float fy;
+        if (scriptFloor(app, at, 10.0f, fy)) at.y = fy;
+        setActor(app, id, at, facing == Facing::Keep ? nullptr : &yaw, true);
+    }
     if (facing == Facing::Snap) {
         if (cr::FieldNpc* n = id ? findNpc(app, id) : nullptr) n->shownSet = false; // (the model's yaw with it)
         if (id == 0) app.leaderYawSet = false;
@@ -4034,6 +4041,18 @@ bool actorPos(App& app, int id, cr::Vec3& out) {
     const cr::FieldNpc* n = findNpc(app, id);
     if (!n) return false;
     out = {n->pos[0], n->pos[1], n->pos[2]};
+    return true;
+}
+
+// _get_floor(out, x, y, z, r) (2.2.0 0x6bf88, asm 0x6bf88-0x6c068): Cmp::CmpBase::searchNode(pos, r) (0x2dac0), then
+// that node's CmpBasic::getFloor (vtable +0x20, blx r12 at 0x6c048; 0x2dcf8) with twice r (vadd.f32 d0, d8, d8 at
+// 0x6c020) - the highest floor polygon in the node's floor list under (x, z) with |trunc(y - h)| <= 2r; false (y left
+// as it is) when the file has no tree or there is no such floor
+bool scriptFloor(const App& app, cr::Vec3 p, float r, float& y) {
+    const int node = cr::searchNode(app.collisionData, p, r);
+    float h;
+    if (node < 0 || cr::getFloor(app.collisionData, node, p, 2.0f * r, h) < 0) return false;
+    y = h;
     return true;
 }
 

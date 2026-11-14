@@ -2467,6 +2467,61 @@ int fieldPresentationSelfTest(App& app) {
                     shown ? "yes" : "NO", killed ? "yes" : "NO", sceneProblems);
         problems += sceneProblems;
     }
+    { // Placed actors' floor: __EvtSetc / FrmSetc / FrmSetc2 (2.2.0 18005 / 18422 / 19490) call _get_floor(x, y, z, 10)
+      // (0x6bf88) - getFloor within 20 of the record's y, in the KD node's floor list; none: the record's y
+        int floorProblems = 0;
+        const cr::GameState keepGame = app.game;
+        auto show = [&](int area, int map) {
+            const auto it = std::find(app.maps.begin(), app.maps.end(), cr::kMapCollisionFile[map]);
+            if (it == app.maps.end()) return false;
+            showMap(app, int(it - app.maps.begin()), map, area);
+            app.runner.stop();
+            app.pendingEntry = App::Entry::None;
+            return true;
+        };
+        ViewerHost host(app);
+        auto placedY = [&](int id, float x, float y, float z, float& out) {
+            const float rec[6] = {x, y, z, 0, 0, 0};
+            host.placeNpc(id, rec, 0, cr::EventHost::Facing::Keep);
+            const cr::FieldNpc* n = findNpc(app, id);
+            if (n) out = n->pos[1];
+            return n != nullptr;
+        };
+        // j001_t01's opening stage (map 113, t0150_10: its one square listed at node +10 alone, no floor list): Escher
+        // (npc 415, c107; FrmSetc2 at 0x85d4) stays at the record's 29.67 over it, in shot behind the reaper's rise
+        // (Part 1 645-649 s) - not down on the square at 0, under the camera's frame
+        float y = 0;
+        bool stage = false, rise = false, near = false, far = false;
+        if (show(7, 113)) {
+            host.loadNpc(415);
+            stage = placedY(415, -2.21f, 29.67f, 0.07f, y) && std::fabs(y - 29.67f) < 1e-3f &&
+                    app.collisionData.nodes.size() == 1 && app.collisionData.nodes[0].floors.empty();
+        } else ++floorProblems;
+        // j001_d02's d0218 (map 27): FrmSetc 417 at 0x5482 on y 0 under a floor 47.49 up stays at 0 (the old
+        // "highest floor up to 1000 above" rule took it up there)
+        if (show(3, 27)) rise = placedY(417, 103.85f, 0.0f, 70.57f, y) && std::fabs(y) < 1e-3f;
+        else ++floorProblems;
+        // the hall (map 97): an NPC placed 15 over the floor the leader stands on is put on it, 25 over it stays
+        if (show(7, 97)) {
+            int id = -1;
+            for (const cr::FieldNpc& n : app.npcs)
+                if (n.model >= 0) { id = n.id; break; }
+            float h;
+            const cr::Vec3 at = app.walker.pos;
+            if (id >= 0 && app.havePlayer &&
+                cr::getFloor(app.collisionData, cr::searchNode(app.collisionData, at, 10), at, 1000, h) >= 0) {
+                far = placedY(id, at.x, h + 25, at.z, y) && std::fabs(y - (h + 25)) < 1e-3f;
+                near = placedY(id, at.x, h + 15, at.z, y) && std::fabs(y - h) < 1e-3f;
+            }
+        } else ++floorProblems;
+        floorProblems += !stage + !rise + !near + !far + app.renderer.takeErrors();
+        std::printf("placed actors' floor: Escher over t0150's unlisted square kept at 29.67 %s, d0218's 417 at 0 not "
+                    "taken up to the floor 47.49 over it %s, 15 over the hall's floor put on it %s, 25 over it kept %s; "
+                    "%d problems\n", stage ? "yes" : "NO", rise ? "yes" : "NO", near ? "yes" : "NO", far ? "yes" : "NO",
+                    floorProblems);
+        app.game = keepGame;
+        problems += floorProblems;
+    }
     {
         // Render the loaded atlas's panel over magenta and check both halves in every layout.
         // This also guards the iOS / Vita art when changing Android's separate parchment path.

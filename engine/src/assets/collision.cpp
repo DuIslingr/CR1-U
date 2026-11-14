@@ -66,7 +66,7 @@ bool parseCollision(const std::vector<uint8_t>& f, Collision& out, std::string* 
     }
     const size_t end = fixedEnd + lists * 2;
     if (end > f.size() || f.size() - end >= 16) return fail("layout does not match file size");
-    bool listed = false;
+    bool listed = false, anyList = lists > 0;
     out.nodes.clear();
     if (out.treeType == 0) out.nodes.resize(size_t(nNodes));
     for (int i = 0, at = 0; i < nNodes; ++i) {
@@ -94,7 +94,11 @@ bool parseCollision(const std::vector<uint8_t>& f, Collision& out, std::string* 
     }
     if (!listed) // (no lists: by the normal, as before)
         for (auto& poly : out.polygons) poly.floor = poly.normal[1] > 0.7f, poly.wall = !poly.floor && poly.normal[1] > -0.7f;
-    if (out.nodes.empty() || !listed) { // (no KD tree: one leaf holding them all)
+    // (no KD tree, or a tree without lists: one leaf holding them all). A tree whose lists hold only the
+    // other kinds (+8 / +10) keeps its empty floor and wall lists: the scene stages d0150..d0550_10 and
+    // t0150_10 list their one square at +10 alone, so getFloor finds no floor there and _get_floor leaves a
+    // placed actor at the record's y (j001_t01's Escher, npc 415 (c107), at 29.67 over t0150: Part 1 645-649 s)
+    if (out.nodes.empty() || !anyList) {
         out.nodes.assign(1, CollisionNode());
         for (int i = 0; i < nPolys; ++i) {
             if (out.polygons[size_t(i)].floor) out.nodes[0].floors.push_back(int16_t(i));

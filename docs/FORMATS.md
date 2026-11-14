@@ -434,7 +434,9 @@ What is ground and what is a wall comes from these lists (`Cmp::CmpBasic::getFlo
 reads the node's first count only, `checkHitWallToSphere` the second, neither the normal): seven ramps
 with normal.y 0.62..0.68 (d0207 49/50, d0309 16, d0311 29/30, d0408 97/98) are floors, the 10 × 10
 squares at the origin (polygon 0, and d0503's 12, d0509's 1 / 13 / 14) are in neither of those lists
-(12 polygons; some maps list them under +10, which nothing reads), and d0406's one downward polygon
+(12 polygons; some maps list them under +10, which nothing reads - the six scene stages d0150, d0250,
+d0350, d0450, d0550 and t0150 list their one square there alone, so they have no floor at all: the port
+keeps their empty lists, and a placed actor there stands at its record's y), and d0406's one downward polygon
 (20) sits in a floor list (at y 0, level with the floor round it: the walker, reading the lists, takes
 it as getFloor does; the port's placement helpers leave it out). Data (2.2.0, 114 files): 2,709 floor
 polygons, 3,889 walls.
@@ -787,7 +789,7 @@ NPC scripts play).
 |---|---|
 | `FrmSet n` | scene n, its first record |
 | `FrmJmp f` | the record with frame f, else the nearer neighbour, else the last (a negative f too: `FUN_0001fa98` compares unsigned) |
-| `FrmSetc2 npc, flag` | place the actor from the current record (position, Y rotation), y snapped to the floor (`get_floor`) |
+| `FrmSetc2 npc, flag` | place the actor from the current record (position, Y rotation); an NPC's y snapped to the floor by `_get_floor(x, y, z, 10)` (0x6bf88: searchNode 10, the node's getFloor within 20 of the record's y; none: the record's y stands - so too `Setc` and `FrmSetc`); the leader's y left to the field's getFloor |
 | `FrmSetc npc, dir` | place from the current record; `dir` −4499…999 = degrees, 1000 keep the facing, 2000 face the way it moved (turns = (1 − dz / len) / 4, 1 − that when dx < 0: linear in the cosine, so a 45° move faces 26.4°), else 0 |
 | `FrmAdjc npc, f, n, dir` | walk to record f's position over n frames in a straight line (`npc_autoctl_set_fream`); the facing per `dir` is written as the move starts - no turn over it |
 | `FrmAdjc2 npc, f, n, mode` | the same; mode 0 turns to the record's angles at once and moves (`__EvtFrmAdjc2` writes the rotation, `npc_autoctl_set_fream` mode 1), 2 moves in y too without turning (mode 4), anything else (1, 10 / 20) turns to them over the move (mode 2) |
