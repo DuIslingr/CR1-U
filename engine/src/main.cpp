@@ -1415,7 +1415,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         app.fingers.held = std::max(0, app.fingers.held - 1);
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        if (app.press.down || app.campPointer.down) { // touchesMoved: a held touch's way (App::fingerMoved)
+        // touchesMoved: a held touch's way (App::fingerMoved) - a touch's only (SDL's touch-made mouse events): a real
+        // mouse's jitter during a click mustn't drop it
+        if ((app.press.down || app.campPointer.down) && event->motion.which == SDL_TOUCH_MOUSEID) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
             const float fx = event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f);

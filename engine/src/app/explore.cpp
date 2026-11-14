@@ -2611,7 +2611,7 @@ int mobileInputSelfTest(App& app) {
         const float y = (ly - y0) * 1000 / (y1 - y0) * wh / app.renderer.frameHeight();
         SDL_Event e{};
         e.type = type;
-        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y;
+        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y, e.motion.which = SDL_TOUCH_MOUSEID; // (a touch's)
         else e.button.x = x, e.button.y = y, e.button.button = SDL_BUTTON_LEFT;
         SDL_AppEvent(&app, &e);
     };
@@ -3628,7 +3628,7 @@ int touchSemanticsSelfTest(App& app) {
         e.type = type;
         const float x = (lx - x0) * 1000 / (x1 - x0) * ww / app.renderer.frameWidth();
         const float y = (ly - y0) * 1000 / (y1 - y0) * wh / app.renderer.frameHeight();
-        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y;
+        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y, e.motion.which = SDL_TOUCH_MOUSEID; // (a touch's)
         else e.button.x = x, e.button.y = y, e.button.button = SDL_BUTTON_LEFT;
         SDL_AppEvent(&app, &e);
     };
