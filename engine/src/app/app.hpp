@@ -501,12 +501,40 @@ struct App {
         int phaseT = 100;
         bool barIn = true;                 // the main page's Back bar (window 4) coming on with it: at the Camp's
                                            // opening and back from Items (the other pages leave it up)
+        // A state's change on the Equip, Status and Genes pages, and an Items category's (their ComUty_WinDispOn /
+        // Off at the original's frames - campSlide): the windows of the view left (`view`, a copy of what they
+        // showed) going, the new view's coming; t counts frames since the change (100: settled), input waits
+        // until t reaches `wait` (the original's states that only count frames or wait on a window's move)
+        enum Role { RTitle, RSection, RBoard, RGene, RList, RPlates, RFaces, RBar, kRoles };
+        struct Move { int at = -1; float dx = 0; bool cut = false; }; // at: its frame (-1 none); cut: gone at once
+        struct View {
+            Page page = Main;
+            Phase phase = List;
+            int member = 0, slot = 0, statusView = 0, category = 0, plate = 0, listCursor = 0, scrollKey = -1;
+            std::vector<int> list;
+            float scroll = 0, swipe = 0;
+        };
+        struct Slide {
+            int t = 100, wait = 0;
+            bool was = false;              // the view left drawn (else only the new view's windows come)
+            View view;
+            std::array<Move, kRoles> out, in;
+        } slide;
+        // The list (or the Status board) following a finger sideways: MuScrList's d1fa4 (back to 0 by 10 a frame
+        // once let go), ComUty_GetSwipeX's offset (d304c)
+        float swipe = 0;
+        int lastSlot = 0;                  // Equip: the slot last chosen (d2fac) - the other member's list opens on it
+        int toOptions = 0;                 // Options chosen: frames since (CampMain 6 takes every window off, 7 opens it)
+        bool optionsUp = false;            // ... Options over the Camp: on its return CampMain 9 puts the windows on
+        bool headIn = false;               // "Camp" (window 0) fading in with them (back from Options)
+        bool mainGone = false;             // the main page's windows already off (the first Items tap's 56016 took them)
         std::array<cr::Texture, 22> plateArt; // gene_m*c.mct, loaded when a board first shows them
         std::array<cr::Texture, 8> statusArt; // the records' Status portraits (j001_L01.. : 0xca490)
     } camp;
     float campClock = 0;
     struct CampPointer {
         bool down = false, dragging = false, bar = false;
+        bool sideways = false, upright = false; // a list's drag taken as a swipe (MuScrList d1f9d) or a scroll (d1f9e)
         float startX = 0, startY = 0, lastY = 0, remainder = 0;
         float px = 0, py = 0;
         float curPx = -1e9f, curPy = -1e9f; // where it is now (the frame's pixels): the control held lights
@@ -1555,6 +1583,8 @@ void drawClockAndOz(App& app, cr::MenuPainter& m, float a);
 void drawFaceBoard(App& app, cr::MenuPainter& m, float x, float y, int c, int hp, int hpMax, int mp, int mpMax, float a, const cr::GameState* gs = nullptr);
 void memberHpMp(const App& app, int c, int& hp, int& hpMax, int& mp, int& mpMax, const cr::GameState* gs = nullptr);
 float campEase(const App& app);
+bool campBusy(const App& app);
+std::vector<int> campStatusItems(const App& app, int view);
 float campListX(const App& app);
 int campScrollCount(const App& app);
 bool campScrollable(const App& app);

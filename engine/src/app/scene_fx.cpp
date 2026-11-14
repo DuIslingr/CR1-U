@@ -2264,7 +2264,10 @@ int menuMaskWanted(const App& app, bool& atOnce) {
         return app.saveScreen.load ? 0 : -1;
     }
     if (app.tutoTex.on) return 0;
-    if (app.campOpen) return 1;
+    // (the Camp's: none under a once-only message - CampMainSet masks only once 56010 is read (63017-63033, 63192),
+    // the first Items tap clears it for 56016 (63266-63274) - nor from CampMain 0xd on, the frame after Back:
+    // MuCom_MenuClrMask, the Camp closing seven frames later)
+    if (app.campOpen) return app.camp.notice || app.camp.leaving >= 2 ? -1 : 1;
     if ((app.optionsOpen && !optionsAbout(app)) || app.shop.open || app.worldChoiceOpen || app.lastBattle.open) return 1;
     if (app.battle.active && app.battle.phase == App::Battle::Results && app.battle.result.stage != 3) return 1; // (MbResultPrc 0 .. 10)
     return -1;

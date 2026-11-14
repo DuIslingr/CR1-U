@@ -2299,7 +2299,10 @@ int mobileInputSelfTest(App& app) {
             if (view >= 2) {
                 c.phase = App::Camp::Slot;
                 c.member = 0, c.slot = c.slotTop = 0;
-                if (view == 3) campChoose(app);
+                if (view == 3) { // (its list in from the right a frame on; input from EquipProc 0xc, the frame after)
+                    campChoose(app);
+                    for (int f = 0; f < 8 && campBusy(app); ++f) stepCamp(app);
+                }
             }
             const auto phase = c.phase;
             const int n = campScrollCount(app);
@@ -2338,10 +2341,46 @@ int mobileInputSelfTest(App& app) {
             c.page = App::Camp::Equip, c.phase = App::Camp::Slot, c.anim = anim;
             c.slot = c.slotTop = slot; // (the slot on the line)
             tap(campListX(app) + 60, campui::kFocusY + 20);
-            const bool ok = c.slot == slot && (slot == 3 ? c.phase == App::Camp::Slot : c.phase == App::Camp::List);
+            // (every slot opens its list - the Human Genes' too, EquipProc 0x17 with kind 0xb: Part 01 1190 s)
+            const bool ok = c.slot == slot && c.phase == App::Camp::List;
             problems += !ok;
             if (!ok) std::printf("mobile equipment: layout %d wide %d anim %d slot %d FAILED\n", layout, wide, anim, slot);
             ++slots;
+        }
+        { // MuScrList_SetSwipeMove's lists and the Status board (ComUty_GetSwipeX): a sideways drag past 10 holds the
+          // list beside the finger (less those 10), let go past 30 it turns what the Back bar's arrows turn (SE 5);
+          // short of it the list eases back 10 a frame
+            openCamp(app);
+            auto& c = app.camp;
+            const float x = campui::kRowX + 60;
+            auto drag = [&](float dx) {
+                pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, x, 200);
+                pointer(SDL_EVENT_MOUSE_MOTION, x + dx, 200);
+                const float held = c.swipe;
+                pointer(SDL_EVENT_MOUSE_BUTTON_UP, x + dx, 200);
+                return held;
+            };
+            campOpenPage(app, 0); // Items: the next category
+            c.anim = 8;
+            const int cat0 = c.category;
+            int bad = 0;
+            auto off = [](float v, float want) { return std::fabs(v - want) > 0.5f; }; // (the layouts' pixel rounding)
+            bad |= (off(drag(-20), -10) || c.category != cat0) << 0;
+            stepCamp(app);
+            bad |= (off(c.swipe, 0)) << 1;
+            bad |= (off(drag(-55), -45) || c.category == cat0 || off(c.slide.view.swipe, -45) || c.slide.out[App::Camp::RList].dx != -480) << 2;
+            campOpenPage(app, 1); // Equip's slots: the other member
+            c.phase = App::Camp::Slot, c.member = 0, c.anim = 8;
+            bad |= (campMembers(app) > 1 && (off(drag(60), 50) || c.member != 1 || c.slide.in[App::Camp::RList].dx != -480)) << 3;
+            campOpenPage(app, 3); // Status: the equipment -> (a swipe right, -3) the board -> (left, -2) the equipment
+            c.phase = App::Camp::Slot, c.statusView = 1, c.list = campStatusItems(app, 1), c.anim = 8;
+            bad |= (off(drag(50), 40) || c.statusView != 0) << 4;
+            for (int f = 0; f < 4; ++f) stepCamp(app);
+            bad |= (off(drag(-50), -50) || c.statusView != 1 || off(c.swipe, 0)) << 5;
+            const bool ok = bad == 0;
+            if (!ok) std::printf("mobile swipes: layout %d wide %d FAILED (checks %#x)\n", layout, wide, bad);
+            problems += !ok;
+            ++gestures;
         }
     }
     app.campOpen = false;
@@ -4808,17 +4847,30 @@ int runSelfTest(App& app) {
         auto key = [&](SDL_Keycode k) { campKey(app, k); };
         auto steps = [&](int n) { for (int f = 0; f < n; ++f) stepCamp(app); };
         App::Camp& c = app.camp;
+        bool atOnce = false;
+        int slideBad = 0;
         problems += c.notice != 56010 || !app.game.flag(0x38);
+        const bool noMask10 = menuMaskWanted(app, atOnce) < 0; // (CampMainSet: no mask before 56010 is read)
         app.dialogue.clear();
         steps(1);
         problems += c.notice != 0;
+        const bool mask10 = menuMaskWanted(app, atOnce) == 1;
         const int atk0 = cr::maxStat(app.game.party[0], 0, cr::kAttack, app.itemTable);
         c.cursor = 0, key(SDLK_RETURN);                       // Items, the first time: 56016 first (flag 0x39)
         problems += c.notice != 56016 || c.page != App::Camp::Main;
+        // (the mask cleared and the main page's windows gone under it - "Camp" kept -, not slid out again after)
+        const bool notice16 = menuMaskWanted(app, atOnce) < 0 && c.mainGone;
         app.dialogue.clear();
         steps(1);                                             // the message read: the page (CampMain 2 -> 6)
         problems += c.page != App::Camp::Items || c.list.empty() || c.list[0] != 3;
         steps(8);
+        key(SDLK_RIGHT); // Weapons: the list out to the left and the next in from the right that frame, SE 5 (CampMainPrc 0's 2)
+        slideBad += c.category == 0 || c.slide.out[App::Camp::RList].at != 0 || c.slide.out[App::Camp::RList].dx != -480 ||
+                    c.slide.in[App::Camp::RList].dx != 480 || c.slide.in[App::Camp::RSection].dx != -140 || c.slide.wait != 1;
+        steps(1);
+        key(SDLK_LEFT);  // and back: out to the right, in from the left
+        slideBad += c.category != 0 || c.slide.out[App::Camp::RList].dx != 480 || c.slide.in[App::Camp::RList].dx != -480;
+        steps(1);
         key(SDLK_RETURN), key(SDLK_RETURN);                   // on Escher: how many?
         problems += c.phase != App::Camp::Ask;
         key(SDLK_ESCAPE);                                     // (no Back bar here; the Vita's × answers No, SE 2: the list)
@@ -4845,38 +4897,104 @@ int runSelfTest(App& app) {
         key(SDLK_ESCAPE);                                     // Back: the page's windows go, then the main page's come
         problems += c.pageOut == 0;
         steps(8);
-        problems += c.page != App::Camp::Main || c.pageOut != 0;
-        c.cursor = 1, key(SDLK_RETURN), key(SDLK_RETURN);   // Equip: Escher's weapon
-        key(SDLK_RETURN);
+        problems += c.page != App::Camp::Main || c.pageOut != 0 || c.mainGone;
+        // The state changes' windows (campSlide) and their waits: input is refused until the original's state that
+        // takes it (the old instant swaps took the next key at once - the keys below wait those frames)
+        auto drawn = [&] { app.lastTicks = 0; drawFrame(app, false); ++frames; };
+        c.cursor = 1, key(SDLK_RETURN), key(SDLK_RETURN);   // Equip: Escher - EquipProc 1, 3's count, then the slots
+        slideBad += c.phase != App::Camp::Slot || c.slide.wait != 6 || c.slide.in[App::Camp::RList].at != 5 ||
+                    c.slide.out[App::Camp::RFaces].at != 0 || !c.slide.was;
+        key(SDLK_RETURN);                                     // (refused: state 3 is only counting)
+        slideBad += c.phase != App::Camp::Slot;
+        steps(2), drawn(), steps(4);                          // (drawn half way: the old windows out, the new not yet in)
+        key(SDLK_RETURN);                                     // his weapon: the slot list out, the list in a frame later
+        slideBad += c.slide.out[App::Camp::RList].at != 0 || c.slide.out[App::Camp::RList].dx != -480 ||
+                    c.slide.in[App::Camp::RList].at != 1 || c.slide.wait != 2 || c.lastSlot != 0;
         // (GetItmCnt counts worn gear: the Trusty Longsword he wears is listed first, refused - type 5's -4)
         problems += c.phase != App::Camp::List || c.list != std::vector<int>{201, 202};
-        for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
+        steps(1), drawn(), steps(1), drawn(), drawn();
         key(SDLK_RETURN);                                     // the worn one: refused
         problems += c.phase != App::Camp::List || app.game.party[0].equip[0] != 201;
         key(SDLK_DOWN);
         key(SDLK_RETURN);                                     // wear the Bastard Sword
         problems += app.game.party[0].equip[0] != 202 || ownedCount(app, 201) != 1 || ownedCount(app, 202) != 0;
-        key(SDLK_ESCAPE), key(SDLK_ESCAPE);
+        slideBad += c.phase != App::Camp::Slot || c.slide.in[App::Camp::RList].dx != 480 || c.slide.in[App::Camp::RList].at != 1;
+        steps(2);
+        key(SDLK_DOWN), key(SDLK_DOWN);                       // (the cursor moved, nothing chosen there)
+        key(SDLK_RIGHT);                                      // Musiea's slots (EquipProc 7 - 10: -2, out left, in from the right), on the slot last chosen
+        slideBad += c.member != 1 || c.slot != 0 || c.slide.in[App::Camp::RList].at != 4 || c.slide.in[App::Camp::RList].dx != 480 ||
+                    c.slide.out[App::Camp::RBoard].dx != -240 || c.slide.wait != 6;
+        steps(6);
+        key(SDLK_LEFT);                                       // back to Escher's
+        slideBad += c.member != 0 || c.slide.in[App::Camp::RList].dx != -480 || c.slide.out[App::Camp::RList].dx != 480;
+        steps(6);
+        key(SDLK_ESCAPE);                                     // the slots' Back: End, 6's count, then the member choice
+        slideBad += c.phase != App::Camp::Member || c.slide.in[App::Camp::RPlates].at != 6 || c.slide.wait != 8;
+        key(SDLK_ESCAPE);                                     // (refused: 5 / 6)
+        slideBad += c.pageOut != 0;
+        steps(8);
+        key(SDLK_ESCAPE);
         steps(8);
         problems += c.page != App::Camp::Main;
         c.cursor = 3, key(SDLK_RETURN), key(SDLK_DOWN), key(SDLK_RETURN); // Status: Musiea's
         problems += c.page != App::Camp::Status || c.member != 1 || c.phase != App::Camp::Slot;
-        key(SDLK_RIGHT);                                      // her equipment
+        slideBad += c.slide.in[App::Camp::RGene].at != 2 || c.slide.in[App::Camp::RBoard].at != 3 || !c.slide.out[App::Camp::RBar].cut;
+        steps(4);
+        key(SDLK_RIGHT);                                      // her equipment: the board out left a frame on, the list in from the right
         problems += c.statusView != 1 || c.list.size() != size_t(campui::kEquipSlots);
-        for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
+        slideBad += c.slide.out[App::Camp::RBoard].at != 1 || c.slide.out[App::Camp::RBoard].dx != -240 ||
+                    c.slide.in[App::Camp::RList].at != 2 || c.slide.in[App::Camp::RList].dx != 480;
+        steps(1), drawn(), steps(1), drawn(), drawn();
         const int errs = app.renderer.takeErrors();
-        key(SDLK_ESCAPE), key(SDLK_ESCAPE);
+        steps(3);
+        key(SDLK_ESCAPE);                                     // (ReturnCharChoice: the face boards and plates back at once)
+        slideBad += c.phase != App::Camp::Member || c.slide.in[App::Camp::RFaces].at != 1 || c.slide.out[App::Camp::RList].dx != 480;
+        steps(3);
+        key(SDLK_ESCAPE);
         steps(8);
         key(SDLK_ESCAPE);                                     // Back on the main page: the windows go, then it closes (SE 9 alone)
-        problems += !app.campOpen;
-        steps(5);
-        problems += app.campOpen + errs;
-        problems += expectSounds("camp", {6, 7, 2, 6, 7, 2, 2, 2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 1, 2, 5, 3, 3, 9}); // (the two notices' 6 / 7)
+        problems += !app.campOpen || menuMaskWanted(app, atOnce) != 1;
+        steps(1);
+        const bool maskOff = menuMaskWanted(app, atOnce) < 0; // (CampMain 0xd: ClrMask the frame after)
+        steps(6);
+        problems += !app.campOpen;                            // (0x10 eight frames after the tap)
+        steps(1);
+        problems += app.campOpen + errs + slideBad + !noMask10 + !mask10 + !notice16 + !maskOff;
+        if (slideBad || !noMask10 || !mask10 || !notice16 || !maskOff)
+            std::printf("  camp: slides %d wrong, mask %d %d %d %d\n", slideBad, noMask10, mask10, notice16, maskOff);
+        problems += expectSounds("camp", {6, 7, 2, 6, 7, 5, 5, 2, 2, 2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 1, 1, 5, 5, 3, 3, 2, 1, 2, 5, 3, 3, 9}); // (the two notices' 6 / 7)
         app.mapNumber = campMap;
         std::printf("camp: 56010 / 56016 first, 3 seeds +%d attack, Plum to MP %d, Bastard Sword worn, status page and list; %d "
                     "frames, %d render API errors; %d problems\n", atk1 - atk0, app.game.party[0].mp, frames, errs, problems);
         mapErrors += problems;
         glErrors += errs;
+        app.game = cr::GameState();
+    }
+    { // Options from the Camp (CampMain 6's 4, 7): every window off the next frame, Options a frame after; back from it
+      // CampMain 9 puts "Camp", the boards, the plates, Back and the clock on again
+        int problems = 0;
+        app.game = cr::GameState();
+        app.game.setFlag(0x38, true), app.game.setFlag(0x39, true);
+        openCamp(app);
+        App::Camp& c = app.camp;
+        for (int f = 0; f < 8; ++f) stepCamp(app);
+        c.cursor = 4;
+        campKey(app, SDLK_RETURN);
+        problems += app.optionsOpen || c.toOptions != 1;
+        stepCamp(app);
+        problems += app.optionsOpen;
+        app.lastTicks = 0;
+        drawFrame(app, false); // (the windows going)
+        stepCamp(app);
+        problems += !app.optionsOpen || !c.optionsUp;
+        app.optionsOpen = false;
+        stepCamp(app);
+        problems += c.optionsUp || !c.headIn || !c.barIn || c.anim != 0 || campEase(app) != 0;
+        for (int f = 0; f < 4; ++f) stepCamp(app);
+        problems += campEase(app) != 1 || app.renderer.takeErrors();
+        app.campOpen = false;
+        std::printf("camp options: the windows off, Options two frames after the tap, the windows back on its return; %d problems\n", problems);
+        mapErrors += problems;
         app.game = cr::GameState();
     }
     { // The field menu (menuf_mainPrc): the corner button slides the bar out and back in 4 frames;
@@ -8510,7 +8628,10 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     if (app.captureMenu == 1) {
         // --camp-view items|use|equip|slots|wear|status|genes|plate|entries: a page, with a bag to show
         // (entries: the first plate's known entries, Genes 4); open@n / back@n: n frames after the main page's
-        // Items is chosen / after Back from it
+        // Items is chosen / after Back from it. Any view@n: n frames after its last key (the earlier ones each
+        // settled first), mid-way through a state change's windows (campSlide); and member (Items' member choice),
+        // category (Items, the next category), switch (Equip, the other member's slots), turn (Status, the board to
+        // the equipment), statusback (Status, its Back), slotsback (Equip, the slots' Back), options (Options chosen)
         const std::string& v0 = app.captureCampView;
         const size_t at = v0.find('@');
         const std::string v = v0.substr(0, at);
@@ -8533,13 +8654,24 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             app.game.items[3] = 4, app.game.items[24] = 2, app.game.items[21] = 3, app.game.items[27] = 1;
             app.game.items[202] = 1, app.game.items[216] = 1, app.game.items[427] = 1;
             app.game.party[size_t(campCharacter(app, 0))].mp = 10;
-            auto key = [&](SDL_Keycode k) { campKey(app, k); };
-            if (v == "items" || v == "use") app.camp.cursor = 0, key(SDLK_RETURN);
+            auto key = [&](SDL_Keycode k) { // (the earlier key's windows settled first: its state's wait, the moves)
+                if (app.camp.page != App::Camp::Main || app.camp.notice)
+                    for (int f = 0; f < 12; ++f) app.camp.anim = std::max(app.camp.anim, 100), stepCamp(app);
+                campKey(app, k);
+            };
+            if (v == "items" || v == "use" || v == "member" || v == "category") app.camp.cursor = 0, key(SDLK_RETURN);
             if (v == "use") key(SDLK_RIGHT), key(SDLK_LEFT), key(SDLK_RETURN), key(SDLK_RETURN), key(SDLK_RIGHT), key(SDLK_RIGHT);
-            if (v == "equip" || v == "slots" || v == "wear") app.camp.cursor = 1, key(SDLK_RETURN);
-            if (v == "slots" || v == "wear") key(SDLK_RETURN);
+            if (v == "member") key(SDLK_RETURN);
+            if (v == "category") key(SDLK_RIGHT);
+            if (v == "equip" || v == "slots" || v == "wear" || v == "switch" || v == "slotsback") app.camp.cursor = 1, key(SDLK_RETURN);
+            if (v == "slots" || v == "wear" || v == "switch" || v == "slotsback") key(SDLK_RETURN);
             if (v == "wear") key(SDLK_RETURN);
-            if (v == "status") app.camp.cursor = 3, key(SDLK_RETURN), key(SDLK_RETURN);
+            if (v == "switch") key(SDLK_RIGHT);
+            if (v == "slotsback") key(SDLK_ESCAPE);
+            if (v == "status" || v == "turn" || v == "statusback") app.camp.cursor = 3, key(SDLK_RETURN), key(SDLK_RETURN);
+            if (v == "turn") key(SDLK_RIGHT);
+            if (v == "statusback") key(SDLK_ESCAPE);
+            if (v == "options") app.camp.cursor = 4, key(SDLK_RETURN);
             if (v == "genes" || v == "plate" || v == "entries") app.game.items[481] = 1, app.game.items[108] = 1, app.game.items[94] = 1;
             if (v == "genes") app.camp.cursor = 2, key(SDLK_RETURN), key(SDLK_DOWN), key(SDLK_DOWN);
             if (v == "entries") app.camp.cursor = 2, key(SDLK_RETURN), key(SDLK_RETURN);
@@ -8554,8 +8686,14 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                 for (int k = 0; k < 4; ++k) key(SDLK_DOWN); // Gene Plate 1
                 key(SDLK_RETURN);
             }
-            app.camp.anim = 100;
-            for (int f = 0; f < 12; ++f) stepCamp(app); // (the list settled on its line)
+            if (frames >= 0) { // (n frames into the last key's change)
+                for (int f = 0; f < frames; ++f) stepCamp(app);
+                std::printf("camp: %s@%d, page %d phase %d, slide t %d (wait %d), anim %d\n", v.c_str(), frames, int(app.camp.page),
+                            int(app.camp.phase), app.camp.slide.t, app.camp.slide.wait, app.camp.anim);
+            } else {
+                app.camp.anim = 100;
+                for (int f = 0; f < 12; ++f) stepCamp(app); // (the list settled on its line)
+            }
         }
     }
     if (app.captureMenu == 7) { // --save-screen clear: the title's, pair 1 with every story cleared (a save of its own)
