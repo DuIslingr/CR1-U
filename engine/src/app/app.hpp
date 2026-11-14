@@ -768,6 +768,7 @@ struct App {
         int phaseFrames = 0;
         bool wonTap = false; // a tap in the victory's hold (state 1099: 140 frames or pad_chk_trg_up)
         bool lostTap = false;    // a tap on the defeat (0x513: at once, or after 40 frames of an event battle's game over picture)
+        bool waitLine = false;   // WinTalk held by _btlvoice_special_busy: a story fight's battle line playing on
         bool lostButton = false; // a button (or key) on it: the Vita's 0x513 ends at once
         cr::Texture gameOver;    // btl_main 0x4b0: gameover.mct, drawn fading in over 20 frames for a lost event battle
         bool ending = false;     // btl_main 9000 -> 0x238b: the mask to black over 10 frames (SetMask(0): 500 ms), the music out, 12 frames, then the way out

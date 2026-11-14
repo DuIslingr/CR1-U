@@ -773,6 +773,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     }
     app.sound.stopDialogueVoices();
     app.voiceQueue.clear();
+    app.game.setFlag(0xffe, false); // (btl_main 0, 6273: the scripted early end's flag cleared)
     b.active = true;
     b.start = start;
     b.flags = flags;
@@ -2531,6 +2532,13 @@ void drawBreakFx(App& app, cr::MenuPainter& m) {
 // The enemies are down (btl_main 1000): the victory pose and tune, then the results
 // btl_main 1000 / 0x3e8: ten frames first, the battle's music fading out over them unless the
 // victory tune (var 59) is the battle's own (var 58); then 0x3e9 - victoryShown
+// _btlvoice_special_busy (79183): in the story fights 0x104..0x106, 0x118..0x11a, 300, 0x12e, 0x140, 0x142 and 0x176
+// btl_main 799 holds the victory while a battle line plays (6185, then 1000 at 5961)
+bool battleLineHolds(const App& app) {
+    static constexpr int kGroups[] = {0x104, 0x105, 0x106, 0x118, 0x119, 0x11a, 300, 0x12e, 0x140, 0x142, 0x176};
+    const int g = app.battle.start.group;
+    return std::find(std::begin(kGroups), std::end(kGroups), g) != std::end(kGroups) && app.sound.battleLinePlaying();
+}
 void battleWon(App& app) {
     App::Battle& b = app.battle;
     b.phase = App::Battle::Won;
@@ -2664,6 +2672,7 @@ void endRound(App& app) {
         // (24753-24760) sets 1000 at once, past chk_karaok_end's last word and the boss's fall (0x3de / 0x3e3)
         if (!wonBefore) battleWon(app);
         else if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
+        else if (battleLineHolds(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0, b.waitLine = true;
         else battleVictory(app);
         break;
     case 3: { // lost (0x4b0): the battle's music out over 10 frames, then (0x4b1) the defeat tune and "... lost the battle"
@@ -2971,6 +2980,13 @@ void stepBattle(App& app) {
         return;
     }
     if (app.fadeT < app.fadeFrames) ++app.fadeT; // the screen's fade (stepEvents' while a talk runs)
+    // (btl_main 400, 6422-6427: with 0xfff clear, a set 0xffe - the talk's script ending the fight, e.g. j001_d04
+    // 0x5535 after 371's third round, 378 / 350's in j005_d05 - is cleared and the battle leaves through 9000:
+    // mask, music out, the field; no victory, results or EXP. Video 05 ~955-958 s)
+    if (app.game.flag(0xffe) && b.phase != App::Battle::Fled) {
+        app.game.setFlag(0xffe, false);
+        b.phase = App::Battle::Fled, b.phaseFrames = 30; // (the escape's way out, held still: 9000)
+    }
     switch (b.phase) {
     case App::Battle::Intro: // btl_main 10 / 100 / 199 under the encounter's white, then 200, 300 and 400
         if (b.phaseFrames == kIntroWhite) {
@@ -3007,7 +3023,10 @@ void stepBattle(App& app) {
             battleMenu(app, App::Battle::Top);
         }
         break;
-    case App::Battle::WinTalk: // btl_main 8000: the last word said, the victory
+    case App::Battle::WinTalk: // btl_main 8000: the last word said, the victory (or 799 held by the line)
+        // (no cap in 2.2.0; 20 s here so an audio device that never drains its stream can't hold the battle for good)
+        if (b.waitLine && battleLineHolds(app) && b.phaseFrames < 400) break;
+        b.waitLine = false;
         battleVictory(app);
         break;
     case App::Battle::BossDown: stepBossDown(app); break;

@@ -8016,6 +8016,9 @@ int runSelfTest(App& app) {
                         break;
                     }
                     const int hpBefore = b.rules.f[2].hp, roundBefore = b.rules.round;
+                    // (the victory held by a battle line - _btlvoice_special_busy: the dummy audio plays in real time,
+                    // so the line is ended here as if heard out)
+                    if (b.phase == App::Battle::WinTalk && b.waitLine) app.sound.stopBattleLines();
                     stepBattle(app);
                     if (!talk1 && app.game.flag(1231)) talk1 = b.rules.round;
                     if (!talk2 && app.game.flag(1232)) talk2 = b.rules.round;
@@ -8044,6 +8047,31 @@ int runSelfTest(App& app) {
         app.testNoTutorials = true;
         app.game = keepGame;
         app.playerChar = keepChar;
+    }
+    { // A talk's script ending the fight (flag 0xffe, btl_main 400 6422-6427; 371 / 375 / 376 / 378 / 350): the battle
+      // leaves through 9000 - no victory, results or EXP - and the flag goes
+        App::Battle& b = app.battle;
+        const cr::GameState keepGame = app.game;
+        app.game.setFlag(0xff1, true);
+        startBattle(app, {0x173, 0, -1, 0}, 0);
+        int exitCode = 0;
+        bool sawWin = false;
+        if (b.active) {
+            for (int f = 0; f < 2000 && b.active && b.phase != App::Battle::Command; ++f) stepBattle(app);
+            app.game.setFlag(0xffe, true);
+            for (int f = 0; f < 200 && b.active && !exitCode; ++f) {
+                stepBattle(app);
+                sawWin |= b.phase == App::Battle::Won || b.phase == App::Battle::Results;
+                exitCode = b.exit;
+            }
+            b.exit = 0;
+            endBattle(app, false);
+        }
+        const int bad = exitCode != 1 || sawWin || app.game.flag(0xffe);
+        std::printf("scripted early end (0xffe): left with exit %d, victory %s, flag cleared %s; %d problems\n", exitCode,
+                    sawWin ? "YES" : "no", app.game.flag(0xffe) ? "NO" : "yes", bad);
+        mapErrors += bad;
+        app.game = keepGame;
     }
     { // The NPC model table's story models (197..304: the scenes' bosses and the party's battle
       // models - rows 501.. of every dungeon and town use 198, 200..214): each loads
