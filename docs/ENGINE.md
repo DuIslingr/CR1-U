@@ -185,10 +185,13 @@ Entering an area runs its entry script, so first visits play their scenes: actor
 places and walk, and the speakers' portraits appear beside the dialogue box. `--capture … --frames n`
 plays n frames of scripts before capturing (pages turn every 45 frames).
 
-Known viewer limitations: field NPCs, the leader read by Set_Prtyno, effects and unlit
-alpha-model / leader materials are drawn as the original's loaders leave them (lighting off:
-colour 1 alone, or the colour array alone with property bit 6 - hwalSetAppearanceColor_ES1);
-lit materials, battle fighters and stages are approximated as full-bright (surface colour =
+Known viewer limitations: field NPCs, the leader read by Set_Prtyno, effects, unlit
+alpha-model / leader materials, battle fighters (`read_mdl2`: unlit, alpha test 1) and battle stages
+(`read_mdl_hd`: unlit, d0153bt's order -200 -> 1, no alpha test on RGB / PAL8_RGB8 textures and on
+stages 3..6 and 9's textured Appearances) are drawn as the original's loaders leave them (lighting off:
+colour 1 alone, or the colour array alone with property bit 6 - hwalSetAppearanceColor_ES1); the
+stages' Appearances with user id 2000..2007 scroll their texture as `_mdl_uv` does (FORMATS.md);
+the viewer's own lit materials are approximated as full-bright (surface colour =
 emission + ambient + diffuse; many materials are black-diffuse/white-ambient) until scene
 Light records are decoded; effects whose colour is animated (fade in/out) are
 invisible until material animation is implemented. **F** toggles smooth texture filtering

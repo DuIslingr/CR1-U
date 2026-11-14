@@ -1120,6 +1120,7 @@ struct App {
     float speed = 1.0f;
     Uint64 lastTicks = 0;
     float drawFrames = 0;       // this frame's length in 20 Hz frames (the game's dt)
+    int mdlFrame = 0;           // gac+0x3c6a8: +1 a game frame (stepBattle / stepEvents) - _mdl_uv's clock
     float texSpin = 0;          // _mdl_put's _vEuler z: texture 999's turn (0..1)
 };
 
@@ -1404,6 +1405,10 @@ std::vector<bool> packageActionsKept(const cr::Model& m);
 void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool character);
 void mdlMemRules(LoadedModel& lm);
 void readMdlRules(LoadedModel& lm, const std::string& name);
+void readMdl2Rules(LoadedModel& lm);
+void readMdlHdRules(LoadedModel& lm, const std::string& name, int stage);
+bool uvScroll(const cr::Material* mt, double frame, float shift[2]);
+bool scrollModelUvs(App& app, LoadedModel& lm, double frame);
 LoadedModel& npcModel(App& app, const std::string& file);
 void showModel(App& app, int index);
 void applyMix(App& app);

@@ -3432,6 +3432,7 @@ static void stepNpcTurns(App& app) {
 }
 
 void stepEvents(App& app) {
+    ++app.mdlFrame; // (gac+0x3c6a8: the main loop's count, _mdl_uv's clock)
     struct TurnAfter { App& a; ~TurnAfter() { stepNpcTurns(a); } } turnAfter{app}; // (every way out of the frame)
     if (app.npcNativesPending) { // npc_setup: SetVar(0, id); UtyPrcTbl[row + 8 - 1].init() for every created NPC with one
         app.npcNativesPending = false;
@@ -3997,25 +3998,30 @@ void drawNpcs(App& app, const cr::Mat4& vp) {
             return ap >= 0 && ap < int(m.materials.size()) ? &m.materials[size_t(ap)] : nullptr;
         };
         const bool posed = !m.skeleton.nodes.empty() && lm.meshes.size() == m.meshes.size();
-        if (posed || (matAnim && lm.meshes.size() == m.meshes.size())) { // skin this instance; scroll its textures
+        static const bool noScroll = SDL_getenv("CR_NO_UV_SCROLL") != nullptr; // tests: before / after
+        if (posed || lm.meshes.size() == m.meshes.size()) { // skin this instance; scroll its textures
             const cr::Action* act = d.action >= 0 && d.action < int(lm.actions.size()) ? &lm.actions[d.action] : nullptr;
             if (posed) poseWorld(m.skeleton, lm.actions, act, d.time, d.blend, lm.world);
             for (size_t i = 0; i < m.meshes.size(); ++i) {
                 float shift[2] = {0, 0}, scale[2] = {1, 1};
                 const bool moves = matAnim && effectUvMotion(lm, matOf(i), d.time, shift, scale);
                 const bool spins = spinsTexture(m, i);
-                if (!posed && !moves && !spins) continue;
+                float group[2] = {0, 0}; // (_mdl_uv: d0555bt's groups, read_mdl's too)
+                const bool scrolls = !noScroll && uvScroll(matOf(i), app.mdlFrame, group);
+                if (!posed && !moves && !spins && !scrolls) continue;
                 if (posed) cr::skinMesh(m, m.meshes[i], lm.world, lm.skinned);
                 const std::vector<float>& pos = posed ? lm.skinned : m.meshes[i].positions;
-                if (moves || spins) { // uv * scale + offset (texture unit 0's: the material action's segment 6)
+                const bool uvs = moves || spins || scrolls;
+                if (uvs) { // uv * scale + offset (texture unit 0's: the material action's segment 6)
                     lm.uvScratch = m.meshes[i].uvs;
                     for (size_t k = 0; moves && k + 1 < lm.uvScratch.size(); k += 2) {
                         lm.uvScratch[k] = lm.uvScratch[k] * scale[0] + shift[0];
                         lm.uvScratch[k + 1] = lm.uvScratch[k + 1] * scale[1] + shift[1];
                     }
+                    for (size_t k = 0; scrolls && k + 1 < lm.uvScratch.size(); k += 2) lm.uvScratch[k] += group[0], lm.uvScratch[k + 1] += group[1];
                     if (spins) spinUvs(lm.uvScratch, app.texSpin);
                 }
-                app.renderer.updatePositions(lm.meshes[i], pos, moves || spins ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
+                app.renderer.updatePositions(lm.meshes[i], pos, uvs ? lm.uvScratch : m.meshes[i].uvs, m.meshes[i].colors);
             }
         }
         if (matAnim) ++app.matAnimDraws[d.model];

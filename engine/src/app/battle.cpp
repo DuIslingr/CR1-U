@@ -790,11 +790,12 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.gaugeShown = 0;
     b.cam = -1, b.camLive = false, b.camHeld = false, b.camEase = 1, b.camHold = 25;
     loadModelFile(app, cr::kBattleStageFile[start.stage], b.stage, false);
+    readMdlHdRules(b.stage, cr::kBattleStageFile[start.stage], start.stage); // (btl_main 100: read_mdl_hd)
     auto add = [&](int modelId, const short* place, float yaw, int fighter) -> App::Battle::Actor& {
         App::Battle::Actor a;
         a.modelId = modelId;
         a.model = cr::kBattleModelFile[modelId];
-        if (!b.models.count(a.model)) loadModelFile(app, a.model, b.models[a.model], true);
+        if (!b.models.count(a.model)) loadModelFile(app, a.model, b.models[a.model], true), readMdl2Rules(b.models[a.model]); // (read_mdl2)
         if (fighter >= 0 && fighter < 5) battleSlotsLoaded(b.models[a.model], modelId, fighter < 2, false);
         a.pos = a.home = {float(place[0]), 0.0f, float(place[1])};
         a.yaw = a.homeYaw = a.wantYaw = yaw; // (+0x558 = 15: btl_main 100, read_btlcpl)
@@ -2798,6 +2799,7 @@ void stepBattle(App& app) {
     b.bannerShown = b.bannerFrames > 0 ? b.banner : std::string(); // (what the last frame set shows from this one)
     ++b.frames;
     ++b.phaseFrames;
+    ++app.mdlFrame; // (gac+0x3c6a8)
     stepEffects(app);
     stepSceneEffects(app);
     for (App::Battle::Actor& a : b.actors) {
@@ -3281,6 +3283,7 @@ void drawBattle(App& app, float dt) {
     b.vp = vp;
     r.setCamera(9.0f, 2000.0f, 28.5f * 3.14159265f / 180.0f);
     r.begin3DRect(0, 0, W, H);
+    scrollModelUvs(app, b.stage, app.mdlFrame - 1.0 + bk); // (_mdl_uv: as a frame between steps shows it)
     drawLoaded(app, b.stage, vp);
     b.shadows.clear(), b.shadowTris.clear();
     for (size_t ai = 0; ai < b.actors.size(); ++ai) {

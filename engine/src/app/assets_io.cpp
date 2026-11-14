@@ -659,6 +659,68 @@ void readMdlRules(LoadedModel& lm, const std::string& name) {
     }
 }
 
+// read_mdl2 (2.2.0 0x7b7c, 2992-3006: read_btlcpl's monsters, btl_main 6307 / 6327's pair) clears
+// property bits 0 and 1 - unlit, glColor = colour 1, or the colour array alone with bit 6 - and sets
+// every alpha test to 1
+void readMdl2Rules(LoadedModel& lm) {
+    for (cr::Material& mt : lm.cpu.materials) mt.unlit = 1, mt.alphaThreshold = 1;
+}
+
+// read_mdl_hd (2.2.0 0x6930, 2365-2380 and 2490-2512: btl_main 100's stage, `stage` the stage number
+// gac+0x35875) clears bits 0 and 1 (unlit), d0153bt's draw order -200 -> 1; the alpha tests stay
+// the file's but for a texture in pixel format 1 or 6 (RGB888, PAL8_RGB8: no alpha) - no alpha test
+// - and every textured Appearance on stages 3..6 and 9 (none); stage 7 (d0351bt) left as it is
+void readMdlHdRules(LoadedModel& lm, const std::string& name, int stage) {
+    cr::Model& m = lm.cpu;
+    for (cr::Material& mt : m.materials) {
+        mt.unlit = 1;
+        if (name == "d0153bt.bin" && mt.drawOrder == -200) mt.drawOrder = 1;
+        if (mt.textureRef < 0 || stage == 7) continue; // (mceAppearance_getTexture: unit 0's)
+        for (size_t k = 0; k < m.textureIds.size() && k < m.textures.size(); ++k)
+            if (m.textureIds[k] == mt.textureRef && (m.textures[k].format == 1 || m.textures[k].format == 6)) mt.alphaThreshold = 0;
+        if ((stage >= 3 && stage <= 6) || stage == 9) mt.alphaThreshold = 0;
+    }
+}
+
+// _mdl_uv (2.2.0 0x13e68, 9536-9618), which mdl_put runs for every model it puts, every frame: the
+// Appearances read_mdl / read_mdl2 / read_mdl_hd found by user id 2000 + g (g 0..7: 8 groups,
+// 3229-3249 / 2387-2405) move texture unit 0's translation by f = (frame % period) / period - the
+// period the Appearance's polygon offset units as a whole number, the frame the main loop's count
+// (gac+0x3c6a8, +1 a 20 Hz frame) - in group g's direction: 0 (0, 1-f), 1 (f, 1-f), 2 (f, 0), 3 (f, f),
+// 4 (0, f), 5 (1-f, f), 6 (1-f, 0), 7 (1-f, 1-f). Only battle stages have them (d0151 .. d0558bt;
+// periods 100..320, 2000; at most 5 a group, under findObject3D_a's 16). False: it doesn't scroll
+bool uvScroll(const cr::Material* mt, double frame, float shift[2]) {
+    if (!mt || mt->user < 2000 || mt->user > 2007 || mt->textureRef < 0) return false;
+    const int period = int(mt->offsetUnits); // (FPToFixed: towards 0, kept as a short)
+    if (period <= 0) return false;
+    const float f = float(std::fmod(std::max(frame, 0.0), double(period)) / period), g = 1.0f - f;
+    static const signed char kDir[8][2] = {{0, 2}, {1, 2}, {1, 0}, {1, 1}, {0, 1}, {2, 1}, {2, 0}, {2, 2}}; // 0 none, 1 f, 2 1-f
+    for (int k = 0; k < 2; ++k) {
+        const int d = kDir[mt->user - 2000][k];
+        shift[k] = d == 0 ? 0.0f : d == 1 ? f : g;
+    }
+    return true;
+}
+
+// A model's scrolling Appearances (uvScroll) at `frame`, its meshes' coordinates written anew (static
+// meshes: the rest positions; posed ones draw through their own skinning). True: one scrolled
+bool scrollModelUvs(App& app, LoadedModel& lm, double frame) {
+    static const bool off = SDL_getenv("CR_NO_UV_SCROLL") != nullptr; // tests: before / after
+    const cr::Model& m = lm.cpu;
+    if (off || lm.meshes.size() != m.meshes.size()) return false;
+    bool any = false;
+    for (size_t i = 0; i < m.meshes.size(); ++i) {
+        const int ap = m.meshes[i].appearance;
+        float shift[2];
+        if (ap < 0 || ap >= int(m.materials.size()) || !uvScroll(&m.materials[size_t(ap)], frame, shift)) continue;
+        lm.uvScratch = m.meshes[i].uvs;
+        for (size_t k = 0; k + 1 < lm.uvScratch.size(); k += 2) lm.uvScratch[k] += shift[0], lm.uvScratch[k + 1] += shift[1];
+        app.renderer.updatePositions(lm.meshes[i], m.meshes[i].positions, lm.uvScratch, m.meshes[i].colors);
+        any = true;
+    }
+    return any;
+}
+
 // An NPC table model as npc_setup / EvtNpcMdlRead read it (read_mdl), cached by file
 LoadedModel& npcModel(App& app, const std::string& file) {
     auto it = app.npcModels.find(file);

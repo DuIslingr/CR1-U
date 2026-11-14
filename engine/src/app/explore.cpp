@@ -2003,6 +2003,48 @@ int fieldRenderSelfTest(App& app) {
                     "approximation:%s); %d effect materials (%d not as eff3d leaves them)\n", npcMats, notUnlit, badTest, darker,
                     darkList.c_str(), effMats, effBad);
     }
+    // The battle loaders (2.2.0): read_mdl2's fighters unlit, alpha test 1; read_mdl_hd's stages unlit,
+    // d0153bt's -200 -> 1, no alpha test on textured stages 3..6 / 9 and RGB / PAL8_RGB8 textures; _mdl_uv's
+    // groups (user 2000..2007, period = polygon offset units) and their directions
+    {
+        int fighterMats = 0, fighterBad = 0, stageBad = 0, scrolling = 0, groups = 0;
+        for (int k = 0; k < cr::kNumBattleModels; ++k) {
+            std::vector<uint8_t> data;
+            LoadedModel lm;
+            if (!cr::readFile(app.dataDir + cr::kBattleModelFile[k], data) || !cr::loadModelPackage(data, lm.cpu, nullptr, false)) continue;
+            readMdl2Rules(lm);
+            for (const cr::Material& mt : lm.cpu.materials) ++fighterMats, fighterBad += !mt.unlit || mt.alphaThreshold != 1;
+        }
+        uint32_t seen = 0;
+        for (int s = 0; s < cr::kNumBattleStages; ++s) {
+            std::vector<uint8_t> data;
+            LoadedModel lm;
+            const std::string name = cr::kBattleStageFile[s];
+            if (!cr::readFile(app.dataDir + name, data) || !cr::loadModelPackage(data, lm.cpu, nullptr)) { ++stageBad; continue; }
+            const std::vector<cr::Material> file = lm.cpu.materials;
+            readMdlHdRules(lm, name, s);
+            for (size_t i = 0; i < file.size(); ++i) {
+                const cr::Material &was = file[i], &mt = lm.cpu.materials[i];
+                stageBad += !mt.unlit || (name == "d0153bt.bin" && mt.drawOrder == -200);
+                stageBad += ((s >= 3 && s <= 6) || s == 9) && was.textureRef >= 0 && mt.alphaThreshold != 0;
+                stageBad += s == 7 && mt.alphaThreshold != was.alphaThreshold;
+                float sh[2];
+                if (uvScroll(&mt, 0, sh)) ++scrolling, seen |= 1u << (mt.user - 2000);
+            }
+        }
+        for (uint32_t g = seen; g; g &= g - 1) ++groups;
+        cr::Material probe; // d0253bt's first: group 0, period 180 - 45 frames in, (0, 1 - 0.25)
+        probe.user = 2000, probe.offsetUnits = 180, probe.textureRef = 10;
+        float a[2] = {}, b[2] = {}, c[2] = {};
+        uvScroll(&probe, 45, a);
+        probe.user = 2005, uvScroll(&probe, 45, b); // (1 - f, f)
+        probe.user = 2003, uvScroll(&probe, 180 + 90, c); // (f, f), wrapped
+        const bool dirs = a[0] == 0 && a[1] == 0.75f && b[0] == 0.75f && b[1] == 0.25f && c[0] == 0.5f && c[1] == 0.5f;
+        check(fighterMats > 0 && fighterBad == 0 && stageBad == 0 && scrolling == 27 && groups == 5 && dirs, "the battle loaders and _mdl_uv");
+        std::printf("battle render: %d read_mdl2 materials (%d not as it leaves them); stages %d off read_mdl_hd's rules; %d scrolling "
+                    "appearances in %d groups (want 27 in 5), directions %s\n", fighterMats, fighterBad, stageBad, scrolling, groups,
+                    dirs ? "right" : "WRONG");
+    }
     // The 2D order: the front fade over a portrait and under the message's text; over the portrait alone
     if (app.windowTex.id) {
         App::Portrait& p = app.portraits[15];

@@ -267,6 +267,7 @@ bool readBoneDeformer(Reader& r, Skin& skin, std::string& err) {
 bool readAppearance(Reader& r, Material& m, std::string& err) {
     const RecordHeader h = readHeader(r);
     m.id = h.id;
+    m.user = h.user;
     auto rgba = [&](float* out) {
         const uint32_t c = r.u32(); // bytes R, G, B, A
         for (int i = 0; i < 4; ++i) out[i] = float((c >> (8 * i)) & 255) / 255.0f;
@@ -288,7 +289,9 @@ bool readAppearance(Reader& r, Material& m, std::string& err) {
     r.u8();
     m.drawOrder = int16_t(r.u16());
     m.properties = r.u32();
-    for (int i = 0; i < 3; ++i) r.real(); // polygon offset factor/units, silhouette width
+    r.real();                 // polygon offset factor
+    m.offsetUnits = r.real(); // polygon offset units (_mceAppearance_getPolygonOffsetUnits)
+    r.real();                 // silhouette width
     for (int unit = 0; unit < 2; ++unit) {
         const int ref = int32_t(r.u32());
         if (h.cls > 0) m.unitWord[unit] = r.u32();

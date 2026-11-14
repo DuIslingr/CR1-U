@@ -82,7 +82,7 @@ u8   shininess, alphaThreshold, blendSrc, blendDst, shading, culling, ?
 u16  drawOrder (signed)
 u32  properties        bit3 depth test, bit4 depth write, bit1/2 colour mask,
                        bit5 perspective hint, bit7 polygon offset, bit8 two-sided lighting
-f32  polygonOffset factor, units, silhouette width
+f32  polygonOffset factor, units (`_mdl_uv`'s period, below), silhouette width
 2 × texture unit {
    i32  textureRef      = MCT header id (0x1a) of a package texture; -1 none
                           (4 materials use a 1-based package index instead)
@@ -104,6 +104,17 @@ f32  polygonOffset factor, units, silhouette width
 | texBlend | 0 REPLACE, 1 ADD, 2 BLEND, 3 DECAL, 4 MODULATE (table 0xcb668) |
 | wrap | 0 REPEAT, 1 CLAMP_TO_EDGE |
 | filter | 0 NEAREST, 1 LINEAR, 2–5 mipmap variants (1,501 of 1,503 materials use 0) |
+
+The record header's user id and the polygon offset units drive `_mdl_uv` (2.2.0 0x13e68, 9536-9618),
+which `mdl_put` runs for every model each frame: `read_mdl` / `read_mdl2` / `read_mdl_hd` gather the
+Appearances with user id 2000 + g (g 0..7, at most 16 each: `findObject3D_a`) into 8 groups, each one's
+period its polygon offset units as a whole number (`FPToFixed`), and texture unit 0's translation is
+set to f = (frame % period) / period - frame the main loop's count, gac+0x3c6a8 - in the group's
+direction: 0 (0, 1-f), 1 (f, 1-f), 2 (f, 0), 3 (f, f), 4 (0, f), 5 (1-f, f), 6 (1-f, 0), 7 (1-f, 1-f).
+Only battle stages have them: 27 Appearances on d0151 / 0153 / 0251 / 0253 / 0351 / 0552 / 0553 /
+0555 / 0556 / 0557bt (groups 0, 2, 4, 5, 6; periods 100..320, 2000 - skies, mist, water, the d0553 /
+d0557 floors, the d0555 / d0556 swirl) and d0558bt (a scene's, group 6). The port moves the UVs on
+the CPU (`scrollModelUvs`, `uvScroll`; `CR_NO_UV_SCROLL=1` for before / after captures).
 
 Effect materials' colour is mostly animated by the non-skeleton (9-segment) actions their
 refGid names: segment 1 the diffuse RGBA (keyType 12, kind 4), 6 texture unit 0's transform

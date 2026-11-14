@@ -50,6 +50,8 @@ struct Material {
     int textureRef2 = -1;              // unit 1 texture id (unused by most shipped materials)
     uint8_t texBlend2 = 4;
     uint32_t refGid = 0, tail = 0, unitWord[2] = {0, 0}; // the record's unknown words (animation binding?)
+    int32_t user = 0;                  // the record's user id (mceObject3D_findObject3D: 2000..2007 = _mdl_uv's groups)
+    float offsetUnits = 0;             // polygon offset units (_mdl_uv: a group member's scroll period in frames)
 
     bool blended() const { return !(blendSrc == 1 && blendDst == 0); }
     bool depthTest() const { return (properties & 8) != 0; }
