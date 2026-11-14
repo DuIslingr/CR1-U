@@ -83,6 +83,7 @@ void playSlot(App& app, App::Battle::Actor& a, int slot, int then) {
     }
     a.time = 0;
     a.then = then;
+    a.castRest = false;
     a.loopFrom = a.loopTo = -1;
 }
 
@@ -322,7 +323,7 @@ bool attackSpot(const App& app, int user, int k, int target, cr::Vec3& out) {
 // its first action once at a point (an actor's origin, or the node of its bone whose record user
 // id the table 0xd37c0 names: 1101 the body, 1102 the head, 1003 the root, 1201.. the limbs) and
 // is deleted at its end (eff3d_prc). Its materials (diffuse alpha 0 at rest) take their colour
-// from the package action their Appearance's refGid numbers (segment 1, keyType 12 RGBA).
+// from the package action their Appearance's refGid names (by gid; segment 1, keyType 12 RGBA).
 namespace effects {
 constexpr short kNode[100] = {0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
                               0,    0,    0,    0,    0,    0,    0,    1204, 1203, 1101, 1101, 1102, 1003, 1101, 0,
@@ -362,6 +363,7 @@ LoadedModel* effectModel(App& app, int id) {
     }
     for (const auto& mesh : m.meshes) out.meshes.push_back(app.renderer.upload(mesh));
     out.packageActions = m.actions;
+    out.materialTable = boundActionTable(m.actions);
     // Its motion: the action table's action for the transform tree - one segment a node, and not one
     // of its materials' (9 segments, only segment 1's colour and 6 / 8's texture offset and scale:
     // they can come first - 30 of Omega's effects - and with 9 nodes they'd fit) - else the first
@@ -459,10 +461,15 @@ void stepEffects(App& app, std::vector<Effect>& list) { // eff3d_prc: each ends 
 void stepEffects(App& app) { stepEffects(app, app.battle.effects); }
 
 // An effect material's action (its refGid): segment 1 the colour, 6 texture unit 0's transform, 8
-// unit 1's (keyType 1 the offset, 11 the scale; segment 8 only on two-unit materials)
+// unit 1's (keyType 1 the offset, 11 the scale; segment 8 only on two-unit materials). The refGid is
+// an action's gid in the bound table, not its place (_mceFigure_bindAction -> _mceActionTable_findAction:
+// action +0x28 == refGid); none there, the Appearance has no action and keeps its own colours
 const cr::Action* effectMaterialAction(const LoadedModel& lm, const cr::Material* mt) {
-    const int g = mt ? int(int32_t(mt->refGid)) : -1;
-    return g >= 0 && g < int(lm.packageActions.size()) ? &lm.packageActions[size_t(g)] : nullptr;
+    const int64_t g = mt ? int64_t(int32_t(mt->refGid)) : -1;
+    if (g < 0) return nullptr;
+    for (const cr::Action& a : lm.packageActions)
+        if (a.table == lm.materialTable && int64_t(a.gid) == g) return &a;
+    return nullptr;
 }
 
 // A texture unit's motion at `time`: uv * scale + shift (false: it has none)
@@ -744,7 +751,8 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.member = 0;
     b.view = {};
     b.page = 0, b.viewState = 0, b.slide = battleSlideDistance(app), b.slideHold = 0, b.menuGone = 100, b.roundWait = false;
-    b.turnOn = false;
+    b.turnOn = false, b.pairHeld = false;
+    b.handover = 0, b.breakDue = false;
     for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
     b.hudSlide = 0;
     b.banner.clear();
@@ -1900,7 +1908,13 @@ void startTurn(App& app) {
 }
 
 // The hits land: the numbers, the targets' reactions, the HP the HUD shows
+void releasePair(App::Battle& b) { // the calc's pair flags, as its hit comes (see pairHeld)
+    if (b.pairHeld) b.rules.pair = b.pairAfterHit, b.rules.enemyPair = b.enemyPairAfterHit;
+    b.pairHeld = false;
+}
+
 void showHits(App& app) {
+    releasePair(app.battle); // (2.2.0 _btlcalc_chk_dead 24534 / 24613 at the hit: _btlact_attack calls _btlcalc_prc there)
     App::Battle& b = app.battle;
     b.hitsShown = true;
     if (b.turn.message > 0) { // stolen Oz, a monster running, Analyze, the barrier, the Apples
@@ -2500,13 +2514,31 @@ void stepBattle(App& app) {
             break;
         }
         if (!b.turnOn) {
+            // btl_main after an action's end (btlact_main's 1): 700 goes to 799 that frame, 799's checks run
+            // the next (btlord_chk) and 600 starts the next action on the third (2.2.0 decomp 6190-6240) -
+            // two frames more between one action and the next
+            if (b.handover > 0) {
+                --b.handover;
+                break;
+            }
             // btl_main 799: no next action while a message is up or waiting (the round's first comes from
             // 500 / 600 straight)
             if (!b.roundFirst && (!b.notices.empty() || (b.bannerFrames > 0 && b.bannerFrames <= btlui::kMessageFrames))) break;
+            // btlord_chk in 799: a side lost the Break - its effect (0x5dc: init in 799, its frames from the next)
+            if (b.breakDue) {
+                b.breakDue = false;
+                startBreakFx(app);
+                if (stepBreakFx(app)) b.breakFx.on = false, battletalk::tutorial(app, 0xff2);
+                break;
+            }
             if (b.roundWait && (b.viewState != 0 || b.menuGone < 2)) break; // the menu goes first
             b.roundWait = false;
             b.roundFirst = false;
+            const bool pairWas = b.rules.pair, enemyPairWas = b.rules.enemyPair;
             if (b.rules.nextTurn(app.battleActions, b.turn)) {
+                // (the calc ran ahead of the scene: what its chk_dead ended stays until the hit - showHits)
+                b.pairHeld = true, b.pairAfterHit = b.rules.pair, b.enemyPairAfterHit = b.rules.enemyPair;
+                b.rules.pair = pairWas, b.rules.enemyPair = enemyPairWas;
                 b.turnOn = true;
                 startTurn(app);
             } else if (std::none_of(std::begin(b.popups), std::end(b.popups), [](const App::Battle::Popup& p) { return p.on; }))
@@ -2557,11 +2589,25 @@ void stepBattle(App& app) {
                 if (b.stageAction) stagedHit(app);
             }
         }
+        // _btlact_gene / _btlact_item 2000's first frame (2.2.0 decomp 38480-38497): each user (que +0x98, the
+        // users' copy), alive and not guarding (_btlact_autoguard), gets _mdl_set_act_nextanm(0) - its cast
+        // loop let go: the clip plays on to its end, then the idle
+        if (b.hitsShown && (b.turn.kind == cr::kCmdGene || b.turn.kind == cr::kCmdItem) && !b.stageAction && !b.turn.cancelled &&
+            b.turnFrame == b.hitFrame + 1)
+            for (int k = 0; k < 2; ++k) {
+                const int who = b.turn.actors[k];
+                App::Battle::Actor* u = who >= 0 ? battleActor(app, who) : nullptr;
+                if (!u || u->then >= 0 || u->slot == btlui::kSlotIdle) continue; // (a mover's own way)
+                const cr::Fighter& fw = b.rules.f[size_t(std::clamp(who, 0, 4))];
+                if (fw.guarding || (b.turn.kind == cr::kCmdGene && !fw.alive())) continue; // (the gene's _IsDead; the item's none)
+                u->then = btlui::kSlotIdle, u->castRest = true;
+                u->loopFrom = u->loopTo = -1;
+            }
         if (b.hitsShown) {
             bool busy = false;
             for (int k = 0; k < 2; ++k)
                 if (const App::Battle::Actor* u = b.turn.actors[k] >= 0 ? battleActor(app, b.turn.actors[k]) : nullptr)
-                    busy |= u->then >= 0 && u->slot != btlui::kSlotHit;
+                    busy |= u->then >= 0 && u->slot != btlui::kSlotHit && !u->castRest;
             // (the tail after the action: an attack's ten frames once its actors are back (btlact_attack 1999,
             // count 10), a gene's or item's forty after its hit (btlact_gene / item 2000, count 0x28), a
             // cancelled command's sixty on its user's camera (btlact_none_init: count 0x3c))
@@ -2576,8 +2622,10 @@ void stepBattle(App& app) {
                     if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) playSlot(app, *u, btlui::kSlotIdle);
                 b.stageAction = 0;
                 b.turnOn = false;
-                // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc)
-                if (b.rules.breakChanging()) startBreakFx(app);
+                releasePair(b); // (a turn without a hit shown)
+                b.handover = b.turn.kind == cr::kCmdEscape && b.turn.escaped ? 0 : 2; // (an escape's 99 goes to 9000 from 700)
+                // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc), from 799
+                b.breakDue = b.rules.breakChanging();
                 // btl_main 700: the action's tutorials - an element taken, a status, a gene learned
                 if (b.rules.elementTaken) battletalk::tutorial(app, 0xff3);
                 else if (b.rules.statusTaken) battletalk::tutorial(app, 0xff4);
@@ -2711,7 +2759,7 @@ void drawBattleShadows(App& app, const cr::Mat4& vp) {
     for (size_t v = 0; v < b.shadows.size() * 32 * 3 && v < kVerts; v += 3) col[v * 4 + 3] = uint8_t(std::lround(b.shadows[v / 96].alpha * 255.0f));
     app.renderer.updatePositions(app.battleShadows, pos, uv, col);
     cr::Material m; // untextured, double-sided, depth tested, not written
-    m.culling = 0;
+    m.culling = 2; // (none)
     m.properties = 8;
     m.blendSrc = 4, m.blendDst = 5;
     app.renderer.drawMesh(app.battleShadows, nullptr, vp, m);

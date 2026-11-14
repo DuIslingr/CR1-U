@@ -96,7 +96,8 @@ struct LoadedModel {
     int triangles = 0;
     std::vector<cr::Mat4> world;
     std::vector<float> skinned;
-    std::vector<cr::Action> packageActions; // effects: every action, as materials' refGid number them
+    std::vector<cr::Action> packageActions; // effects: every action, as materials' refGid name them (by gid)
+    int materialTable = 0;                  // the action table (package action file) bound to them: _mdl_set_act
     std::vector<float> uvScratch;          // effects: a mesh's scrolled texture coordinates
 };
 
@@ -611,6 +612,8 @@ struct App {
             float homeYaw = 0;
             int moveFrom = 0, moveTo = 0;  // the move's frames of the current slot
             int loopFrom = -1, loopTo = -1; // mdl_set_act_motion_loop's frames (-1: the slot's own)
+            bool castRest = false;         // a cast's loop let go (btlact_gene / item 2000): to its end, then the
+                                           // idle - the turn's 40 frames don't wait for it
             bool fading = false;           // a fallen monster
             float alpha = 1;
             bool hidden = false;           // the model's +0x55c cleared (a boss's end): not drawn
@@ -699,6 +702,12 @@ struct App {
         std::vector<float> shadowTris;     // their triangles this frame (xyz x 3 each)
         int introStep = 300;               // the opening's btl_main state past 200: 300 (the counter), 400, 499
         bool roundFirst = false;           // btl_main 500 / 600: the round's first action doesn't wait for the banner
+        int handover = 0;                  // frames before the next action's turn (btl_main 700's frame and 799's)
+        // the pair flags the action's calculation left (a member's fall ends pair mode, a monster's the enemy
+        // pair round), held back until its hit: the original calculates there (_btlcalc_prc at the hit frame,
+        // after _btlact_*_init chose the cameras, spots and slots from +0xae8 / +0xaec)
+        bool pairHeld = false, pairAfterHit = false, enemyPairAfterHit = false;
+        bool breakDue = false;             // a Break lost by the last action: its effect when 799 passes
         std::vector<int> levelled;
         bool settled = false;              // the save has the battle's results
         int exit = 0;                      // 1 back to the field (fled), 2 to the title (lost), 4 won
@@ -1434,6 +1443,7 @@ void saveScreenKey(App& app, SDL_Keycode key);
 void saveScreenClick(App& app, float px, float py);
 int ownedCount(const App& app, int item);
 int heldCount(const App& app, int item);
+int boundActionTable(const std::vector<cr::Action>& actions);
 int pairHeldCount(const App& app, int item);
 void openShop(App& app);
 void closeShop(App& app);

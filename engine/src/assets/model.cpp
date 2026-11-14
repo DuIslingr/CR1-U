@@ -477,7 +477,7 @@ bool loadModelPackage(const std::vector<uint8_t>& file, Model& out, std::string*
         std::string aerr;
         if (!parseMca(file.data(), size_t(off) + size, off, out.actions, &aerr)) return fail("animation: " + aerr);
         for (size_t a = first; a < out.actions.size(); ++a)
-            out.actions[a].name = "built-in " + std::to_string(n + 1) + "." + std::to_string(a - first + 1);
+            out.actions[a].name = "built-in " + std::to_string(n + 1) + "." + std::to_string(a - first + 1), out.actions[a].table = n;
     }
 
     // Model block: 'MCM_' + 8 bytes, then 12 sections of size-prefixed records

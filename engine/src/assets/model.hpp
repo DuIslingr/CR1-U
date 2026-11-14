@@ -35,7 +35,7 @@ struct Material {
     uint8_t alphaThreshold = 0;        // alpha test GEQUAL threshold/255, off when 0
     uint8_t blendSrc = 1, blendDst = 0;// ES1 factor order; (1,0) = opaque, blending off
     uint8_t shading = 1;
-    uint8_t culling = 2;               // 0 none, 1 front, 2 back (verified: meshes are CCW-outward)
+    uint8_t culling = 0;               // M3G's codes: 0 back, 1 front, 2 none (2.2.0 hwalSetAppearanceMode_ES1, 0xc0ddc)
     int16_t drawOrder = 0;
     uint32_t properties = 0;           // bit0 lighting, bit3 depth test, bit4 depth write, bit6 vertex colours, bit7 polygon offset
     // How the renderer colours it: 0 the port's old full-bright approximation (emission + ambient +

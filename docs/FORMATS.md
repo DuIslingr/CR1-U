@@ -100,7 +100,7 @@ f32  polygonOffset factor, units, silhouette width
 | blendDst | 0 ZERO, 1 ONE, 2 SRC_COLOR, 3 1-SRC_COLOR, 4 SRC_ALPHA, 5 1-SRC_ALPHA, 6 DST_ALPHA, 7 1-DST_ALPHA |
 | | blending disabled for (1,0). Data: (4,1) additive 872, (4,5) alpha 495, (1,0) opaque 134 |
 | alphaThreshold | alpha test `GEQUAL threshold/255`, off when 0 |
-| culling | 0 none, 1 front, 2 back; front face CCW (hwalReset_ES1). Meshes are CCW-outward |
+| culling | M3G's order: 0 back, 1 front, 2 none - 2.2.0 hwalSetAppearanceMode_ES1's table 0xc0ddc {GL_BACK, GL_FRONT, -1} (0xc0dd0 swaps the first two when hwal +0x24c is 1). Front face CCW (hwalReset_ES1). Meshes are CCW-outward |
 | texBlend | 0 REPLACE, 1 ADD, 2 BLEND, 3 DECAL, 4 MODULATE (table 0xcb668) |
 | wrap | 0 REPEAT, 1 CLAMP_TO_EDGE |
 | filter | 0 NEAREST, 1 LINEAR, 2–5 mipmap variants (1,501 of 1,503 materials use 0) |
@@ -1419,7 +1419,9 @@ is the table 0xd37c0's value for that effect (1101 body, 1102 head, 1003 root, 1
 section-6 records carry these users, the NodeDeformer maps the record id to a node). An
 effect's first action moves its skeleton (scale 0.001 hides parts; 13 effects have a node or
 a few more than segments: the action drives the first ones); its Appearances, diffuse alpha
-0 at rest, are coloured by the package action their **refGid** numbers (0-based; −1 none):
+0 at rest, are coloured by the package action their **refGid** names - the action whose gid (the u32 at
+Action +0x28) equals it, in the action table `_mdl_set_act` binds (the first whose longest action is over
+3 frames; `_mceFigure_bindAction` / `_mceActionTable_findAction`); none there, no action (−1 none):
 9-segment actions, segment 1 a keyType-12 RGBA track, segment 6 a UV translation, segment 8 a
 UV scale (the texture coordinates become uv × scale + translation: 29 effects scroll a
 texture, e.g. 48's light shafts, 78 / 79's walls of flame). Ids the battle uses: 0x15 casting, 0x18 hit, 0x19 critical, 0x1a a monster falling,

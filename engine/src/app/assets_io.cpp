@@ -481,6 +481,17 @@ void unloadModel(App& app) {
     unloadLoaded(app, app.model);
 }
 
+// The action table _mdl_set_act(0) binds to a package's figure (2.2.0 0x13610): the first, past those
+// whose longest action is 3 frames or less (_mceActionTable_getMaxFrame <= 3.0); its Animatables take
+// their actions from it by gid (_mceFigure_bindAction / _mceActionTable_findAction)
+int boundActionTable(const std::vector<cr::Action>& actions) {
+    std::map<int, float> longest;
+    for (const cr::Action& a : actions) longest[a.table] = std::max(longest[a.table], a.duration);
+    for (const auto& [t, d] : longest)
+        if (d > 3.0f) return t;
+    return longest.empty() ? 0 : longest.begin()->first;
+}
+
 // Loads a model package (and its fitting animations) into `out`.
 // The package's actions a model keeps: those with one segment per node; a list's motion ("N.1") a few
 // segments short; and one with empty segments past the last node, segment i still on node i (c111's
@@ -562,7 +573,7 @@ void loadModelFile(App& app, const std::string& name, LoadedModel& out, bool cha
     // Appearances that name a package action (refGid: segment 1 colour, 6 / 8 texture motion) -
     // the scenes' effect props (ee*, fe*): keep every package action for them, as effects do
     for (const auto& mat : m.materials)
-        if (int32_t(mat.refGid) >= 0) { out.packageActions = m.actions; break; }
+        if (int32_t(mat.refGid) >= 0) { out.packageActions = m.actions, out.materialTable = boundActionTable(m.actions); break; }
     // Animations: those stored in the package plus standalone <name>e*.mca files,
     // keeping only actions that animate this skeleton (one segment per node)
     // (or, for each list's motion - its first action, "N.1" - one a few segments off)

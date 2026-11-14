@@ -65,7 +65,7 @@ bool parseAction(Reader& r, Action& act, std::string& err) {
     const size_t end = start + size;
     if (size < 16 || end > r.size) { err = "bad action record size"; return false; }
 
-    r.u32();
+    act.gid = r.u32(); // _mceActionTable_findAction's key (an Animatable's refGid names it)
     const bool compressed = r.u8() == 1;
     const uint32_t decodedSize = r.u32();
     act.duration = r.real();

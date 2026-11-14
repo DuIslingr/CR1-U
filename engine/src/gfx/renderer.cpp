@@ -152,7 +152,9 @@ void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp
     st.blend = mat.blended();
     st.blendSrc = mat.blendSrc;
     st.blendDst = mat.blendDst;
-    st.cull = mat.culling == 0 ? 0 : mat.culling == 1 ? 1 : 2;
+    // (the file's codes - M3G's CULL_BACK / FRONT / NONE: 0 back, 1 front, 2 none, 2.2.0 hwalSetAppearanceMode_ES1's
+    // table 0xc0ddc {GL_BACK, GL_FRONT, -1} - to the device's 2 back, 1 front, 0 none)
+    st.cull = mat.culling == 0 ? 2 : mat.culling == 1 ? 1 : 0;
     st.depthTest = mat.depthTest();
     st.depthWrite = mat.depthWrite();
     // An HD texture for a cut-out (the original's alpha 0 or 255, drawn nearest): drawn filtered its

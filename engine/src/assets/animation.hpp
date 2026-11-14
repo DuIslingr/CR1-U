@@ -25,6 +25,8 @@ struct Action {
     std::string name;
     float duration = 0; // frames
     uint32_t objClass = 0, objId = 0, objUser = 0; // the record header's class / id / user words
+    uint32_t gid = 0xffffffff; // its gid: what an Animatable's (Appearance's, TransformTree's) refGid names (_mceActionTable_findAction)
+    int table = 0;             // the package's action file (an ActionTable) it came from: _mdl_set_act binds one table
     std::vector<std::vector<Track>> segments; // segment i animates skeleton node i
 };
 

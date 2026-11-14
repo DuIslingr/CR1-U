@@ -2429,7 +2429,7 @@ void drawFrame(App& app, bool present) {
             if (!hidden) drawEffects(app, app.fieldEffects, mvp, &eye, &tgt);
             if (app.showCollision && app.collision.vao) {
                 cr::Material colMat; // translucent so the painted floor shows through
-                colMat.culling = 0;
+                colMat.culling = 2; // (none)
                 colMat.properties = 8;
                 colMat.blendSrc = 4;
                 colMat.blendDst = 5;
@@ -2467,7 +2467,7 @@ void drawFrame(App& app, bool present) {
         r.begin3D();
         if (app.mode == Mode::Maps) {
             cr::Material occluder; // field props: shown as translucent grey in the 3D view
-            occluder.culling = 0;
+            occluder.culling = 2; // (none)
             occluder.properties = 8;
             occluder.blendSrc = 4;
             occluder.blendDst = 5;
@@ -2486,7 +2486,7 @@ void drawFrame(App& app, bool present) {
         if (app.mode == Mode::Maps) drawEffects(app, app.fieldEffects, mvp, &eye, &c);
         if (app.mode == Mode::Maps && app.collision.vao && app.showCollision) {
             cr::Material colMat;          // opaque, untextured, double-sided, depth test + write
-            colMat.culling = 0;
+            colMat.culling = 2; // (none)
             colMat.properties = 8 | 16;
             colMat.ambient[0] = colMat.ambient[1] = colMat.ambient[2] = 0;
             r.drawMesh(app.collision, nullptr, mvp, colMat);

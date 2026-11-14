@@ -267,7 +267,7 @@ bool exportGlb(const Model& model, const std::vector<Action>& actions, const std
         s += ",\"metallicFactor\":0,\"roughnessFactor\":1}";
         if (m.blended()) s += ",\"alphaMode\":\"BLEND\"";
         else if (m.alphaThreshold > 0) s += ",\"alphaMode\":\"MASK\",\"alphaCutoff\":" + num(float(m.alphaThreshold) / 255.0f);
-        if (m.culling == 0) s += ",\"doubleSided\":true";
+        if (m.culling == 2) s += ",\"doubleSided\":true"; // (M3G CULL_NONE)
         s += ",\"extensions\":{\"KHR_materials_unlit\":{}}}"; // (the game lights nothing: its colours are as painted)
         materials.push_back(s);
         materialOf[key] = int(materials.size()) - 1;

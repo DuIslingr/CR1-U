@@ -3233,7 +3233,7 @@ void drawFx(App& app, const cr::Mat4& mvp) {
     beams.finish();
     app.renderer.updatePositions(app.puzzleBeams, beams.pos, beams.uv, beams.col);
     cr::Material m; // untextured, double-sided, depth tested, no depth write
-    m.culling = 0;
+    m.culling = 2; // (none)
     m.properties = 8;
     m.blendSrc = 4, m.blendDst = 5; // alpha
     if (beams.n) app.renderer.drawMesh(app.puzzleBeams, nullptr, mvp, m);
@@ -3940,7 +3940,7 @@ void drawShadowFans(App& app, cr::GpuMesh& mesh, const std::vector<float>& tris,
     for (size_t v = 0; v < verts && v < cap; ++v) col[v * 4 + 3] = alpha[v];
     app.renderer.updatePositions(mesh, pos, uv, col);
     cr::Material m;
-    m.culling = 0;
+    m.culling = 2; // (none)
     m.properties = 8;
     m.blendSrc = 4, m.blendDst = 5;
     m.drawOrder = 990;
