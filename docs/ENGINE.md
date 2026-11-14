@@ -43,6 +43,17 @@ It also checks orientation settings across reloads, rapid dialogue voice replace
 first puzzle's solve/exit sequence on all four routes, before and after loading a save. Run it
 with each data source separately and an isolated `XDG_DATA_HOME` (it writes test settings).
 
+Touch follows 2.2.0's primitives (one touch at a time). A message page - the field's, a battle's
+talk, the Camp's notices, the title's Progress Tracker notice - turns on the press (`_PrcMsg`'s
+`_pad_chk_trg_down`); its skip button is the circle `_pad_chk_circle(460, 16, 20)`. The menus'
+controls (`_pad_chk_updw_box`) light while held and run on the box the touch lifts in, however far
+it slid on the way (the Camp too); a list's drag, swipe or gauge is its own. In a game frame in
+which the finger moved (touchesMoved's G+0x94 / 0x98, cleared at `_gameapp_prc`'s end) no control
+lights or takes a lift (`App::fingerMoved`). The battle's own tests (`_pad_chk_trg_up_box0`, the
+targets' `ntap1`) have no such gate; its one-tap phases - the victory's hold, the defeat, Analyze's
+lines, the results - and a script's tap (Call 2001, `_pad_chk_trg_up`) take the lift.
+`CR_SELFTEST_TOUCH=1 chaosrings --selftest` runs just those checks (they are in the full run too).
+
 Vita audio supplies zero-padded superframes for LibAtrac9's Huffman lookahead and uses defined
 unsigned bit operations, including zero-bit fields. `ctest --test-dir engine/build -R atrac9-bits`
 checks bit reversal, sign extension and bit reads at every width and alignment using synthetic
@@ -794,8 +805,10 @@ c101/c102/c104/m207a, 2026-10-12).
       choice (each pair once against the four guardians, its plate named for its leader as the
       reference shows: its camp menu, then Yes / No). `__menuu_LastBtPut` / `WldChoicePut` lay
       out as the camp does (windows at (0, 0), 1.0.1's records: the header at (8, 6) / (8, 4),
-      the rules at (0, 56), the picture at (0, 64)); the pairs are list rows
-      (`ComUty_ComPlate_LastBt`: plate 8 / 9, icon 4, the name at (56, 12)) at (192, 92 + 48k)
+      the rules at (0, 56), the picture at (0, 64)); the pairs are a MuScrList (`__LastBt_CharChoiceInit`:
+      `SetIdInfo(0xd, 4, 7, 0, 0, 0)`, layout 0, no Back) of `ComUty_ComPlate_LastBt` rows (plate 8 / 9,
+      icon 4, the name at (56, 12)) on the focus line at 150, touched as the Camp's lists: a tap over /
+      under the line moves them a row, only the line's row at rest is chosen (`__menuu_LastBtPrc` 3)
 - [x] **Puzzle rooms** (area 1, maps 114..177 - the map table now has all 178): the 16 teleport
       stages play - the blocks, gems, weigh switches and crystals on their grid, a tap (or T,
       straight ahead) swapping places with a block or gem, the ESP count (at 0 an ability is

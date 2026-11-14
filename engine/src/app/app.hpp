@@ -657,11 +657,18 @@ struct App {
     // now (the frame's pixels). The control under it is lit while held (its held flag); its action runs as
     // it lifts there (trg) - sliding off cancels
     struct Press { bool down = false; int screen = 0; float px = 0, py = 0; } press;
+    // touchesMoved (2.2.0 594-608) writes the finger's way to G+0x94 / 0x98, FUN_0001d044 clears it at _gameapp_prc's end
+    // (1870): while it is set, _pad_chk_updw_box finds no touch lifting or held (14444-14449) - a menu's control doesn't
+    // light, nor run on a lift, in a game frame in which the finger moved (the battle's _pad_chk_trg_up_box0 / box0 and
+    // the lists' drags have no such test). Set by a held touch's move, cleared each game frame and by a new touch
+    bool fingerMoved = false;
+    float fingerClock = 0;
     int countHeldSide = 0, countHeldFrames = 0; // a count's < or > held by a touch (_ComUty_NumCountProc's +0x14)
     float countClock = 0;
     crinput::HeldOver padHeldOver;         // (dead after a cancel or a session's end, until let go)
     int itemWindowItem = 0;
     bool tapPending = false;               // action key while a script waits for a tap
+    bool tapArmed = false;                 // a touch down for the script's tap: tapPending as it lifts (_pad_chk_trg_up)
     float fadeGrey = 0, fadeFrom = 0, fadeTo = 0; // Screen
     // Screen's op 58 (_SetFade_back: G+0x3a0a0, the shape 0 - the whole screen): over the 3D, under
     // every 2D (the back mask's draw order -100); Wait 0xFFFC waits for it
@@ -1228,6 +1235,7 @@ struct App {
         int count = 0, mask = 0;           // rounds done, pairs used (the menu's statics, not saved)
         std::vector<int> pairs;            // those left to choose (0..3)
         int cursor = 0, chosen = -1, confirm = 0;
+        ScrList scroll;                    // the pairs' MuScrList (SetIdInfo(0xd, 4, 7, 0, 0, 0): layout 0, no Back): scrlist::
         float win[7] = {}, winTo[7] = {};
         cr::Texture tex;                   // hi / mizu / kaze / mu.mct: this round's guardian
         float clock = 0;
@@ -1737,6 +1745,7 @@ void stepLastBattle(App& app);
 void drawLastBattle(App& app);
 void lastBattleKey(App& app, SDL_Keycode key);
 void lastBattleClick(App& app, float px, float py);
+void worldListPoint(const App& app, float px, float py, float& x, float& y); // a list's units (tex2d, the right-hand group)
 void openWorldSelect(App& app);
 void closeWorldSelect(App& app);
 void worldSelectChoose(App& app, int pos);

@@ -1098,7 +1098,7 @@ void drawNumCount(cr::MenuPainter& m, int count, int = 99, float dx = 0, float a
 
 // A touch held on the shop (shopClick's units: the centre group, or the right-hand one) inside a box
 bool shopPressIn(const App& app, bool right, float x, float y, float w, float h) {
-    if (!app.press.down || app.press.screen != kPressShop) return false;
+    if (!app.press.down || app.press.screen != kPressShop || app.fingerMoved) return false; // (_pad_chk_updw_box's held)
     float lx, ly;
     app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
     const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
@@ -1238,10 +1238,10 @@ void drawShop(App& app) {
             m.text(have[0][0], 24, 251, false, 1, kFont);
     } else if (list && shopEquipment(app) && shopTwoMembers(app)) {
         // ComUty_CmdBack 2: < Back > - the part held lit (1 Back, 2 right, 3 left: the boxes shopClick tests)
-        m.backButton(kBackX, kBackY, shopPressIn(app, false, kBackX + 51, kBackY, 130, 24) ? 1 : shopPressIn(app, false, 0x175, kBackY, 0x33, 24) ? 2
-                                     : shopPressIn(app, false, 0xc0, kBackY, 0x33, 24) ? 3 : 0, s.bob, a);
+        m.backButton(kBackX, kBackY, shopPressIn(app, false, 0xf8, 0x11e, 0x78, 0x22) ? 1 : shopPressIn(app, false, 0x175, 0x11e, 0x33, 0x22) ? 2
+                                     : shopPressIn(app, false, 0xc0, 0x11e, 0x33, 0x22) ? 3 : 0, s.bob, a);
     } else {
-        m.backBar(kBackX, kBackY, shopPressIn(app, false, kBackX, kBackY, 232, 24), a); // (lit while held: DAT_000d307c)
+        m.backBar(kBackX, kBackY, shopPressIn(app, false, 0xc0, 0x11e, 0x100, 0x22), a); // (lit while held: DAT_000d307c; shopClick's box)
     }
     const char* help = s.phase == App::Shop::Count     ? "Left/Right: 1  Shift: 10  Up/Down: Yes / No  Enter  Esc"
                        : s.phase == App::Shop::EquipAsk ? "Up/Down  Enter  Esc: no"
@@ -1315,6 +1315,8 @@ void shopKey(App& app, SDL_Keycode key) {
 
 void shopClick(App& app, float px, float py) {
     App::Shop& s = app.shop;
+    const bool still = !app.fingerMoved; // (_pad_chk_updw_box: no lift in a frame the finger moved in - the list's drag aside)
+    if (!still && s.phase != App::Shop::List) return;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
@@ -1345,7 +1347,10 @@ void shopClick(App& app, float px, float py) {
         break;
     case App::Shop::List: {
         using namespace shopui;
-        const bool arrows = shopEquipment(app) && shopTwoMembers(app) && my >= kBackY && my < kBackY + 24;
+        // (__Common_ListReady 66846 / 66882: MuScrList back type 2 with two members - __ComUty_BackButtonProc 45879-45903:
+        // Back (0xf8, 0x11e, 0x78 x 0x22), the arrows (0xc0, ..) -3 and (0x175, ..) -2, 0x33 x 0x22)
+        const bool arrows = shopEquipment(app) && shopTwoMembers(app);
+        const bool inBar = my >= 0x11e && my < 0x11e + 0x22;
         const int n = int(s.list.size());
         // MuScrList_Proc (scrlist::): a drag's or the gauge's lift moves only the rows; a tap over / under the line a row
         // on, the pills' boxes to the other end, the line's row chosen once the rows rest
@@ -1357,13 +1362,15 @@ void shopClick(App& app, float px, float py) {
             s.listTop = s.listCursor;
             break;
         }
+        if (!still) break;
         if (const int r = scrlist::tap(s.scroll, sx, sy, n); r) {
             if (r == 2) scrlist::follow(s.scroll, s.listCursor, n), shopChooseItem(app, s.listCursor);
             else if (r == 1 && scrlist::follow(s.scroll, s.listCursor, n)) menuSound(app, se::kListFocus);
             s.listTop = s.listCursor;
-        } else if (arrows && ((cx >= 0xc0 && cx < 0xf3) || (cx >= 0x175 && cx < 0x1a8)))
-            shopSwitchMember(app);
-        else if (onBack) shopBack(app);
+        } else if (arrows) {
+            if (inBar && cx >= 0xf8 && cx < 0xf8 + 0x78) shopBack(app);
+            else if (inBar && ((cx >= 0xc0 && cx < 0xc0 + 0x33) || (cx >= 0x175 && cx < 0x175 + 0x33))) shopSwitchMember(app);
+        } else if (onBack) shopBack(app);
         break;
     }
     case App::Shop::Count:
@@ -2603,9 +2610,9 @@ bool campBackShown(const App& app) {
 void campClick(App& app, float px, float py) {
     using namespace campui;
     App::Camp& c = app.camp;
-    if (c.notice) { tapDialogue(app); return; }
+    if (c.notice) return; // (its pages turn on the press - _PrcMsg's _pad_chk_trg_down: main.cpp's mouse-down)
     if (c.phase == App::Camp::Exit) return;
-    if (c.phase == App::Camp::Result) { campChoose(app); return; } // (a tap anywhere)
+    if (c.phase == App::Camp::Result) { campChoose(app); return; } // (a lift anywhere: NextProc 9's _pad_chk_updw_box(0, 0, 480, 320))
     if (c.leaving || c.pageOut || c.toOptions || campSliding(app)) return;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
@@ -2683,7 +2690,8 @@ void campPointerPoint(const App& app, float px, float py, float& mx, float& my) 
 // while _pad_chk_updw_box finds the finger on it (not once it drags a list)
 bool campPressIn(const App& app, float origin, float x, float y, float w, float h) {
     const auto& p = app.campPointer;
-    if (!p.down || p.dragging) return false;
+    if (!p.down || p.bar || p.sideways || p.upright || app.fingerMoved) return false; // (not a list's drag or swipe, nor the
+                                                                                        // gauge; not while the finger moves)
     float lx, ly, mx, my;
     app.renderer.toLogical(p.curPx, p.curPy, lx, ly);
     menuPointAt(app, lx, ly, origin, mx, my);
@@ -2763,8 +2771,8 @@ void campPointerUp(App& app, float px, float py) {
         // ComUty_GetSwipeX: let go more than 30 to the left -2, to the right -3 (SE 5); else the board back at once
         float mx, my;
         campPointerPoint(app, px, py, mx, my);
-        const float dx = p.startX - mx;
-        if (std::fabs(dx) > 30 && std::fabs(dx) > std::fabs(my - p.startY)) campKey(app, dx > 0 ? SDLK_RIGHT : SDLK_LEFT);
+        const float dx = p.startX - mx; // (|dx| alone: an up-and-down way doesn't matter)
+        if (std::fabs(dx) > 30) campKey(app, dx > 0 ? SDLK_RIGHT : SDLK_LEFT);
         app.camp.swipe = 0;
         return;
     }
@@ -2782,7 +2790,10 @@ void campPointerUp(App& app, float px, float py) {
         campFollowed(app, scrlist::follow(sl, campCursor(app), campScrollCount(app)));
         if (!tap || p.dragging) return;
     } else sl.hold = ScrList::None;
-    if (same && !p.dragging && !p.bar) campClick(app, px, py);
+    // The controls (__MuCamp_NextProc 5's plates and face boards 63224 / 63239, Back 63255, the result's tap 63585,
+    // __MuCommon_CharChoiceProc 64747): _pad_chk_updw_box's trg - the box the touch lifts in, however far it came
+    // (a list's drag or swipe, the gauge, the board's swipe went above)
+    if (same && !p.bar && !app.fingerMoved) campClick(app, px, py); // (none in a frame the finger moved in: App::fingerMoved)
 }
 
 // A plate's name at the ComPlate's (x, y) (ComUty_ComPlate_Base: + (0x38, 0xc)): MuComFontPlateDisp (0x5242c,
@@ -3075,9 +3086,11 @@ void drawStaffRoll(App& app) {
 // back to the plates, Yes closes - count + 1, the pair's bit set, var 0 = the pair; after the
 // fourth, count and the bits clear and so does flag 1.
 namespace lastbt {
-// The pairs: MuScrList rows (list layout 0, as the World Select's and the shop's) of
-// ComUty_ComPlate_LastBt - plate 8 / 9 (lit), icon 4 at (12, 8), the leader's name at (56, 12)
-constexpr float kRowX = 192, kRowY = 92, kRowStep = 48, kRowW = 256, kRowH = 44; // menu units
+// The pairs: a MuScrList (__LastBt_CharChoiceInit 72426: SetIdInfo(0xd, 4, 7, 0, 0, 0) - list layout 0, as the World
+// Select's, no Back) of ComUty_ComPlate_LastBt - plate 8 / 9 (lit), icon 4 at (12, 8), the leader's name at (56, 12):
+// the focus row on the line at 150, the rows moving under it (scrlist::)
+constexpr float kRowX = 192, kRowStep = 48; // menu units
+constexpr int kListKey = 1;
 }
 
 // MuScrList_ItemRegist(0x1e + 2p) registers block 7 entry id - 1: the pair's leader
@@ -3106,6 +3119,7 @@ void lastBattleList(App& app, bool windows) { // __LastBt_CharChoiceInit
     for (int p = 0; p < 4; ++p)
         if (!(lb.mask & (1 << p))) lb.pairs.push_back(p);
     lb.cursor = 0;
+    lb.scroll = ScrList(); // (MuScrList_Init / Ready: a new list, on its first row)
     if (windows) lbWin(app, 0, true), lbWin(app, 1, true), lbWin(app, 2, true);
     lbWin(app, 3, true); // the plates
     lb.state = 3;
@@ -3132,6 +3146,20 @@ void stepLastBattle(App& app) {
     if (!lb.open) return;
     for (int w = 0; w < 7; ++w)
         lb.win[w] = lb.win[w] < lb.winTo[w] ? std::min(lb.winTo[w], lb.win[w] + 0.25f) : std::max(lb.winTo[w], lb.win[w] - 0.25f);
+    { // (LastBtPrc 3: MuScrList_Proc - the held touch a frame at a time, lastBattleClick's units; the ease and flick)
+        ScrList& sl = lb.scroll;
+        const int n = int(lb.pairs.size());
+        const bool up = lb.state == 3;
+        scrlist::ready(sl, lastbt::kListKey, lb.cursor);
+        if (up && app.press.down && app.press.screen == kPressLastBattle) {
+            float x, y;
+            worldListPoint(app, app.press.px, app.press.py, x, y);
+            const double t = sl.lastT + 1.0 / 20;
+            if (sl.hold == ScrList::None) scrlist::press(sl, x, y, n, t);
+            else scrlist::move(sl, x, y, n, t);
+        } else if (!up) sl.hold = ScrList::None;
+        if (scrlist::frame(sl, lastbt::kListKey, lb.cursor, n) && up) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1))
+    }
     switch (lb.state) {
     case 0: lb.state = 1; break;
     case 1: lastBattleList(app, true); break;
@@ -3204,14 +3232,32 @@ void drawLastBattle(App& app) {
         m.imagePiece(lb.tex, dx, 64, 0, 0, 256, 256, lb.win[2]);
     }
     r.setOrigin(wideRight(app));
-    if (lb.win[3] > 0)
-        for (size_t i = 0; i < lb.pairs.size(); ++i) {
-            using namespace lastbt;
-            const float a = lb.win[3], x = kRowX + 200 * (1 - ease(a)), y = kRowY + kRowStep * float(i);
-            m.picture(lb.cursor == int(i) ? 9 : 8, x, y, a);
+    if (lb.win[3] > 0) { // MuScrList_Draw (LastBtPut): the focus row on the line, cut to 76..280, the pills, the gauge
+        using namespace lastbt;
+        const float a = lb.win[3], x = kRowX + 200 * (1 - ease(a));
+        const int n = int(lb.pairs.size());
+        const ScrList& sl = lb.scroll;
+        const bool live = sl.key == kListKey;
+        const float scroll = live ? float(sl.shown()) : kRowStep * float(lb.cursor);
+        const int focus = live ? scrlist::focusOf(sl, n) : lb.cursor; // (__MuScrList_GetFocusPos)
+        m.setClip(campui::kListTop, campui::kListBottom);
+        for (int i = 0; i < n; ++i) {
+            const float y = campui::kFocusY + kRowStep * float(i) - scroll;
+            if (y + kRowStep <= campui::kListTop || y >= campui::kListBottom) continue;
+            m.picture(lb.state == 3 && i == focus ? 9 : 8, x, y, a);
             m.piece(x + 12, y + 8, float(4 % 16) * 32, 248 + float(4 / 16) * 32, 32, 32, a); // icon 4
-            plateText(app, m, lastBattlePlate(app, lb.pairs[i]), x + 56, y + 12, 0, a);
+            plateText(app, m, lastBattlePlate(app, lb.pairs[size_t(i)]), x + 56, y + 12, 0, a);
         }
+        if (n > 2) {
+            if (focus < 2) m.picture(0x8c, x + 88, 112 - scroll, a);
+            if (focus >= n - 2) m.picture(0x8d, x + 88, 208 + kRowStep * float(n - 1) - scroll, a);
+        }
+        m.clearClip();
+        const bool phone = r.phoneLayout();
+        m.setOffset((phone ? 16.0f : 0.0f) + x - kRowX, phone ? 32.0f : 0.0f);
+        drawCampScrollBar(m, scroll, n, a);
+        m.setOffset(phone ? 16.0f : 0.0f, phone ? 32.0f : 0.0f); // (PhoneMenu's)
+    }
     r.setOrigin(r.uiX());
     if (lb.win[5] > 0) { // the question (ComUty_MsgBoardDraw at y 220, sliding up from 160 below)
         const float dy = 160 * (1 - ease(lb.win[5]));
@@ -3236,7 +3282,9 @@ void lastBattleKey(App& app, SDL_Keycode key) {
         if (n <= 0) return;
         if (key == SDLK_UP || key == SDLK_W) lb.cursor = (lb.cursor + n - 1) % n, menuSound(app, se::kListFocus);
         else if (key == SDLK_DOWN || key == SDLK_S) lb.cursor = (lb.cursor + 1) % n, menuSound(app, se::kListFocus);
-        else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) lastBattleChoose(app, lb.cursor);
+        else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) {
+            if (scrlist::rests(lb.scroll, lastbt::kListKey)) lastBattleChoose(app, lb.cursor); // (the Vita's: at rest)
+        }
     } else if (lb.state == 10) {
         if (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_W || key == SDLK_S) lb.confirm ^= 1, menuSound(app, se::kCursor);
         else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) lastBattleAnswer(app, lb.confirm == 0);
@@ -3250,13 +3298,21 @@ void lastBattleClick(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
     menuPointAt(app, lx, ly, wideRight(app), mx, my); // menu units (widescreen: the plates on the right)
-    auto in = [&](float x, float y, float w, float h) { return mx >= x && mx < x + w && my >= y && my < y + h; };
+    const bool still = !app.fingerMoved; // (_pad_chk_updw_box: no lift in a frame the finger moved in - the list's drag aside)
+    auto in = [&](float x, float y, float w, float h) { return still && mx >= x && mx < x + w && my >= y && my < y + h; };
     if (lb.state == 3) {
-        for (size_t i = 0; i < lb.pairs.size(); ++i)
-            if (in(lastbt::kRowX, lastbt::kRowY + lastbt::kRowStep * float(i), lastbt::kRowW, lastbt::kRowH)) {
-                lb.cursor = int(i);
-                lastBattleChoose(app, int(i));
-            }
+        // __menuu_LastBtPrc 3: MuScrList_Proc as the touch lifts (scrlist::) - a drag's or the gauge's lift moves only the
+        // rows; a tap over / under the line a row on, the pills' boxes to the other end; only its 2 - the line's row tapped
+        // with the rows at rest - chooses (MuScrList_GetChoiceListNo)
+        const int n = int(lb.pairs.size());
+        ScrList& sl = lb.scroll;
+        scrlist::ready(sl, lastbt::kListKey, lb.cursor);
+        float x, y;
+        worldListPoint(app, px, py, x, y);
+        const bool tapped = scrlist::lift(sl, x, y, n, sl.lastT + 1.0 / 20);
+        const int r = tapped && still ? scrlist::tap(sl, x, y, n, lastbt::kRowX) : 0;
+        if (scrlist::follow(sl, lb.cursor, n)) menuSound(app, se::kListFocus);
+        if (r == 2) lastBattleChoose(app, lb.cursor);
     } else if (lb.state == 10) { // the boxes (0x88 x 0x28)
         if (in(336, 104, 136, 40)) lastBattleAnswer(app, true);
         else if (in(336, 160, 136, 40)) lastBattleAnswer(app, false);
@@ -3540,7 +3596,7 @@ void drawWorldSelect(App& app) {
         ownPlace(true);
     };
     // (MuScrList_Proc's BackButtonProc: the Back bar lit while held - the box worldSelectClick tests)
-    const bool backHeld = pressIn(app, kPressWorld, wideRight(app), kBackX - (phone ? 16 : 0), kBackY - (phone ? 32 : 0), 232, 24);
+    const bool backHeld = pressIn(app, kPressWorld, wideRight(app), kBackX - (phone ? 16 : 0), kBackY - 2 - (phone ? 32 : 0), 256, 34);
     if (ws.win[6] > 0) { // the gates
         ownPlace(true);
         const int n = int(ws.worlds.size());
@@ -3620,10 +3676,13 @@ void worldSelectClick(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
     menuPointAt(app, lx, ly, wideRight(app), mx, my); // (widescreen: the lists and Yes / No on the right)
-    auto in = [&](float x, float y, float w, float h) { return mx >= x && mx < x + w && my >= y && my < y + h; };
+    const bool still = !app.fingerMoved; // (_pad_chk_updw_box: no lift in a frame the finger moved in - the list's drag aside)
+    auto in = [&](float x, float y, float w, float h) { return still && mx >= x && mx < x + w && my >= y && my < y + h; };
     if (ws.state == 1 || ws.state == 6) {
         const bool phone = app.renderer.phoneLayout(); // (Back: tex2d + (16, 32) already, see drawWorldSelect)
-        if (in(kBackX - (phone ? 16 : 0), kBackY - (phone ? 32 : 0), 232, 24)) {
+        // (MuScrList_Proc 54804: back type 1 - SetIdInfo(0, 6, 7, 2, 0, 1) 49319, (1, 7, 7, 8, 0, 1) 49652 -,
+        // __ComUty_BackButtonProc's (0xc0, 0x11e, 0x100 x 0x22): tex2d (192, 286, 256 x 34))
+        if (in(kBackX - (phone ? 16 : 0), kBackY - 2 - (phone ? 32 : 0), 256, 34)) {
             if (ws.state == 1) worldSelectChoose(app, -1);
             else worldSelectLevel(app, -1);
             return;
@@ -3637,7 +3696,7 @@ void worldSelectClick(App& app, float px, float py) {
         float x, y;
         worldListPoint(app, px, py, x, y);
         const bool tapped = scrlist::lift(sl, x, y, n, sl.lastT + 1.0 / 20);
-        const int r = tapped ? scrlist::tap(sl, x, y, n, kListX) : 1;
+        const int r = !tapped ? 1 : still ? scrlist::tap(sl, x, y, n, kListX) : 0;
         if (scrlist::follow(sl, focus, n)) menuSound(app, se::kListFocus);
         if (r == 2) {
             if (ws.state == 1) worldSelectChoose(app, focus);
@@ -4675,7 +4734,7 @@ void drawScenarios(App& app) {
         m.begin(r, app.windowTex, &app.font);
         const PhoneMenu phoneMenu(app, m);
         drawClockAndOz(app, m, a);
-        m.backBar(192, 286, app.press.down && app.press.screen == kPressHistory && historyBackAt(app, app.press.px, app.press.py), a); // (HistoryPut: BackButtonDraw2 mode 1; lit while held - DAT_000d37b8)
+        m.backBar(192, 286, app.press.down && app.press.screen == kPressHistory && !app.fingerMoved && historyBackAt(app, app.press.px, app.press.py), a); // (HistoryPut: BackButtonDraw2 mode 1; lit while held - DAT_000d37b8)
         return;
     }
     // (z: the entries -8 under the pairs' strips -4; the way-in locks -4 over them while above y 688;
@@ -4730,7 +4789,7 @@ void drawScenarios(App& app) {
     }
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
-    m.backBar(272, 330, app.press.down && app.press.screen == kPressHistory && historyBackAt(app, app.press.px, app.press.py), a);
+    m.backBar(272, 330, app.press.down && app.press.screen == kPressHistory && !app.fingerMoved && historyBackAt(app, app.press.px, app.press.py), a);
     if (keyHints(app)) // (our key hints)
         m.text("Up/Down: scroll  Esc: back", 300, 372, false, a * 0.8f, 9);
 }
@@ -5200,7 +5259,7 @@ void drawCharSelect(App& app) {
                 t, false);
     // (the Back held lit - StartPrc 2's DAT_000d334c, minus BackButtonPosSetXYProc's answer: 1 Back, 2 the right
     // arrow, 3 the left - the part held: charSelectBackPart)
-    const int held = app.press.down && app.press.screen == kPressCharSelect ? charSelectBackPart(app, app.press.px, app.press.py) : 0;
+    const int held = app.press.down && app.press.screen == kPressCharSelect && !app.fingerMoved ? charSelectBackPart(app, app.press.px, app.press.py) : 0;
     if (laterPairsOpen(app)) m.backButton(124, 288, held, 0, t); // ComUty_BackButtonPosSetXYDraw(124, 288): its arrows
     else m.backBar(124, 288, held == 1, t);                      // (mode 2) once the later pairs are open (flags 0x20 / 0x22)
     if (keyHints(app)) // (our key hints)
@@ -5381,10 +5440,10 @@ bool titleKey(App& app, SDL_Keycode key) {
 void titleClick(App& app, float px, float py) {
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
-    if (app.resumeNotice) { tapDialogue(app); return; } // (the message window: a tap anywhere)
+    if (app.resumeNotice) return; // (the message window: its pages turn on the press - _PrcMsg, main.cpp's mouse-down)
     if (app.resumePrompt) return;
     if (app.titleStage == 0) { titleTap(app); return; } // (a tap anywhere: _pad_chk_trg_up_box0(0, 0, 480, 320))
-    if (!titlePlatesLive(app)) return;
+    if (!titlePlatesLive(app) || app.fingerMoved) return; // (the plates: _pad_chk_updw_box - no lift in a frame the finger moved in)
     float mx, my;
     menuPointAt(app, lx, ly, wideRight(app), mx, my); // (widescreen: the plates on the right)
     for (int i = 0; i < 3; ++i)

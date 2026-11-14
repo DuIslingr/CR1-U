@@ -3606,6 +3606,127 @@ int textFacesSelfTest(App& app) {
     return problems;
 }
 
+// The touch semantics of 2.2.0's primitives (the round-30 touch sweep), through the SDL input path: the Camp acts on the box
+// the touch lifts in however far it slid (_pad_chk_updw_box's trg), nothing lights or runs in a frame the finger moved in
+// (G+0x94 / 0x98), a notice's page turns on the press (_PrcMsg's _pad_chk_trg_down), the battle's one-tap phases and the
+// script's tap (Call 2001) take the lift (_pad_chk_trg_up), the last battle's pairs are a MuScrList (only the line's row
+// chooses), the message skip is a circle (_pad_chk_circle(460, 16, 20))
+int touchSemanticsSelfTest(App& app) {
+    const cr::GameState keepGame = app.game;
+    const int keepChar = app.playerChar;
+    int bad = 0, check = 0;
+    auto expect = [&](bool ok) { ++check; if (!ok) bad |= 1 << std::min(check, 30); };
+    auto pointer = [&](SDL_EventType type, float mx, float my) { // menu units of the right-hand group (tex2d)
+        float x0, y0, x1, y1;
+        app.renderer.toLogical(0, 0, x0, y0);
+        app.renderer.toLogical(1000, 1000, x1, y1);
+        const bool phone = app.renderer.phoneLayout();
+        const float lx = wideRight(app) + 2 * (mx + (phone ? 16 : 0)), ly = 2 * (my + (phone ? 32 : 0));
+        int ww, wh;
+        SDL_GetWindowSize(app.window, &ww, &wh);
+        SDL_Event e{};
+        e.type = type;
+        const float x = (lx - x0) * 1000 / (x1 - x0) * ww / app.renderer.frameWidth();
+        const float y = (ly - y0) * 1000 / (y1 - y0) * wh / app.renderer.frameHeight();
+        if (type == SDL_EVENT_MOUSE_MOTION) e.motion.x = x, e.motion.y = y;
+        else e.button.x = x, e.button.y = y, e.button.button = SDL_BUTTON_LEFT;
+        SDL_AppEvent(&app, &e);
+    };
+    auto tap = [&](float x, float y) { pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, x, y), pointer(SDL_EVENT_MOUSE_BUTTON_UP, x, y); };
+    auto frameEnd = [&]() { app.fingerMoved = false; }; // (FUN_0001d044 at _gameapp_prc's end)
+    app.runner.stop();
+    app.pendingEntry = App::Entry::None;
+    app.titleOpen = app.optionsOpen = app.charSelectOpen = app.worldChoiceOpen = app.saveScreen.open = false;
+    app.mode = Mode::Maps;
+    app.game = cr::GameState();
+    app.playerChar = 0;
+    app.game.setFlag(0x38, true), app.game.setFlag(0x39, true); // (the Camp's once-only messages read)
+    using namespace campui;
+    // The Camp's plates: down on Equip, slid up onto Items (past 6), lifted there - Items (the port dropped a slid touch)
+    openCamp(app);
+    App::Camp& c = app.camp;
+    c.anim = 100;
+    pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, kPlateX + 60, kPlateY + kPlateStep + 20);
+    pointer(SDL_EVENT_MOUSE_MOTION, kPlateX + 60, kPlateY + 20);
+    const bool dark = !campPressIn(app, wideRight(app), kPlateX, kPlateY, 136, 40); // (moving: not lit)
+    frameEnd();
+    const bool lit = campPressIn(app, wideRight(app), kPlateX, kPlateY, 136, 40);   // (still a frame: lit)
+    pointer(SDL_EVENT_MOUSE_BUTTON_UP, kPlateX + 60, kPlateY + 20);
+    expect(dark), expect(lit), expect(c.page == App::Camp::Items);
+    // ... a lift in a frame the finger moved in runs nothing
+    app.campOpen = false;
+    openCamp(app);
+    c.anim = 100;
+    pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, kPlateX + 60, kPlateY + 20);
+    pointer(SDL_EVENT_MOUSE_MOTION, kPlateX + 62, kPlateY + 20);
+    pointer(SDL_EVENT_MOUSE_BUTTON_UP, kPlateX + 62, kPlateY + 20);
+    expect(c.page == App::Camp::Main);
+    tap(kPlateX + 60, kPlateY + 20); // (and a still one does)
+    expect(c.page == App::Camp::Items);
+    // A Camp notice's page turns on the press, the lift doing nothing more
+    app.campOpen = false;
+    openCamp(app);
+    c.anim = 100;
+    c.notice = 1;
+    app.dialogue = {{"Page"}};
+    app.dialogueInfo.clear();
+    app.dialoguePage = 0;
+    tapDialogue(app); // (typed out)
+    pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, kPlateX + 60, kPlateY + 20);
+    expect(app.dialogue.empty() && !app.campPointer.down);
+    pointer(SDL_EVENT_MOUSE_BUTTON_UP, kPlateX + 60, kPlateY + 20);
+    expect(c.page == App::Camp::Main);
+    c.notice = 0;
+    app.campOpen = false;
+    app.campPointer = App::CampPointer();
+    // The battle's victory hold and its talk's script tap: on the lift
+    App::Battle& b = app.battle;
+    const bool keepActive = b.active;
+    const auto keepPhase = b.phase;
+    const int keepFrames = b.phaseFrames;
+    b.active = true, b.phase = App::Battle::Won, b.phaseFrames = 20, b.wonTap = false;
+    pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 240, 160);
+    const bool notYet = !b.wonTap && app.press.down;
+    pointer(SDL_EVENT_MOUSE_BUTTON_UP, 240, 160);
+    expect(notYet), expect(b.wonTap);
+    b.wonTap = false;
+    app.game.setFlag(battletalk::kFlag, true);
+    app.dialogue.clear(), app.tapPending = false;
+    pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 240, 160);
+    const bool armed = !app.tapPending && app.tapArmed;
+    pointer(SDL_EVENT_MOUSE_BUTTON_UP, 240, 160);
+    expect(armed), expect(app.tapPending && !app.tapArmed);
+    app.tapPending = false;
+    app.game.setFlag(battletalk::kFlag, false);
+    b.active = keepActive, b.phase = keepPhase, b.phaseFrames = keepFrames;
+    // The last battle's pairs (MuScrList): a tap under the line moves them a row and chooses nothing; on the line, at rest,
+    // the line's row is chosen
+    app.game.setFlag(1, true);
+    App::LastBattle& lb = app.lastBattle;
+    lb.count = lb.mask = 0;
+    openLastBattle(app);
+    for (int f = 0; f < 60 && lb.state != 3; ++f) stepLastBattle(app);
+    for (int f = 0; f < 8; ++f) stepLastBattle(app);
+    tap(192 + 60, kFocusY + 48 + 20);
+    for (int f = 0; f < 12; ++f) stepLastBattle(app);
+    expect(lb.state == 3 && lb.cursor == 1);
+    tap(192 + 60, kFocusY + 20);
+    expect(lb.state == 4 && lb.chosen == lb.pairs[1]);
+    app.renderer.destroy(lb.tex);
+    lb = App::LastBattle();
+    // The message skip: a circle about tex2d (460, 16), radius 20 - the old rectangle's far corner is outside it
+    const cr::Renderer& r = app.renderer;
+    expect(skipCorner(app, r.layoutRight() - 40, r.layoutTop() + 32));
+    expect(!skipCorner(app, r.layoutRight() - 4, r.layoutTop() + 68));
+    app.press = App::Press(), app.fingerMoved = false;
+    app.game = keepGame;
+    app.playerChar = keepChar;
+    std::printf("touch semantics: the Camp acts on the lift's box after a slide, nothing in a moving frame, notices on the press, "
+                "the victory / script taps on the lift, the last battle's MuScrList, the skip circle: %d problems%s\n", bad ? 1 : 0,
+                bad ? (" (checks " + std::to_string(bad) + ")").c_str() : "");
+    return bad ? 1 : 0;
+}
+
 int menusAuditSelfTest(App& app) {
     const cr::GameState keepGame = app.game;
     const int keepChar = app.playerChar, keepMap = app.mapNumber;
@@ -3817,6 +3938,12 @@ int runSelfTest(App& app) {
         return problems ? 1 : 0;
     }
     if (SDL_getenv("CR_SELFTEST_CANCEL")) return inputCancelSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_TOUCH")) {
+        setMode(app, Mode::Maps);
+        app.renderer.beginFrame(1280, 720);
+        app.renderer.endFrame(false);
+        return touchSemanticsSelfTest(app) ? 1 : 0;
+    }
     if (SDL_getenv("CR_SELFTEST_LIFECYCLE")) return fieldLifecycleSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_MOBILE")) return scrListSelfTest() + mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
@@ -6670,6 +6797,7 @@ int runSelfTest(App& app) {
         mapErrors += problems;
     }
     mapErrors += menusAuditSelfTest(app);
+    mapErrors += touchSemanticsSelfTest(app);
     mapErrors += textFacesSelfTest(app);
     { // The last battle's pair choice (Util 8): four rounds, each pair once; a No goes back to the
       // plates; the camp menu opens for the chosen pair; flag 1 clears after the fourth

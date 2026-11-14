@@ -4109,10 +4109,11 @@ void battleClick(App& app, float px, float py) {
     if (battletalk::on(app)) { // a talk: the skip corner, else the next page
         if (skipCorner(app, lx, ly)) holdSkip(app, kSkipPointer, true);
         else if (!app.dialogue.empty()) tapDialogue(app);
-        else app.tapPending = true;
+        else app.tapArmed = true; // (the script's tap, Call 2001's _pad_chk_trg_up: set as the touch lifts)
         return;
     }
-    if (b.phase == App::Battle::Results) { // __MbResult_IsTouchChack: (0, 0, 480, 320)
+    // (the one-tap phases: the touch lifting anywhere - pressRelease)
+    if (b.phase == App::Battle::Results) { // __MbResult_IsTouchChack: _pad_chk_trg_up_box0(0, 0, 480, 320)
         resultsTap(app);
         return;
     }

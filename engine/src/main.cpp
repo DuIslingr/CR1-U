@@ -95,8 +95,7 @@ int pressScreen(const App& app) {
     return kPressNone;
 }
 // A battle's touch held for its menus (the command pages, lists, targets, the escape question:
-// __menub_mainPrc's _pad_chk_trg_up_box0 - the lift); a talk and the one-tap phases (results, victory,
-// defeat) take it as it goes down
+// __menub_mainPrc's _pad_chk_trg_up_box0 - the lift: drags and swipes from where it went down)
 bool battleMenuPress(const App& app) { return !battletalk::on(app) && app.battle.phase == App::Battle::Command; }
 // The touch lifting on screen `screen`: its click there (the clicks test their boxes, so a touch slid
 // off the control it went down on does nothing - _pad_chk_updw_box's trg)
@@ -107,7 +106,9 @@ void pressRelease(App& app, int screen, float px, float py) {
     case kPressLastBattle: lastBattleClick(app, px, py); break;
     case kPressWorld: worldSelectClick(app, px, py); break;
     case kPressShop: shopClick(app, px, py); break;
-    case kPressBattle: battleClick(app, px, py); break;
+    case kPressBattle: // (a talk begun meanwhile turns its pages on a press: _PrcMsg's _pad_chk_trg_down)
+        if (!battletalk::on(app)) battleClick(app, px, py);
+        break;
     case kPressResume: resumeClick(app, px, py); break;
     case kPressTitle: titleClick(app, px, py); break;
     case kPressChoice: { // an event's Yes / No plates (0x88 x 0x28): __menuu_EventPrc's ComUty_YesNoChoiceProc trg
@@ -130,7 +131,7 @@ void pressRelease(App& app, int screen, float px, float py) {
 // its counter past 0x14 - one a frame; let go, it starts over (the shop's count, the Camp's seeds)
 void pressCountStep(App& app, float dt) {
     int side = 0;
-    bool shop = false;
+    bool shop = false; // (shopPressIn / campPressIn: nothing held while the finger moves - App::fingerMoved)
     if (app.shop.open && app.shop.phase == App::Shop::Count) {
         shop = true;
         side = shopPressIn(app, true, 336, 60, 36, 31) ? -1 : shopPressIn(app, true, 436, 60, 36, 31) ? 1 : 0;
@@ -425,7 +426,7 @@ void consumeInputCancel(App& app) {
     app.optionsGauge = App::OptGauge();
     app.press = App::Press();
     app.touchPad = App::TouchPad();
-    app.tapPending = false;
+    app.tapPending = app.tapArmed = false;
     clearSkip(app);
     app.padHeld = -1, app.padHeldFor = 0;
     app.padHeldOver.cancel();
@@ -1217,6 +1218,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         app.pointerLast = true;
         app.pointerCancelled = false;
+        app.fingerMoved = false; // (a new touch: the last one's way is gone with it)
         if (event->button.button == SDL_BUTTON_LEFT) { // (ScrollCamera: touchesBegan's tapCount 2 - the double tap, a touch's or a click's)
             if (event->button.which != SDL_TOUCH_MOUSEID && !app.fingers.mouseHeld) app.fingers.mouseHeld = true, ++app.fingers.held;
             if (event->button.clicks >= 2) {
@@ -1268,7 +1270,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             if (optionsPointerDown(app, px, py)) app.press = App::Press{true, kPressOptions, px, py};
             break;
         }
-        if (app.saveScreen.open || app.campOpen || app.resumePrompt || app.charSelectOpen || app.worldChoiceOpen ||
+        if (app.saveScreen.open || app.campOpen || app.resumePrompt || app.charSelectOpen || app.worldChoiceOpen || app.lastBattle.open ||
             (app.shop.open && app.shop.phase != App::Shop::Talk) || (app.mode == Mode::Maps && app.titleOpen) ||
             (app.mode == Mode::Maps && app.battle.active)) {
             int ww = 0, wh = 0;
@@ -1278,13 +1280,19 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float px = event->button.x * kx, py = event->button.y * ky;
             // (2.2.0's menus act on the touch lifting inside a control - _pad_chk_updw_box's trg,
             // _pad_chk_trg_up_box0 - and light it while held: the press is kept, the click runs on the
-            // release. A battle's talk and its one-tap phases and the Camp's pointer take the press itself)
+            // release. The battle's one-tap phases too: the victory's hold (_btl_main 6094), the defeat
+            // (6036), Analyze's lines (_btlact_gene 38512..38784) and the results (MbResultPrc 58633 / 58815 /
+            // 58852) test _pad_chk_trg_up(_box0) - the lift. A message page - a battle's talk, the Camp's
+            // notices, the title's Progress Tracker notice - turns on the press: _PrcMsg's _pad_chk_trg_down
+            // (25157 / 25238 / 25303). The Camp's pointer is its own)
             const int screen = pressScreen(app);
-            if (app.campOpen) campPointerDown(app, px, py);
-            else if (screen == kPressBattle && !battleMenuPress(app)) battleClick(app, px, py);
+            if (app.campOpen && app.camp.notice) tapDialogue(app);
+            else if (screen == kPressTitle && app.resumeNotice) tapDialogue(app);
+            else if (app.campOpen) campPointerDown(app, px, py);
+            else if (screen == kPressBattle && battletalk::on(app)) battleClick(app, px, py);
             else if (screen) {
                 app.press = App::Press{true, screen, px, py};
-                if (screen == kPressBattle) battlePressDown(app, px, py); // (where it went down: drags, swipes)
+                if (screen == kPressBattle && battleMenuPress(app)) battlePressDown(app, px, py); // (where it went down: drags, swipes)
             }
             break;
         }
@@ -1328,7 +1336,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 tapDialogue(app);
                 break;
             }
-            if (app.choiceFlag < 0) app.tapPending = true;
+            // (the script's tap, Call 2001: FUN_000250fc's SetVar(0, _pad_chk_trg_up()) - the lift; armed here,
+            // set as the touch lifts)
+            if (app.choiceFlag < 0) app.tapArmed = true;
         }
         if (app.mode == Mode::Textures) {
             // Touch also arrives as mouse events by default, so this covers Android
@@ -1345,7 +1355,12 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         holdSkip(app, kSkipPointer, false); // the finger off the skip corner
         if (app.pointerCancelled) { // cancellation is not a click or a puzzle release
             app.press = App::Press(), app.manualPointer = App::ManualPointer(), app.optionsGauge = App::OptGauge();
+            app.tapArmed = false;
             break;
+        }
+        if (app.tapArmed) { // the script's tap (Call 2001: _pad_chk_trg_up) as the touch lifts - read in this frame alone
+            app.tapArmed = false;
+            if (app.choiceFlag < 0 && app.dialogue.empty()) app.tapPending = true;
         }
         if (app.manualPointer.down) { // the manual's list: a tap as it lifts, else the drag's end
             int ww = 0, wh = 0;
@@ -1365,7 +1380,12 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                               : pr.screen == kPressHistory ? app.scenariosOpen
                               : pr.screen == kPressOptions ? app.optionsOpen && !app.manualOpen
                               : pr.screen == kPressMap ? app.mapScreen.open : pressScreen(app) == pr.screen;
-            if (same) pressRelease(app, pr.screen, px, py);
+            // (_pad_chk_updw_box finds no lift in a frame the finger moved in: the screens of plates alone drop it; the
+            // shop, the World Select, the last battle, the title and Options test it past their lists' / gauges' lifts;
+            // the battle's _pad_chk_trg_up_box0 has no such test)
+            const bool gated = pr.screen == kPressSave || pr.screen == kPressCharSelect || pr.screen == kPressResume ||
+                               pr.screen == kPressChoice || pr.screen == kPressHistory || pr.screen == kPressMap;
+            if (same && !(gated && app.fingerMoved)) pressRelease(app, pr.screen, px, py);
             break;
         }
         if (app.campPointer.down) {
@@ -1395,6 +1415,14 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         app.fingers.held = std::max(0, app.fingers.held - 1);
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (app.press.down || app.campPointer.down) { // touchesMoved: a held touch's way (App::fingerMoved)
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            const float fx = event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f);
+            const float fy = event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f);
+            if (app.press.down ? fx != app.press.px || fy != app.press.py : fx != app.campPointer.curPx || fy != app.campPointer.curPy)
+                app.fingerMoved = true;
+        }
         if (app.press.down) { // (the held control follows the finger)
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1481,6 +1509,9 @@ SDL_AppResult SDL_AppIterate(void* state) {
     App& app = *static_cast<App*>(state);
     const float activeDt = app.clock.step();
     padStep(app, activeDt);
+    // (FUN_0001d044 at _gameapp_prc's end: the finger's way since the last frame cleared - App::fingerMoved)
+    for (app.fingerClock += activeDt; app.fingerClock >= 1.0f / kFramesPerSecond; app.fingerClock -= 1.0f / kFramesPerSecond)
+        app.fingerMoved = false;
     pressCountStep(app, activeDt);
     stickPointerStep(app, activeDt);
     app.music.update(activeDt);

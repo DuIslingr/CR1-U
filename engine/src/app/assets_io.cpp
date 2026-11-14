@@ -10,9 +10,10 @@ void clearSkip(App& app) {
     app.skipHeld = 0;
     app.skipScene = false;
 }
-// The skip button's corner, top right, in logical units
-bool skipCorner(const App& app, float lx, float ly) {
-    return lx >= app.renderer.layoutRight() - 76 && ly < app.renderer.layoutTop() + 72;
+// The skip button, top right, in logical units
+bool skipCorner(const App& app, float lx, float ly) { // _PrcMsg's _pad_chk_circle(0x1cc, 0x10, 0x14): tex2d (460, 16), radius 20
+    const float dx = lx - (app.renderer.layoutRight() - 40), dy = ly - (app.renderer.layoutTop() + 32);
+    return dx * dx + dy * dy <= 40.0f * 40.0f;
 }
 
 // _mdl_put: a texture of MCT id 999 (c105a's and m105a's) turns about the texture's origin -

@@ -1172,7 +1172,7 @@ void menuPoint(const App& app, float lx, float ly, float& mx, float& my) {
     phoneMenuPoint(app, mx, my);
 }
 bool pressIn(const App& app, int screen, float origin, float x, float y, float w, float h) {
-    if (!app.press.down || app.press.screen != screen) return false;
+    if (!app.press.down || app.press.screen != screen || app.fingerMoved) return false; // (_pad_chk_updw_box's held: not while moving)
     float lx, ly, mx, my;
     app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
     menuPointAt(app, lx, ly, origin, mx, my);
@@ -1245,7 +1245,7 @@ void optionsAsk(App& app, int ask) {
 // A touch held on Options (App::press, kPressOptions), in its menu units (menuPointFit), now inside the box: the control
 // lights (OptionPrc 5 / 7's _pad_chk_updw_box held - d3228, d322b, d322a; __ComUty_BackButtonProc's d31fc; Yes / No's d3204)
 bool optionsHeld(const App& app, float x0, float y0, float x1, float y1) {
-    if (!app.press.down || app.press.screen != kPressOptions) return false;
+    if (!app.press.down || app.press.screen != kPressOptions || app.fingerMoved) return false;
     float lx, ly, mx, my;
     app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
     menuPointFit(app, lx, ly, mx, my);
@@ -1253,7 +1253,7 @@ bool optionsHeld(const App& app, float x0, float y0, float x1, float y1) {
 }
 // The Back bar's part held: 1 Back, 2 the right arrow, 3 the left (ComUty_CmdBack mode 2's pressed), 0 none
 int optionsBackHeld(const App& app) {
-    if (!app.press.down || app.press.screen != kPressOptions) return 0;
+    if (!app.press.down || app.press.screen != kPressOptions || app.fingerMoved) return 0;
     float lx, ly, mx, my;
     app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
     menuPointFit(app, lx, ly, mx, my);
@@ -1619,6 +1619,7 @@ void optionsClick(App& app, float px, float py) {
         return;
     }
     if (optionsBusy(app) && !app.saveImport.active()) return;
+    if (app.fingerMoved) return; // (_pad_chk_updw_box: no lift in a frame the finger moved in)
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
