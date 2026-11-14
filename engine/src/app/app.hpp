@@ -404,6 +404,7 @@ struct App {
         int pending = 0;                   // what Yes does: 1 save, 2 load, 3 new game
         bool startAfter = false;           // the last battle / clear data's start waits out 57083's 20 frames
         bool toTitle = false;              // Util 6's (SetModeSaveLoadMenu 3 / 4): the title follows, saved or not (SaveLoadClr)
+        bool perfect = false;              // mode 4 (Util 6 with flag 0 - after Qualia): d34b7, the "perfect save", no face boards
         bool askLeave = false;             // ... its "return to the title without saving?" (0x3c) after a No
         int kind = 0;                      // the title's choice, var 1 on the way out (SaveLoadClr):
                                            // 1 the last battle, 2 new, 3 new with the clear data, 4 load
@@ -946,7 +947,11 @@ struct App {
     } puzzle;
     int padLock = 0;                       // gac + 0x3cde6 (2.2.0): the puzzle pad's buttons and Camp / Save refused while > 0
                                            // (Util 2038 sets it from var 9: FUN_00026d1c)
-    struct Fingers { int held = 0, fresh = 0; float x = 0, y = 0; } fingers; // SDL touch: down now, new since the last frame (the last one's frame pixels)
+    struct Fingers {
+        int held = 0, fresh = 0; float x = 0, y = 0; // SDL touch (and the mouse's left button): down now, new since the last frame (the last one's frame pixels)
+        bool doubleTap = false;                      // a touch with tapCount 2 came down since the last frame (touchesBegan's gac+0 = 2)
+        bool mouseHeld = false;                      // the mouse's left button counted in `held`
+    } fingers;
     float puzzleStartHeading = 0;          // ... and its heading (FieldPCCtrl::reset)
     float playerAlpha = 1, playerAlphaFrom = 1, playerAlphaTo = 1; // mdl_set_alpha on the leader
     int playerFadeFrames = 0, playerFadeLeft = 0;
@@ -1504,7 +1509,7 @@ bool languageSheet(App& app);
 std::string slotPath(const App& app, int pair);
 std::string dataPath(const App& app);
 bool readData(const App& app, cr::SaveData& d);
-bool saveGame(App& app);
+bool saveGame(App& app, bool perfect = false);
 bool foldVitaImport(App& app, const std::vector<std::string>& files);
 int currentPair(const App& app);
 std::vector<int> savePlates(const App& app);

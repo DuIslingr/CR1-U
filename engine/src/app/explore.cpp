@@ -5522,11 +5522,11 @@ int runSelfTest(App& app) {
             const bool lockRefuses = !puzzle::ask(app, 0) && !puzzle::ask(app, 1);
             app.padLock = 0;
             app.runner.stop();
-            // ScrollCamera: one finger 5 frames, a second within 6 - the view goes to it, the ability waits
+            // ScrollCamera: one touch 5 frames, a double tap within 6 - the view goes to it, the ability waits
             app.fingers = App::Fingers();
             app.fingers.held = 1;
             steps(5);
-            app.fingers.held = 2, app.fingers.fresh = 1;
+            app.fingers.doubleTap = true;
             app.fingers.x = float(app.renderer.frameWidth()) / 4, app.fingers.y = float(app.renderer.frameHeight()) / 4;
             steps(1);
             const bool scrolled = pz.scroll.state == 1;

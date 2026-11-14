@@ -905,6 +905,7 @@ bool ViewerHost::tapped() { const bool t = app.tapPending; app.tapPending = fals
 // for the Oz: "You got n/OZ!"), flag 0 cleared - the band comes down from the top (_Put)
 void ViewerHost::showItemWindow(int item, bool oz) {
     app.game.setFlag(0, false); // confirmation belongs to this item window, not the previous interaction
+    app.tapPending = false; // (_Uty_GetItem_Init 20367: memset(G, 0, 0xa0) - the touches cleared)
     app.itemWindowOpen = true;
     app.itemWindowItem = item;
     App::ItemWin& w = app.itemWin;
@@ -1582,7 +1583,7 @@ bool ViewerHost::menu(int n) {
         // Util 6 off the title (__EvtUtil: SetModeSaveLoadMenu(3), 4 with flag 0 - both set the menu's title mark):
         // "Save data?" on the way to the title - saved or not, SaveLoadClr returns there (MuCom_ReturnTitle);
         // a No asks about leaving unsaved (SaveLoadPrc 8 -> 0xc)
-        if (n == 6 && !app.booting) app.saveScreen.toTitle = true;
+        if (n == 6 && !app.booting) app.saveScreen.toTitle = true, app.saveScreen.perfect = app.game.flag(0);
         return true;
     }
     static const char* const kMenu[] = {"title", "world choice", "shop", "yes/no", "start", "save/load", "save/load",
@@ -1675,7 +1676,9 @@ void stepPuzzleHud(App& app) {
     if (pz.stage < 0) return;
     const int esp = pz.esp < 0 ? -1 : std::max(0, pz.esp - (pz.pkState == 2 && pz.pkMoved));
     if (esp != pz.shownEsp) {
-        if (pz.shownEsp != -1000) pz.pop = 4;
+        // (PuzzleManager::init 42715-42725 zeroes the HUD, then SetFldMenu_puzzle_count swells on any change - the
+        // room's first value too, unless it is 0)
+        if ((pz.shownEsp == -1000 ? 0 : pz.shownEsp) != esp) pz.pop = 4;
         pz.shownEsp = esp;
     }
     if (pz.pop > 0) --pz.pop;
@@ -2698,14 +2701,17 @@ void stepPkBlock(App& app, App::Puzzle::Obj& o) {
         o.bob = 0;
         o.pk = 2;
         break;
-    case 2: { // onWaitSlide: bobbing; dropped (2) or sent (3)
-        o.bob = (o.bob + 9) % 360;
-        setY(o.baseY + 5.0f + std::sin(float(o.bob) * 3.14159265f / 180.0f));
+    case 2: { // onWaitSlide (FUN_00054250, 52564ff): a drop first (FUN_000536bc - no bob that frame), then y from
+              // the angle, then the angle 9 degrees on; then a send (3)
         if (o.pkMsg == 2) {
             o.pkMsg = 0;
             o.vy = 0;
             o.pk = switchAt(app, o.row, o.col) ? 5 : 4;
-        } else if (o.pkMsg == 3) {
+            break;
+        }
+        setY(o.baseY + 5.0f + std::sin(float(o.bob) * 3.14159265f / 180.0f));
+        o.bob = (o.bob + 9) % 360;
+        if (o.pkMsg == 3) {
             o.pkMsg = 0;
             // the way it goes: its arrow over 10 frames, the others at once (onWaitSlide, 2.2.0 0x54250)
             const int chosen = o.toCol < o.col ? 0 : o.toRow < o.row ? 1 : o.toCol > o.col ? 2 : 3;
@@ -3120,17 +3126,18 @@ void logicalToView(const App& app, float lx, float ly, float& hx, float& hy) {
     hx = (lx - vx) * fieldViewW(app) / vw, hy = (ly - vy) * fieldViewH(app) / vh;
 }
 
-// ScrollCamera::update: checkTouch (2.2.0 0x7b7c4) - 5 frames on, one finger down opens 6 frames for a second:
-// one coming down then scrolls the view to it (state 1: the camera off the leader, the ability
-// paused) - else, or once the next single touch's frames pass without one, state 0 again. While
-// scrolled, setScroll2D(the point, 0.25) every frame
+// ScrollCamera::update: checkTouch (2.2.0 0x7b7c4, 77446-77483) - 5 frames on, one touch down opens 6 frames
+// for a double tap (touchesBegan 640-641: tapCount 2 sets gac+0 = 2 for a frame; touch_set keeps one touch
+// only - a second finger is never seen): a double tap with one touch down then scrolls the view to it
+// (state 1: the camera off the leader, the ability paused) - else, or once the next single touch's frames
+// pass without one, state 0 again. While scrolled, setScroll2D(the point, 0.25) every frame
 void stepScroll(App& app, int fresh) {
     App::Puzzle::Scroll& sc = app.puzzle.scroll;
     const App::Fingers& f = app.fingers;
     if (sc.phase == 1) {
         bool done = true;
         if (++sc.count < 6) {
-            if (f.held >= 2 && fresh == 1) {
+            if (f.doubleTap && f.held == 1) {
                 float lx, ly;
                 app.renderer.toLogical(f.x, f.y, lx, ly);
                 logicalToView(app, lx, ly, sc.x, sc.y);
@@ -3147,6 +3154,7 @@ void step(App& app) {
     App::Puzzle& pz = app.puzzle;
     const int fresh = app.fingers.fresh;
     app.fingers.fresh = 0;
+    struct TapGone { App& a; ~TapGone() { a.fingers.doubleTap = false; } } tapGone{app}; // (FUN_0001d044: gac+0 cleared each frame)
     if (pz.stage < 0) return;
     if (pz.scene == 2) { // fading out to the reset (PuzzleScene::onFadeOut)
         if (app.fadeT < app.fadeFrames) return;
@@ -3260,6 +3268,7 @@ void stepCrystalCam(App& app) {
     for (size_t i = 0; i < app.npcs.size(); ++i)
         if (app.npcs[i].id == cc.npc) n = &app.npcs[i], index = int(i);
     if (!n) { cc.npc = -1; app.cam.free = false; return; }
+    if (cc.phase == 0 && app.game.vars[0] == 2) cc.phase = 1; // (20884-20954: aimed at the leader the frame var 0 is 2)
     const cr::Vec3 at = cc.phase == 0 ? cr::Vec3{n->pos[0], n->pos[1], n->pos[2]}
                                       : app.walker.pos + cr::Vec3{0, 7.0f + float(app.stageCam.lookHeight), 0};
     const float ox = app.scroll.offX, oy = app.scroll.offY;
@@ -3281,8 +3290,7 @@ void stepCrystalCam(App& app) {
         fade(app, index, 0, 1, 4);
         app.sound.play(0x2a);
         app.game.vars[0] = 1;
-    } else if (cc.phase == 0 && app.game.vars[0] == 2) cc.phase = 1;
-    else if (cc.phase == 1) {
+    } else if (cc.phase == 1) {
         app.game.vars[0] = 3;
         cc.npc = -1;
         app.cam.free = false; // SetPlayerCamera
@@ -3436,6 +3444,9 @@ static void stepNpcTurns(App& app) {
 void stepEvents(App& app) {
     ++app.mdlFrame; // (gac+0x3c6a8: the main loop's count, _mdl_uv's clock)
     struct TurnAfter { App& a; ~TurnAfter() { stepNpcTurns(a); } } turnAfter{app}; // (every way out of the frame)
+    // (touch_up_chk / _pad_chk_trg_up 14519: a tap counts in the frame it came - FUN_0001d044 (14607) clears the
+    // touches at the frame's end; a tap no Call 2001 read that frame is gone, not held for the next)
+    struct TapGone { App& a; ~TapGone() { a.tapPending = false; } } tapGone{app};
     if (app.npcNativesPending) { // npc_setup: SetVar(0, id); UtyPrcTbl[row + 8 - 1].init() for every created NPC with one
         app.npcNativesPending = false;
         ViewerHost natives(app);

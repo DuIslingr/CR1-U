@@ -177,10 +177,20 @@ bool foldVitaImport(App& app, const std::vector<std::string>& written) {
 
 // SaveData_Save: the whole game into data.dat with the pair in play's place and "saved" mark (the
 // other pairs' places kept)
-bool saveGame(App& app) {
+bool saveGame(App& app, bool perfect) {
     cr::SaveData s = captureSave(app);
     cr::SaveData old;
     if (readData(app, old)) s.places = old.places;
+    // (SaveLoadPrc 8, 73621-73623: mode 4's _SaveData_PerfectSaveInit (71526) first - every pair's place its Ark,
+    // area 7 / 13 / 19 / 25, room 97 / 97 / 105 / 105, at (0, 7.5, 15) facing 0 - the saved marks kept; then the
+    // pair in play's own place, as always)
+    if (perfect)
+        for (int r = 0; r < 4; ++r) {
+            cr::SaveData::Place& p = s.places[size_t(r)];
+            p.area = 7 + 6 * r, p.map = r < 2 ? 97 : 105;
+            p.pos[0] = 0, p.pos[1] = 7.5f, p.pos[2] = 15;
+            p.yaw = 0;
+        }
     s.places[size_t(s.route())] = s.placeInPlay();
     s.game.vars[9] = 0; // (71848: the saved copy's var 9, +0x30b28, written 0)
     if (!cr::writeSave(dataPath(app), s)) return false;
@@ -259,7 +269,7 @@ void saveScreenYes(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     if (ss.toTitle && ss.askLeave) { saveScreenToTitle(app); return; } // leaving unsaved (SaveLoadPrc 0xc -> Yes)
     if (ss.pending == 1) {
-        if (saveGame(app)) {
+        if (saveGame(app, ss.perfect)) {
             ss.data = captureSave(app);
             ss.haveSave = true;
             ss.message = 57082; // Save complete.
@@ -427,7 +437,7 @@ void drawSaveScreen(App& app) {
     // back; with no save the party as the title holds it (openSaveScreen)
     const cr::GameState* shown = ss.load ? &ss.data.game : &app.game;
     const int route = ss.load ? std::clamp(app.chosenPair - 1, 0, 3) : std::clamp(app.playerChar / 2, 0, 3);
-    for (int k = 0; k < (shown->flag(4077 + route) ? 1 : 2); ++k) {
+    for (int k = 0; k < (ss.perfect ? 0 : shown->flag(4077 + route) ? 1 : 2); ++k) { // (73769: none in mode 4)
         const int ch = 2 * route + k;
         int hp, hpMax, mp, mpMax;
         memberHpMp(app, ch, hp, hpMax, mp, mpMax, shown);

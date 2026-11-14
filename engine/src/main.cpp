@@ -1184,6 +1184,16 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
         app.pointerLast = true;
         app.pointerCancelled = false;
+        if (event->button.button == SDL_BUTTON_LEFT) { // (ScrollCamera: touchesBegan's tapCount 2 - the double tap, a touch's or a click's)
+            if (event->button.which != SDL_TOUCH_MOUSEID && !app.fingers.mouseHeld) app.fingers.mouseHeld = true, ++app.fingers.held;
+            if (event->button.clicks >= 2) {
+                int ww = 0, wh = 0;
+                SDL_GetWindowSize(app.window, &ww, &wh);
+                app.fingers.doubleTap = true;
+                app.fingers.x = event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1);
+                app.fingers.y = event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1);
+            }
+        }
         if (app.puzzle.pkPointerCancelled && app.puzzle.pkState == 1) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1290,6 +1300,8 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         }
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (event->button.button == SDL_BUTTON_LEFT && app.fingers.mouseHeld)
+            app.fingers.mouseHeld = false, app.fingers.held = std::max(0, app.fingers.held - 1);
         holdSkip(app, kSkipPointer, false); // the finger off the skip corner
         if (app.pointerCancelled) { app.press = App::Press(); break; } // cancellation is not a click or a puzzle release
         if (app.press.down) { // a menu's touch lifting: the control it lifts on (if the screen is still the one)
