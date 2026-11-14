@@ -455,17 +455,17 @@ void drawSaveScreen(App& app) {
         const float backY = r.phoneLayout() ? 286 : 344;
         m.backBar(192, backY, pressIn(app, kPressSave, r.uiX(), 192, backY, 232, 24), a); // (SaveLoadPut: BackButtonDraw mode 1, no arrows; lit while held - DAT_000d34a4)
     } else if (r.phoneLayout()) { // the original's (SaveLoadPut, the same in 2.2.0): the message
-        // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234); Yes / No the
+        // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234) - MuComFontDisp's +1: 235; Yes / No the
         // plates at window 6 + (336, 104) / (336, 160). The board's mark (picture 13 at (458, 298), out and
         // back: SaveLoadSet's ComUty_PictAnimInit(d357c, 0x30, 1, 4, ..)) and its lines in the menu font
         m.picture(12, 0, 220, a);
         const short* mark = cr::kMenuPicture[13];
         m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(ss.anim, 1, 4)), mark[1], mark[2], mark[3], a);
         const std::string msg = ss.message > 0 ? sysText(app, ss.message) : std::string("The save couldn't be written.");
-        m.text(msg.empty() ? "?" : msg, 24, 234, false, a, menuFontSize(app));
+        m.text(msg.empty() ? "?" : msg, 24, 235, false, a, menuFontSize(app));
         int extra = 0;
         for (int l : ss.lines)
-            if (l > 0) m.text(sysText(app, l), 24, 234 + 16.0f * float(++extra), false, a, menuFontSize(app));
+            if (l > 0) m.text(sysText(app, l), 24, 235 + 16.0f * float(++extra), false, a, menuFontSize(app));
         if (ss.phase == 1) { // (__ComUty_YesNoChoiceProc: a held plate takes the cursor)
             const bool hy = pressIn(app, kPressSave, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressSave, r.uiX(), 336, 160, 136, 40);
             m.plate(336, 104, 0, 0, hy || (!hn && ss.confirm == 0), a, false);
@@ -673,7 +673,7 @@ int shopUnitPrice(const App& app, int item) {
 // _MuCom_IsShopNewState (0x51ac4): the buy list's "NEW" (picture 0x73) - flag 0xffb set and the shop past
 // level 2: a consumable whose 0xbc150 level is the shop's or higher (the seeds 3..6 always: the loop's
 // own exit after the first row), gear whose (n - 201) % 14 + 1 is
-void plateText(cr::MenuPainter& m, const std::string& s, float x, float y, int style, float a);
+void plateText(const App& app, cr::MenuPainter& m, const std::string& s, float x, float y, int style, float a);
 bool shopNewState(const App& app, int item) {
     static constexpr short kNew[15][2] = {{1, 2},  {21, 2}, {28, 2}, {2, 3},  {22, 3}, {29, 3}, {32, 3}, {33, 4},
                                           {34, 4}, {35, 4}, {36, 5}, {37, 5}, {38, 5}, {30, 6}, {31, 6}};
@@ -931,7 +931,8 @@ std::string shopMessage(const App& app) {
 // digit style `style` (picture 20 + style: 0 white, 2 outlined, 4 red / 5 cyan small)
 void drawShopNumber(cr::MenuPainter& m, int value, float x, float y, int digits, float step, float alpha, int style,
                     bool left) {
-    const std::string t = std::to_string(std::abs(value));
+    std::string t = std::to_string(std::abs(value));
+    if (int(t.size()) > digits) t.assign(size_t(std::max(digits, 0)), '9'); // (ComUty_PictNumDraw 46630-46634: more digits than places - every place a 9)
     const int n = int(t.size());
     const short* p = cr::kMenuPicture[20 + style];
     for (int k = 0; k < n; ++k)
@@ -1144,7 +1145,7 @@ void drawShop(App& app) {
             m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
             if (const cr::ItemParam* p = app.itemTable.item(it); p && p->icon >= 0)
                 m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, ra);
-            plateText(m, itemName(app, it), x + 56, y + 12, style, ra);
+            plateText(app, m, itemName(app, it), x + 56, y + 12, style, ra);
             if (!s.selling && shopNewState(app, it)) m.picture(0x73, x + 8, y + 4, ra); // (ComPlate: 0x73 at (x + 8, y + 4))
             drawShopNumber(m, shopUnitPrice(app, it), x + 158, y + 30, 6, 10, ra);
             m.picture(101, x + 226, y + 34, ra);
@@ -1172,17 +1173,17 @@ void drawShop(App& app) {
 
     // Centre: Back (with ◀ ▶ for equipment lists) and the message board
     r.setOrigin(centre);
-    if (asking && item > 0) { // ComUty_MsgBoardDraw (window 0x10, (0, 220)): its mark, the lines at (24, 234), 16 apart, one style
+    if (asking && item > 0) { // ComUty_MsgBoardDraw (window 0x10, (0, 220)): its mark, the lines at (24, 234 + MuComFontDisp's 1), 16 apart, one style
         m.picture(12, 0, 220, 1);
         const short* mark = cr::kMenuPicture[13];
         m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(s.mark, 1, 4)), mark[1], mark[2], mark[3], 1);
-        m.text(shopMessage(app), 24, 234, false, 1, kFont);
+        m.text(shopMessage(app), 24, 235, false, 1, kFont);
         std::vector<std::vector<std::string>> have;
         if (s.phase == App::Shop::Count &&
             // (__Common_ListNextReady 66590-66597: GetItemCnt - worn gear counted - less the held-back member's jewel)
             app.systemText.message(57046, app.language, [&](int) { return pairHeldCount(app, item); }, have) && !have.empty() &&
             !have[0].empty())
-            m.text(have[0][0], 24, 250, false, 1, kFont);
+            m.text(have[0][0], 24, 251, false, 1, kFont);
     } else if (list && shopEquipment(app)) {
         // ComUty_CmdBack 2: < Back > - the part held lit (1 Back, 2 right, 3 left: the boxes shopClick tests)
         m.backButton(kBackX, kBackY, shopPressIn(app, false, kBackX + 51, kBackY, 130, 24) ? 1 : shopPressIn(app, false, 0x175, kBackY, 0x33, 24) ? 2
@@ -2315,12 +2316,15 @@ void campPointerUp(App& app, float px, float py) {
     }
 }
 
-// MuComFontPlateDisp's colours: 0 white, 2 grey (0x808080), 3 yellow - the plate and the icon stay as
-// they are
-void plateText(cr::MenuPainter& m, const std::string& s, float x, float y, int style, float a) {
-    if (style == 2) m.textTint(s, x, y, 0x80 / 255.0f, 0x80 / 255.0f, 0x80 / 255.0f, a, 14);
-    else if (style == 3) m.textTint(s, x, y, 1, 1, 0, a, 14);
-    else m.text(s, x, y, false, a, 14);
+// A plate's name at the ComPlate's (x, y) (ComUty_ComPlate_Base: + (0x38, 0xc)): MuComFontPlateDisp (0x5242c,
+// 51012-51032) draws it a unit lower (y + 1), in its colours - 0 white, 2 grey (0x808080), 3 yellow -, the
+// plate and the icon staying as they are; at the size ComUty_ComPlate_ChangeStr -> _MuComFontChangeTex
+// (51095-51110) registers it: 13, 14 in Japanese, Chinese, Korean
+void plateText(const App& app, cr::MenuPainter& m, const std::string& s, float x, float y, int style, float a) {
+    const float size = menuFontSize(app);
+    if (style == 2) m.textTint(s, x, y + 1, 0x80 / 255.0f, 0x80 / 255.0f, 0x80 / 255.0f, a, size);
+    else if (style == 3) m.textTint(s, x, y + 1, 1, 1, 0, a, size);
+    else m.text(s, x, y + 1, false, a, size);
 }
 
 // A list row (ComUty_ComPlate_Base): plate 8 / 9, the icon at (12, 8), the name at (56, 12) in the style's
@@ -2330,7 +2334,7 @@ void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int c
     m.picture(lit ? 9 : 8, x, y, a);
     if (const cr::ItemParam* p = app.itemTable.item(item); p && p->icon >= 0)
         m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, a);
-    plateText(m, item > 0 ? itemName(app, item) : std::string("-"), x + 56, y + 12, style, a);
+    plateText(app, m, item > 0 ? itemName(app, item) : std::string("-"), x + 56, y + 12, style, a);
     if (!label.empty()) m.text(label, x + 56, y + 30, false, a * 0.8f, 11);
     if (count > 0) drawShopNumber(m, count, x + 222, y + 30, 2, 10, a, 0);
 }
@@ -2358,7 +2362,7 @@ void drawGeneRow(App& app, cr::MenuPainter& m, float x, float y, int plate, bool
         m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, a);
     const int known = cr::plateLearned(app.game, plate);
     constexpr int total = 6;
-    plateText(m, itemName(app, plate), x + 56, y + 12, known == 0 ? 2 : worn ? 3 : 0, a);
+    plateText(app, m, itemName(app, plate), x + 56, y + 12, known == 0 ? 2 : worn ? 3 : 0, a);
     if (known >= total) m.picture(96, x + 176, y + 24, a);
     else
         for (int k = 0; k < total; ++k) m.picture(k < total - known ? 10 : 11, x + 251 - 14 * float(total) + 14 * float(k), y + 30, a);
@@ -2737,13 +2741,13 @@ void drawLastBattle(App& app) {
             const float a = lb.win[3], x = kRowX + 200 * (1 - ease(a)), y = kRowY + kRowStep * float(i);
             m.picture(lb.cursor == int(i) ? 9 : 8, x, y, a);
             m.piece(x + 12, y + 8, float(4 % 16) * 32, 248 + float(4 / 16) * 32, 32, 32, a); // icon 4
-            m.text(lastBattlePlate(app, lb.pairs[i]), x + 56, y + 12, false, a, 14);
+            plateText(app, m, lastBattlePlate(app, lb.pairs[i]), x + 56, y + 12, 0, a);
         }
     r.setOrigin(r.uiX());
     if (lb.win[5] > 0) { // the question (ComUty_MsgBoardDraw at y 220, sliding up from 160 below)
         const float dy = 160 * (1 - ease(lb.win[5]));
         m.picture(12, 0, 220 + dy, lb.win[5]);
-        m.text(sysText(app, 57000 + 0x13 + lb.count, sysText(app, 58029 + 2 * std::max(0, lb.chosen))), 24, 234 + dy,
+        m.text(sysText(app, 57000 + 0x13 + lb.count, sysText(app, 58029 + 2 * std::max(0, lb.chosen))), 24, 235 + dy,
                false, lb.win[5], 15);
     }
     if (lb.win[6] > 0) { // Yes / No (from 360 to the right)
@@ -3024,7 +3028,7 @@ void drawWorldSelect(App& app) {
     }
     auto plate = [&](float x, float y, bool chosen, const std::string& name, int pips, float a) {
         m.picture(chosen ? 9 : 8, x, y, a);
-        m.text(name, x + 56, y + 12, false, a, 14);
+        plateText(app, m, name, x + 56, y + 12, 0, a);
         if (pips >= 0)
             for (int k = 0; k < 4; ++k) m.picture(pips & (1 << k) ? 11 : 10, x + 195 + 14 * float(k), y + 30, a);
     };
@@ -3086,7 +3090,7 @@ void drawWorldSelect(App& app) {
         if (ws.asking) lines = {sysText(app, 57000 + 0x40)};
         else if (ws.world == 5) lines = {sysText(app, 58002 + ws.world), sysText(app, 58018)};
         else lines = {sysText(app, 58002 + ws.world), sysText(app, 58008 + ws.level), sysText(app, 58018)};
-        for (size_t k = 0; k < lines.size(); ++k) m.text(lines[k], 24 + ox, y + 14 + 16 * float(k), false, a, menuFontSize(app));
+        for (size_t k = 0; k < lines.size(); ++k) m.text(lines[k], 24 + ox, y + 15 + 16 * float(k), false, a, menuFontSize(app));
     }
     r.setOrigin(wideRight(app));
     if (ws.win[8] > 0) { // Yes / No
@@ -3168,7 +3172,10 @@ void drawHelpWindow(App& app, cr::MenuPainter& m, int item, float a, float dx, f
     if (!app.systemText.message(cr::itemHelpId(item), app.language, nullptr, help) || help.empty()) return;
     const int n = std::min(3, int(help[0].size()));
     static const int kTop[4] = {0, 24, 18, 10};
-    for (int i = 0; i < n; ++i) m.text(help[0][size_t(i)], 156 + dx, float(kTop[n] + 8 + 16 * i) + dy, true, a, 13);
+    // (MuComFontDisp adds a unit to y; the lines are set at 14 in every language: _MuComFontHelpStrSet 0x52734 `mov lr, #14`.
+    // The Vita's (0x8104c5a6-0x8104c5be) sets 13 for English, French and German - its layout here, as Part 03 1220 s shows)
+    const float size = vitaLayout(app) && app.language >= 1 && app.language <= 3 ? 13.0f : 14.0f;
+    for (int i = 0; i < n; ++i) m.text(help[0][size_t(i)], 156 + dx, float(kTop[n] + 8 + 16 * i + 1) + dy, true, a, size);
 }
 
 void drawCamp(App& app) {
@@ -3309,7 +3316,7 @@ void drawCamp(App& app) {
                 m.picture(12, 0, 220 + dy, e);
                 const short* mark = cr::kMenuPicture[13];
                 m.piece(458, 298 + dy, float(mark[0] + 20 * pictAnimFrame(c.mark, 1, 4)), mark[1], mark[2], mark[3], e);
-                if (current) m.text(sysText(app, seed ? 57077 : 57014, itemName(app, item)), 24, 234 + dy, false, e, menuFontSize(app));
+                if (current) m.text(sysText(app, seed ? 57077 : 57014, itemName(app, item)), 24, 235 + dy, false, e, menuFontSize(app));
                 left();
             }
         };
@@ -3481,7 +3488,7 @@ void drawCamp(App& app) {
     if (c.messageFrames > 0) --c.messageFrames;
     if (c.messageFrames > 0 && !c.message.empty()) {
         m.picture(12, 0, 220, 1);
-        m.text(c.message, 24, 234, false, 1, menuFontSize(app));
+        m.text(c.message, 24, 235, false, 1, menuFontSize(app));
     }
     left();
     const char* help = main ? "Up/Down  Enter  Esc or K: back"
@@ -3732,8 +3739,8 @@ void drawResumePrompt(App& app) {
     const short* mark = cr::kMenuPicture[13];
     m.piece(458, by + 78, float(mark[0] + 20 * pictAnimFrame(app.resumeMark, 1, 4)), mark[1], mark[2], mark[3], a);
     if (w >= 1) {
-        m.text(sysText(app, 57092), 24, by + 14, false, a, menuFontSize(app));
-        m.text(sysText(app, 57093), 24, by + 30, false, a, menuFontSize(app));
+        m.text(sysText(app, 57092), 24, by + 15, false, a, menuFontSize(app));
+        m.text(sysText(app, 57093), 24, by + 31, false, a, menuFontSize(app));
     }
 }
 

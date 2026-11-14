@@ -3617,7 +3617,7 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     if (away <= 0.0f && app.systemText.message(rs.message, app.language, [&](int) { return value; }, pages, nullptr,
                                [&](int) { return rs.name; }) &&
         !pages.empty())
-        for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 234 + by + 16.0f * float(i), false, a, 14);
+        for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 235 + by + 16.0f * float(i), false, a, 14);
     r.setOrigin(wideLeft(app));
     if (keyHints(app)) // (our key hints)
         m.text("Enter: continue", 20, 372, false, a * 0.8f * in, 9);
@@ -3750,7 +3750,8 @@ void drawBattleHud(App& app, float W, float H) {
         m.quad(112, 4 + by, 351, 24, dark, dark);
         m.quad(463, 4 + by, 24, 24, dark, clear);
         m.setOutline(false); // (the banner's text plain: __menub_mainPut's 0x3783c, drawfont_btl's twin, has no edge)
-        m.textCentred(b.bannerShown, 287 - m.textWidth(b.bannerShown, 14) / 2, 16 + by, false, 1, 14);
+        // (FUN_0003783c: centred on tex2d x 0x110 - the menus' 272 + 16)
+        m.textCentred(b.bannerShown, 288 - m.textWidth(b.bannerShown, 14) / 2, 16 + by, false, 1, 14);
         m.setOutline(true);
     }
 

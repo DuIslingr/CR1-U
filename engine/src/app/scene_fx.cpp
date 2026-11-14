@@ -1255,7 +1255,7 @@ void drawOptions(App& app, float, float) {
             ? "Choose the folder containing your decrypted Vita saves." : app.saveImport.message;
         std::replace(message.begin(), message.end(), '\n', ' ');
         const auto lines = wrapText(m, message, 455, 13, 8);
-        for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 24, 234 + 16 * float(l), false, 1, 13);
+        for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 24, 235 + 16 * float(l), false, 1, 13);
         if (app.saveImport.state == vitaimport::Session::Confirm) {
             m.plate(336, 104, 0, 0, app.saveImport.focus == 0, 1, false);
             m.plate(336, 160, 1, 1, app.saveImport.focus == 1, 1, false);
@@ -1271,7 +1271,7 @@ void drawOptions(App& app, float, float) {
         r.setOrigin(r.uiX());
         m.picture(12, 0, 220, 1);
         if (!pages.empty())
-            for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, 234 + 16.0f * float(l), false, 1, 14);
+            for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, 235 + 16.0f * float(l), false, 1, 14);
         m.plate(336, 104, 0, 0, app.resetConfirm == 0, 1, false);
         m.plate(336, 160, 1, 1, app.resetConfirm == 1, 1, false);
     }
