@@ -167,6 +167,8 @@ struct BattleHit {
     int status = -1;      // a status it set (BattleStatus), -1 none
     bool revived = false; // calc 19 brought it back
     bool critical = false; // que +0xbf: it was a critical, whatever the type says now (the Break's event 8)
+    bool own = false;      // a user's own loss inside the calc (0404's Risk Breaker quarter, 0412's give-up: chk_dead
+                           // kind 99) - not one of the action's targets (que +0x7a / +0x8e)
 };
 
 enum BattleCommandKind { kCmdNone = 0, kCmdAttack = 1, kCmdGene = 2, kCmdItem = 3, kCmdDefend = 4, kCmdEscape = 5 };

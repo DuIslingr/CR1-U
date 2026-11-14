@@ -6303,7 +6303,8 @@ int runSelfTest(App& app) {
     }
     { // Battle presentation as 2.2.0's: __dmg_prc's labels, slots and places, the rows' rolling numbers,
       // _btlcalc_chk_dead's reactions, _btlcalc_0404's gating, the invincible's "0", +0xaea (the member
-      // whose action came up last), the talk's HUD slide, an enemy pair's pair attack with one left
+      // whose action came up last), the talk's and the results' HUD slide, an enemy pair's pair attack with one
+      // left, the rows from 0, que +0x8e's first target, the defeat's 0x4b1
         int problems = 0;
         std::string what;
         auto fail = [&](bool bad, const char* name) {
@@ -6319,6 +6320,8 @@ int runSelfTest(App& app) {
         startBattle(app, {1, 0, -1, 0}, 0);
         App::Battle& b = app.battle;
         if (b.active) {
+            // btlpcparam_prty_init: the rows' shown HP / MP from 0, counting up under the opening white
+            fail(b.rollHp[0] != 0 || b.rollMp[0] != 0 || b.shownHp[0] <= 0, "rows-from-0");
             for (int f = 0; f < 60 && b.phase != App::Battle::Command; ++f) stepBattle(app);
             // the places (480 x 320 units)
             for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
@@ -6411,6 +6414,40 @@ int runSelfTest(App& app) {
             app.game.setFlag(battletalk::kFlag, false);
             for (int f = 0; f < 2; ++f) stepMenuView(app), slide += std::to_string(b.hudSlide) + " ";
             fail(slide != "120 240 360 480 480 360 240 ", "talk-slide");
+            { // the results send the HUD out the same way (_menub_main_set_result: -480 over 4 frames)
+                const auto keepPhase = b.phase;
+                b.phase = App::Battle::Results;
+                b.hudSlide = 0;
+                slide.clear();
+                for (int f = 0; f < 6; ++f) stepMenuView(app), slide += std::to_string(b.hudSlide) + " ";
+                b.phase = keepPhase;
+                for (int f = 0; f < 4; ++f) stepMenuView(app);
+                fail(slide != "120 240 360 480 480 480 " || b.hudSlide != 0, "results-slide");
+                if (slide != "120 240 360 480 480 480 ") std::printf("battle presentation: the results' slide %s\n", slide.c_str());
+            }
+            { // que +0x8e: a user's own loss pushed first (Risk Breaker's quarter) is no target - the camera,
+              // approach and facing key on the monster
+                cr::BattleTurn rt;
+                rt.actors[0] = 0;
+                cr::BattleHit own, blow;
+                own.target = 0, own.amount = 10, own.own = true;
+                blow.target = 2, blow.amount = 100;
+                rt.hits = {own, blow};
+                const std::vector<int> ts = turnTargets(rt);
+                fail(firstTarget(rt) != 2 || ts != std::vector<int>{2}, "own-loss-target");
+            }
+            { // the defeat (0x4b0 ten frames, then 0x4b1): the camera 0x48 and the monsters hidden only at 0x4b1
+                b.turnOn = false;
+                for (int k = 0; k < 2; ++k) b.rules.f[size_t(k)].hp = 0;
+                const int camBefore = b.cam;
+                endRound(app);
+                bool hiddenEarly = false, hiddenLate = false;
+                for (const App::Battle::Actor& a : b.actors) hiddenEarly |= a.fighter >= 2 && a.hidden;
+                const bool early = b.phase == App::Battle::Lost && b.cam == camBefore && !hiddenEarly;
+                for (int f = 0; f < 12 && b.phase == App::Battle::Lost; ++f) stepBattle(app);
+                for (const App::Battle::Actor& a : b.actors) hiddenLate |= a.fighter >= 2 && b.rules.f[size_t(a.fighter)].alive() && a.hidden;
+                fail(!early || b.cam != 0x48 || !hiddenLate, "defeat-0x4b1");
+            }
             endBattle(app, false);
         } else
             fail(true, "no-battle");
@@ -6445,8 +6482,8 @@ int runSelfTest(App& app) {
             fail(zero < 1, "invincible-0");
             fail(lone != 1, "enemy-pair-attack-alone");
         }
-        std::printf("battle presentation (2.2.0): labels, slots, places, reactions, 0404 gating, rows' roll, talk slide, "
-                    "invincible 0, +0xaea, lone pair attack; %d problems%s\n", problems, what.c_str());
+        std::printf("battle presentation (2.2.0): labels, slots, places, reactions, 0404 gating, rows from 0 and their roll, talk and results slides, "
+                    "invincible 0, +0xaea, lone pair attack, own losses no target, defeat at 0x4b1; %d problems%s\n", problems, what.c_str());
         mapErrors += problems;
         app.runner.stop();
         app.game = keepGame;
@@ -7632,9 +7669,14 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             const size_t at = v.find('@');
             const int frame = at == std::string::npos ? -1 : SDL_atoi(v.c_str() + at + 1);
             b.rules.forceAction = action;
+            // (CR_BATTLE_PAIR: the pair stands in pair mode - a single blow on it hits both; the battle may open on
+            // the enemy's turn, so it is set again before each one)
+            void placePair(App & app, bool pair);
+            const bool asPair = SDL_getenv("CR_BATTLE_PAIR") && b.rules.f[0].alive() && b.rules.f[1].alive() && !b.rules.allyAuto;
             for (int f = 0; f < 6000 && b.active; ++f) {
+                if (asPair && !b.turnOn && !b.rules.pair) b.rules.pair = true, placePair(app, true);
                 if (b.phase == App::Battle::Command && b.menu == App::Battle::Top) { // the pair defends
-                    battleChooseTop(app, 0);
+                    battleChooseTop(app, asPair ? 1 : 0);
                     battleChooseCommand(app, 3);
                     if (b.menu == App::Battle::Commands) battleChooseCommand(app, 3);
                 }

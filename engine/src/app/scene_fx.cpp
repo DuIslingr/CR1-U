@@ -2561,7 +2561,7 @@ void drawFrame(App& app, bool present) {
                 app.order2d.portrait = ++app.order2d.seq;
             }
         if (app.itemWindowOpen) drawItemBand(app); // Uty_GetItem
-        if (!messageNow) drawFrontFade(app);
+        if (!messageNow && !(app.mode == Mode::Maps && app.battle.active)) drawFrontFade(app); // (a battle's: over its 2D, below)
     }
     if (fieldMenuWanted(app)) { // the corner button and its bar
         for (app.fieldMenu.clock += dt; app.fieldMenu.clock >= 1.0f / kFramesPerSecond; app.fieldMenu.clock -= 1.0f / kFramesPerSecond)
@@ -2580,7 +2580,12 @@ void drawFrame(App& app, bool present) {
     if (app.mode == Mode::Maps && app.tutoTex.on) drawTutoTex(app);
     if (app.mode == Mode::Maps && app.exclamation) drawExclamation(app);
     if (app.mode == Mode::Maps && app.padArt) drawPadArt(app);
-    if (app.mode == Mode::Maps && app.battle.active) drawBattleHud(app, W, H);
+    if (app.mode == Mode::Maps && app.battle.active) {
+        drawBattleHud(app, W, H);
+        // (gameapp_prc, 2.2.0 0x5b28: tex2d_prc_2d - the battle's 2D - then PutMask: the opening white washes the
+        // badge, the rows and the banner with the scene)
+        if (!messageNow) drawFrontFade(app);
+    }
     if (app.mode == Mode::Maps && app.titleOpen && !app.optionsOpen && !app.saveScreen.open && // (the offer's windows over it)
         !app.charSelectOpen && !app.scenariosOpen && !app.manualOpen)
         drawTitleMenu(app);

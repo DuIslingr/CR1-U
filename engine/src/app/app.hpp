@@ -111,6 +111,7 @@ struct Effect {
     float scale = 1, yaw = 0;
     float pitch = 0, roll = 0; // FrmPlayEff2: the record's X and Z angles (radians)
     bool faceCamera = false;   // FrmPlayEff at a record's point: turned to the camera each frame (mdl + 0xfc7, as a battle's)
+    bool keepAngles = false;   // a battle effect whose +0x56f its caller cleared: its own angles, not the camera's
     int handle = 0;  // for stopping it
     int key = 0;     // FrmPlayEff's (effect + 1) x (actor + 1)
 };
@@ -1647,8 +1648,8 @@ void teleportTo(App& app, int t);
 void punish(App& app, int t);
 void pkGrab(App& app, int t, float sx = -1e9f, float sy = -1e9f, float fromX = -1e9f, float fromY = -1e9f);
 void pkSend(App& app, int dir);
-void toughTap(App& app, int t);
 int pkDirection(float dx, float dy); // 1 up, 2 down, 3 left, 4 right
+void toughTap(App& app, int t);
 bool allCandlesLit(App& app);
 void pyroTap(App& app, int t);
 void reset(App& app);
@@ -1703,6 +1704,8 @@ int monsterSize(const App& app, int fighter);
 int enemyCameraSlot(const App& app, int fighter);
 void cameraForTarget(App& app, int target, bool group, bool cursor = false);
 void cameraForTurn(App& app, const cr::BattleTurn& t);
+int firstTarget(const cr::BattleTurn& t); // que +0x8e
+std::vector<int> turnTargets(const cr::BattleTurn& t);
 void hitCamera(App& app, const cr::BattleTurn& t, int target, bool bounce);
 bool attackSpot(const App& app, int user, int k, int target, cr::Vec3& out);
 int attackSlot(const App& app, const cr::BattleTurn& t, int k, int model, int cls);

@@ -957,6 +957,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                             Fighter& u = f[size_t(k)];
                             BattleHit self;
                             self.target = k;
+                            self.own = true; // (2.2.0 _btlcalc_0404 22035-22045: chk_dead kind 99)
                             self.amount = u.hp / 4;
                             if (keepAlive && k >= 2 && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
                             if (self.amount > 0) breakEvent(e.actors[0], 2, t);
@@ -1102,6 +1103,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                     Fighter& u = f[size_t(k)];
                     BattleHit self;
                     self.target = k;
+                    self.own = true;
                     self.amount = u.hp - 1;
                     if (self.amount > 0) breakEvent(e.actors[0], 2, hitList.empty() ? -1 : hitList.front());
                     u.hp = 1;

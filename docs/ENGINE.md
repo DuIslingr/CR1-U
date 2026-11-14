@@ -592,7 +592,10 @@ c101/c102/c104/m207a, 2026-10-12).
       models' 14th / 15th slots), runs of cameras, effects at points and on the targets,
       sounds, white flashes over the 3D and screen quakes at the original's frames, the hit at
       the end and the wait after. Every landing hit shakes the screen (`StartQuake(3, 100, 0,
-      5)`). `--battle-view stage<action>[@frame]` makes the first enemy use one.
+      5)`). `--battle-view stage<action>[@frame]` makes the first enemy use one;
+      `CR_BATTLE_PAIR=1` puts the pair in pair mode first (a single blow then hits both).
+      Effects whose caller clears the model's `+0x56f` keep their own angles instead of facing
+      the camera: 430's 0x59 / 0x5a, 434's 0x1e, 435's 0x21.
 - [x] A boss's end (`btl_main` 1000 / 0x3de / 0x3e3..0x3e6): a won battle with a strong-growth
       monster, in any formation but 2, turns the camera on it, plays the fallen monsters' down
       motion (`btlanm_boss_dead_anim`) and takes the pair out of sight; m102 .. m105a go under a
@@ -629,7 +632,10 @@ c101/c102/c104/m207a, 2026-10-12).
       EXP / OZ +20% counts the member queued last out of pair mode; a member down at the end gets
       half the EXP; the resisting armors count as their skills; losing an ordinary battle goes
       back to the pair's Ark with a fifth of the Oz gone (a script's battle still restarts).
-      Also 2.2.0's escape timing (30 + 40 frames away, 40 stayed; the line only on success) and
+      Also 2.2.0's escape timing (30 + 40 frames away, 40 stayed; the line only on success; a
+      flight goes to the black at once - `btlact_main`'s 99 - without the round's end), a
+      barrier's bounce landing the frame after `0x1004`'s 40 (no glow, no wait), the defeat's
+      camera, hidden monsters and voice (a script's battle only) at `0x4b1`, ten frames in, and
       the original's random numbers (`core/random.hpp`: MT19937, its bounded draw and
       `get_random`'s discards, one stream for battles and the field)
 - [x] The battle's status messages (`btl_add_msgque`): "<name> was poisoned!", the stat ups,
@@ -651,7 +657,9 @@ c101/c102/c104/m207a, 2026-10-12).
       taken, a status, a gene learned, the Genes and Defend commands; flags 4081..4085, 4008,
       4009), with their animated pictures (`battle_0n_hd`, `gene_01_hd`). After a battle that
       wasn't a script's, the room's entry script (EvrStart 5) runs again as the field reloads.
-      The battle comes in out of white over its opening (`SetFade`). `crtool npcloads <dataHD>`
+      The battle comes in out of white over its opening (`SetFade`) - its HUD too (`PutMask`
+      after `tex2d_prc_2d`), the rows' HP / MP counting up from 0 under it; the results send the
+      badge and the rows out to the left over 4 frames, the board's line and mark once it stands. `crtool npcloads <dataHD>`
       finds the scripts that bring in the story NPCs 501..512 and the flags that let them
 - [x] The field menu (`menuf_mainPut`): the corner button (or R) slides out Camp, Save, Map and
       — once skill 170 is known — the switch that turns this pair's random encounters off and
