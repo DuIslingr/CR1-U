@@ -74,6 +74,7 @@ sequence and layout within a screen, not the Vita's absolute positions.
 | Sell's Weapons asks whose list first (ShopPrc 5's 2 -> 3: the pair's plates) | 02 96 s: "Escher" / "Musiea" plates after Weapons, then 102 s Musiea's list | Contradicted, fixed: the port went straight to the list |
 | How many: two digits ("03"), the question's two lines in one style | 02 84 s: "03", "How many Piu-Piu's Collection (Book)s would you like to sell?" / "(Currently possessed: 5)" | Contradicted, fixed: the port drew one digit and a dimmer, smaller second line |
 | "Shop" stays over the shopkeeper's talk (ShopPrc 2 takes windows 1 - 5 off) | 02 72 / 108 s: the heading at the top left over Piu-Piu's talk | Contradicted, fixed: the port drew nothing of the shop then |
+| The shop's Back and the field's music (`__menuu_ShopPrc` 6: the windows off a frame after the tap; 7: a count of 4 run past 0, then `__bgmgo(0x8000000)`, a 20-frame fade; 8 the next frame: `__mc_SetMenuStat(7, 4)`, `ShopClr` in the same `_PrcMenu` pass restarts var 0's track, 66208-66229 / 65714) | 02 240.7 s the windows slide out, ~240.97 s the shop's music drops, 241.04 s bgm02 from its start | Contradicted, fixed: the port closed the shop and started the field's track on the tap; now the windows go the next frame, the fade starts 7 frames (0.35 s) after the tap and the track 8 frames after |
 
 ## Trophies (backport of CRO-U's achievements, 1386052)
 

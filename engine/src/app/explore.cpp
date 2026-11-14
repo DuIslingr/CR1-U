@@ -5749,6 +5749,7 @@ int runSelfTest(App& app) {
         problems += app.shop.phase != App::Shop::Main || app.game.flag(4090) || !app.runner.running() || talkMessages == 0;
         shopKey(app, SDLK_ESCAPE); // leave: the shopkeeper's script goes on to its end
         for (int f = 0; f < 600 && app.runner.running(); ++f) {
+            if (app.shop.open) stepShop(app); // (ShopPrc 6 - 8: closed 8 frames after the tap)
             stepEvents(app);
             app.dialogue.clear();
             app.tapPending = true;
@@ -6916,10 +6917,19 @@ int runSelfTest(App& app) {
         openShop(app);
         const bool shopTune = host.bgmNo() == 0x13 && app.shop.bgmBack == 7;
         closeShop(app);
-        const bool back = host.bgmNo() == 7;
+        bool back = host.bgmNo() == 7;
         openShop(app);
         host.endMenu(2);
         const bool ended = !app.shop.open && host.bgmNo() == 0x13; // SetShopBgmNoRecovery
+        // Back on Talk / Buy / Sell (ShopPrc 6 - 8): open with the shop's music for 7 frames, ShopClr on the 8th
+        openShop(app);
+        shopBack(app);
+        bool backTimed = app.shop.open && app.shop.out == 1;
+        for (int f = 1; f <= 8; ++f) {
+            stepShop(app);
+            backTimed &= f < 8 ? app.shop.open && host.bgmNo() == 0x13 : !app.shop.open && host.bgmNo() == 7;
+        }
+        back &= backTimed;
         // 2030 / 2031: queued outside a battle, the next battle's fighter 1 / 0 starts with the four ups
         host.battleParamUp(1);
         const bool queued = app.paramUp[1] && !app.paramUp[0];

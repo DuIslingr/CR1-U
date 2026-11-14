@@ -406,7 +406,10 @@ c101/c102/c104/m207a, 2026-10-12).
       `__GetShopItemTbl`: each character's own weapons and armor, more of everything as the
       shop's level (2..7, `MuCom_GetShopBuyLevel`, from story flags) rises; selling pays half.
       Item prices, icons and kinds come from sys.evt (+0x38, 20 bytes per item). Talk plays the
-      shopkeeper's EvrStart 4 scene while the shop waits. Oz and the party (levels, experience,
+      shopkeeper's EvrStart 4 scene while the shop waits. Back on Talk / Buy / Sell slides the
+      windows out the next frame and holds the shop's music 7 frames, then starts its 20-frame
+      fade and the frame after closes - `ShopClr` putting the field's track back cuts the fade
+      (`__menuu_ShopPrc` 6 - 8, 66208-66229; video 02 240.7 - 241.04 s). Oz and the party (levels, experience,
       equipment; stats from `_pcparam` + level + equipment, `pcparam_max_*`) are saved. Oz comes
       from selling and battles; Sexy Pose's 10% off and the seeds' and genes' stat bonuses apply
       (see Skills).

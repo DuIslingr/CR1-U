@@ -749,6 +749,7 @@ void openShop(App& app) {
     }
 }
 
+// ShopClr (65696-65715): the field's music again (var 0 as ShopSet kept it) - unless SetShopBgmNoRecovery
 void closeShop(App& app) {
     if (app.shop.open && !app.shop.noBgmRecovery) playBgm(app, uint32_t(app.shop.bgmBack)); // ShopClr
     app.shop.open = false;
@@ -798,6 +799,13 @@ void stepShop(App& app) {
     ++s.mark;
     s.bob += s.bobDir;
     if (s.bob >= 5 || s.bob <= 0) s.bobDir = -s.bobDir;
+    if (s.out > 0) { // (ShopPrc 6 - 8, 66208-66229: 6 a frame after the tap takes the windows off; 7 runs its
+        // count 4 down past 0, then __bgmgo(0x8000000) - a 20-frame fade - and 8 the frame after sets the menu's
+        // close bit: _PrcMenu runs ShopClr that same frame, whose __bgmgo(var 0) cuts the fade one frame in)
+        if (++s.out == 8) playBgm(app, 0x8000000u); // (7 frames after the tap)
+        else if (s.out == 9) closeShop(app);           // (8)
+        return;
+    }
     stepShopList(app); // (FUN_0006a9d8: MuScrList_Proc)
     if (s.phase == App::Shop::Talk) {
         // (ShopPrc 3, 65811-65830: 0 -> 1 with a count of 4, run down past 0 - the talk on the 7th frame after the tap)
@@ -963,7 +971,7 @@ void shopBack(App& app) {
     App::Shop& s = app.shop;
     menuSound(app, s.selling && s.phase == App::Shop::Count ? se::kChoose : se::kBack); // (ShopPrc: a sale's No is SE 2, a purchase's 3)
     switch (s.phase) {
-    case App::Shop::Main: closeShop(app); break;
+    case App::Shop::Main: s.out = 1; break; // (ShopPrc 2 -> 6: stepShop takes it from there)
     case App::Shop::Category: s.phase = App::Shop::Main; s.anim = 0; break;
     case App::Shop::Member: s.phase = App::Shop::Category; s.anim = 0; break;
     case App::Shop::List: s.phase = shopAsksMember(app) ? App::Shop::Member : App::Shop::Category; s.anim = 0; break;
@@ -1128,7 +1136,13 @@ void drawShop(App& app) {
         r.setOrigin(r.uiX());
         return;
     }
-    const float a = std::min(1.0f, float(s.anim + 1) / 6.0f), slide = (1 - a) * (1 - a);
+    float a = std::min(1.0f, float(s.anim + 1) / 6.0f), slide = (1 - a) * (1 - a), plateDx = 240 * slide;
+    float wa = 1; // windows 0, 1 and 5 ("Shop", Oz, Back)
+    if (s.out > 0) { // Back (ShopPrc 6, 66208-66213): WinDispOff a frame after the tap - 0, 1, 5 fading where they are,
+        // 2 ("Shopping") to -140, 3 (the shopkeeper) to -240, 4 (the plates) to 360 (campWinOff)
+        const CampWin w = campWinOff(s.out - 1, 1, 1);
+        a = wa = w.a, slide = w.dx, plateDx = 360 * w.dx;
+    }
     const float kFont = menuFontSize(app); // (the labels: MuComFontFromIdRegist's size)
     const float leftEdge = wideLeft(app), centre = r.uiX(), rightEdge = wideRight(app); // origins (the screen's edges inside the safe area)
     const bool list = s.phase == App::Shop::List;
@@ -1142,10 +1156,10 @@ void drawShop(App& app) {
     // (+ (16, 32) in menu units); the iPad layout keeps 1.0.1's place
     if (s.keeper.id && !list && !board) {
         const bool phone = r.phoneLayout();
-        r.drawQuad(s.keeper, ((phone ? 16 : -32) - 240 * slide) * 2, (phone ? 32 + 64 : 128) * 2, 256 * 2, 256 * 2, 1, 1, 1, 1);
+        r.drawQuad(s.keeper, ((phone ? 16 : -32) - 240 * slide) * 2, (phone ? 32 + 64 : 128) * 2, 256 * 2, 256 * 2, 1, 1, 1, s.out > 0 ? a : 1);
     }
     if (board) drawShopBoard(app, 12 - 200 * slide, 92, shopCharacter(app), item, a); // (FUN_0006a6c0 66395-66421: the focused item, sold or bought)
-    m.picture(97, 8, 4, 1); // "Shop"
+    m.picture(97, 8, 4, wa); // "Shop"
     if (s.phase == App::Shop::Main) { // window 2: font 0 (7, 0x3a) "Shopping" at (12, 40) over picture 15
         m.textCentred(sysText(app, 58058), 12 - 140 * slide, 47, false, a, kFont);
         m.picture(15, -140 * slide, 56, a);
@@ -1162,11 +1176,11 @@ void drawShop(App& app) {
     // Right: Oz, the plates, the list, the count and Yes / No
     r.setOrigin(rightEdge);
     if (list && !s.list.empty()) drawHelpWindow(app, m, item, a); // HELP: the cursor's item (ComUty_HelpWindowDraw)
-    m.picture(152, 316, 0, 1); // the Oz bar
-    drawShopNumber(m, app.game.oz, 362, 0, 9, 12, 1);
+    m.picture(152, 316, 0, wa); // the Oz bar
+    drawShopNumber(m, app.game.oz, 362, 0, 9, 12, wa);
     if (s.phase == App::Shop::Main)
         for (int i = 0; i < 3; ++i)
-            m.plate(328 + 240 * slide, 144 + 48.0f * float(i), kMainIcons[i], kMainWords[i],
+            m.plate(328 + plateDx, 144 + 48.0f * float(i), kMainIcons[i], kMainWords[i],
                     (s.cursor == i && menuCursorLit(app)) || shopPressIn(app, true, 328, 144 + 48.0f * float(i), 136, 40), a, false);
     if (s.phase == App::Shop::Category)
         for (int i = 0; i < 4; ++i)
@@ -1260,6 +1274,7 @@ void drawShop(App& app) {
 
 void shopKey(App& app, SDL_Keycode key) {
     App::Shop& s = app.shop;
+    if (s.out > 0) return; // (ShopPrc 6 - 8 read no pad)
     const bool back = key == SDLK_ESCAPE || key == SDLK_BACKSPACE || key == SDLK_AC_BACK;
     const bool enter = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E;
     const bool up = key == SDLK_UP || key == SDLK_W, down = key == SDLK_DOWN || key == SDLK_S;
@@ -1321,6 +1336,7 @@ void shopKey(App& app, SDL_Keycode key) {
 
 void shopClick(App& app, float px, float py) {
     App::Shop& s = app.shop;
+    if (s.out > 0) return;
     const bool still = !app.fingerMoved; // (_pad_chk_updw_box: no lift in a frame the finger moved in - the list's drag aside)
     if (!still && s.phase != App::Shop::List) return;
     float lx, ly;

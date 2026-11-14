@@ -483,6 +483,9 @@ struct App {
     // that opened the shop is parked.
     struct Shop {
         int backIn = 0;                    // ShopPrc 3 / 3-4: frames after the talk before the windows come back
+        // Back on Talk / Buy / Sell (ShopPrc 2 -> 6 -> 7 -> 8): frames since the tap + 1, 0 none - the windows go on
+        // the next frame, the music fades out (__bgmgo(0x8000000)) on the 7th and ShopClr closes on the 8th
+        int out = 0;
         // Member: __Buy_CharChoiceProc's pair (Buy's Weapons / Armor / Jewel, Sell's all but Items)
         enum Phase { Main, Category, Member, List, Count, EquipAsk, Talk } phase = Main;
         bool open = false, selling = false;
@@ -1694,6 +1697,7 @@ void shopChooseCategory(App& app, int c);
 void shopChooseMember(App& app, int k);
 void shopChooseItem(App& app, int index);
 void shopPay(App& app);
+void shopBack(App& app);
 std::string shopMessage(const App& app);
 void drawShopNumber(cr::MenuPainter& m, int value, float x, float y, int digits, float step, float alpha, int style = 0, bool left = false);
 void drawShop(App& app);
