@@ -2487,7 +2487,7 @@ int fieldPresentationSelfTest(App& app) {
             if (n) out = n->pos[1];
             return n != nullptr;
         };
-        // j001_t01's opening stage (map 113, t0150_10: its one square listed at node +10 alone, no floor list): Escher
+        // j001_t01's opening stage (map 113, t0150_10: its one square listed at node +10 alone, no floor list): npc 415
         // (npc 415, c107; FrmSetc2 at 0x85d4) stays at the record's 29.67 over it, in shot behind the reaper's rise
         // (Part 1 645-649 s) - not down on the square at 0, under the camera's frame
         float y = 0;
@@ -2515,7 +2515,7 @@ int fieldPresentationSelfTest(App& app) {
             }
         } else ++floorProblems;
         floorProblems += !stage + !rise + !near + !far + app.renderer.takeErrors();
-        std::printf("placed actors' floor: Escher over t0150's unlisted square kept at 29.67 %s, d0218's 417 at 0 not "
+        std::printf("placed actors' floor: npc 415 over t0150's unlisted square kept at 29.67 %s, d0218's 417 at 0 not "
                     "taken up to the floor 47.49 over it %s, 15 over the hall's floor put on it %s, 25 over it kept %s; "
                     "%d problems\n", stage ? "yes" : "NO", rise ? "yes" : "NO", near ? "yes" : "NO", far ? "yes" : "NO",
                     floorProblems);
