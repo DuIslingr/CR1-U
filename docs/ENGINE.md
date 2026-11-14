@@ -479,7 +479,9 @@ c101/c102/c104/m207a, 2026-10-12).
       itself on macOS / Windows, Liberation Sans or Arimo (Arial's metrics) on Linux -, the
       Chinese and Korean glyphs it lacks from the CJK font's SC / TC / KR face on its baseline,
       as iOS's font fallback draws them. The CJK font: Noto Sans CJK on Linux, Hiragino / PingFang /
-      Apple SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows. `CR_FONT=<file>` picks
+      Apple SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows. Fonts in the game folder's `font/`
+      take their place (`gfx/font.cpp` `ownFonts`: one with CJK glyphs the CJK font - a
+      `...bold...` file its bold, else it too -, one without the Latin one). `CR_FONT=<file>` picks
       the CJK font, `CR_FONT_BOLD=<file>` its bold, `CR_LATIN_FONT=<file>` the Latin one (`none`:
       without - the CJK font draws Latin text then, the messages at 94% of their size, its Latin
       being about 5% wider than Arial's); `CR_FONT=none` keeps the 8x8 font (English and the Latin

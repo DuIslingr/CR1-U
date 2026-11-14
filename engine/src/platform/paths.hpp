@@ -17,6 +17,7 @@ namespace cr {
 //   vita/            the Vita release: its game folder (PCSG00497: eboot.bin, sce_sys/ ...) or what is in it
 //   textures/export/ where --export-textures writes the pictures to upscale (<hash>.crraw)
 //   textures/hd/     where the upscaled ones are read from (<hash>.crhd: tools/hd_textures.py)
+//   font/            your own .ttf / .otf / .ttc, in place of the system's (gfx/font.cpp ownFonts)
 // A release's folder may hold it one or two folders down (ios/Payload/ChaosRingsHD.app,
 // vita/PCSG00497). The older places still work: dataHD/, data/, the .app or Payload/ in the game
 // folder, hd-textures/ beside the program or in the profile folder.

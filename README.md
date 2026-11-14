@@ -160,6 +160,12 @@ Notes on the upscalers:
   You can build it in for your own use (see [Building from source](#building-from-source)).
 - **MetalFX** (macOS 13+) is built but hasn't been tried on a real Mac yet.
 
+**Fonts:** the game draws its text in the system's fonts - Arial's widths (Arial, Liberation Sans
+or Arimo) and a CJK font (Noto Sans CJK, Hiragino, Yu Gothic) for Japanese, Chinese and Korean.
+To use your own, put .ttf / .otf / .ttc files in the game folder's `font/`: one with CJK
+characters replaces the CJK font (a second named `...bold...` the Japanese bold), one without
+replaces Arial. Its `README.txt` has the details; with the folder empty nothing changes.
+
 With Vulkan, the profile folder keeps `vulkan-pipelines.bin` so later starts and new screens don't
 compile the graphics pipelines again. It is safe to delete; a new GPU or driver starts it afresh.
 

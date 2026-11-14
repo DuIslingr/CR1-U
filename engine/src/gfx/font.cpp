@@ -3,11 +3,16 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
+#include <vector>
 
 #include "core/file.hpp"
 #include "core/text.hpp"
+#include "platform/paths.hpp"
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
@@ -208,21 +213,61 @@ bool Font::rasterise(const std::vector<std::string>& lines, float em, float line
 }
 
 namespace {
-// The first of `paths` that loads (an environment variable's file first; its value "none": none)
-bool loadFirst(Font& font, const char* env, std::initializer_list<const char*> paths) {
+// The first of `paths` that loads (an environment variable's file first; its value "none": none -,
+// then `own`: the font/ folder's)
+bool loadFirst(Font& font, const char* env, const std::string& own, std::initializer_list<const char*> paths) {
     if (const char* e = SDL_getenv(env)) {
         if (SDL_strcmp(e, "none") == 0) return false;
         if (font.load(e)) return true;
     }
+    if (!own.empty() && font.load(own)) return SDL_Log("font/: %s", own.c_str()), true;
     for (const char* p : paths)
         if (font.load(p)) return true;
     return false;
+}
+
+// Your own fonts: the .ttf / .otf / .ttc files in a game folder's font/ (the first game folder
+// holding one wins, its files by name). One with Japanese / Chinese / Korean glyphs takes the CJK
+// font's place - its bold's too, unless a file named "...bold..." is there for it -; one without
+// takes the Latin (ArialMT) one's. Nothing there: the system's fonts, as before.
+struct OwnFonts {
+    std::string latin, cjk, cjkBold;
+};
+OwnFonts ownFonts() {
+    OwnFonts own;
+    for (const std::string& folder : gameFolders()) {
+        std::error_code ec;
+        std::vector<std::filesystem::path> files;
+        for (const auto& entry : std::filesystem::directory_iterator(std::filesystem::u8path(folder + "font"), ec)) {
+            std::string ext = entry.path().extension().u8string();
+            for (char& c : ext) c = char(std::tolower((unsigned char)c));
+            if (entry.is_regular_file(ec) && (ext == ".ttf" || ext == ".otf" || ext == ".ttc")) files.push_back(entry.path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const auto& file : files) {
+            Font font;
+            const std::string path = file.u8string();
+            if (!font.load(path)) {
+                SDL_Log("font/: %s isn't a font this can read", path.c_str());
+                continue;
+            }
+            std::string name = file.filename().u8string();
+            for (char& c : name) c = char(std::tolower((unsigned char)c));
+            std::string& slot = !font.covers("\xe3\x81\x82\xe6\xbc\xa2") ? own.latin // (あ漢)
+                                : name.find("bold") != std::string::npos ? own.cjkBold : own.cjk;
+            if (slot.empty()) slot = path;
+        }
+        if (!files.empty()) break;
+    }
+    if (own.cjkBold.empty()) own.cjkBold = own.cjk;
+    return own;
 }
 } // namespace
 
 bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold) {
     if (const char* env = SDL_getenv("CR_FONT"); env && SDL_strcmp(env, "none") == 0) return false; // the 8x8 font only
-    loadFirst(cjk, "CR_FONT",
+    const OwnFonts own = ownFonts();
+    loadFirst(cjk, "CR_FONT", own.cjk,
               {
                   // Linux (Noto CJK under several distributions' paths, then other CJK families)
                   "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
@@ -248,7 +293,7 @@ bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold) {
                   "/system/fonts/NotoSansSC-Regular.otf",
               });
     // Japanese: 2.2.0's FUN_000375bc picks HiraKakuProN-W6, a bold Gothic
-    loadFirst(cjkBold, "CR_FONT_BOLD",
+    loadFirst(cjkBold, "CR_FONT_BOLD", own.cjkBold,
               {
                   "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
                   "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
@@ -261,7 +306,7 @@ bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold) {
                   "/system/fonts/NotoSansCJK-Bold.ttc",
               });
     // Every other language: ArialMT - Arial itself, or a face made to its metrics (the same advance widths)
-    loadFirst(latin, "CR_LATIN_FONT",
+    loadFirst(latin, "CR_LATIN_FONT", own.latin,
               {
                   // Linux: Liberation Sans, Arimo (both Arial's metrics), Arial from the core fonts
                   "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
