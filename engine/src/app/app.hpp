@@ -1430,6 +1430,8 @@ void stepSaveScreen(App& app);
 void saveScreenKey(App& app, SDL_Keycode key);
 void saveScreenClick(App& app, float px, float py);
 int ownedCount(const App& app, int item);
+int heldCount(const App& app, int item);
+int pairHeldCount(const App& app, int item);
 void openShop(App& app);
 void closeShop(App& app);
 void stepShop(App& app);

@@ -599,6 +599,27 @@ int ownedCount(const App& app, int item) {
     return it == app.game.items.end() ? 0 : it->second;
 }
 
+// _GetItmCnt (59977) as 2.2.0 counts gear: its bag keeps what is worn (the equipment slots name it), so
+// the count is the port's bag - the spares - and what the item's pair wears: weapons / armor 201..424
+// the pair (n - 201) / 56's, jewels the current pair's
+int heldCount(const App& app, int item) {
+    int n = ownedCount(app, item);
+    if (item < 201 || item > 438) return n;
+    const int route = item <= 424 ? (item - 201) / 56 : std::clamp(app.playerChar / 2, 0, 3);
+    for (int c : {2 * route, 2 * route + 1}) {
+        const cr::PartyMember& pm = app.game.party[size_t(c)];
+        n += int(std::count(std::begin(pm.equip), std::end(pm.equip), item));
+    }
+    return n;
+}
+// ... less the jewel a held-back second member wears (MuCom_ChkPartyNum 1: __Common_ListNextReady
+// 66592-66596, MuComMakeItemData leaving it out)
+int pairHeldCount(const App& app, int item) {
+    const int route = std::clamp(app.playerChar / 2, 0, 3);
+    const bool heldBack = app.game.flag(4077 + route);
+    return heldCount(app, item) - (heldBack && item >= 425 && item <= 438 && app.game.party[size_t(2 * route + 1)].equip[cr::kJewel] == item);
+}
+
 // The price of one in the current list (half when selling)
 int shopUnitPrice(const App& app, int item) {
     const cr::ItemParam* p = app.itemTable.item(item);
@@ -631,7 +652,7 @@ bool shopNewState(const App& app, int item) {
 
 int shopMaxCount(const App& app, int item) {
     if (app.shop.selling) return std::min(ownedCount(app, item), cr::kMaxItemCount);
-    return cr::maxPurchase(shopUnitPrice(app, item), app.game.oz, ownedCount(app, item));
+    return cr::maxPurchase(shopUnitPrice(app, item), app.game.oz, heldCount(app, item)); // (65963: 99 - GetItmCnt)
 }
 
 void refreshShopList(App& app) {
@@ -1030,7 +1051,7 @@ void drawShop(App& app) {
             if (!s.selling) {
                 const cr::PartyMember& pm = app.game.party[size_t(shopCharacter(app))];
                 if (std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip)) style = 3;
-                if (shopUnitPrice(app, it) > app.game.oz || ownedCount(app, it) > 98) style = 2;
+                if (shopUnitPrice(app, it) > app.game.oz || heldCount(app, it) > 98) style = 2;
             }
             const float ra = a;
             m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
@@ -1068,7 +1089,8 @@ void drawShop(App& app) {
         m.text(shopMessage(app), 24, 234, false, 1, kFont);
         std::vector<std::vector<std::string>> have;
         if (s.phase == App::Shop::Count &&
-            app.systemText.message(57046, app.language, [&](int) { return ownedCount(app, item); }, have) && !have.empty() &&
+            // (__Common_ListNextReady 66590-66597: GetItemCnt - worn gear counted - less the held-back member's jewel)
+            app.systemText.message(57046, app.language, [&](int) { return pairHeldCount(app, item); }, have) && !have.empty() &&
             !have[0].empty())
             m.text(have[0][0], 24, 250, false, 1, kFont);
     } else if (list && shopEquipment(app)) {
@@ -1329,9 +1351,9 @@ void memberHpMp(const App& app, int c, int& hp, int& hpMax, int& mp, int& mpMax,
 
 // MuComMakeItemHaveData (0x51f1c): what the bag holds of a category - weapons / armor (kinds 6 / 7)
 // the first member's, or the second's unless held back (flag 0xfed + route). With the second held
-// back, MuComMakeItemData leaves the jewel they wear out while GetItemCnt counts 1 of it - 2.2.0's
-// bag counts what is worn, so that one is theirs and a second is listed; the port's bag holds only
-// what isn't worn, so every jewel in it is a spare and listed
+// back, MuComMakeItemData leaves the jewel they wear out. 2.2.0's bag counts what is worn: the
+// lists and counts take pairHeldCount - the port's spares and what the pair wears - so worn gear is
+// listed (yellow, and refused in Equip) as there
 
 std::vector<int> campItems(const App& app, int category) {
     std::vector<int> out;
@@ -1346,7 +1368,7 @@ std::vector<int> campItems(const App& app, int category) {
     }
     const int route = campRoute(app), bits = (1 << (2 * route)) | (campMembers(app) > 1 ? 2 << (2 * route) : 0);
     for (int n = from; n <= to; ++n) {
-        const int count = ownedCount(app, n);
+        const int count = pairHeldCount(app, n); // (make_item_list: GetItmCnt, worn gear in it)
         if (count <= 0) continue;
         const cr::ItemParam* p = app.itemTable.item(n);
         if (category == 2 && (!p || p->kind != cr::kKindWeapon || !(p->owners & bits))) continue;
@@ -1419,7 +1441,7 @@ std::vector<int> campEquipList(const App& app, int c, int slot) {
     const int kind = slot == cr::kWeapon ? cr::kKindWeapon : slot == cr::kArmor ? cr::kKindArmor : cr::kKindJewel;
     for (int n = 201; n <= 438; ++n) {
         const cr::ItemParam* p = app.itemTable.item(n);
-        if (!p || p->kind != kind || ownedCount(app, n) <= 0 || !(p->owners & (1 << c))) continue;
+        if (!p || p->kind != kind || pairHeldCount(app, n) <= 0 || !(p->owners & (1 << c))) continue; // (worn ones too, refused)
         out.push_back(n);
     }
     if (slot == cr::kJewel && pm.equip[cr::kJewel] > 0) out.push_back(campui::kRemove);
@@ -1819,7 +1841,13 @@ void campChoose(App& app) {
             int& worn = pm.equip[c.slot];
             const int wear = item == campui::kRemove ? 0 : item;
             if (worn > 0) app.game.items[worn] = std::min(cr::kMaxItemCount, ownedCount(app, worn) + 1); // (the port's bag
-            if (wear > 0 && --app.game.items[wear] <= 0) app.game.items.erase(wear);                  // holds what isn't worn)
+            if (wear > 0 && ownedCount(app, wear) <= 0) {                                                // holds what isn't worn;
+                for (int g = 0; g < 2; ++g) {                                                             // with no spare, the one the
+                    int& other = app.game.party[size_t(campCharacter(app, g))].equip[c.slot];             // partner wears changes hands -
+                    if (&other != &worn && other == wear) { other = 0; app.game.items[wear] = 1; break; } // __ChangeEquipItem: whoever
+                }                                                                                         // else wears it)
+            }
+            if (wear > 0 && --app.game.items[wear] <= 0) app.game.items.erase(wear);
             worn = wear;
             menuSound(app, campui::kSoundEquip);
             if (wear > 0) campEquipRefill(app);
@@ -1952,7 +1980,7 @@ void campKey(App& app, SDL_Keycode key) {
             if (step && n > 0) {
                 c.listCursor = (c.listCursor + step + n) % n;
                 c.listTop = std::clamp(c.listTop, std::max(0, c.listCursor - campui::kRows + 1), c.listCursor);
-                menuSound(app, se::kCursor);
+                menuSound(app, n > 1 ? se::kListFocus : se::kCursor); // (MuScrList_Draw: __effgo(1) as the focus row changes)
             } else if ((left || right) && c.page == App::Camp::Items && c.phase == App::Camp::List) {
                 campNextCategory(app, left ? -1 : 1);
                 menuSound(app, se::kPage);
@@ -3102,7 +3130,7 @@ void drawCamp(App& app) {
                         const cr::PartyMember& pm = app.game.party[size_t(campCharacter(app, g))];
                         worn |= std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip) || campWears(app, campCharacter(app, g), it);
                     }
-                    drawCampRow(app, m, x, y, it, cr::isPlate(it) ? 0 : ownedCount(app, it), lit, e, worn ? 3 : campUsable(app, it) ? 0 : 2);
+                    drawCampRow(app, m, x, y, it, cr::isPlate(it) ? 0 : heldCount(app, it), lit, e, worn ? 3 : campUsable(app, it) ? 0 : 2);
                 }, e);
                 left();
             } else if (ph == App::Camp::Member) memberPlates(current, e); // (the face boards above; no state board)

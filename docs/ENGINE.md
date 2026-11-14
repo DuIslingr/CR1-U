@@ -511,7 +511,10 @@ c101/c102/c104/m207a, 2026-10-12).
       `FixJumpTable.java` in Ghidra): **Items** - the bag by category (Standard, Event, Weapons,
       Armor, Jewel, Gene Plates; Left/Right), the seeds (a stat point each, up to 5000, how many
       asked) and the MP items used on a member, the item's HELP; **Equip** - a member, weapon /
-      armor / jewel, what the bag holds for it with the state board showing the change;
+      armor / jewel, what the bag holds for it with the state board showing the change (2.2.0's bag
+      keeps worn gear - `_GetItmCnt` counts it - so the lists, the Items page's counts and the shop's
+      "You have" / 99 take the port's spares plus what the pair wears; the member's own worn piece
+      listed yellow and refused, the partner's changing hands with no spare);
       **Status** - a member's portrait and board, < > to its equipment and skills; **Genes** - the
       gene plates in the bag on the gene board (n / 6 known, the known entries by name), a plate
       opens its known entries (the plate's picture). As 2.2.0's `__MuCamp_NextProc` runs it: the

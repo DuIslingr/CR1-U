@@ -2856,6 +2856,21 @@ int menusAuditSelfTest(App& app) {
         }
     const std::vector<int> eq = campEquipList(app, 0, cr::kJewel);
     spare = spare && std::find(eq.begin(), eq.end(), 426) != eq.end();
+    // (GetItmCnt counts worn gear: Escher's worn weapon is listed with no spare, the held-back Musiea's
+    // worn-only jewel isn't, and Escher's own worn jewel shows in his Equip list)
+    app.game.items.erase(426);
+    app.game.party[0].equip[cr::kWeapon] = 201;
+    app.game.party[0].equip[cr::kJewel] = 427;
+    bool wornListed = false, heldBackOut = true;
+    for (int k = 0; k < campui::kCategories; ++k) {
+        const std::vector<int> l = campItems(app, k);
+        if (campui::kCategoryKind[k] == 6) wornListed = std::find(l.begin(), l.end(), 201) != l.end();
+        if (campui::kCategoryKind[k] == 8) heldBackOut = std::find(l.begin(), l.end(), 426) == l.end() && std::find(l.begin(), l.end(), 427) != l.end();
+    }
+    const std::vector<int> eq2 = campEquipList(app, 0, cr::kJewel);
+    const bool ownWorn = std::find(eq2.begin(), eq2.end(), 427) != eq2.end() && heldCount(app, 201) == 1;
+    if (!wornListed || !heldBackOut || !ownWorn) std::printf("  worn gear counted: listed %d, held back left out %d, own in Equip %d\n", wornListed, heldBackOut, ownWorn);
+    spare = spare && wornListed && heldBackOut && ownWorn;
     problems += !spare;
     // S10: the Android phone's staff roll (oy 20: a 4:3 screen) - the picture's end, the lines shown
     App::StaffRoll st;
@@ -4370,8 +4385,12 @@ int runSelfTest(App& app) {
         problems += c.page != App::Camp::Main || c.pageOut != 0;
         c.cursor = 1, key(SDLK_RETURN), key(SDLK_RETURN);   // Equip: Escher's weapon
         key(SDLK_RETURN);
-        problems += c.phase != App::Camp::List || c.list.empty() || c.list[0] != 202;
+        // (GetItmCnt counts worn gear: the Trusty Longsword he wears is listed first, refused - type 5's -4)
+        problems += c.phase != App::Camp::List || c.list != std::vector<int>{201, 202};
         for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
+        key(SDLK_RETURN);                                     // the worn one: refused
+        problems += c.phase != App::Camp::List || app.game.party[0].equip[0] != 201;
+        key(SDLK_DOWN);
         key(SDLK_RETURN);                                     // wear the Bastard Sword
         problems += app.game.party[0].equip[0] != 202 || ownedCount(app, 201) != 1 || ownedCount(app, 202) != 0;
         key(SDLK_ESCAPE), key(SDLK_ESCAPE);
@@ -4389,7 +4408,7 @@ int runSelfTest(App& app) {
         problems += !app.campOpen;
         steps(5);
         problems += app.campOpen + errs;
-        problems += expectSounds("camp", {2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 21, 3, 3, 2, 4, 2, 5, 3, 3, 3, 9});
+        problems += expectSounds("camp", {2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 4, 2, 5, 3, 3, 3, 9});
         app.mapNumber = campMap;
         std::printf("camp: 56010 / 56016 first, 3 seeds +%d attack, Plum to MP %d, Bastard Sword worn, status page and list; %d "
                     "frames, %d render API errors; %d problems\n", atk1 - atk0, app.game.party[0].mp, frames, errs, problems);
