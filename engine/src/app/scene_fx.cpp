@@ -907,7 +907,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
         gauge("Master Volume", &app.mix.master, int(se::kVolume));
         gauge(sysLabel(app, 58085, "BGM"), &app.mix.music, -1);
         gauge(sysLabel(app, 58086, "Sound Effects"), &app.mix.effects, int(se::kVolume));
-        gauge("Voice Volume", &app.mix.voice, -1);
+        gauge(sysLabel(app, 58124, "Voice"), &app.mix.voice, -1); // (OptionPrc 4's label table bd300: 81, 85, 86, 124, 82)
         { // (OptionPrc's gauges, 71108-71113: a changed voice level speaks - __voicego(0x200075, 0))
             auto act = rows.back().act;
             rows.back().act = [&app, act](int dir) {
@@ -1451,10 +1451,13 @@ void optionsClick(App& app, float px, float py) {
         case OptControl::Gauge: { // set the value where the track was hit (knob at x + 11 + v x 2.03)
             if (!inX(224, 444) || !r.gauge) return;
             const float design = kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale; // back to design units
-            *r.gauge = std::clamp(int(std::lround((design - 235) / 2.03f / 10)) * 10, 0, 100); // (steps of 10)
+            // (FUN_000493b4 45333-45345: trunc(((x - 214) x 0.4956 - 10) / 10) x 10 - truncated, steps of 10)
+            *r.gauge = std::clamp(int(((design - 214) * 0.4956f - 10) / 10) * 10, 0, 100);
             applyMix(app);
             saveMix(app);
             if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
+            // (__MuOptionSetInfo 71108-71113: the voice gauge speaks on every release, changed or not)
+            if (r.gauge == &app.mix.voice && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
             return;
         }
         case OptControl::Value:

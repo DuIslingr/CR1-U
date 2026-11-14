@@ -1035,11 +1035,14 @@ struct App {
     struct MapScreen {                     // __menuu_Map*: the gate's map, where the pair is, where to go
         bool open = false, closing = false;
         int fade = 0;                      // 4 frames in, 4 out
+        int closeWait = 0;                 // MapPrc 2: the closing tap's count 4 down past 0 - 6 frames to the close
         int gate = -1;                     // map_D01..D04 (ReadMapMenu), the one in `tex`
+        int readGate = -1;                 // the gate Call 2020 read (var 0: each dungeon's entry script), -1 none yet
         cr::Texture tex;
         float clock = 0;
         int spot[2] = {-1, -1};            // the pair's marker's top-left (tex2d), -1 none
         int marks[2][2] = {{-1, -1}, {-1, -1}}; // the story's two markers
+        int markType[2] = {0, 0};          // their table type: 1 drawn over the pair's marker (z -1), else under (-3)
         int blink = 0;                     // ComUty_PictAnimDraw's counter: 2 frames of 6
         int wait = 0;                      // MapPrc 1: 4 frames before taps count (and the pulse runs)
         int pulse = 0, pulseCount = 0;     // MapPrc's d3708 / d3710: the pair's spot fading in and out

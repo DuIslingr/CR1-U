@@ -1349,7 +1349,10 @@ void ViewerHost::panCamera(const float* d, int frames) {
     c.eyeTo = c.eye + dv; c.tgtTo = c.target + dv;
     c.frames = std::max(frames, 1); c.t = 0;
 }
-void ViewerHost::sceneEffectSet(int set) { loadSceneEffectSet(app, set); }
+void ViewerHost::sceneEffectSet(int set) { // Call 2020 (FUN_000266cc 21319-21327): ScnEffectRead and ReadMapMenu(var 0)
+    loadSceneEffectSet(app, set);
+    if (set >= 0 && set <= 3) app.mapScreen.readGate = set;
+}
 void ViewerHost::quake(int amp, int from, int to, int frames) { // EvtQuake: < 0 frames starts one held, else EndQuake
     ++app.scriptQuakes;
     if (frames < 0) startQuake(app.fieldQuake, float(amp), float(from), float(to), 1, true);
@@ -2155,7 +2158,9 @@ void openMapScreen(App& app) {
     using namespace mapui;
     App::MapScreen& ms = app.mapScreen;
     if (app.mapNumber < 0 || app.mapNumber >= 64) return;
-    const int gate = mapGate(app.mapNumber);
+    // (the sheet ReadMapMenu read from the dungeon script's var 0 - d0150 / d0250 / d0350 show their own
+    // gate's, not the next; the map number's split only before any)
+    const int gate = ms.readGate >= 0 ? ms.readGate : mapGate(app.mapNumber);
     if (ms.gate != gate || !ms.tex.id) { // ReadMapMenu: only when the gate changes
         if (ms.tex.id) app.renderer.destroy(ms.tex);
         cr::Image img;
@@ -2172,7 +2177,7 @@ void openMapScreen(App& app) {
         if (app.game.flag(base + step)) {
             for (int k = 0; k < 2; ++k) {
                 const short* m = kMapMark[gate][step][k];
-                if (m[0] - 8 > -1 && m[1] - 16 > -1) ms.marks[k][0] = m[0] - 8, ms.marks[k][1] = m[1] - 16;
+                if (m[0] - 8 > -1 && m[1] - 16 > -1) ms.marks[k][0] = m[0] - 8, ms.marks[k][1] = m[1] - 16, ms.markType[k] = m[2];
             }
             break;
         }
@@ -2181,13 +2186,16 @@ void openMapScreen(App& app) {
     ms.fade = 0;
     ms.blink = 0;
     ms.clock = 0;
-    ms.wait = 4, ms.pulse = ms.pulseCount = 0, ms.pulseAlpha = 0;
+    // (__menuu_MapSet 76391 / 76416: the pulse starts in its 255 state - the spot full once MapPrc's 4-frame
+    // wait is over, as video 12 1264.4 s shows)
+    ms.wait = 4, ms.pulse = 2, ms.pulseCount = 0, ms.pulseAlpha = 0;
 }
 
 void closeMapScreen(App& app) {
     if (!app.mapScreen.open || app.mapScreen.closing || app.mapScreen.wait > 0) return; // (MapPrc 1: not for 4 frames)
     menuSound(app, se::kChoose); // __effgo(2)
     app.mapScreen.closing = true;
+    app.mapScreen.closeWait = 6; // (76449-76456: DAT_000d3704 = 4, counted down until below 0)
 }
 
 void stepMapScreen(App& app) {
@@ -2195,7 +2203,8 @@ void stepMapScreen(App& app) {
     if (!ms.open) return;
     ms.blink = (ms.blink + 1) % 12;
     if (ms.closing) {
-        if (--ms.fade <= 0) ms.open = false, ms.closing = false;
+        ms.fade = std::max(0, ms.fade - 1);
+        if (--ms.closeWait <= 0) ms.open = false, ms.closing = false;
         ms.pulseAlpha = 0;
         return;
     }
@@ -2226,12 +2235,18 @@ void drawMapScreen(App& app) {
     if (!ms.tex.id) return;
     m.imagePiece(ms.tex, 16, 32, 0, 0, 480, 320, a);
     const int frame = ms.blink / 6;
-    for (const auto& mk : ms.marks)
-        if (mk[0] >= 0) m.imagePiece(ms.tex, float(mk[0]) + 16, float(mk[1]) + 32, float(16 * frame), 368, 16, 16, a);
+    // (tex2d's z: the map -4, a type-0 mark -3, the pair's marker -2, a type-1 mark -1 - MapSet 76403-76406)
+    auto marks = [&](bool over) {
+        for (int k = 0; k < 2; ++k)
+            if (ms.marks[k][0] >= 0 && (ms.markType[k] == 1) == over)
+                m.imagePiece(ms.tex, float(ms.marks[k][0]) + 16, float(ms.marks[k][1]) + 32, float(16 * frame), 368, 16, 16, a);
+    };
+    marks(false);
     // (MapPut 76565-76573: the spot's colour alpha << 24 | 0xffffff, the pulse; the story's marks opaque)
     if (ms.spot[0] >= 0)
         m.imagePiece(ms.tex, float(ms.spot[0]) + 16, float(ms.spot[1]) + 32, float(48 * frame), 320, 48, 48,
                      a * std::clamp(ms.pulseAlpha, 0.0f, 255.0f) / 255);
+    marks(true);
 }
 
 // ---- Puzzle rooms (PuzzleScene, PuzzleManager, the touch abilities, the PuzzleObjects) ----

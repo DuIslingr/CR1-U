@@ -4713,15 +4713,17 @@ int runSelfTest(App& app) {
                     ms.marks[0][0] != 84 || ms.marks[1][0] != 104;
         closeMapScreen(app); // (MapPrc 1: no tap for 4 frames)
         problems += ms.closing;
-        for (int f = 0; f < 6; ++f) stepMapScreen(app);
-        const float hidden = ms.pulseAlpha; // (the pulse: 0 for its first frames)
-        for (int f = 0; f < 7; ++f) stepMapScreen(app);
+        for (int f = 0; f < 4; ++f) stepMapScreen(app);
+        const float hidden = ms.pulseAlpha; // (0 through MapPrc's 4-frame wait, then full: MapSet starts the pulse at 2)
+        stepMapScreen(app);
         if (hidden != 0 || ms.pulseAlpha != 255) std::printf("  map spot pulse %.0f -> %.0f (want 0 -> 255)\n", hidden, ms.pulseAlpha), ++problems;
         app.lastTicks = 0;
         drawFrame(app, false);
         const int mapErrs = app.renderer.takeErrors();
         closeMapScreen(app);
-        for (int f = 0; f < 4; ++f) stepMapScreen(app);
+        for (int f = 0; f < 5; ++f) stepMapScreen(app);
+        problems += !ms.open; // (MapPrc 2: 6 frames from the tap to the close)
+        stepMapScreen(app);
         problems += ms.open + mapErrs + expectSounds("map screen", {2, 2}) + offMap + (spots != 60);
         app.mapNumber = keepMap;
         std::printf("field menu: bar slides out and back, encounter switch per pair (flag 4076 refuses it), skill 174 "
