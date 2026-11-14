@@ -1213,19 +1213,11 @@ void battleBack(App& app) {
         } else
             battleMenu(app, App::Battle::Top);
         break;
-    case App::Battle::Targets: {
-        const bool item = b.pendingItem != 0, gene = b.pendingGene != 0;
-        battleMenu(app, item ? App::Battle::Items : gene ? App::Battle::Genes : App::Battle::Commands);
-        if (item) b.pendingItem = 0;
-        if (gene) b.pendingGene = 0, b.picks = battleGeneList(app);
-        if (item) {
-            b.picks.clear();
-            for (int n = 21; n <= 46; ++n)
-                if (auto it = app.game.items.find(n); it != app.game.items.end() && it->second > 0 && app.battleActions.get(n + 79))
-                    b.picks.push_back(n);
-        }
+    case App::Battle::Targets: // (__menub_mainPrc 0x386: Back - +0x92 999 - goes to 100, the member's Commands page,
+        // whether the targets came from an attack, a gene or an item; the Vita's the same)
+        b.pendingItem = 0, b.pendingGene = 0;
+        battleMenu(app, App::Battle::Commands);
         break;
-    }
     case App::Battle::Items: case App::Battle::Genes: battleMenu(app, App::Battle::Commands); break;
     case App::Battle::EscapeAsk: battleMenu(app, App::Battle::Top); break;
     default: return;
