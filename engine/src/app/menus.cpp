@@ -757,7 +757,8 @@ void stepShop(App& app) {
     if (std::fabs(to - s.scroll) > shopui::kRowH) s.scroll = to;
     else s.scroll = s.scroll < to ? std::min(to, s.scroll + 8) : std::max(to, s.scroll - 8);
     if (s.phase == App::Shop::Talk) {
-        if (s.timer >= 0 && ++s.timer > 4) { // ShopPrc waits 4 frames, then starts it
+        // (ShopPrc 3, 65811-65830: 0 -> 1 with a count of 4, run down past 0 - the talk on the 7th frame after the tap)
+        if (s.timer >= 0 && ++s.timer > 6) {
             s.timer = -1;
             app.game.setFlag(4090, true);
             app.runner.swap(app.parkedRunner);
@@ -768,12 +769,13 @@ void stepShop(App& app) {
                 s.talkRunning = true;
                 app.runnerWhat = "shop talk";
             }
+        } else if (s.timer < 0 && s.backIn > 0) { // (3 -> 4: a count of 4 run down past 0 before the windows come)
+            if (--s.backIn == 0) s.phase = App::Shop::Main, s.anim = 0;
         } else if (s.timer < 0 && !app.runner.running()) { // done: the shop's script again
             app.runner.swap(app.parkedRunner);
             s.talkRunning = false;
             app.game.setFlag(4090, false);
-            s.phase = App::Shop::Main;
-            s.anim = 0;
+            s.backIn = 7;
         }
     }
 }
@@ -839,8 +841,11 @@ void shopChooseItem(App& app, int index) {
 }
 
 // ◀ / ▶ in an equipment list: the pair's other character, and their list
+// (__Common_ListReady 66817-66826: list mode 2 - < Back > and the swipe - only with both members there)
+bool shopTwoMembers(const App& app) { return !app.game.flag(4077 + shopRoute(app)); }
 void shopSwitchMember(App& app) {
     App::Shop& s = app.shop;
+    if (!shopTwoMembers(app)) return;
     s.member ^= 1;
     s.listCursor = s.listTop = 0;
     refreshShopList(app);
@@ -872,6 +877,16 @@ void shopPay(App& app) {
         checkTrophies(app);
     }
     menuSound(app, se::kPaid);
+    if (s.selling) { // (ShopPrc 66173-66177: __CheckItemList - Items or Jewels with nothing left to sell go back to the
+                     // categories; the focus on the sold item again, or the top once it's gone - SetListPosFromItemNo)
+        refreshShopList(app);
+        if ((s.category == 0 || s.category == 3) && s.list.empty()) {
+            s.phase = App::Shop::Category, s.message = 0, s.anim = 0;
+            return;
+        }
+        const auto at = std::find(s.list.begin(), s.list.end(), item);
+        s.listCursor = s.listTop = at == s.list.end() ? 0 : int(at - s.list.begin());
+    }
     const cr::ItemParam* p = app.itemTable.item(item);
     // (ShopPrc 7, 65990: asked after any equipment bought - DAT_000d30c8 is the category - one worn already too)
     if (!s.selling && p && cr::equipSlot(p->kind) >= 0 && (p->owners >> shopCharacter(app) & 1)) {
@@ -1086,7 +1101,7 @@ void drawShop(App& app) {
         const bool phone = r.phoneLayout();
         r.drawQuad(s.keeper, ((phone ? 16 : -32) - 240 * slide) * 2, (phone ? 32 + 64 : 128) * 2, 256 * 2, 256 * 2, 1, 1, 1, 1);
     }
-    if (board) drawShopBoard(app, 12 - 200 * slide, 92, shopCharacter(app), s.selling ? 0 : item, a);
+    if (board) drawShopBoard(app, 12 - 200 * slide, 92, shopCharacter(app), item, a); // (FUN_0006a6c0 66395-66421: the focused item, sold or bought)
     m.picture(97, 8, 4, 1); // "Shop"
     if (s.phase == App::Shop::Main) { // window 2: font 0 (7, 0x3a) "Shopping" at (12, 40) over picture 15
         m.textCentred(sysText(app, 58058), 12 - 140 * slide, 47, false, a, kFont);
@@ -1122,8 +1137,6 @@ void drawShop(App& app) {
         }
     if (list) { // MuScrList_Draw mode 0: rows from the focus line at 150 less the scroll, cut to 76..280
         const int n = int(s.list.size());
-        if (s.list.empty())
-            m.text(s.selling ? "Nothing to sell." : "Nothing for sale.", kRowX + 56, kFocusY + 16, false, a, 15);
         m.setClip(kClipTop, kClipBottom);
         for (int index = 0; index < n; ++index) {
             const int it = s.list[size_t(index)];
@@ -1184,7 +1197,7 @@ void drawShop(App& app) {
             app.systemText.message(57046, app.language, [&](int) { return pairHeldCount(app, item); }, have) && !have.empty() &&
             !have[0].empty())
             m.text(have[0][0], 24, 251, false, 1, kFont);
-    } else if (list && shopEquipment(app)) {
+    } else if (list && shopEquipment(app) && shopTwoMembers(app)) {
         // ComUty_CmdBack 2: < Back > - the part held lit (1 Back, 2 right, 3 left: the boxes shopClick tests)
         m.backButton(kBackX, kBackY, shopPressIn(app, false, kBackX + 51, kBackY, 130, 24) ? 1 : shopPressIn(app, false, 0x175, kBackY, 0x33, 24) ? 2
                                      : shopPressIn(app, false, 0xc0, kBackY, 0x33, 24) ? 3 : 0, s.bob, a);
@@ -1269,7 +1282,8 @@ void shopClick(App& app, float px, float py) {
     if (app.renderer.phoneLayout()) rx -= 16;
     using shopui::kBackX;
     using shopui::kBackY;
-    const bool onBack = my >= kBackY && my < kBackY + 24 && cx >= kBackX && cx < kBackX + 232;
+    // (_pad_chk_updw_box(0xc0, 0x11e, 0x100, 0x22): 192..448 x 286..320 - wider and taller than the bar drawn)
+    const bool onBack = my >= 0x11e && my < 0x11e + 0x22 && cx >= 0xc0 && cx < 0xc0 + 0x100;
     auto plateAt = [&](float x0, float y0, float step, int n) {
         for (int i = 0; i < n; ++i)
             if (rx >= x0 && rx < x0 + 136 && my >= y0 + step * i && my < y0 + 40 + step * i) return i;
@@ -1290,7 +1304,7 @@ void shopClick(App& app, float px, float py) {
         break;
     case App::Shop::List: {
         using namespace shopui;
-        const bool arrows = shopEquipment(app) && my >= kBackY && my < kBackY + 24;
+        const bool arrows = shopEquipment(app) && shopTwoMembers(app) && my >= kBackY && my < kBackY + 24;
         const int n = int(s.list.size());
         auto focusTo = [&](int i) { s.listCursor = s.listTop = i; menuSound(app, se::kListFocus); };
         if (rx >= kRowX && rx < kRowX + 256 && my >= kClipTop && my < kClipBottom) {
@@ -2985,8 +2999,9 @@ void stepWorldSelect(App& app) {
     toward(ws.scroll, ws.cursor);
     toward(ws.levelScroll, ws.levelCursor);
     switch (ws.state) {
-    case 3: if (--ws.timer < 0) ws.state = 4; break;
-    case 7: if (--ws.timer < 0) ws.state = 8; break;
+    // (asm 0x50094 / 0x502ac: the count at 1 or more moves on at once, then counts down - with 4, one frame)
+    case 3: if (ws.timer-- >= 1) ws.state = 4; break;
+    case 7: if (ws.timer-- >= 1) ws.state = 8; break;
     case 9: if (--ws.timer < 0) ws.state = 10; break;
     case 10: closeWorldSelect(app); break;
     default: break;
