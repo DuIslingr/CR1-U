@@ -866,7 +866,14 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         auto atkSumOf = [&]() { int s = 0; for (int k : e.actors) if (k >= 0) s += atkOf(k); return s; };
         auto magicBoost = [&](int v) { return has(e.actors[0], 156) ? v + v / 5 : v; };
         auto recovery = [&](int v) { return has(e.actors[0], 155) ? v * 2 : v; };
+        // (_btlcalc_prc_0404 24006-24030: a physical action's every target worked out at btlact_attack_init, the
+        // amounts applied at the hit - one target's fall or auto-guard doesn't change another's result)
+        std::vector<BattleHit> physicalHits;
+        if (a->calc == 0)
+            for (int t : hitList) physicalHits.push_back(physical(*a, e.actors, t));
+        size_t hitIndex = 0;
         for (int t : hitList) {
+            const size_t thisHit = hitIndex++;
             BattleHit h;
             h.target = t;
             int calc = a->calc;
@@ -977,7 +984,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 out.hits.push_back(h);
                 continue;
             case 0: case 1: case 12: {
-                h = calc == 0 ? physical(*a, e.actors, t) : calc == 1 ? magical(*a, e.actors, t) : heal(*a, e.actors, t);
+                h = calc == 0 ? (thisHit < physicalHits.size() ? physicalHits[thisHit] : physical(*a, e.actors, t)) : calc == 1 ? magical(*a, e.actors, t) : heal(*a, e.actors, t);
                 if (calc == 0 && a->id == 203 && h.amount > 0) { // btlcalc_0404: Risk Breaker
                     h.amount = h.amount * (holdsBreak(e.actors[0]) ? 200 : 125) / 100;
                     if (t == hitList.front()) // the users give a quarter of their HP first
@@ -1045,6 +1052,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             }
             Fighter& tf = f[size_t(t)];
             const int before = tf.hp;
+            // (an instant death on an Invincible target: type 0 and 0 - "0", not the kill's label: 23941-23947 / 22223-22229)
+            if (h.type == kHitKill && invincible(t)) h.type = kHitNormal, h.amount = 0;
             if (h.type == kHitKill) h.amount = tf.hp;
             // _btlcalc_dmg_hp (23744): Is_invincible (a pair's either member) takes the damage to 0 and
             // leaves the result's type - a "0" with the hit's own label, if any
@@ -1094,9 +1103,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             }
             out.hits.push_back(h);
         }
-        if (a->id >= 10 && a->id <= 21)
-            for (int k : e.actors)
-                if (k >= 0) f[size_t(k)].firstAttack = false;
+        if (a->id >= 10 && a->id <= 21) // (24029-24040: +0xcf marked only for an actor with 135 - chk_skill_btl, a pair's
+            for (int k : e.actors)       // shared - or already marked; one without keeps its first)
+                if (k >= 0 && has(k, 135)) f[size_t(k)].firstAttack = false;
         if (a->id == 223) { // btlcalc_0504: Steal Item, when the blow landed
             int dealt = 0, mine = 0, n = 0, theirs = 0, m = 0;
             bool anyLeft = false;
