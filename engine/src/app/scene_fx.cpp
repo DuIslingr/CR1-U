@@ -2471,7 +2471,14 @@ int menuMaskWanted(const App& app, bool& atOnce) {
     // (the Camp's: none under a once-only message - CampMainSet masks only once 56010 is read (63017-63033, 63192),
     // the first Items tap clears it for 56016 (63266-63274) - nor from CampMain 0xd on, the frame after Back:
     // MuCom_MenuClrMask, the Camp closing seven frames later)
-    if (app.campOpen) return app.camp.notice || app.camp.leaving >= 2 ? -1 : 1;
+    // (the Emergency Exit: CampMain 0xd's MuCom_MenuClrMask as the windows go, 64172-64173 - frame 10 after Yes, the
+    // white fade at 16; the Status details: CampMainPrc 3 state 4's FUN_00050b38(2), 63893 - the mirrored slant behind
+    // the state board, the portrait's side bright - till the member choice's 1 again, 63788)
+    if (app.campOpen) {
+        const App::Camp& c = app.camp;
+        if (c.notice || c.leaving >= 2 || (c.phase == App::Camp::Exit && c.exitT >= 10)) return -1;
+        return c.page == App::Camp::Status && c.phase == App::Camp::Slot ? 2 : 1;
+    }
     if ((app.optionsOpen && !optionsAbout(app)) || app.shop.open || app.worldChoiceOpen || app.lastBattle.open) return 1;
     if (app.battle.active && app.battle.phase == App::Battle::Results && app.battle.result.stage != 3) return 1; // (MbResultPrc 0 .. 10)
     return -1;

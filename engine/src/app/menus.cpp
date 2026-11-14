@@ -1701,7 +1701,8 @@ void openCamp(App& app) {
     c = App::Camp();
     c.plateArt = std::move(art);
     c.statusArt = std::move(portraits);
-    c.cursor = campEntries(app) - 1;
+    c.cursor = 0; // (the pad's: the Vita's CampMainSet leaves DAT_81113c48, which the pages' member choices reset to 0 -
+                  // Items lit as it opens, video 16 1137.5 s; 2.2.0 iOS has no key cursor, DAT_000d2e10 = -1)
     campEquipRefill(app); // (CampMainSet: opened on a home map, the pair healed - pcparam_hpmp_recovery)
     capPairMp(app);       // (63012: ComUty_CharInfoInit)
     // __menuu_CampMainSet (0x635e8): the first time an ability 0x59..0x71 or a skill 0x8b..0xba is in the
