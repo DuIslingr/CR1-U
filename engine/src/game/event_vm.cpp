@@ -544,9 +544,14 @@ bool EventRunner::step(EventHost* host) {
             host->stopNpcAuto(n); // (__EvtFrmSetc 18381 / 18421, __EvtFrmSetc2 19468 / 19489: npc +0x88 / 0x358c8 = 0; Setc keeps it)
             // (__EvtFrmSetc2 19458-19496: flag 0 writes the model's drawn yaw too - it stands turned at once;
             // 1 / 2 only the actor's, the model turning to it)
-            if (op == 53) host->placeNpc(n, v, v[4], s.words != 6 ? EventHost::Facing::Keep : dir == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw);
-            if (op == 53 && s.words == 6) host->tiltNpc(n, v[3], v[5], false); // (19458-19470: all three angles)
-            else { float yaw; const auto f = facingFor(dir, yaw); host->placeNpc(n, v, yaw, f); }
+            if (op == 53) {
+                host->placeNpc(n, v, v[4], s.words != 6 ? EventHost::Facing::Keep : dir == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw);
+                if (s.words == 6) host->tiltNpc(n, v[3], v[5], false); // (19458-19470: all three angles)
+            } else { // (FrmSetc's dir; FrmSetc2 on a 3-word scene was placed a second time here, its flag taken for degrees)
+                float yaw;
+                const auto f = facingFor(dir, yaw);
+                host->placeNpc(n, v, yaw, f);
+            }
             break;
         }
         case 35: case 52: { // FrmAdjc npc, frame, frames, dir / FrmAdjc2 npc, frame, frames, mode
