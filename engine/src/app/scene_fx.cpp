@@ -2233,7 +2233,7 @@ cr::Mat4 scriptCameraView(const App& app, const cr::Vec3& eye, const cr::Vec3& t
 // pair's Ark (area 7 / 13 / 19 / 25, room 103, or 111 once flag 1881 (route 2) / 2281 (route 3)
 // is set) at (-140, -1, 25) facing 180, a fifth of the Oz gone (the same in 1.0.1 and 2.2.0)
 void loseToArk(App& app) {
-    endBattle(app, false);
+    endBattle(app, false, true);
     const int pair = std::clamp(app.playerChar / 2, 0, 3);
     cr::WarpRequest w;
     w.valid = true;

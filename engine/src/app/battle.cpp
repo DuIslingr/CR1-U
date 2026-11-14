@@ -938,7 +938,7 @@ void settleBattle(App& app) {
 
 // Back to the field: its music again, the encounter count restarted (fldencount_init), and the
 // area's EvrStart 2 script (run after battles)
-void endBattle(App& app, bool won) {
+void endBattle(App& app, bool won, bool keepMusic) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.sound.stopBattleLines(); // _btlvoice_stop_all
     App::Battle& b = app.battle;
@@ -957,7 +957,9 @@ void endBattle(App& app, bool won) {
     b.active = false;
     app.renderer.destroy(b.gameOver);
     b.lostTap = false;
-    { // fldread_prc's return from a battle (the load flag's bit 3): var 60 says what plays - 998 nothing
+    // (_btl_lose 5158: load flags 0x27, bit 3 clear - _fldread_prc returns before __bgmgo (37628-37630): the
+    // defeat tune plays on until the Ark's script 0 plays its own)
+    if (!keepMusic) { // fldread_prc's return from a battle (the load flag's bit 3): var 60 says what plays - 998 nothing
       // (the battle's music faded out at its end), under 29 that track, else the field's last request
       // (G+0x358e0, which __EvtBattle zeroes: a scene's battle without a var 60 gets track 0)
         const auto v60 = app.game.vars.find(60);
@@ -3139,7 +3141,7 @@ void stepBattle(App& app) {
             b.wonTap = false;
             b.phase = App::Battle::Results;
             b.phaseFrames = 0;
-            b.result.stage = 0, b.result.frames = 0, b.result.message = 57007;
+            b.result.stage = 0, b.result.frames = 0, b.result.lineAt = -1, b.result.message = 57007;
         }
         break;
     case App::Battle::Results: stepResults(app); break;
@@ -3502,7 +3504,9 @@ void drawBattleRow(App& app, cr::MenuPainter& m, int k, bool dimmed, float a) {
 // item's (0xa0: 57010, or 57035 with how many), and 0x93 as the windows go (4 frames)
 void resultsNext(App& app) {
     App::Battle::Result& rs = app.battle.result;
-    rs.frames = 0;
+    // (MbResultPrc 5 -> 6 / 7 -> 8, 58801-58866: only the board's line changes - the windows stay where they are -
+    // and the next tap is taken a frame on; video 02 814.6-815.4 s)
+    rs.lineAt = rs.frames;
     if (rs.upNext < rs.ups.size()) {
         const auto [k, n] = rs.ups[rs.upNext++];
         menuSound(app, se::kMenuBase + 0x11);
@@ -3531,6 +3535,7 @@ void resultsSettle(App::Battle::Result& rs) { // __RestoreParam
 void resultsTap(App& app) {
     App::Battle::Result& rs = app.battle.result;
     if (rs.frames < 4 || rs.stage == 3) return; // (the windows coming in, or going)
+    if (rs.stage != 0 && rs.frames <= rs.lineAt) return; // (a line's own frame)
     if (rs.stage == 0 && rs.count > 0) {
         menuSound(app, se::kChoose);
         resultsSettle(rs);
@@ -3551,7 +3556,7 @@ void stepResults(App& app) {
     for (int k = 0; k < 2; ++k) {
         if (rs.character[k] < 0 || rs.exp[k] >= rs.expTo[k]) continue;
         rs.exp[k] = std::min(rs.expTo[k], rs.exp[k] + rs.expStep[k]);
-        if (rs.level[k] < rs.levelTo[k] && rs.exp[k] >= float(cr::expForLevel(rs.level[k] + 1)))
+        if (rs.level[k] < rs.levelTo[k] && rs.exp[k] > float(cr::expForLevel(rs.level[k] + 1))) // (MbResultPrc: next < exp)
             ++rs.level[k], menuSound(app, se::kMenuBase + 0x11);
     }
     auto climb = [](float& v, float to, float step) { if (v < to) v = std::min(to, v + step); };

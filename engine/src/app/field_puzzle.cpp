@@ -374,6 +374,8 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     if (it == app.maps.end()) return false;
     const int fromMap = app.mapNumber;
     const bool reload = w.map != app.mapNumber || area != app.area;
+    // (a script's Warp naming an area - its own too - for another map: load flags 0x22, the area's script 0 again)
+    if (reload && fromEvent >= 0 && w.area >= 0) app.entryArea = -1;
     if (reload) {
         showMap(app, int(it - app.maps.begin()), w.map, area);
         // FieldScene::onLoading calls SetMask2(1): retain the outgoing mask's

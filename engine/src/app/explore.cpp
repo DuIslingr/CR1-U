@@ -1629,10 +1629,12 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                         ++won;
                         levelled += int(b.levelled.size());
                         const size_t lines = b.result.ups.size() + b.result.items.size();
-                        int taps = 0;
+                        int taps = 0, since = 0;
                         for (int g = 0; g < 3000 && b.exit != 4; ++g) {
                             stepBattle(app);
-                            if (b.result.frames >= 30 && b.result.stage != 3) resultsTap(app), ++taps, b.result.frames = 4;
+                            // (a tap every 26 frames once the windows are in: each line keeps the windows still and
+                            // takes the next tap a frame after it)
+                            if (b.result.frames >= 30 && b.result.stage != 3 && ++since >= 26) resultsTap(app), ++taps, since = 0;
                         }
                         const bool through = b.exit == 4 && b.result.shownExp == float(b.result.expTotal) && size_t(taps) >= lines + 1;
                         if (!through) std::printf("  results: exit %d, %d taps for %zu lines, exp %.0f of %d\n", b.exit, taps, lines,

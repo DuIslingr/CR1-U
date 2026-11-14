@@ -423,6 +423,7 @@ struct App {
     // Yes / No. Talk hides it and plays the area's EvrStart 4 (the shopkeeper) while the script
     // that opened the shop is parked.
     struct Shop {
+        int backIn = 0;                    // ShopPrc 3 / 3-4: frames after the talk before the windows come back
         // Member: __Buy_CharChoiceProc's pair (Buy's Weapons / Armor / Jewel, Sell's all but Items)
         enum Phase { Main, Category, Member, List, Count, EquipAsk, Talk } phase = Main;
         bool open = false, selling = false;
@@ -767,6 +768,7 @@ struct App {
         struct Result {                    // __menuu_MbResult*: the results' stages (_gstMbResult)
             int stage = 0;                 // 0 counting (3), 1 a level-up's line (5 / 6), 2 an item's (7 / 8), 3 going (10..)
             int count = 0, frames = 0;     // DAT_000e50e0: counting frames left ((most levels + 1) x 60); frames in
+            int lineAt = -1;               // the frame the board's line last changed (a tap the next frame on)
             int message = 57007;           // the board's one line: Victory!, then 57008 / 57034, 57010 / 57035
             std::string name;
             int value = 0;
@@ -1827,7 +1829,7 @@ void step(App& app);
 } // namespace battletalk
 int battleInSound(int g);
 void startBattle(App& app, const cr::BattleStart& start, int flags);
-void endBattle(App& app, bool won);
+void endBattle(App& app, bool won, bool keepMusic = false); // keepMusic: btl_lose's return - the defeat tune plays on
 void setBanner(App& app, const std::string& text, int frames = btlui::kBannerFrames);
 void battleMenu(App& app, App::Battle::Menu menu);
 void battleChooseTop(App& app, int i);

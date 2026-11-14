@@ -470,12 +470,16 @@ bool EventRunner::step(EventHost* host) {
                 r.pos[0] = float(w[2]); r.pos[1] = float(w[3]); r.pos[2] = float(w[4]); // unsigned in EvtWarp
                 r.angleDegrees = float(int16_t(w[5]));
             }
+            if (op == 59) for (float& c : r.pos) c /= 10.0f; // (Warp2, FUN_00024690 19866-19890: tenths, the table's too)
             r.valid = r.map >= 0;
             if (!host) return finish(true);
             if (r.valid) host->warp(r);
-            // The rest of the script (fade-in) runs on the new field - unless the area (and so
-            // the event file this script lives in) changed
-            if (r.valid && r.area >= 0 && r.area != currentArea) return finish(true);
+            // The rest of the script (fade-in) runs on the new field - unless the Warp named an area for another
+            // map: __EvtWarp (17435-17440) sets load flags 0x22 for any area operand but -1, its own area too, and
+            // _fldread_prc reloads the event file and _init_evnt runs script 0 - this script is wiped. (The same
+            // map: the position alone, the script goes on, 17429-17433)
+            if (r.valid && r.area >= 0 && r.map != vm.map) return finish(true);
+            if (r.valid) vm.map = r.map;
             return yield(Vm::Wait::None);
         }
         // Presentation and object opcodes: skip their operands (sizes from the handlers)
