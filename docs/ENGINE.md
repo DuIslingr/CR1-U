@@ -561,7 +561,8 @@ c101/c102/c104/m207a, 2026-10-12).
       frames in (btl_main 200 at frame 4, the commands at 36), `top@<n>` n frames after the first
       page starts sliding in (its offset printed), `break@<n>` the Break effect's n-th frame;
       `CR_BATTLE_CAMLOG=1` prints the shown camera every battle frame. `CR_BATTLE_STRIKE=1|2` starts the
-      captured battle as a first strike / an ambush; `CR_BATTLE_BANNERLOG=1` prints the top
+      captured battle as a first strike / an ambush; `CR_CAPTURE_LEADER=c` fights it as character c's
+      pair; `CR_BATTLE_BANNERLOG=1` prints the top
       banner's text and the phase each time they change, by battle frame.
 - [x] Every action calc (`btlcalcTbl`, 0..36): fixed and split damage, % of HP, down to 1 HP,
       MP damage, Sacrifice, drains (Steal HP / Humor Siphon), Oz theft (won back with the thief),
