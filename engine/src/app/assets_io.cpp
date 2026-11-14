@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "platform/dialogs.hpp"
 
 #include <filesystem>
 #include <system_error>
@@ -367,7 +368,7 @@ std::string vitaPicked;
 bool vitaPickedReady = false;
 
 void chooseVitaFolder(App& app) {
-    SDL_ShowOpenFolderDialog(
+    crShowOpenFolderDialog(
         [](void*, const char* const* list, int) {
             if (!list || !list[0]) return; // cancelled or failed
             std::lock_guard<std::mutex> lock(vitaPickMutex);
@@ -459,7 +460,7 @@ std::string androidPicked;
 bool androidPickedReady = false;
 
 void chooseAndroidFolder(App& app) {
-    SDL_ShowOpenFolderDialog(
+    crShowOpenFolderDialog(
         [](void*, const char* const* list, int) {
             if (!list || !list[0]) return;
             std::lock_guard<std::mutex> lock(androidPickMutex);

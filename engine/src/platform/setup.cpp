@@ -2,6 +2,7 @@
 #define NOMINMAX // (archive.h brings <windows.h>: its min / max macros would take std::min)
 #endif
 #include "platform/setup.hpp"
+#include "platform/dialogs.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -235,13 +236,13 @@ std::vector<std::string> pickFiles(const SetupGame& g, const SDL_DialogFileFilte
         filters = kAny, n = 1;
     }
     Answer a;
-    SDL_ShowOpenFileDialog(answered, &a, nullptr, filters, n, nullptr, many);
+    crShowOpenFileDialog(answered, &a, nullptr, filters, n, nullptr, many);
     return localize(g, waitFor(a));
 }
 std::string pickFolder() {
     if (script().on) return answer("a folder");
     Answer a;
-    SDL_ShowOpenFolderDialog(answered, &a, nullptr, nullptr, false);
+    crShowOpenFolderDialog(answered, &a, nullptr, nullptr, false);
     const std::vector<std::string> p = waitFor(a);
     return p.empty() ? std::string() : p.front();
 }
@@ -1536,12 +1537,84 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
     }
 }
 
+namespace {
+// A dump's archive copied into vita/ (.zip, .rar, .7z, .vpk - an iPhone has no setup to pick one, a phone's
+// copied over USB): the first not yet unpacked - vita/.unpacked lists those done (name and size) - unpacked
+// into vita/.unpack/, this game's parts alone; that folder ("" none). `archive` its name
+std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, std::string& archive) {
+    if (!kArchives) return {};
+    std::string list;
+    if (std::FILE* f = std::fopen((v + ".unpacked").c_str(), "rb")) {
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) list.append(buf, n);
+        std::fclose(f);
+    }
+    int count = 0;
+    std::string pick, line;
+    char** names = SDL_GlobDirectory(v.c_str(), "*", 0, &count);
+    for (int k = 0; names && k < count && pick.empty(); ++k) {
+        const std::string n = names[k], p = v + n;
+        std::string lower = n;
+        for (char& c : lower) c = char(std::tolower((unsigned char)c));
+        if (n.empty() || n[0] == '.' || isDir(p)) continue;
+        if (!(endsWith(lower, ".zip") || endsWith(lower, ".rar") || endsWith(lower, ".7z") || endsWith(lower, ".vpk"))) continue;
+        SDL_PathInfo info;
+        line = n + " " + std::to_string(SDL_GetPathInfo(p.c_str(), &info) ? info.size : 0) + "\n";
+        if (list.find(line) == std::string::npos) pick = p;
+    }
+    SDL_free(names);
+    if (pick.empty()) return {};
+    if (std::FILE* f = std::fopen((v + ".unpacked").c_str(), "ab")) std::fputs(line.c_str(), f), std::fclose(f); // (once, whatever comes of it)
+    const std::string id = g.vitaId, addon = g.trilogyAddon, u = v + ".unpack/";
+    auto want = [&](const std::string& n) { // (this game's parts alone: as the setup's pick takes them)
+        const std::string s = "/" + n + "/";
+        if (s.find("/" + id + "/") != std::string::npos) return true;
+        if (!*g.trilogyDir || s.find("/PCSG00457/") == std::string::npos) return false;
+        return s.find("/addcont/") == std::string::npos || (!addon.empty() && s.find("/" + addon + "/") != std::string::npos);
+    };
+    if (isDir(u)) removeTree(u);
+    if (!SDL_CreateDirectory(u.c_str())) return {};
+    archive = baseName(pick);
+    SDL_Log("setup: a Vita dump's archive %s in %s, unpacking it", archive.c_str(), v.c_str());
+    std::string why;
+    bool ok;
+    {
+        Progress bar(g.title, "Unpacking " + archive + " ...");
+        ok = unpackArchive(pick, u, want, &why, [&](double x) { bar.show(x); });
+    }
+    if (!ok) {
+        SDL_Log("setup: %s can't be unpacked: %s", archive.c_str(), why.c_str());
+        removeTree(u);
+        return {};
+    }
+    return u;
+}
+} // namespace
+
 bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResult& out, bool quiet) {
     const std::string v = withSlash(folder) + "vita/";
     if (!isDir(v)) return false;
     VitaInstall in;
-    if (!findVitaInstall(v, g, in)) return false; // (none; the trilogy without this game's add-on: the message where no copy is found)
-    if (!encryptedVita(in.root) && (in.addon.empty() || !encryptedVita(in.addon))) return false; // (installed, or put there decrypted: read as it is)
+    std::string unpacked, archive; // (a dump's archive copied in: unpacked first, gone after)
+    if (!findVitaInstall(v, g, in)) { // (none; the trilogy without this game's add-on: the message where no copy is found)
+        const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO); // (the progress window)
+        unpacked = unpackDroppedVitaArchive(g, v, archive);
+        if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        if (unpacked.empty()) return false;
+        if (!findVitaInstall(unpacked, g, in)) {
+            note(g, archive + std::string(" holds no ") + g.title + " (" + g.vitaId + ") as the port reads it.", quiet);
+            removeTree(unpacked);
+            return false;
+        }
+    }
+    struct Gone { // (the unpacked archive's folder: removed however this ends)
+        std::string dir;
+        ~Gone() { if (!dir.empty() && isDir(dir)) removeTree(dir); }
+    } gone{unpacked};
+    if (!encryptedVita(in.root) && (in.addon.empty() || !encryptedVita(in.addon))) { // (installed, or put there decrypted: read as it is)
+        if (unpacked.empty()) return false;
+        // (an archive of the game decrypted already - Vita3K's ux0/app/<id>: copied in as the setup's pick is)
+    }
     const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO); // (the progress window, the messages)
     SDL_Log("setup: a Vita dump in %s, decrypting it into %s", in.root.c_str(), v.c_str());
     std::string dest, why;
@@ -1550,7 +1623,10 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     auto say = [&](const std::string& text) { note(g, text, quiet); };
     if (got > 0) {
         out.vita = dest;
-        if (withSlash(in.root) != withSlash(v + (in.trilogy ? "PCSG00457" : g.vitaId)))
+        if (!archive.empty())
+            say(std::string("The Vita release is unpacked and decrypted into ") + v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/.\n\n" + archive +
+                " isn't needed any more - delete it to get the space back.");
+        else if (withSlash(in.root) != withSlash(v + (in.trilogy ? "PCSG00457" : g.vitaId)))
             say(std::string("The Vita release is decrypted into ") + v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/.\n\nThe dump you copied in (" + in.root +
                 (in.addon.empty() ? std::string() : " and " + in.addon) + ") isn't needed any more - delete it to get the space back.");
     } else if (notGame && !why.empty()) {

@@ -1,5 +1,6 @@
 #pragma once
 #include "platform/vita_import.hpp"
+#include "platform/dialogs.hpp"
 #include <SDL3/SDL.h>
 #include <memory>
 #include <mutex>
@@ -56,7 +57,7 @@ struct Session {
         choice = std::make_shared<Choice>();
         state = Picking;
         auto *holder = new std::shared_ptr<Choice>(choice);
-        SDL_ShowOpenFolderDialog(
+        crShowOpenFolderDialog(
             [](void *data, const char *const *list, int) {
                 std::unique_ptr<std::shared_ptr<Choice>> keep(static_cast<std::shared_ptr<Choice> *>(data));
                 std::lock_guard<std::mutex> lock((*keep)->mutex);
