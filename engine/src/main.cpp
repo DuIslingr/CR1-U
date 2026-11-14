@@ -1159,9 +1159,11 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             setMode(app, app.mode == Mode::Textures ? Mode::Models
                          : app.mode == Mode::Models ? Mode::Maps : Mode::Textures);
             break;
-        case SDLK_C: if (app.mode == Mode::Maps) { app.showCollision = !app.showCollision; updateTitle(app); } break;
+        // (C / M / P / O / N / B / U / - / =: the viewer's own - a game's field leaves them alone: O changed the leader and
+        // with it the route a save is made on, M reloaded the room as another map, P took the leader away)
+        case SDLK_C: if (app.viewer && app.mode == Mode::Maps) { app.showCollision = !app.showCollision; updateTitle(app); } break;
         case SDLK_M:
-            if (app.mode == Mode::Maps && !app.stageCams.empty()) {
+            if (app.viewer && app.mode == Mode::Maps && !app.stageCams.empty()) {
                 app.stageCamIndex = (app.stageCamIndex + 1) % int(app.stageCams.size());
                 app.stageCam = app.stageCams[app.stageCamIndex];
                 app.mapNumber = app.stageCam.mapNumber;
@@ -1170,7 +1172,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 updateTitle(app);
             }
             break;
-        case SDLK_P: if (app.mode == Mode::Maps) { app.showPlayer = !app.showPlayer; placePlayer(app); } break;
+        case SDLK_P: if (app.viewer && app.mode == Mode::Maps) { app.showPlayer = !app.showPlayer; placePlayer(app); } break;
         case SDLK_E: case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE:
             if (app.mode != Mode::Maps) {
                 if (event->key.key == SDLK_SPACE && app.mode == Mode::Models) {
@@ -1190,7 +1192,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             }
             break;
         case SDLK_O:
-            if (app.mode == Mode::Maps) {
+            if (app.viewer && app.mode == Mode::Maps) {
                 app.playerChar = (app.playerChar + 1) % int(SDL_arraysize(kPartyModels));
                 const cr::FieldWalker keep = app.walker;
                 const bool had = app.havePlayer;
@@ -1199,19 +1201,19 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 updateTitle(app);
             }
             break;
-        case SDLK_U: app.zUp = !app.zUp; updateTitle(app); break;
+        case SDLK_U: if (app.viewer) { app.zUp = !app.zUp; updateTitle(app); } break;
         case SDLK_F: app.smoothFilter = !app.smoothFilter; updateTitle(app); break;
         case SDLK_X: break; // (held at the top of SDL_EVENT_KEY_DOWN; up: SDL_EVENT_KEY_UP)
         case SDLK_N:
             if (app.mode == Mode::Models) selectAction(app, 1);
-            else if (app.mode == Mode::Maps) { app.showNpcs = !app.showNpcs; buildNpcDraws(app); updateTitle(app); }
+            else if (app.viewer && app.mode == Mode::Maps) { app.showNpcs = !app.showNpcs; buildNpcDraws(app); updateTitle(app); }
             break;
         case SDLK_B: // previous animation in model mode, background view in map mode
             if (app.mode == Mode::Models) selectAction(app, -1);
-            else if (app.mode == Mode::Maps) { app.showBackground = !app.showBackground; updateTitle(app); }
+            else if (app.viewer && app.mode == Mode::Maps) { app.showBackground = !app.showBackground; updateTitle(app); }
             break;
-        case SDLK_MINUS: app.speed = std::max(0.125f, app.speed * 0.5f); updateTitle(app); break;
-        case SDLK_EQUALS: app.speed = std::min(8.0f, app.speed * 2.0f); updateTitle(app); break;
+        case SDLK_MINUS: if (app.viewer) { app.speed = std::max(0.125f, app.speed * 0.5f); updateTitle(app); } break;
+        case SDLK_EQUALS: if (app.viewer) { app.speed = std::min(8.0f, app.speed * 2.0f); updateTitle(app); } break;
         default: break;
         }
         break;
