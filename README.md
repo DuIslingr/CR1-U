@@ -69,15 +69,16 @@ folder above). The release downloads already have these folders, each with a `RE
 
 ```
 <game folder>/
-├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), or Payload/... as unpacked
-├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex)
+├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), Payload/... as unpacked - or the .ipa itself, unpacked on the next start
+├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex) - or an .xapk / .apks / .zip holding them, unpacked on the next start
 ├── vita/       PCSG00497/ as installed - or a NoNpDrm dump's app/ (and addcont/), decrypted on the next start
 ├── fsr4/       optional: AMD FSR 4's files (see Settings)
 ├── textures/   optional: export/ and hd/ for HD textures
 └── models/     optional: export/ and hd/ for HD models
 ```
 
-Each release may sit one or two folders down (as it was unpacked or installed), and the folder
+A hand-placed `.ipa` or Android bundle is unpacked once, under a progress window, on the first start that finds it (listed in
+that folder's `.unpacked`, so it isn't unpacked again); it can be deleted afterwards. Each release may sit one or two folders down (as it was unpacked or installed), and the folder
 names below `ios/`, `android/` and `vita/` don't matter. Older places still work too: `dataHD/`,
 `data/`, `ChaosRingsHD.app/` or `Payload/` straight in the game folder.
 

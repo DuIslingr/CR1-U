@@ -569,6 +569,49 @@ bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& a
     return true;
 }
 
+bool unpackAndroidBundle(const std::string& bundle, const std::string& dir, std::string* error,
+                         const std::function<void(double)>& progress) {
+    std::FILE* f = std::fopen(bundle.c_str(), "rb");
+    if (!f) return fail(error, "can't be opened");
+    SDL_PathInfo info{};
+    SDL_GetPathInfo(bundle.c_str(), &info);
+    std::vector<ZipEntry> all;
+    if (!zipEntries(f, info.size, all, error)) return std::fclose(f), false;
+    auto wanted = [](const std::string& name) { // (an APK anywhere in it; the expansion file main.*.obb)
+        if (name.empty() || name.back() == '/') return false;
+        const std::string b = baseName(name);
+        if (b.empty() || b.find("..") != std::string::npos) return false;
+        std::string low = b;
+        for (char& ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+        return endsWith(low, ".apk") || (low.compare(0, 5, "main.") == 0 && endsWith(low, ".obb"));
+    };
+    uint64_t total = 0, written = 0;
+    for (const ZipEntry& e : all)
+        if (wanted(e.name)) total += e.size;
+    if (!total) return std::fclose(f), fail(error, "no APK or main.*.obb in it - not an Android release");
+    bool ok = true;
+    int got = 0;
+    for (const ZipEntry& e : all) {
+        if (!wanted(e.name)) continue;
+        const std::string to = withSlash(dir) + baseName(e.name), part = to + ".part";
+        if (!(ok = unpackEntry(f, e, part, error))) {
+            SDL_RemovePath(part.c_str());
+            break;
+        }
+        SDL_RemovePath(to.c_str()); // (an earlier one of the same name: replaced)
+        if (!SDL_RenamePath(part.c_str(), to.c_str())) {
+            SDL_RemovePath(part.c_str());
+            ok = fail(error, to + ": can't be made");
+            break;
+        }
+        ++got;
+        written += e.size;
+        if (progress) progress(double(written) / double(total));
+    }
+    std::fclose(f);
+    return ok && got > 0;
+}
+
 std::string findVitaGame(const std::string& picked, const SetupGame& g) {
     const std::string p = withSlash(picked);
     std::vector<std::string> tries; // (the game's own folders first, the folder chosen last - a reader that looks deep would take any game under it)
@@ -1254,6 +1297,17 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     }
                     made.push_back(to);
                 }
+                // (an .xapk / .apks chosen: its APKs and main.*.obb unpacked beside it - CR1's release is the APK and
+                // its OBB, read side by side; installDroppedAndroid does the same for one copied in by hand)
+                for (const std::string& m : std::vector<std::string>(made))
+                    if (endsWith(m, ".xapk") || endsWith(m, ".apks")) {
+                        std::string why;
+                        bar.label = "Unpacking " + baseName(m) + " ...";
+                        if (unpackAndroidBundle(m, a, &why, [&](double v) { bar.show(v); })) {
+                            const std::string listed = baseName(m) + " " + std::to_string(fileBytes(m)) + "\n"; // (not again at a start)
+                            if (std::FILE* f = std::fopen((a + ".unpacked").c_str(), "ab")) std::fwrite(listed.data(), 1, listed.size(), f), std::fclose(f);
+                        } else SDL_Log("setup: %s: %s", baseName(m).c_str(), why.c_str());
+                    }
                 // (no APK chosen nor one by its package's name: each APK beside the picks tried in turn -
                 // CR1's is named 05818-chaos-rings-1.1.1.apk -, the one that makes it whole kept)
                 if (!g.androidOk(a) && std::none_of(files.begin(), files.end(), [](const std::string& f) { return endsWith(f, ".apk") || endsWith(f, ".apks") || endsWith(f, ".xapk"); }))
@@ -1484,6 +1538,110 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     }
     if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return got > 0;
+}
+
+// (each kind's bundles found in `t`, those not listed in t/.unpacked yet; the list read into `list`)
+static std::vector<std::string> droppedFiles(const std::string& t, std::string& list, const std::function<bool(const std::string&)>& kind) {
+    list.clear();
+    if (std::FILE* f = std::fopen((t + ".unpacked").c_str(), "rb")) {
+        char buf[4096];
+        for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) list.append(buf, n);
+        std::fclose(f);
+    }
+    std::vector<std::string> out;
+    int count = 0;
+    char** names = SDL_GlobDirectory(t.c_str(), "*", 0, &count);
+    for (int k = 0; names && k < count; ++k) {
+        const std::string n = names[k], p = t + n;
+        if (n.empty() || n[0] == '.' || isDir(p)) continue;
+        std::string low = n;
+        for (char& ch : low) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+        if (!kind(low)) continue;
+        if (list.find(n + " " + std::to_string(fileBytes(p)) + "\n") == std::string::npos) out.push_back(p);
+    }
+    SDL_free(names);
+    return out;
+}
+static void writeDroppedList(const std::string& t, const std::string& list) {
+    if (std::FILE* f = std::fopen((t + ".unpacked").c_str(), "wb")) {
+        std::fwrite(list.data(), 1, list.size(), f);
+        std::fclose(f);
+    }
+}
+
+bool installDroppedIpa(const SetupGame& g, const std::string& folder, bool quiet) {
+    const std::string t = withSlash(folder) + "ios/";
+    if (!isDir(t)) return false;
+    // each .ipa there unpacked once - ios/.unpacked lists those done (name and size) -, not where an
+    // unpacked .app the game reads is there already (put in by hand, or the setup's)
+    std::string list;
+    const std::vector<std::string> ipas = droppedFiles(t, list, [](const std::string& n) { return endsWith(n, ".ipa"); });
+    bool haveApp = false;
+    int count = 0;
+    char** names = SDL_GlobDirectory(t.c_str(), "*", 0, &count);
+    for (int k = 0; names && k < count; ++k)
+        if (const std::string n = names[k]; isDir(t + n) && endsWith(n, ".app") && (!g.iosOk || g.iosOk(t + n))) haveApp = true;
+    SDL_free(names);
+    if (ipas.empty() || haveApp) {
+        if (!ipas.empty()) SDL_Log("setup: %s in %s left - an unpacked .app is there already", baseName(ipas.front()).c_str(), t.c_str());
+        return false;
+    }
+    const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO); // (the progress window, the messages: before the game's window)
+    bool any = false;
+    for (const std::string& ipa : ipas) {
+        SDL_Log("setup: %s in %s, unpacking it", baseName(ipa).c_str(), t.c_str());
+        std::string app, why;
+        bool ok;
+        {
+            Progress bar(g.title, "Unpacking " + baseName(ipa) + " ...");
+            ok = unpackIpa(ipa, t, app, &why, [&](double v) { bar.show(v); });
+        }
+        if (!ok) note(g, baseName(ipa) + " can't be unpacked: " + why, quiet);
+        else note(g, baseName(ipa) + " is unpacked into " + app + " - the .ipa isn't needed any more: delete it to get the space back.", quiet);
+        any = any || ok;
+        list += baseName(ipa) + " " + std::to_string(fileBytes(ipa)) + "\n"; // (listed either way: said once, not at every start)
+        if (ok) break; // (one release is the game)
+    }
+    writeDroppedList(t, list);
+    if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return any;
+}
+
+bool installDroppedAndroid(const SetupGame& g, const std::string& folder, bool quiet) {
+    const std::string t = withSlash(folder) + "android/";
+    if (!isDir(t)) return false;
+    // each bundle there unpacked once - android/.unpacked lists those done -, not where android/ opens already
+    std::string list;
+    const std::vector<std::string> bundles = droppedFiles(t, list, [](const std::string& n) {
+        return endsWith(n, ".xapk") || endsWith(n, ".apks") || endsWith(n, ".zip");
+    });
+    if (bundles.empty()) return false;
+    if (g.androidOk && g.androidOk(t)) {
+        SDL_Log("setup: %s in %s left - the release there opens already", baseName(bundles.front()).c_str(), t.c_str());
+        return false;
+    }
+    const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO);
+    bool any = false;
+    for (const std::string& b : bundles) {
+        SDL_Log("setup: %s in %s, unpacking it", baseName(b).c_str(), t.c_str());
+        std::string why;
+        bool ok;
+        {
+            Progress bar(g.title, "Unpacking " + baseName(b) + " ...");
+            ok = unpackAndroidBundle(b, t, &why, [&](double v) { bar.show(v); });
+        }
+        const bool whole = ok && (!g.androidOk || g.androidOk(t));
+        if (!ok) note(g, baseName(b) + " can't be unpacked: " + why, quiet);
+        else if (whole) note(g, baseName(b) + " is unpacked into " + t + " - it isn't needed any more: delete it to get the space back.", quiet);
+        list += baseName(b) + " " + std::to_string(fileBytes(b)) + "\n";
+        any = any || ok;
+        if (whole) break;
+    }
+    if (any && g.androidOk && !g.androidOk(t))
+        note(g, std::string("The Android release in ") + t + " still needs its " + g.obbHint + " and its APK, side by side.", quiet);
+    writeDroppedList(t, list);
+    if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return any;
 }
 
 bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool quiet) {

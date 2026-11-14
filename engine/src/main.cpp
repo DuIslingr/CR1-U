@@ -524,6 +524,25 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     // (beside the program, the .app or the AppImage; on Android its folder on the shared storage) -
     // the iOS data the game, the others its add-ons (each switched off in Options), else the Vita
     // copy alone, else the Android release alone
+    // (an .ipa copied into ios/ by hand, an Android release's .xapk / .apks / .zip into android/: unpacked there
+    // first, under a progress window, once - as CR3-U does; the Vita's encrypted dump below. Not when a copy is given)
+    {
+        bool given = SDL_getenv("CR_DATA") != nullptr, quiet = false;
+        for (int i = 1; i < argc; ++i) {
+            for (const char* f : {"--data", "--vita", "--android"})
+                if (SDL_strcmp(argv[i], f) == 0) given = true;
+            for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
+                if (SDL_strcmp(argv[i], f) == 0) quiet = true;
+        }
+        if (!given) {
+#if !defined(SDL_PLATFORM_IOS)
+            for (const std::string& place : cr::gameFolders())
+                if (cr::installDroppedIpa(crSetupGame(), place, quiet)) break;
+#endif
+            for (const std::string& place : cr::gameFolders())
+                if (cr::installDroppedAndroid(crSetupGame(), place, quiet)) break;
+        }
+    }
     app->dataDir = cr::findDataDir(argc, argv);
     const std::string beside = [] {
         const char* b = SDL_GetBasePath();
@@ -683,8 +702,9 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
 #endif
         std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n" +
                           (g.empty() ? std::string("(no folder)") : g.front()) +
-                          "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app, or the unpacked .ipa)"
-                          "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK"
+                          "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app), or the .ipa (unpacked on the next start)"
+                          "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK, or its .xapk"
+                          "\n            (unpacked on the next start)"
                           "\n  vita/     the Vita's PCSG00497 folder, or a NoNpDrm dump's folder (the Prequel Trilogy's with its"
                           "\n            addcont/ beside its app/: decrypted here on the next start)\n\nAlso looked in:";
         for (size_t k = 1; k < g.size(); ++k) msg += "\n" + g[k];

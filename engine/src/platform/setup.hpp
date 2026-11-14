@@ -66,6 +66,22 @@ bool runSetup(const SetupGame& game, const std::string& folder, const std::strin
 // or one decrypted already -: false at once. `out.vita`: this game's folder in it
 bool installDroppedVita(const SetupGame& game, const std::string& folder, SetupResult& out, bool quiet = false);
 
+// An iOS release's .ipa copied by hand into the game folder's ios/: its Payload/<name>.app unpacked
+// there (as the setup's iOS button does), with a progress window, once - ios/.unpacked lists those
+// done. Nothing to do (no .ipa there, one unpacked already, or an unpacked .app there): false at once
+bool installDroppedIpa(const SetupGame& game, const std::string& folder, bool quiet = false);
+
+// An Android release's bundle - an .xapk (the APK with its Android/obb/<package>/main.*.obb), an .apks
+// or a .zip holding them - copied by hand into the game folder's android/: its APKs and main.*.obb
+// unpacked beside it, with a progress window, once - android/.unpacked lists those done. Nothing to
+// do (no bundle there, one unpacked already, or android/ whole already): false at once
+bool installDroppedAndroid(const SetupGame& game, const std::string& folder, bool quiet = false);
+
+// A bundle's (.xapk / .apks / .zip) APKs and main.*.obb unpacked into `dir` by their own names; true
+// with at least one of them. `progress` (0 .. 1) as it goes
+bool unpackAndroidBundle(const std::string& bundle, const std::string& dir, std::string* error,
+                         const std::function<void(double)>& progress = {});
+
 // (CR3-U) The fan translation's archive - the .rar or .zip it comes in - copied by hand into the
 // game folder's translation/: unpacked into translation/<id>/, with a progress window. Nothing to do
 // (no archive there, or a translation unpacked already; a game without one): false at once
