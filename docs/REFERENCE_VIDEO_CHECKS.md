@@ -27,6 +27,7 @@ at 2 frames a second is in ~/.cache/cro-issue/cr1-ref/ocr-NN.
 | The Break ring a tick every other frame, the results' totals and purse, the boss's end, "Counter", an entry announced once, the banner a frame late, the turning, the cast loops | - | Code reading only (2.2.0 and Android 1.1.1 decomps) |
 | A neutralized gene's label (`__dmg_prc` 51790: the piece is type - 1 for types 1..3, the type itself from 4; `dodgeGene_` gives type 7 with 57062) | 06 85.0 s: "Neutralized magical damage!" over two "Block!" labels | Contradicted, fixed: the port drew piece type - 1 ("Miss!"); the fended off (type 6) shows "Miss!", not "Guard!" |
 | The rows' HP / MP bars (FUN_0001b840 / 0001b6c4: parallelograms leaning right by 3 over a black one) | 06 85.0 s: the bars' ends slanted | Contradicted, fixed: the port drew rectangles |
+| A size 4 / 5 monster's plain attack is slot 9 where it stands, no btlmove_setpos (_btlact_attack_init's 0x76c branch, 2.2.0 10669-10687) | 04 170.5-174.0 s: the Roc (monster 212, size 4) "Swoop" (action 318, class 9: an attack) dives from its place to the pair, its head at them, 226 on the hit | Consistent: the port's capture of the same attack (`--battle 422 3 --battle-view hit1`, CR_BATTLE_STRIKE=2) has the Roc dive to Escher in the same pose - the dive is the slot's own motion. The bosses' fights found (08 220-235 s The Executioner, 07 150-210 s The Agent) show no plain attack: only genes, cast where they stand |
 
 ## The Camp and the menu screens (backport of CRO-U's 2026-11-07 / 08 Camp and menu passes)
 
