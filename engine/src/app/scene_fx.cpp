@@ -2697,8 +2697,10 @@ void drawFrame(App& app, bool present) {
         // drawn all the same
         const bool hidden = app.fieldHidden;
         fieldHiddenDrawn = hidden;
+        // (the tower's scrolling backdrop - ScnEffect set 4, z -1998 - behind the painting, whose sky is see-through
+        // there (d05xx-f00a00): ScnEffect's tex2d_prc_3d first, FUN_0001d6f8's slots 0 / 1, then the 3D)
+        drawSpaceBackdrop(app, false);
         if (app.background.id && !hidden) drawLayer(app.background);
-        drawSpaceBackdrop(app, false); // the tower's scrolling backdrop, behind the 3D
         r.setOrigin(0);
         if (have3D) {
             if (scriptCam) {

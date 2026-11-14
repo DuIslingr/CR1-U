@@ -377,7 +377,7 @@ walking on an invisible collision mesh:
 | file | role |
 |---|---|
 | `dXXXX-b00a00.mct` | 1024×1024 background (PAL8_RGB8) — `FieldScene::drawBack` |
-| `dXXXX-f00a00.mct` | optional foreground overlay drawn over characters — `drawFront` (9 fields) |
+| `dXXXX-f00a00.mct` | some fields' painting (the d05xx towers: its sky see-through over the starfield) when the stage record names it; never an overlay over the characters |
 | `dXXXX_10.cmp` | collision mesh (below) |
 | `dXXXX.bin` | optional 3D props, already in world coordinates |
 | `dXXXX_fog/_snow/_sun.mct` | weather/light layers |
@@ -513,8 +513,11 @@ Layer file names vary (the game keeps a flat list at 0xd3fb8):
 - `tXXXX_b00a00.mct` (underscore) for the towns and for d0512/d0524/d0525;
 - a plain `dXXXX.mct` for d0108, d0117, d0208, d0219, d0307 and d0320.
 
-Foregrounds are `-f00a00` or `_f00a00`. d0101/d0117/d0209/d0307/d0401/d0507/d0511/p0001 add
-`_fog` layers (not drawn yet). Stage record `+62` indexes the image list and `+64` the
+`-f00a00` / `_f00a00` files are paintings too, not overlays: `_fldread_prc` (37819-37832) loads the picture
+the stage record's `+60` (+0x3c) names through the Tex2d table (0xc7da0) into tex2d slot 0 (`+62` would fill
+slot 1; it is -1 in every record) and `FUN_0001d6f8` draws slots 0 / 1 before the 3D - the d05xx towers take
+their `-f00a00` over the starfield, map 85 (d0523) `d0512_b01a00`, and no painting is ever drawn over the
+models. d0101/d0117/d0209/d0307/d0401/d0507/d0511/p0001 add `_fog` layers (the scene effects'). `+64` indexes the
 field-prop list (`_stgalphaname`, the 27 `dXXXX.bin`/`t0101.bin` props). The 512×512 fields
 (d0108, d0117, d0208, d0219) have a 512×512 view.
 

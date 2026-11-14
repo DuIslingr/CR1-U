@@ -157,7 +157,7 @@ Start directly in model mode with `--models`, map mode with `--maps`, at a model
 `--model <name>`, or on a field with `--map <name>` (e.g. `--map d0108`). **Tab** cycles textures → models → maps. In map mode **C** toggles the
 collision overlay: floors green-grey (tinted by surface type), walls tan, with the field's
 prop models in place. **B** shows the field as the game composes it: the background, the 3D
-scene through the stage camera, then the foreground. **M** picks another map that shares the
+scene through the stage camera (the painting the stage record names, behind the models). **M** picks another map that shares the
 collision file.
 
 The party leader stands on every field. **W/A/S/D** walk relative to the camera; hold
@@ -224,7 +224,7 @@ c101/c102/c104/m207a, 2026-10-12).
       by, or that character would shade unlike the other seven. The NPC model table has 305
       entries (the scenes' bosses and battle models from 197; it was cut at 200, hiding rows
       501.. of every dungeon and town); its 99..197 props are never used by the shipped data
-- [x] Field map structure: 2D background + foreground overlay + collision + props (74 fields)
+- [x] Field map structure: 2D painting (the stage record's) + collision + props (74 fields)
 - [x] Field collision (`.cmp`): 114/114 parse exactly — `crtool maps`, viewer map mode
 - [x] Stage records in the event files: camera, view size and background placement rect.
       All 114 maps get a camera; backgrounds line up with the collision (incl. the d05xx

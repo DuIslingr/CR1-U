@@ -32,10 +32,10 @@ void showMap(App& app, int index, int forcedMap, int forcedArea) {
     };
     // Layer names vary (the game's file list): dXXXX-b00a00, tXXXX_b00a00 (towns, d0512/d0524/
     // d0525) or a plain dXXXX.mct (d0108, d0117, d0208, d0219, d0307, d0320)
+    // (the field's namesake till the stage record is known, below: a room with no record of its own keeps it. No
+    // painting is ever drawn over the models - FUN_0001d6f8 draws tex2d slots 0 / 1 before FUN_0001d68c's 3D)
     for (const char* suffix : {"-b00a00.mct", "_b00a00.mct", ".mct"})
         if (!app.background.id) loadLayer(field + suffix, app.background);
-    for (const char* suffix : {"-f00a00.mct", "_f00a00.mct"})
-        if (!app.foreground.id) loadLayer(field + suffix, app.foreground);
     SDL_Log("%s layers: background %dx%d (id %u), foreground %dx%d", field.c_str(), app.background.width,
             app.background.height, app.background.id, app.foreground.width, app.foreground.height);
 
@@ -137,6 +137,21 @@ void showMap(App& app, int index, int forcedMap, int forcedArea) {
     if (app.haveStageCam && !app.stageCamBorrowed) {
         if (app.stageCam.alphaModel >= 0 && app.stageCam.alphaModel < cr::kNumStageAlphaModels)
             app.mapProps = cr::kStageAlphaModel[app.stageCam.alphaModel];
+        // (_fldread_prc 37819-37832: the painting the record's +0x3c names through the Tex2d table, not the field's
+        // namesake - map 85 (d0523) d0512_b01a00, the tower rooms d05xx-f00a00 over the starfield, the Ark's t0107 /
+        // t0137 -b00a00 alone; +0x3e is -1 in every record)
+        const int im = app.stageCam.image;
+        if (im >= 0 && im < cr::kNumTex2dImages) {
+            std::string file = cr::kTex2dImage[im];
+            cr::Image img;
+            bool got = loadImage(app, file, img);
+            if (!got && file.size() > 7 && file.compare(file.size() - 7, 7, "_hd.mct") == 0)
+                got = loadImage(app, file.substr(0, file.size() - 7) + ".mct", img);
+            if (got) {
+                app.renderer.destroy(app.background);
+                app.background = app.renderer.upload(img);
+            }
+        }
     } else if (std::find(app.models.begin(), app.models.end(), field + ".bin") != app.models.end()) {
         app.mapProps = field + ".bin";
     }
@@ -145,9 +160,10 @@ void showMap(App& app, int index, int forcedMap, int forcedArea) {
         mdlMemRules(app.model); // (read_mdl_set -> mdl_mdl_init -> read_mdl_mem_mcm)
     }
     if (SDL_getenv("CR_STAGE_LOG")) // (debugging: which stage camera a room took)
-        std::printf("stage camera for %s (map %d area %d): %zu candidates%s, took map %d area %d fov %.1f view %dx%d\n", name.c_str(), forcedMap,
+        std::printf("stage camera for %s (map %d area %d): %zu candidates%s, took map %d area %d fov %.1f view %dx%d image %d\n", name.c_str(), forcedMap,
                     forcedArea, app.stageCams.size(), app.stageCamBorrowed ? " (borrowed)" : "", app.haveStageCam ? app.stageCam.mapNumber : -1,
-                    app.haveStageCam ? app.stageCam.area : -1, app.stageCam.fovDegrees, app.stageCam.viewWidth, app.stageCam.viewHeight);
+                    app.haveStageCam ? app.stageCam.area : -1, app.stageCam.fovDegrees, app.stageCam.viewWidth, app.stageCam.viewHeight,
+                    app.stageCam.image);
     app.collisionPolys = int(col.polygons.size());
     // Frame the collision (props live inside it)
     const auto& b0 = col.boundsMin;

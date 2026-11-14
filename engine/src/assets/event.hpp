@@ -18,6 +18,7 @@ struct StageCamera {
     int rect[4] = {0, 0, 0, 0};        // +44: x, y, w, h of the painting in the view (the scroll limits)
     int lookHeight = 0;                // +70: added to the player's height + 7 when the camera follows
     int alphaModel = -1;               // +64: fldread_prc's alpha model (cr::kStageAlphaModel), -1 none
+    int image = -1, image2 = -1;       // +60 / +62: the painting(s), Tex2d image numbers (cr::kTex2dImage) - tex2d slots 0 / 1
     std::string eventFile;
     int area = -1;      // index of the area (event file) the record came from
     int mapNumber = -1;

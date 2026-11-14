@@ -74,7 +74,9 @@ const cr::Texture* charSheet(App& app) {
     if (!app.charSheetTried && app.rendererReady) {
         app.charSheetTried = true;
         cr::Image img;
-        if (loadImage(app, "window_char.mct", img) && img.width >= 1024 && img.height > 0) {
+        // (tex2d_read("window_char") 8208: FUN_00006588's _hd sheet first on the Retina screen - 2048 x 1024, its
+        // pieces at the same logical size)
+        if ((loadImage(app, "window_char_hd.mct", img) || loadImage(app, "window_char.mct", img)) && img.width >= 1024 && img.height > 0) {
             img.logicalW = 1024, img.logicalH = 1024 * img.height / img.width;
             app.charSheet = app.renderer.upload(img);
         }

@@ -81,6 +81,10 @@ bool loadStageCamera(const std::string& dataDir, int mapNumber, StageCamera& out
         int16_t alpha = -1;
         rd(f, rec + 64, alpha);
         out.alphaModel = alpha;
+        int16_t image = -1, image2 = -1; // (_fldread_prc 37819-37832: +0x3c / +0x3e through the Tex2d table, 0xc7da0)
+        rd(f, rec + 60, image);
+        rd(f, rec + 62, image2);
+        out.image = image, out.image2 = image2;
         std::memcpy(out.eye, f.data() + rec, 12);
         std::memcpy(out.target, f.data() + rec + 12, 12);
         std::memcpy(&out.fovDegrees, f.data() + rec + 24, 4);
