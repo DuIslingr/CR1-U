@@ -342,6 +342,8 @@ void saveScreenChoose(App& app, int i) { // the title's plates (savePlates): the
     const std::vector<int> plates = savePlates(app);
     if (i < 0 || i >= int(plates.size())) return;
     ss.cursor = i;
+    // (SaveLoadPrc 73517: Load with no save for this pair - all four cleared shows its plate - SE 2, nothing more)
+    if (plates[size_t(i)] == 1 && !ss.haveSave) { menuSound(app, se::kChoose); return; }
     ss.phase = 1;
     ss.confirm = 0;
     ss.lines[0] = ss.lines[1] = ss.lines[2] = 0;
@@ -572,7 +574,8 @@ void saveScreenClick(App& app, float px, float py) {
         if (rx >= 328 && rx < 464 && my >= py0 && my < py0 + 40) { saveScreenChoose(app, int(i)); return; }
     }
     const float backY = app.renderer.phoneLayout() ? 286 : 344; // 2.2.0's Back: (192, 286)
-    if (my >= backY && my < backY + 24 && mx >= 192 && mx < 424) saveScreenKey(app, SDLK_ESCAPE);
+    // (_pad_chk_updw_box(0xc0, 0x11e, 0x100, 0x22): 256 x 34 - wider and taller than the bar drawn)
+    if (my >= backY && my < backY + 0x22 && mx >= 0xc0 && mx < 0xc0 + 0x100) saveScreenKey(app, SDLK_ESCAPE);
 }
 
 // ---- The shop (Util 2: __menuu_ShopPrc / __menuu_ShopPut) ----
@@ -3527,7 +3530,9 @@ bool trackerField(const App& app) { // (G+0x388 bit 6 set, bit 3 clear: on the f
 }
 void writeResume(App& app) {
     if (!app.persist || !trackerField(app)) return;
-    cr::writeSave(savePath(app, "resume.dat"), captureSave(app));
+    cr::SaveData s = captureSave(app);
+    s.game.vars[9] = 0; // (ContData_Save_set: +0x3174c, var 9, written 0 - as data.dat's)
+    cr::writeSave(savePath(app, "resume.dat"), s);
 }
 // The Vita's (FORMATS "The Vita's code"): saved as you go, not only when the game is left - every
 // script's end on the field (__EvtReturn / __EvtAbort: _ContData_Save_set_fld, then the save
@@ -3687,7 +3692,8 @@ void answerResume(App& app, bool yes, bool cancelled) {
     if (app.resumePrompt != 1) return;
     app.resumePrompt = 2; // 0x15: the windows go
     app.resumeYes = yes;
-    SDL_RemovePath(savePath(app, "resume.dat").c_str()); // used up either way, as the original's
+    // (cont.dat stays: only SaveData_Save and Reset Data remove it - _removeContData's callers 71862 / 70698 -
+    // and Uty_LoadData reads it again at every title, so the offer comes back until the next save)
     menuSound(app, cancelled ? se::kBack : se::kChoose); // Yes and No alike (ComUty_YesNoChoicePosProc(.., 1); the Vita's × 3)
     if (!yes) { app.resumeIn = 6; return; } // 0x16: 4, counted below zero (0x17), then Start
     // Yes (0x16): the music off, black over 500 ms (10 frames), ten counted below zero, then the load
@@ -4455,7 +4461,7 @@ void drawCharSelect(App& app) {
     for (int k = 0; k < 2; ++k) // (lit: the keys' cursor, or a touch holding it - StartPrc 2's DAT_000d3348)
         m.plate(56 + 232.0f * float(k), 232, plateIcon(kCharSelectWords[app.charSelectPage][k]), // (the word's icon)
                 kCharSelectWords[app.charSelectPage][k],
-                (app.charSelectCursor == k && menuCursorLit(app)) || pressIn(app, kPressCharSelect, r.uiX(), 56 + 232.0f * float(k), 232, 132, 40),
+                (app.charSelectCursor == k && menuCursorLit(app)) || pressIn(app, kPressCharSelect, r.uiX(), 272.0f * float(k), 0, 208, 278),
                 t, false);
     // (the Back held lit - StartPrc 2's DAT_000d334c, minus BackButtonPosSetXYProc's answer: 1 Back, 2 the right
     // arrow, 3 the left - the part held: charSelectBackPart)
@@ -4500,9 +4506,9 @@ void charSelectClick(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
     menuPoint(app, lx, ly, mx, my);
-    for (int k = 0; k < 2; ++k) {
-        const float x = 56 + 232.0f * float(k);
-        if (mx >= x && mx < x + 132 && my >= 232 && my < 272) {
+    for (int k = 0; k < 2; ++k) { // (StartPrc 2's boxes, 0xbd3d0: each pair's half of the picture above Back -
+        const float x = 272.0f * float(k); // (0, 0) / (272, 0), 208 x 278 - the plate and the portrait alike)
+        if (mx >= x && mx < x + 208 && my >= 0 && my < 278) {
             menuSound(app, se::kChoose);
             closeCharSelect(app, app.charSelectPage * 2 + k + 1);
             return;

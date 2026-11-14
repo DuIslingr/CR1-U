@@ -4250,8 +4250,10 @@ int runSelfTest(App& app) {
         for (int f = 0; f < 20 && app.resumeIn > 0; ++f) stepEvents(app); // (the black, then the load)
         rbad += !app.game.flag(0x44) || app.resumePrompt; // (ContData_memcpy: the message seen this launch)
         problems += expectSounds("resume", {2});
-        problems += app.titleOpen || app.mapNumber != before.map || SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
+        // (the resume point stays after either answer: only a save or Reset Data removes cont.dat)
+        problems += app.titleOpen || app.mapNumber != before.map || !SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
         // ... and saved as you go (the Vita's): a scene's end after the load arms it, the next writes it
+        SDL_RemovePath(savePath(app, "resume.dat").c_str());
         app.trackerArmed = false; // (a script that ended during the load's frames above armed it already)
         trackerSceneEnd(app);
         const bool armedOnly = !SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
@@ -4270,7 +4272,7 @@ int runSelfTest(App& app) {
             answerResume(app, false);
             rbad += app.resumePrompt != 2 || app.resumeYes;
             for (int f = 0; f < 20 && app.resumeIn > 0; ++f) stepEvents(app);
-            rbad += app.titleOpen || app.resumePrompt || app.game.flag(0) || SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
+            rbad += app.titleOpen || app.resumePrompt || app.game.flag(0) || !SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
             app.runner.stop();
             // ... and none while the save holds flag 0x44, a new launch or not
             cr::SaveData d;

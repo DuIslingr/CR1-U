@@ -55,12 +55,14 @@ struct SaveData {
 
     int route() const { return leader / 2 < 0 ? 0 : leader / 2 > 3 ? 3 : leader / 2; }
     Place placeInPlay() const { return Place{true, area, map, {pos[0], pos[1], pos[2]}, yaw, leader, playSeconds, savedAt}; }
-    // The file as pair `r` would be loaded (Set_Prtyno + SaveData_Load_init): its place on top
+    // The file as pair `r` would be loaded (Set_Prtyno + SaveData_Load_init): its place on top. The play
+    // time and the date stay the file's own - 2.2.0 keeps one clock in the block (+4 / +8, 72123-72126) and
+    // shows data.dat's date (_Load_Date, 72121), whichever pair saved last
     void takePlace(int r) {
         if (r < 0 || r > 3 || !places[size_t(r)].has) return;
         const Place& p = places[size_t(r)];
         area = p.area, map = p.map, pos[0] = p.pos[0], pos[1] = p.pos[1], pos[2] = p.pos[2], yaw = p.yaw;
-        leader = p.leader, playSeconds = p.playSeconds, savedAt = p.savedAt;
+        leader = p.leader;
     }
 };
 
