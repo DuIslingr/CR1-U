@@ -4856,7 +4856,44 @@ int runSelfTest(App& app) {
             problems += mm.state != 3 || mm.pic.on || picturePages != wantPictures || turned != int(textPages) || framesSeen < 4;
             for (int f = 0; f < 8; ++f) stepManual(app);
             problems += !app.manualOpen || mm.state != 0 || app.manualCursor != 4; // the list back at 451
-            manualKey(app, SDLK_ESCAPE);
+            { // OptionPrc 0xf's MuScrList (layout 0, as the Camp's Items list) by touch: a tap on another row brings it to
+              // the line; on the line's row it opens as the touch lifts; Back lit while held, the list's windows going as it
+              // lifts and the manual gone once they are (0x11)
+                for (int f = 0; f < 12; ++f) stepManual(app); // (settled on the line)
+                cr::Renderer& r = app.renderer;
+                auto toFrame = [&](float x, float y, float origin, float& px, float& py) { // menu units -> the frame's pixels
+                    const bool phone = r.phoneLayout();
+                    const float lx = origin + 2 * (x + (phone ? 16.0f : 0.0f)), ly = 2 * (y + (phone ? 32.0f : 0.0f));
+                    float ax, ay, bx, by;
+                    r.toLogical(0, 0, ax, ay), r.toLogical(1000, 1000, bx, by);
+                    px = (lx - ax) * 1000 / (bx - ax), py = (ly - ay) * 1000 / (by - ay);
+                };
+                int touch = 0;
+                float px, py;
+                toFrame(campui::kRowX + 100, campui::kFocusY - campui::kRowH + 20, wideRight(app), px, py); // (448, above the line)
+                manualPointerDown(app, px, py);
+                touch += app.manualCursor == 4;
+                manualPointerUp(app, px, py);
+                touch += app.manualCursor == 3 && mm.state == 0;
+                for (int f = 0; f < 12; ++f) stepManual(app);
+                toFrame(campui::kRowX + 100, campui::kFocusY + 20, wideRight(app), px, py); // (on the line)
+                manualPointerDown(app, px, py);
+                touch += mm.state == 0;
+                manualPointerUp(app, px, py);
+                touch += mm.state == 1 && mm.id == 56009; // (448: 56000 + 9)
+                app.manualMsg = App::ManualMsg(), app.manualAnim = 100;
+                toFrame(campui::kBackX + 100, campBackY(app) + 10, r.uiX(), px, py);
+                manualPointerDown(app, px, py);
+                touch += manualPressIn(app, r.uiX(), campui::kBackX, campBackY(app), 256, 34) && app.manualOut == 0;
+                manualPointerUp(app, px, py);
+                touch += app.manualOut == 1;
+                for (int f = 0; f < 4; ++f) stepManual(app);
+                touch += app.manualOpen;
+                stepManual(app);
+                touch += !app.manualOpen;
+                if (touch != 8) std::printf("manual: touch NOT as MuScrList_Proc's (%d/8)\n", touch);
+                problems += touch != 8;
+            }
             problems += app.manualOpen || app.renderer.takeErrors();
             std::printf("manual: %zu topics held, 56012 %zu pages, %d with battle_01's picture (frames up to %d)\n", topics.size(),
                         textPages, picturePages, framesSeen);
@@ -4865,7 +4902,7 @@ int runSelfTest(App& app) {
             app.optionsOpen = keepOptions;
             app.game = keepGame;
         }
-        problems += expectSounds("manual", {6, 7, 6, 7, 1, 1, 5, 1, 2, 6, 7, 3}); // (the topics' MuScrList: __effgo(1) a focus change)
+        problems += expectSounds("manual", {6, 7, 6, 7, 1, 1, 5, 1, 2, 6, 7, 1, 2, 3}); // (the topics' MuScrList: __effgo(1) a focus change)
         cr::GameState chart;
         chart.setFlag(1092, true);
         chart.setFlag(1093, true);
@@ -8988,9 +9025,15 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     if (app.captureMenu == 6) {
         openManual(app, 0);
         app.manualAnim = 100;
-        if (app.captureAt[0] == app.captureAt[0]) app.manualCursor = int(app.captureAt[0]);
         if (manualTopics(app).empty()) // (none held yet: every manual item, the topic the item's number - 439)
             for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items[item] = 1;
+        if (app.captureAt[0] == app.captureAt[0]) // (that topic on the line, settled)
+            app.manualCursor = std::clamp(int(app.captureAt[0]), 0, int(manualTopics(app).size()) - 1),
+            app.manualScroll = campui::kRowH * float(app.manualCursor);
+        if (const char* fr = SDL_getenv("CR_CAPTURE_MANUAL_FRAMES")) { // (n frames after the list's start)
+            app.manualAnim = 0;
+            for (int f = 0; f < SDL_atoi(fr); ++f) stepManual(app);
+        }
         if (app.captureAt[1] == app.captureAt[1]) { // --at topic page: that topic's page open (its picture 30 frames on)
             app.typeOn = false;
             manualChoose(app);
@@ -9005,6 +9048,10 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         const int page = app.optionsPage;
         openOptions(app, page);
         app.optionsAnim = 100;
+        if (const char* fr = SDL_getenv("CR_CAPTURE_OPTIONS_FRAMES")) { // (n frames into the page's coming in)
+            app.optionsAnim = 0;
+            for (int f = 0; f < SDL_atoi(fr); ++f) stepOptions(app);
+        }
         if (const char* ra = SDL_getenv("CR_CAPTURE_RESET")) app.resetAsk = SDL_atoi(ra); // (Reset Data's question 1 / 2)
         if (const char* row = SDL_getenv("CR_CAPTURE_OPTIONS_ROW")) { // (that row in focus, the page scrolled to it)
             app.optionsRow = SDL_atoi(row);
@@ -9018,6 +9065,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                 else if (key == "left") optionsKey(app, SDLK_LEFT);
                 else if (key == "right") optionsKey(app, SDLK_RIGHT);
                 else if (key == "back") optionsKey(app, SDLK_ESCAPE);
+                else if (key == "next") optionsKey(app, SDLK_E); // (the page after: E, PageDown)
+                else if (key == "step") stepOptions(app);        // (a frame on)
             }
             std::printf("import UI: state %d, succeeded %d, options %d, title %d\n", int(app.saveImport.state),
                         int(app.saveImport.succeeded), int(app.optionsOpen), int(app.titleOpen));

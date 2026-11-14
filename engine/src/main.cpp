@@ -400,6 +400,7 @@ void consumeInputCancel(App& app) {
     if (SDL_GetCurrentThreadID() != app.gameThread || !app.inputCancel.consume()) return;
     app.dragging = app.optionsBarDrag = false;
     app.campPointer = App::CampPointer();
+    app.manualPointer = App::ManualPointer();
     app.press = App::Press();
     app.touchPad = App::TouchPad();
     app.tapPending = false;
@@ -1219,7 +1220,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             SDL_GetWindowSize(app.window, &ww, &wh);
             const float kx = ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f;
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
-            if (app.manualOpen) manualClick(app, event->button.x * kx, event->button.y * ky);
+            if (app.manualOpen) manualPointerDown(app, event->button.x * kx, event->button.y * ky); // (MuScrList_Proc: on the lift)
             else {
                 // its Back: held, closing as the touch lifts there (pressRelease); elsewhere a drag to scroll
                 if (historyBackAt(app, event->button.x * kx, event->button.y * ky))
@@ -1308,7 +1309,14 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         if (event->button.button == SDL_BUTTON_LEFT && app.fingers.mouseHeld)
             app.fingers.mouseHeld = false, app.fingers.held = std::max(0, app.fingers.held - 1);
         holdSkip(app, kSkipPointer, false); // the finger off the skip corner
-        if (app.pointerCancelled) { app.press = App::Press(); break; } // cancellation is not a click or a puzzle release
+        if (app.pointerCancelled) { app.press = App::Press(), app.manualPointer = App::ManualPointer(); break; } // cancellation is not a click or a puzzle release
+        if (app.manualPointer.down) { // the manual's list: a tap as it lifts, else the drag's end
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            manualPointerUp(app, event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f),
+                            event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f));
+            break;
+        }
         if (app.press.down) { // a menu's touch lifting: the control it lifts on (if the screen is still the one)
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1369,6 +1377,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             app.renderer.toLogical(event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f),
                                    event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f), lx, ly);
             holdSkip(app, kSkipPointer, skipCorner(app, lx, ly));
+        }
+        if (app.manualPointer.down) {
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            manualPointerMove(app, event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f),
+                              event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f));
+            break;
         }
         if (app.campPointer.down) {
             int ww = 0, wh = 0;

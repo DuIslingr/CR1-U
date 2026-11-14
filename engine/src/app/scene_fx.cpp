@@ -1174,6 +1174,20 @@ bool pressIn(const App& app, int screen, float origin, float x, float y, float w
 }
 bool menuCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app); }
 
+// Options' windows (__menuu_OptionPut's: 0 "Options" with the page's name and number, 1 the rows' labels, 2 their
+// controls, 5 Back): in as the page comes (the port's: 8 frames, eased) and off while the manual is up - the Manual
+// chosen (OptionPrc 5 -> FUN_00071444: 0, 1 to -240, 2 to +240 and 5 off that frame) until its Back puts them on again
+void optionsWindows(const App& app, OptionsWins& w) {
+    const float t = std::clamp(app.optionsAnim / 8.0f, 0.0f, 1.0f), ease = 1 - (1 - t) * (1 - t);
+    w.head = w.back = CampWin{t, 0};
+    w.rows = CampWin{t, -240 * (1 - ease)}, w.ctrl = CampWin{t, 240 * (1 - ease)};
+    if (app.manualOpen && !app.manualIntro && !app.manualOut) {
+        const int f = app.manualFrames;
+        w.head = w.back = campWinOff(f, 0, 0);
+        w.rows = campWinOff(f, 0, -240), w.ctrl = campWinOff(f, 0, 240);
+    }
+}
+
 void drawOptions(App& app, float, float) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
@@ -1182,38 +1196,40 @@ void drawOptions(App& app, float, float) {
     const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
     // Behind the menu: the scene under the menu mask (drawFrame's drawMenuMask)
     r.setOrigin(r.uiX());
-    // The windows slide in: rows from the left, controls from the right (WinDispOn -240 / +240)
-    const float t = std::min(1.0f, app.optionsAnim / 8.0f), ease = 1 - (1 - t) * (1 - t);
-    const float rowsX = -240 * (1 - ease), ctrlX = 240 * (1 - ease), a = t;
-    m.picture(102, 8, 4); // "Options"
+    OptionsWins w;
+    optionsWindows(app, w);
+    if (w.head.a <= 0 && w.rows.a <= 0 && w.ctrl.a <= 0 && w.back.a <= 0 && !app.resetAsk && !app.saveImport.active()) return;
+    const float rowsX = w.rows.dx, ctrlX = w.ctrl.dx, a = w.rows.a, ah = w.head.a, ac = w.ctrl.a, ab = w.back.a;
+    m.picture(102, 8, 4, ah); // "Options"
     const std::vector<OptRow> rows = optionRows(app, app.optionsPage);
     const int n = int(rows.size()), shown = std::min(n, kOptVisible);
     optionsScrollFix(app, n, false);
     { // (the port's: a darker panel under the page's name, the rows and the help line - readable
       // over any scene - and the help's lines)
-        const float shade[4] = {0, 0, 0, 0.5f * a}, fade[4] = {0, 0, 0, 0.2f * a};
+        const float shadeH[4] = {0, 0, 0, 0.5f * ah}, shade[4] = {0, 0, 0, 0.5f * a};
+        const float shadeC[4] = {0, 0, 0, 0.5f * ac}, fade[4] = {0, 0, 0, 0.2f * ac};
         const float nameW = m.textWidth(kOptionPageName[app.optionsPage], 16);
-        m.quad(228, 10, nameW + 16, 24, shade, shade);
-        m.quad(12, kOptRowTop - 8, 250, optRowY(shown) + 42 - kOptRowTop, shade, shade);
-        m.quad(262, kOptRowTop - 8, 238, optRowY(shown) + 42 - kOptRowTop, shade, fade);
+        m.quad(228, 10, nameW + 16, 24, shadeH, shadeH);
+        m.quad(12 + rowsX, kOptRowTop - 8, 250, optRowY(shown) + 42 - kOptRowTop, shade, shade);
+        m.quad(262 + ctrlX, kOptRowTop - 8, 238, optRowY(shown) + 42 - kOptRowTop, shadeC, fade);
     }
-    m.text(kOptionPageName[app.optionsPage], 236, 14, false, a, 16);
+    m.text(kOptionPageName[app.optionsPage], 236, 14, false, ah, 16);
     for (int i = app.optionsScroll; i < n && i < app.optionsScroll + kOptVisible; ++i) {
         const OptRow& row = rows[size_t(i)];
         const float y = optRowY(i - app.optionsScroll), mid = y + 12;
         const bool cursor = app.optionsRow == i;
-        const float dim = row.enabled ? a : a * 0.45f;
-        m.rowBar(20 + rowsX, y, row.label, dim, cursor);
+        const float dim = row.enabled ? ac : ac * 0.45f;
+        m.rowBar(20 + rowsX, y, row.label, row.enabled ? a : a * 0.45f, cursor);
         // The control in the original's design units (buttons 8 above the bar, gauges 4 below),
         // scaled about (kOptCtrlX, the bar's middle)
         m.setScale(kOptCtrlX + ctrlX, mid, kOptCtrlScale);
         const float cx = kOptCtrlX + ctrlX;
         switch (row.kind) {
         case OptControl::Check: m.button(cx + 120, y - 8, 23, "", false, dim, cursor && row.enabled); break;
-        case OptControl::Gauge: m.gauge(cx, y + 4, row.value, a, cursor); break;
+        case OptControl::Gauge: m.gauge(cx, y + 4, row.value, ac, cursor); break;
         case OptControl::Pair:
             for (int k = 0; k < 2; ++k)
-                m.button(cx + 120 * k, y - 8, row.words[k], row.texts[k], row.selected == k, a, false);
+                m.button(cx + 120 * k, y - 8, row.words[k], row.texts[k], row.selected == k, ac, false);
             break;
         case OptControl::Value: // our picker: the value on a button with the Back arrows either side
             m.button(cx + 60, y - 8, -1, row.valueTex ? std::string() : row.valueText, false, dim, cursor && row.enabled);
@@ -1224,28 +1240,28 @@ void drawOptions(App& app, float, float) {
             break;
         }
         m.setScale(0, 0, 1);
-        if (cursor && row.kind == OptControl::Pair) m.text(">", kOptCtrlX + ctrlX - 12, y + 4, false, a);
+        if (cursor && row.kind == OptControl::Pair) m.text(">", kOptCtrlX + ctrlX - 12, y + 4, false, ac);
     }
     if (n > kOptVisible) { // the scroll bar: a dark track, the thumb in the buttons' teal
         float top, height, ty, th;
         optionsBar(n, app.optionsScroll, top, height, ty, th);
-        const float track[4] = {0.05f, 0.07f, 0.09f, 0.75f * a}, trackEdge[4] = {0.22f, 0.25f, 0.28f, 0.75f * a};
-        const float lit[4] = {0.55f, 0.92f, 0.92f, a}, deep[4] = {0.16f, 0.5f, 0.55f, a};
-        m.quad(kOptBarX - 1, top - 1, kOptBarW + 2, height + 2, trackEdge, trackEdge);
-        m.quad(kOptBarX, top, kOptBarW, height, track, track);
-        m.quad(kOptBarX + 1, ty + 1, kOptBarW - 2, th - 2, lit, deep);
+        const float track[4] = {0.05f, 0.07f, 0.09f, 0.75f * ac}, trackEdge[4] = {0.22f, 0.25f, 0.28f, 0.75f * ac};
+        const float lit[4] = {0.55f, 0.92f, 0.92f, ac}, deep[4] = {0.16f, 0.5f, 0.55f, ac};
+        m.quad(kOptBarX - 1 + ctrlX, top - 1, kOptBarW + 2, height + 2, trackEdge, trackEdge);
+        m.quad(kOptBarX + ctrlX, top, kOptBarW, height, track, track);
+        m.quad(kOptBarX + 1 + ctrlX, ty + 1, kOptBarW - 2, th - 2, lit, deep);
     }
-    // "n / total" from the game's 14 x 14 digits, and Back
-    m.digit(app.optionsPage + 1, 20, kOptPageY, a);
-    m.digit(-1, 34, kOptPageY, a);
-    m.digit(kOptionPages, 48, kOptPageY, a);
-    m.backButton(192, kOptBackY, app.optionsRow == kOptionsBackRow, app.optionsBob, a);
+    // "n / total" from the game's 14 x 14 digits (OptionPut: with "Options", window 0), and Back (window 5)
+    m.digit(app.optionsPage + 1, 20, kOptPageY, ah);
+    m.digit(-1, 34, kOptPageY, ah);
+    m.digit(kOptionPages, 48, kOptPageY, ah);
+    m.backButton(192, kOptBackY, app.optionsRow == kOptionsBackRow, app.optionsBob, ab);
     if (app.optionsRow >= 0 && app.optionsRow < n && !rows[size_t(app.optionsRow)].hint.empty()) { // (under the rows shown, clear of Back)
         const std::vector<std::string> lines = wrapText(m, rows[size_t(app.optionsRow)].hint, 470, 11, 2);
         for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 20, optRowY(shown) + 2 + 13 * float(l), false, a, 11);
     }
     if (app.showHud) // (our key hints: off in a Release build, F3)
-        m.text("Up/Down  Left/Right  Enter  Q/E or PgUp/PgDn: page  Esc: back", 20, 372, false, a * 0.8f, 9);
+        m.text("Up/Down  Left/Right  Enter  Q/E or PgUp/PgDn: page  Esc: back", 20, 372, false, ab * 0.8f, 9);
     if (app.saveImport.active()) {
         r.setOrigin(0);
         r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
@@ -2814,7 +2830,6 @@ void drawFrame(App& app, bool present) {
         for (app.manualMsg.clock += dt; app.manualMsg.clock >= 1.0f / kFramesPerSecond && app.manualOpen;
              app.manualMsg.clock -= 1.0f / kFramesPerSecond)
             stepManual(app);
-        ++app.manualAnim;
         if (app.manualOpen) drawManual(app);
     }
     stepTrophies(app, realDt); // (the system's notification: over everything, at its own pace)

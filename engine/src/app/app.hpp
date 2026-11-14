@@ -455,7 +455,18 @@ struct App {
     cr::Texture scenariosSheet;            // flow_hd.mct
     cr::GameState scenariosFlags;          // every pair's saves together (the original's system data)
     bool manualOpen = false;               // Options > Instruction Manual
-    int manualCursor = 0, manualTop = 0, manualAnim = 0;
+    // The topics' MuScrList (layout 0, as the Camp's Items list): the focus row - the one on the line at 150 -
+    // and the rows' offset now, 48 x the focus row once settled, 8 a frame toward it (MuScrList_Proc)
+    int manualCursor = 0;
+    float manualScroll = 0;
+    int manualAnim = 0;                    // frames since the list was started (MuScrList_Start: its windows come)
+    int manualFrames = 0;                  // frames since the manual was chosen (Options' windows going: FUN_00071444)
+    int manualOut = 0;                     // its Back (OptionPrc 0x11): frames since the list's windows began going + 1, 0 none
+    struct ManualPointer {                 // a touch on the list (MuScrList_Proc): a drag scrolls it, the gauge's thumb follows
+        bool down = false, dragging = false, bar = false;
+        float startX = 0, startY = 0, lastY = 0, remainder = 0;
+        float curPx = -1e9f, curPy = -1e9f; // where it is now (the frame's pixels): Back lit while held
+    } manualPointer;
     int manualIntro = 0;                   // the page shown before a topic is chosen (56035), 0 none
     bool charSelectOpen = false;
     int charSelectCursor = 0, charSelectAnim = 0, chosenPair = 1, charSelectPage = 0;
@@ -1619,6 +1630,19 @@ void campPointerDown(App& app, float px, float py);
 void campPointerMove(App& app, float px, float py);
 void campPointerUp(App& app, float px, float py);
 bool campPressIn(const App& app, float origin, float x, float y, float w, float h);
+// A window's move (__SetWinRect's offset, _PrcWin's states): ComUty_WinDispOn at frame `at` puts it at dx, then
+// its count 4 .. 0 brings it home over four frames as it fades in (0x24 = 0xff0 - count x 0x3fc); WinDispOff
+// (ClrWin) leaves it whole the frame after while the count 0 .. 4 takes it to dx, fading
+struct CampWin { float a = 1, dx = 0; };
+inline CampWin campWinOn(int t, int at, float dx) {
+    const float e = std::clamp(float(t - at) / 4.0f, 0.0f, 1.0f);
+    return {e, dx * (1 - e)};
+}
+inline CampWin campWinOff(int t, int at, float dx) {
+    return {1 - std::clamp(float(t - at - 1) / 4.0f, 0.0f, 1.0f), dx * std::clamp(float(t - at) / 4.0f, 0.0f, 1.0f)};
+}
+struct OptionsWins { CampWin head, rows, ctrl, back; }; // Options' windows 0, 1, 2 and 5 (optionsWindows)
+void optionsWindows(const App& app, OptionsWins& w);
 void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int count, bool lit, float a, int style = 0, const std::string& label = std::string());
 float menuFontSize(const App& app); // MuComFont*: 13 pt, 14 in Japanese / Chinese / Korean
 void drawCampScrollBar(cr::MenuPainter& m, float scroll, int n, float a);
@@ -1681,6 +1705,12 @@ void stepManual(App& app);
 void drawManual(App& app);
 void manualKey(App& app, SDL_Keycode key);
 void manualClick(App& app, float px, float py);
+void manualPointerDown(App& app, float px, float py);
+void manualPointerMove(App& app, float px, float py);
+void manualPointerUp(App& app, float px, float py);
+void manualBack(App& app);
+bool manualPressIn(const App& app, float origin, float x, float y, float w, float h);
+float campBackY(const App& app);
 void openCharSelect(App& app);
 void charSelectTurn(App& app);
 void closeCharSelect(App& app, int pair);

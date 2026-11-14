@@ -1612,20 +1612,9 @@ void campTrackPhase(App::Camp& c) {
     else if (c.phase != c.shownPhase) c.prevPhase = c.shownPhase, c.shownPhase = c.phase, c.phaseT = 0;
 }
 
-// A window's move (__SetWinRect's offset, _PrcWin's states): ComUty_WinDispOn at frame `at` puts it at dx, then
-// its count 4 .. 0 brings it home over four frames as it fades in (0x24 = 0xff0 - count x 0x3fc); WinDispOff
-// (ClrWin) leaves it whole the frame after while the count 0 .. 4 takes it to dx, fading
-struct CampWin { float a = 1, dx = 0; };
 constexpr App::Camp::Role RTitle = App::Camp::RTitle, RSection = App::Camp::RSection, RBoard = App::Camp::RBoard,
                           RGene = App::Camp::RGene, RList = App::Camp::RList, RPlates = App::Camp::RPlates,
                           RFaces = App::Camp::RFaces, RBar = App::Camp::RBar;
-CampWin campWinOn(int t, int at, float dx) {
-    const float e = std::clamp(float(t - at) / 4.0f, 0.0f, 1.0f);
-    return {e, dx * (1 - e)};
-}
-CampWin campWinOff(int t, int at, float dx) {
-    return {1 - std::clamp(float(t - at - 1) / 4.0f, 0.0f, 1.0f), dx * std::clamp(float(t - at) / 4.0f, 0.0f, 1.0f)};
-}
 // A state change's windows (App::Camp::Slide): the view left kept to draw it going; its moves set by the caller
 // (the original's frames, counted from the input's: 0 the state that took it, 1 the next, ...); input waits
 // until `wait` (the states that only count or wait on a window's move)
@@ -4583,8 +4572,9 @@ void openManual(App& app, int intro) { // intro: a page shown before any topic (
     app.manualOpen = true;
     app.manualIntro = intro;
     app.manualCursor = 0;
-    app.manualTop = 0;
-    app.manualAnim = 0;
+    app.manualScroll = 0;
+    app.manualAnim = app.manualFrames = app.manualOut = 0;
+    app.manualPointer = App::ManualPointer();
     App::ManualMsg& mm = app.manualMsg;
     app.renderer.destroy(mm.pic.tex);
     mm = App::ManualMsg();
@@ -4593,17 +4583,38 @@ void openManual(App& app, int intro) { // intro: a page shown before any topic (
 
 void manualChoose(App& app) { // OptionPrc 0x10: a topic chosen - the list's windows go, 4 frames on its page opens
     const std::vector<int> topics = manualTopics(app);
-    if (app.manualCursor < 0 || app.manualCursor >= int(topics.size())) return;
+    if (app.manualCursor < 0 || app.manualCursor >= int(topics.size()) || app.manualOut) return;
     menuSound(app, se::kChoose); // (__ScrListSelectSePlay)
+    app.manualPointer = App::ManualPointer();
     App::ManualMsg& mm = app.manualMsg;
     const int item = topics[size_t(app.manualCursor)]; // (OptionPrc 0x12: item - 0x1b7 below 0x1b7 + 0x28, else - 0x1d2)
     mm.id = kManualFirstPage + item - (item <= kManualLastItem ? kManualFirstItem : 0x1d2);
     mm.state = 1, mm.count = 4;
 }
 
-// A frame (20 Hz): 0x12's wait, PrcWin and PrcMsg's typing, the picture's frames, the window closing
+// OptionPrc 0x10's Back (MuScrList_Proc's ComUty_BackButtonProc(1), SE 3) -> 0x11: the gauge and Back (windows 7, 8)
+// and the list (MuScrList_DispActive(0, 0): out to 480) go off, and state 3 - the frame after - puts Options' "Options"
+// and Back (0, 5) on, 4 its two halves (1, 2); the manual is gone once its windows are
+void manualBack(App& app) {
+    if (!app.manualOpen || app.manualOut || app.manualMsg.state != 0 || app.manualIntro) return;
+    menuSound(app, se::kBack);
+    app.manualOut = 1;
+    app.manualPointer = App::ManualPointer();
+    if (app.optionsOpen) app.optionsAnim = -1;
+}
+
+// A frame (20 Hz): 0x12's wait, PrcWin and PrcMsg's typing, the picture's frames, the window closing; the list's rows
+// stepping 8 toward the focus row (MuScrList_Proc), its windows' moves
 void stepManual(App& app) {
     App::ManualMsg& mm = app.manualMsg;
+    ++app.manualAnim, ++app.manualFrames;
+    const float to = campui::kRowH * float(app.manualCursor);
+    if (std::fabs(to - app.manualScroll) > campui::kRowH) app.manualScroll = to;
+    else app.manualScroll = app.manualScroll < to ? std::min(to, app.manualScroll + 8) : std::max(to, app.manualScroll - 8);
+    if (app.manualOut && ++app.manualOut > 5) { // (WinDispOff: whole a frame, then 4 frames to gone)
+        app.manualOpen = false, app.manualOut = 0;
+        return;
+    }
     switch (mm.state) {
     case 1:
         if (--mm.count < 0) manualShow(app, mm.id);
@@ -4618,40 +4629,74 @@ void stepManual(App& app) {
         if (mm.win.state == 6) {
             mm.state = 0;
             if (app.manualIntro) { app.manualOpen = false; break; } // (the intro: on to Options)
-            app.manualAnim = 0; // (0xf: MuScrList_Start - the list's windows anew, at the item)
+            app.manualAnim = 0; // (0x16 -> 0xf: MuScrList_Start - the list's windows anew, at the item)
         }
         break;
     default: break;
     }
 }
 
-constexpr int kManualRows = 9;
+// The list's windows (0 out .. 1 in): MuScrList_Start (OptionPrc 0xf, the frame after the Manual was chosen in
+// state 5 or the page's window had shut) puts the list (window 6, its HELP with it) on from 480 to the right and the
+// gauge (7) and Back (8) on where they are; a topic chosen (0x10) or Back (0x11) takes them off that frame
+void manualWindows(const App& app, CampWin& list, CampWin& bar) {
+    const App::ManualMsg& mm = app.manualMsg;
+    list = campWinOn(app.manualAnim, 1, 480), bar = campWinOn(app.manualAnim, 1, 0);
+    if (app.manualOut) list = campWinOff(app.manualOut - 1, 0, 480), bar = campWinOff(app.manualOut - 1, 0, 0);
+    else if (mm.state == 1) list = campWinOff(4 - mm.count, 0, 480), bar = campWinOff(4 - mm.count, 0, 0);
+    else if (mm.state >= 2) list.a = bar.a = 0;
+}
 
+bool manualPressIn(const App& app, float origin, float x, float y, float w, float h) { // (Back lit while held)
+    const App::ManualPointer& p = app.manualPointer;
+    if (!p.down || p.dragging) return false;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(p.curPx, p.curPy, lx, ly);
+    menuPointAt(app, lx, ly, origin, mx, my);
+    return mx >= x && mx < x + w && my >= y && my < y + h;
+}
+
+// OptionPrc 0xf: MuScrList_Init(7, 8) - layout 0 (Init zeroes it), the Camp's - and SetIdInfo(10, 6, 0, 0, 1, 1):
+// type 10's rows (ComUty_ComPlate_Base: plate 8 / 9, the item's icon, its name white - FUN_00056508's own for the
+// manual items, 0x1b7..0x1d9 and 0x1f5 / 0x1f6 - and no count, MuScrList_Draw 55748-55790), the HELP board with
+// the focused topic's item text (argument 5: ComUty_HelpWindowProc(0, item - 1) - 52438 "Basic Controls" ...;
+// HelpWindowDraw 55922) and the one-part Back bar (argument 6: ComUty_BackButtonDraw type 1). Over the menu mask,
+// Options' windows gone (FUN_00071444; drawOptions)
 void drawManual(App& app) {
+    using namespace campui;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     const App::ManualMsg& mm = app.manualMsg;
     m.begin(r, app.windowTex, &app.font);
-    r.setOrigin(0);
-    if (!app.manualIntro) r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f); // ("Option": no mask yet)
     r.setOrigin(r.uiX());
     if (!app.manualIntro) {
-        const PhoneFit phoneFit(app, m); // the iPhone layout: its screen's menu coordinates
-        const float a = std::min(1.0f, app.manualAnim / 8.0f);
-        m.picture(102, 8, 4, a); // "Options"
-        m.text(sysLabel(app, 58081, "Instruction Manual"), 236, 14, false, a, 16);
-        // The list (MuScrList: windows 7 and 8) fades out as a topic opens and is off while it's up
-        const float la = mm.state == 0 ? a : mm.state == 1 ? a * float(std::max(0, mm.count)) / 4.0f : 0.0f;
-        if (la > 0) {
-            const std::vector<int> topics = manualTopics(app);
-            for (int i = 0; i < kManualRows && app.manualTop + i < int(topics.size()); ++i) {
-                const int n = app.manualTop + i;
-                m.rowBar(20, 52 + 32.0f * float(i), itemName(app, topics[size_t(n)]), la, app.manualCursor == n);
+        const PhoneMenu phoneMenu(app, m);
+        CampWin list, bar;
+        manualWindows(app, list, bar);
+        const std::vector<int> topics = manualTopics(app);
+        const int n = int(topics.size());
+        const float scroll = app.manualScroll;
+        const int focus = std::clamp(int((scroll + 28) / kRowH), 0, std::max(0, n - 1)); // (__MuScrList_GetFocusPos)
+        r.setOrigin(wideRight(app)); // (widescreen: the list, its HELP and gauge to the right, as the Camp's)
+        if (list.a > 0 && n > 0) {
+            drawHelpWindow(app, m, topics[size_t(focus)], list.a, list.dx);
+            const float x = kRowX + list.dx;
+            m.setClip(kListTop, kListBottom); // (MuScrList_Draw mode 0: row k at (192, 150 + 48k - offset), cut to 76..280)
+            for (int k = 0; k < n; ++k) {
+                const float y = kFocusY + kRowH * float(k) - scroll;
+                if (y + kRowH > kListTop && y < kListBottom) drawCampRow(app, m, x, y, topics[size_t(k)], 0, k == focus, list.a, 0);
             }
-            if (app.manualTop > 0) m.text("...", 100, 40, false, la, 12);
-            if (app.manualTop + kManualRows < int(topics.size())) m.text("...", 100, 52 + 32.0f * kManualRows - 6, false, la, 12);
-            m.backButton(192, 344, false, 0, la);
-            if (app.showHud) m.text("Up/Down  Enter: read  Esc: back", 20, 372, false, la * 0.8f, 9); // (our key hints)
+            if (n > 2) { // (the pills: taps jump to the other end)
+                if (focus < 2) m.picture(0x8c, x + 88, 112 - scroll, list.a);
+                if (focus >= n - 2) m.picture(0x8d, x + 88, 208 + kRowH * float(n - 1) - scroll, list.a);
+            }
+            m.clearClip();
+        }
+        if (bar.a > 0) drawCampScrollBar(m, scroll, n, bar.a);
+        r.setOrigin(r.uiX());
+        if (bar.a > 0) {
+            m.backBar(kBackX, campBackY(app), manualPressIn(app, r.uiX(), kBackX, campBackY(app), 256, 34), bar.a);
+            if (app.showHud) m.text("Up/Down  Enter: read  Esc: back", 20, 372, false, bar.a * 0.8f, 9); // (our key hints)
         }
     }
     if (mm.state < 2) return;
@@ -4667,6 +4712,13 @@ void drawManual(App& app) {
     r.setOrigin(r.uiX());
 }
 
+// MuScrList (layout 0): the rows move under the line, so a key, the wheel, a drag or the gauge's arrows move the focus
+void manualScrollBy(App& app, int rows) {
+    const int n = int(manualTopics(app).size()), before = app.manualCursor;
+    app.manualCursor = std::clamp(app.manualCursor + rows, 0, std::max(0, n - 1));
+    if (before != app.manualCursor) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1) as the focus row changes)
+}
+
 void manualKey(App& app, SDL_Keycode key) {
     App::ManualMsg& mm = app.manualMsg;
     const bool confirm = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E;
@@ -4676,38 +4728,100 @@ void manualKey(App& app, SDL_Keycode key) {
         else if (back && mm.win.state == 3) manualCloseMessage(app);
         return;
     }
-    if (mm.state != 0) return; // (the list going, or the window closing)
+    if (mm.state != 0 || app.manualOut) return; // (the list going, or the window closing)
     if (confirm) { manualChoose(app); return; }
-    const int n = int(manualTopics(app).size());
-    int& c = app.manualCursor;
     switch (key) {
-    case SDLK_UP: case SDLK_W: if (c > 0) --c, menuSound(app, se::kListFocus); break;
-    case SDLK_DOWN: case SDLK_S: if (c < n - 1) ++c, menuSound(app, se::kListFocus); break;
-    case SDLK_PAGEUP: c = std::max(0, c - kManualRows); menuSound(app, se::kPage); break; // a list flicked a page
-    case SDLK_PAGEDOWN: c = std::min(n - 1, c + kManualRows); menuSound(app, se::kPage); break;
-    case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: app.manualOpen = false; menuSound(app, se::kBack); return;
-    default: return;
+    case SDLK_UP: case SDLK_W: manualScrollBy(app, -1); break;
+    case SDLK_DOWN: case SDLK_S: manualScrollBy(app, 1); break;
+    case SDLK_PAGEUP: case SDLK_PAGEDOWN: { // (L / R: the port's - a list flicked a view on)
+        const int before = app.manualCursor, n = int(manualTopics(app).size());
+        app.manualCursor = std::clamp(before + (key == SDLK_PAGEUP ? -campui::kRows : campui::kRows), 0, std::max(0, n - 1));
+        if (app.manualCursor != before) menuSound(app, se::kPage);
+        break;
     }
-    if (c >= 0 && c < app.manualTop) app.manualTop = c;
-    if (c >= app.manualTop + kManualRows) app.manualTop = c - kManualRows + 1;
+    case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: manualBack(app); break;
+    default: break;
+    }
 }
 
+// A touch lifting (frame pixels), not a drag (MuScrList_Proc): Back (lit while held) closes; on the list the row on
+// the line is chosen (pad_chk_updw_box(192, 150, 256, 48)), another is brought to the line; above the first row the
+// down pill's box jumps to the end, under the last the up pill's to the top; the gauge's arrows step it
 void manualClick(App& app, float px, float py) {
+    using namespace campui;
     App::ManualMsg& mm = app.manualMsg;
     if (mm.state == 2) { manualTap(app); return; } // (anywhere: PrcMsg's tap)
-    if (mm.state != 0 || app.manualIntro) return;
+    if (mm.state != 0 || app.manualIntro || app.manualOut) return;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, app.renderer.uiX(), mx, my);
+    if (mx >= kBackX && mx < kBackX + 256 && my >= campBackY(app) && my < campBackY(app) + 34) { manualBack(app); return; }
+    menuPointAt(app, lx, ly, wideRight(app), mx, my);
+    auto in = [&](float x, float y, float w, float h) { return mx >= x && mx < x + w && my >= y && my < y + h; };
+    if (in(kGaugeX - 4, kGaugeY - 4, 24, 24)) { manualScrollBy(app, -1); return; }
+    if (in(kGaugeX - 4, kGaugeY + kGaugeH - 12, 24, 28)) { manualScrollBy(app, 1); return; }
+    if (!in(kRowX, kListTop, 256, kListBottom - kListTop)) return;
+    const int n = int(manualTopics(app).size());
+    int& cursor = app.manualCursor;
+    const int row = int(std::floor((my - kFocusY + app.manualScroll) / kRowH));
+    if (row >= 0 && row < n) {
+        if (row == cursor) manualChoose(app);
+        else cursor = row, menuSound(app, se::kListFocus);
+    } else if (n > 2 && row < 0 && cursor < 2) cursor = n - 1, app.manualScroll = kRowH * float(n - 1), menuSound(app, se::kListFocus);
+    else if (n > 2 && row >= n && cursor >= n - 2) cursor = 0, app.manualScroll = 0, menuSound(app, se::kListFocus);
+}
+
+// The list's touch (the Camp's model: campPointerDown / Move / Up). On the page a tap turns it as it goes down
+void manualPointerDown(App& app, float px, float py) {
+    using namespace campui;
+    App::ManualPointer& p = app.manualPointer;
+    p = App::ManualPointer();
+    const App::ManualMsg& mm = app.manualMsg;
+    if (mm.state == 2) { manualTap(app); return; }
+    if (mm.state != 0 || app.manualIntro || app.manualOut) return;
+    p.down = true;
+    p.curPx = px, p.curPy = py;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
-    float mx, my;
-    menuPointFit(app, lx, ly, mx, my);
-    if (my >= 344 && my < 368 && mx >= 192 && mx < 424) { app.manualOpen = false; menuSound(app, se::kBack); return; }
-    if (mx >= 20 && mx < 240)
-        for (int i = 0; i < kManualRows; ++i)
-            if (my >= 52 + 32.0f * i && my < 76 + 32.0f * i && app.manualTop + i < int(manualTopics(app).size())) {
-                app.manualCursor = app.manualTop + i;
-                manualChoose(app); // a topic tapped
-                return;
-            }
+    menuPointAt(app, lx, ly, wideRight(app), p.startX, p.startY);
+    p.lastY = p.startY;
+    p.bar = manualTopics(app).size() > 1 && p.startX >= kGaugeX - 2 && p.startX < kGaugeX + 22 && p.startY >= kGaugeY + 12 &&
+            p.startY < kGaugeY + kGaugeH - 12;
+}
+void manualPointerMove(App& app, float px, float py) {
+    using namespace campui;
+    App::ManualPointer& p = app.manualPointer;
+    if (!p.down) return;
+    if (!app.manualOpen || app.manualMsg.state != 0 || app.manualOut) { p = App::ManualPointer(); return; }
+    p.curPx = px, p.curPy = py;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, wideRight(app), mx, my);
+    if (std::fabs(mx - p.startX) > 6 || std::fabs(my - p.startY) > 6) p.dragging = true;
+    const int n = int(manualTopics(app).size());
+    if (p.bar && p.dragging) { // (MuScrList_Proc's ComUty_PadChkMove on the gauge: the rows follow its thumb)
+        const int to = int(std::lround(std::clamp((my - kGaugeY - 24) / (kGaugeH - 48), 0.0f, 1.0f) * float(std::max(0, n - 1))));
+        manualScrollBy(app, to - app.manualCursor);
+    } else if (!p.bar && p.dragging && p.startX >= kRowX && p.startX < kRowX + 256 && p.startY >= kListTop && p.startY < kListBottom) {
+        // (MuScrList_Proc 54700-54760: a drag past 5 up or down scrolls - row by row here, the rows easing to the line)
+        p.remainder += p.lastY - my;
+        const int rows = int(p.remainder / kRowH);
+        if (rows) { manualScrollBy(app, rows); p.remainder -= float(rows) * kRowH; }
+    }
+    p.lastY = my;
+}
+void manualPointerUp(App& app, float px, float py) {
+    using namespace campui;
+    if (!app.manualPointer.down) return;
+    manualPointerMove(app, px, py);
+    const App::ManualPointer p = app.manualPointer;
+    app.manualPointer = App::ManualPointer();
+    if (!p.down || p.dragging) return;
+    if (p.bar) {
+        const int n = int(manualTopics(app).size());
+        const int to = int(std::lround(std::clamp((p.startY - kGaugeY - 24) / (kGaugeH - 48), 0.0f, 1.0f) * float(std::max(0, n - 1))));
+        manualScrollBy(app, to - app.manualCursor);
+    } else manualClick(app, px, py);
 }
 
 // ---- Character Select (Util 4: __menuu_StartPut) ----
