@@ -192,9 +192,8 @@ alpha-model / leader materials, battle fighters (`read_mdl2`: unlit, alpha test 
 stages 3..6 and 9's textured Appearances) are drawn as the original's loaders leave them (lighting off:
 colour 1 alone, or the colour array alone with property bit 6 - hwalSetAppearanceColor_ES1); the
 stages' Appearances with user id 2000..2007 scroll their texture as `_mdl_uv` does (FORMATS.md);
-the viewer's own lit materials are approximated as full-bright (surface colour =
-emission + ambient + diffuse; many materials are black-diffuse/white-ambient) until scene
-Light records are decoded; effects whose colour is animated (fade in/out) are
+nothing in play is lit (only f0000jem02 and m205a..c have lighting's bit 0, and their loaders clear it), so
+the full-bright approximation (surface colour = emission + ambient + diffuse) is the model viewer's alone; effects whose colour is animated (fade in/out) are
 invisible until material animation is implemented. **F** toggles smooth texture filtering
 (the original uses nearest). Playback runs animations a frame a game frame - 20 frames per second, the
 game's own rate (FORMATS.md; 30 was an early guess by eye) - and models are Y-up (confirmed by eye on

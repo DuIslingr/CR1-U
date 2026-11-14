@@ -2,7 +2,8 @@
 // Model smoothing (optional, Graphics > Smooth Models): PN triangles (Vlachos et al. 2001) at
 // load time, on the CPU. Each triangle becomes level^2 triangles on a cubic patch through its
 // corners: the original vertices stay put (feet stay on the floor, joints where they were)
-// while silhouettes round out. Normals come from the faces (the game's models have none): a
+// while silhouettes round out. Normals come from the faces (most vertex buffers carry s16 normals, but nothing in
+// the game is lit - the loaders clear the four lit Appearances' bit 0 - so they're not taken): a
 // corner averages the faces around it that are within `creaseDegrees` of its own, and edges
 // sharper than that - and mesh borders - stay straight, so hard edges stay hard and separate
 // meshes (head / body) still meet. UVs and colours are interpolated linearly; bone weights are

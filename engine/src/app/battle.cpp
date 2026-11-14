@@ -590,7 +590,16 @@ void drawEffects(App& app, const std::vector<Effect>& list, const cr::Mat4& vp, 
         world.m[4] = (sx * sy * cz - cx * sz) * k, world.m[5] = (sx * sy * sz + cx * cz) * k, world.m[6] = sx * cy * k;
         world.m[8] = (cx * sy * cz + sx * sz) * k, world.m[9] = (cx * sy * sz - sx * cz) * k, world.m[10] = cx * cy * k;
         world.m[12] = e.pos.x, world.m[13] = e.pos.y, world.m[14] = e.pos.z;
-        const cr::Mat4 mvp = vp * world;
+        cr::Mat4 mvp = vp * world;
+        // (eff3d_set_with_pos / _and_ang 61228-61234, 61323-61330: in a battle (G+0x2c0 bit 0x20) every material gets
+        // property 0x80 and polygon offset (1.1, -400) - glPolygonOffset on 2.2.0's 16-bit depth (1238): 400 / 65535 of
+        // the window's depth nearer, so a spark at a body node sits over its surface. Here as the clip z pulled by
+        // 2 x that x w (GL's -1..1 depth); the slope factor left out)
+        if (&list == &app.battle.effects) {
+            cr::Mat4 pull;
+            pull.m[14] = -2.0f * 400.0f / 65535.0f;
+            mvp = pull * mvp;
+        }
         // drawn last, depth tested but not written (draw order + 1000, eff3d_set_with_pos_and_ang)
         std::vector<size_t> order(lm.meshes.size());
         for (size_t i = 0; i < order.size(); ++i) order[i] = i;

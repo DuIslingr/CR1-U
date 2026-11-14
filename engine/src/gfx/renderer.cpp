@@ -126,9 +126,9 @@ void Renderer::begin3DRect(float x, float y, float w, float h) {
 
 void Renderer::drawMesh(const GpuMesh& mesh, const Texture* tex, const Mat4& mvp, const Material& mat,
                         bool smoothFilter, const Texture* tex2, const float* uv2) {
-    // GL ES 1.1 lighting with full-bright scene light (ambient = diffuse = 1) until scene
-    // Light records are decoded: rgb = emission + ambient + diffuse, alpha = diffuse alpha.
-    // 357 materials rely on this (black ambient, white diffuse - or the other way), so one alone is not enough.
+    // GL ES 1.1 lighting with full-bright scene light (ambient = diffuse = 1): rgb = emission + ambient + diffuse,
+    // alpha = diffuse alpha - the model viewer's alone: in play every material is unlit (only f0000jem02 and m205a..c
+    // have property bit 0, and read_mdl / read_mdl2 clear it; hwalSetAppearanceColor_ES1 86686-86800).
     MeshShading sh;
     if (mat.unlit) { // hwalSetAppearanceColor_ES1, lighting off: the colour array alone (property bit 6), else glColor = colour 1
         const bool array = (mat.properties & 0x40) && mesh.vertexColors;
