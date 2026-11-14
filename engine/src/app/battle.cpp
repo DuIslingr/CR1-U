@@ -2612,9 +2612,12 @@ void endRound(App& app) {
         b.exit = 1;
         return;
     }
-    const bool wonBefore = b.rules.outcome() == 2; // (btlord_chk's win at 799, before the round's end)
-    battletalk::rules(app); // (status_prc's boss rules as the round ends)
-    b.rules.endRound();
+    // btl_main 799 (2.2.0 decomp 6161-6185): btlord_chk decides a win (2: chk_karaok_end, the victory) or a loss (3:
+    // 0x4b0) before 800 - the round's end (btlcalc_status_prc at 899) runs only for a battle still going
+    const int decided = b.rules.outcome();
+    const bool wonBefore = decided == 2;
+    if (decided == 0) battletalk::rules(app); // (status_prc's boss rules as the round ends)
+    b.rules.endRound();                        // (nothing once decided)
     for (int i : b.rules.roundPoisoned) { (void)i; app.sound.play(0x5a); } // (btlcalc_status_prc 24690-24693: each poisoned one)
     for (int t : b.rules.roundFell) // (btlcalc_chk_dead 24541-24548 at 24748: a fall to poison as one to a blow)
         if (App::Battle::Actor* a = battleActor(app, t)) {
@@ -3156,8 +3159,10 @@ void stepBattle(App& app) {
                 b.turnOn = false;
                 releasePair(b); // (a turn without a hit shown)
                 b.handover = b.turn.kind == cr::kCmdEscape && b.turn.escaped ? 0 : 2; // (an escape's 99 goes to 9000 from 700)
-                // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc), from 799
-                b.breakDue = b.rules.breakChanging();
+                // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc), from 799; but btlord_chk
+                // (30370-30381) returns 3 / 2 for a side down before it looks at +0x18 bit 0x400 - a last blow that
+                // also turned the Break ends the battle with no "BREAK!!" and no 0xff2 tutorial
+                b.breakDue = b.rules.breakChanging() && b.rules.outcome() == 0;
                 if (b.breakDue) b.rules.breakChangeSeen();
                 // btl_main 700 (the next frame, as it sees btlact's 1): the action's tutorials - an element
                 // taken, a status, a gene learned - from the hand-over above (an escape's 99 has none)

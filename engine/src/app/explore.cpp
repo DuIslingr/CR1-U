@@ -465,6 +465,17 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     rr.endRound();
                     cbad += rr.f[2].hp != 900;
                 }
+                { // btl_main 799: btlord_chk's win goes to the victory before 800 - no btlcalc_status_prc, the
+                  // poisoned pair at 1 HP doesn't fall to it (the win isn't turned into a loss)
+                    cr::BattleRules rr;
+                    for (cr::Fighter& x : rr.f) x = cr::Fighter();
+                    rr.f[2].present = true, rr.f[2].enemy = true, rr.f[2].hpMax = 1000;
+                    rr.f[0].present = true, rr.f[0].hp = 1, rr.f[0].hpMax = 1000, rr.f[0].status[cr::kStatusPoison] = 3;
+                    rr.endRound();
+                    if (rr.outcome() != 2 || rr.f[0].hp != 1 || rr.f[0].status[cr::kStatusPoison] != 3 || !rr.roundPoisoned.empty())
+                        std::printf("  round's end after the win: outcome %d, hp %d, poison %d\n", rr.outcome(), rr.f[0].hp,
+                                    rr.f[0].status[cr::kStatusPoison]), ++cbad;
+                }
                 { // story line-ups and the guest's rotation
                     cr::GameState g;
                     cr::giveStartingItems(g);
@@ -6185,8 +6196,32 @@ int runSelfTest(App& app) {
             endBattle(app, false);
         }
         problems += frames != 41 || gaugeAt != 19 || !waited || b.rules.breakChanging();
-        std::printf("break effect: %d frames, the pair holds 4 from frame %d, the battle waited %s; %d problems\n", frames,
-                    gaugeAt, waited ? "yes" : "NO", problems);
+        // btlord_chk (2.2.0 decomp 30370-30381): a side down is 2 / 3 before the Break's bit 0x400 is looked at - the
+        // last foe's fall that also turns the Break (the pair's blow +1 and kill +2 from -2) ends the battle with no effect
+        bool lastFx = false, lastWon = false;
+        for (int attempt = 0; attempt < 3 && !lastWon; ++attempt) { // (the blow may miss: 1%)
+            startBattle(app, {1, 0, -1, 0}, 0);
+            if (!b.active) break;
+            for (int f = 0; f < 60 && b.phase != App::Battle::Command; ++f) stepBattle(app);
+            for (int i = 3; i < 5; ++i) b.rules.f[size_t(i)].hp = 0;
+            b.rules.f[2].hp = 1, b.rules.f[2].lck = -1000, b.rules.f[2].grd = 0;
+            b.rules.f[0].spd = 9999;
+            b.rules.breakStarted = true;
+            b.rules.breakGauge = b.rules.breakTarget = -2;
+            b.cmds[0] = cr::BattleCommand(), b.cmds[1] = cr::BattleCommand();
+            b.cmds[0].kind = cr::kCmdAttack, b.cmds[0].target = 2, b.cmds[1].kind = cr::kCmdDefend;
+            b.rules.beginRound(b.cmds, app.battleActions);
+            b.phase = App::Battle::Acting, b.phaseFrames = 0, b.turnOn = false, b.roundFirst = true, b.roundWait = false;
+            for (int f = 0; f < 600 && b.active && b.phase == App::Battle::Acting; ++f) {
+                stepBattle(app);
+                lastFx |= b.breakFx.on;
+            }
+            lastWon = b.rules.outcome() == 2 && b.rules.breakChanging() && b.phase != App::Battle::Acting;
+            endBattle(app, false);
+        }
+        problems += lastFx || !lastWon;
+        std::printf("break effect: %d frames, the pair holds 4 from frame %d, the battle waited %s, none for a last blow that "
+                    "turns it %s; %d problems\n", frames, gaugeAt, waited ? "yes" : "NO", !lastFx && lastWon ? "yes" : "NO", problems);
         mapErrors += problems;
         app.runner.stop();
         app.game = keepGame;

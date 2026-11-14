@@ -709,6 +709,10 @@ c101/c102/c104/m207a, 2026-10-12).
       camera, hidden monsters and voice (a script's battle only) at `0x4b1`, ten frames in, and
       the original's random numbers (`core/random.hpp`: MT19937, its bounded draw and
       `get_random`'s discards, one stream for battles and the field)
+- [x] A battle's rounds as 2.2.0's `btl_main` 700-899: `btlord_chk` at 799 ends the battle
+      as soon as a side is down - before the round's end (`btlcalc_status_prc`, 899), so no
+      poison, regen or countdown follows a win or a loss, and before it looks at the Break: a
+      last blow that also turns the Break gives no "BREAK!!"
 - [x] The battle's status messages (`btl_add_msgque`): "<name> was poisoned!", the stat ups,
       the barrier, endure, invincible, silence, an element given, a command cancelled and each
       stolen item queue up (one per fighter) and take the banner one at a time for 60 frames,

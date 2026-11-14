@@ -1224,8 +1224,13 @@ void BattleRules::notice(int fighter, int entry) {
 }
 
 void BattleRules::endRound() {
+    // btl_main 799 (2.2.0 decomp 6161-6185): btlord_chk's 3 (the pair down) / 2 (the enemies) go to the defeat /
+    // the victory at once - 800..899, and with it btlcalc_status_prc (24628, at 899's count 28), never runs: no
+    // poison, regen or countdown after the battle is decided
+    roundPoisoned.clear(), roundFell.clear(), roundChimes = 0;
+    if (outcome() != 0) return;
     // btlord_chk: the holder wasn't hit all round
-    if (outcome() == 0 && !(breakFlags & 0x400) && (breakFlags & 0x8000)) breakEvent(breakGauge < 1 ? 2 : 0, 0x40, -1);
+    if (!(breakFlags & 0x400) && (breakFlags & 0x8000)) breakEvent(breakGauge < 1 ? 2 : 0, 0x40, -1);
     catchUpBreak();
     // btlcalc_status_prc, each standing fighter in turn: the statuses count down (not Endure),
     // then one amount through btlcalc_dmg_hp - poison's 10% less skill 133's 5% (a story boss:
