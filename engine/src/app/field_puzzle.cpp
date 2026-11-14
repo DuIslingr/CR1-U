@@ -3152,7 +3152,7 @@ void logicalToView(const App& app, float lx, float ly, float& hx, float& hy) {
 // only - a second finger is never seen): a double tap with one touch down then scrolls the view to it
 // (state 1: the camera off the leader, the ability paused) - else, or once the next single touch's frames
 // pass without one, state 0 again. While scrolled, setScroll2D(the point, 0.25) every frame
-void stepScroll(App& app, int fresh) {
+void stepScroll(App& app) {
     App::Puzzle::Scroll& sc = app.puzzle.scroll;
     const App::Fingers& f = app.fingers;
     if (sc.phase == 1) {
@@ -3173,7 +3173,6 @@ void stepScroll(App& app, int fresh) {
 // One 20 Hz frame (PuzzleManager::update, under PuzzleScene::update)
 void step(App& app) {
     App::Puzzle& pz = app.puzzle;
-    const int fresh = app.fingers.fresh;
     app.fingers.fresh = 0;
     struct TapGone { App& a; ~TapGone() { a.fingers.doubleTap = false; } } tapGone{app}; // (FUN_0001d044: gac+0 cleared each frame)
     if (pz.stage < 0) return;
@@ -3211,7 +3210,7 @@ void step(App& app) {
             if (k == 0 && app.game.vars[0] == 1) { reset(app); return; }
         }
     ++pz.clock;
-    if (!pz.busy) stepScroll(app, fresh); // (PuzzleManager::update 42536-42539: ScrollCamera only while no ability is busy, +0x26)
+    if (!pz.busy) stepScroll(app); // (PuzzleManager::update 42536-42539: ScrollCamera only while no ability is busy, +0x26)
     if (pz.scroll.state != 1) { // the ability's update
         stepTeleport(app);
         if (stage(app)->ability == cr::kAbilityPsychokinesis) {
