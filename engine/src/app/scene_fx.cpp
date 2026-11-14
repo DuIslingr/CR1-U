@@ -388,7 +388,14 @@ bool stepMove(App& app, App::Move& m) {
     if (m.tilt)
         if (cr::FieldNpc* n = findNpc(app, m.npc))
             for (int k = 0; k < 2; ++k) n->tilt[k] = m.tiltFrom[k] + (m.tiltTo[k] - m.tiltFrom[k]) * t;
-    setActor(app, m.npc, p, m.turn ? &yaw : nullptr, m.mode == 2);
+    if (m.npc == 0) setActor(app, m.npc, p, m.turn ? &yaw : nullptr, m.mode == 2);
+    else { // (_npc_autoctl_prc 35193-35196, every frame of a move, every mode: _get_floor(.., 10) - the y the floor's only
+        // within 20 of it (scriptFloor), else the move's own)
+        cr::Vec3 at = p;
+        float fy;
+        if (scriptFloor(app, at, 10.0f, fy)) at.y = fy;
+        setActor(app, m.npc, at, m.turn ? &yaw : nullptr, true);
+    }
     return m.t >= m.frames;
 }
 bool stepRescale(App& app, App::Rescale& r) { // (npc_autoctl_prc mode 3: the scale in a straight line)
