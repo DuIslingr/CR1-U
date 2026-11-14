@@ -455,7 +455,7 @@ bool EventRunner::step(EventHost* host) {
         case 17: case 59: { // Warp / Warp2
             uint16_t w[6];
             for (auto& x : w) x = vm.u16();
-            if (w[0] == 0xFC19) break; // return to title: not handled here
+            if (w[0] == 0xFC19) break; // -999: area 0 reloaded from its boot script (17394-17404) - its one use, j001_d01 0x5d18, sits behind flag 4007, which nothing sets (a trial build's end): not handled
             WarpRequest& r = res.warp;
             if (w[0] == 0xFFFD) {
                 WarpEntry e;
@@ -580,7 +580,11 @@ bool EventRunner::step(EventHost* host) {
             break;
         }
         case 41: case 42: if (host) host->freeCamera(op == 41); break; // CameraFree / CameraPlayer
-        case 51: { const int n = vm.resolve(vm.u16()); if (host) host->loadNpc(n); break; } // NpcMdlRead
+        case 51: { // NpcMdlRead n; -n (19121-19188): the room's NPC n read back into its slot, at its list record, hidden
+            const int16_t raw = int16_t(vm.u16());
+            if (host) host->loadNpc(raw < 0 ? raw : vm.resolve(uint16_t(raw)));
+            break;
+        }
         case 28: { // Setc npc, x, y, z, dir: place at world coordinates (dir as FrmSetc)
             const int n = vm.resolve(vm.u16());
             float v[3];

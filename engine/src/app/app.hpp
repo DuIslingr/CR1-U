@@ -987,6 +987,8 @@ struct App {
     cr::FieldWalker walker;
     bool havePlayer = false;
     float walkClock = 0;                   // movement runs in fixed 20 Hz steps like the original
+    float leaderYaw = 0;                   // the leader model's drawn yaw (slot 1's +0xd90): mdl_put turns it 1/16 turn a frame
+    bool leaderYawSet = false;             // unset: it takes the heading at once (a load, a reset, FrmSetc2 flag 0, FrmAdjc2 mode 0)
     // Between the game's frames: each field step's values at its start and its end - the leader,
     // the NPCs drawn, the script's camera, the scroll - and how far into the next step the clock is
     // (alpha). The frames drawn between steps show those values where they are by then (shown*());
@@ -1405,6 +1407,7 @@ float fieldFillZoom(const App& app);
 bool fieldViewPoint(const App& app, const cr::Vec3& p, float& vx, float& vy);
 void scrollFieldTo(App& app, float vx, float vy, float rate);
 void followPlayerScroll(App& app, float dt = 0); // dt <= 0: at once
+float drawnHeading(const App& app); // the leader's drawn yaw
 void stepFieldScroll(App& app);
 bool stepMove(App& app, App::Move& m);
 bool stepRescale(App& app, App::Rescale& r);
@@ -1762,6 +1765,7 @@ int attackSlot(const App& app, const cr::BattleTurn& t, int k, int model, int cl
 void battleVictory(App& app);
 LoadedModel* effectModel(App& app, int id);
 cr::Vec3 actorPoint(App& app, const App::Battle::Actor& a, int user);
+int effectNode(int id); // the table at 0xc7a20: the model node an effect sits on (0 none)
 void spawnEffect(App& app, int id, int fighter);
 int startEffect(App& app, std::vector<Effect>& list, int id, cr::Vec3 at, bool loop, float scale, float yaw);
 void stopEffect(std::vector<Effect>& list, int handle);

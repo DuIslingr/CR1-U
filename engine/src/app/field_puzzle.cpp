@@ -270,6 +270,15 @@ void enterMap(App& app) {
     app.placedNpcs.clear();
     app.actorSlots.clear();
     app.cam = App::ScriptCam();
+    // (_fldread_prc 37738-37763: the stage record's eye and target are the live camera's on a load - in a
+    // room without a painting the scene's camera from the start: FrmPanCam slides from it (18727-18751) and
+    // setCamera3D draws through the doubled stage view (39553-39700) before any FrmSetCam)
+    if (!app.background.id && app.haveStageCam) {
+        const cr::StageCamera& sc = app.stageCam;
+        app.cam.eye = {sc.eye[0], sc.eye[1], sc.eye[2]};
+        app.cam.target = {sc.target[0], sc.target[1], sc.target[2]};
+        app.cam.set = true;
+    }
     app.crystalCam = App::CrystalCam();
     app.scroll = App::FieldScroll();
     if (app.area < 0 || app.mapNumber < 0) return;
@@ -399,7 +408,7 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     app.walker.pos = p;
     // (__EvtWarp to the map in play writes the position alone - gac+0xd6c..0xd74 - the facing kept;
     // a load turns the leader as FieldPCCtrl::reset does: DegToRad)
-    if (reload) app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f;
+    if (reload) app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f, app.leaderYawSet = false;
     if (reload) app.loadPoint[0] = p.x, app.loadPoint[1] = p.y, app.loadPoint[2] = p.z, app.loadPoint[3] = w.angleDegrees;
     app.walker.gait = cr::Gait::Stand;
     // (lastKick as it was - the warping box's id: a box of another id where he lands kicks once the
@@ -822,6 +831,7 @@ void animateModel(App& app, float dt) { animate(app, app.model, dt); }
 // the floor (the real start point comes from the event script, which isn't interpreted yet).
 void placePlayer(App& app) {
     app.havePlayer = false;
+    app.leaderYawSet = false; // (_fldread_prc 37737: a load sets the drawn yaw)
     if (!app.showPlayer || app.collisionData.polygons.empty()) return;
     const std::string name = kPartyModels[app.playerChar];
     if (app.playerName != name || app.playerLoadedByReadMdl != app.playerByReadMdl) {
@@ -1106,8 +1116,10 @@ void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
         else yaw = travelYaw(p.x - old.x, p.z - old.z);
     }
     setActor(app, id, p, facing == Facing::Keep ? nullptr : &yaw, false);
-    if (facing == Facing::Snap)
+    if (facing == Facing::Snap) {
         if (cr::FieldNpc* n = id ? findNpc(app, id) : nullptr) n->shownSet = false; // (the model's yaw with it)
+        if (id == 0) app.leaderYawSet = false;
+    }
 }
 void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, int frames, int mode) {
     App::Move m;
@@ -1127,8 +1139,10 @@ void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, in
     } else if (facing == Facing::Snap || facing == Facing::Set) { // (FrmAdjc2 mode 0 / FrmAdjc: the rotation set before the move starts)
         const float yaw = yawDeg * kDeg;
         setActor(app, id, m.from, &yaw, true);
-        if (facing == Facing::Snap) // (FrmAdjc2 mode 0, 19367-19372: the model's drawn yaw too; FrmAdjc's turns to it)
+        if (facing == Facing::Snap) { // (FrmAdjc2 mode 0, 19367-19372 / 19351-19353: the model's drawn yaw too; FrmAdjc's turns to it)
             if (cr::FieldNpc* n = id ? findNpc(app, id) : nullptr) n->shownSet = false;
+            if (id == 0) app.leaderYawSet = false;
+        }
     }
     app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }),
                     app.moves.end());
@@ -1251,6 +1265,17 @@ void ViewerHost::loadParty(int pair, bool clearData) { // Uty_LoadPrty: prty_ini
     if (pair >= 1 && pair <= 4) newPairParty(app, pair, clearData);
 }
 void ViewerHost::loadNpc(int id) {
+    if (id < 0) { // (__EvtNpcMdlRead -n: an NPC npc_setup left unread - its create flags failed - read now, placed at
+                  // its record with the drawn yaw set, hidden (+0x8c bit 0) at alpha 0 until a Born / the crystal camera)
+        cr::FieldNpc* n = findNpc(app, -id);
+        if (!n) return;
+        if (n->model >= 0) n->mdlRead = true;
+        n->shownSet = false;
+        stopNpcAuto(-id);
+        app.npcShown[-id] = false;
+        buildNpcDraws(app);
+        return;
+    }
     if (cr::FieldNpc* had = findNpc(app, id)) { // (+0x98: the standing push leaves it out)
         if (had->model >= 0) had->mdlRead = true;
         had->shownSet = false; // (19179: the model's drawn yaw = its yaw)
@@ -1302,14 +1327,12 @@ void ViewerHost::panCamera(const float* d, int frames) {
     if (scrollingField(app)) { // FrmPanCam's 2D path: twice the deltas on the iPad
         if (app.cam.free) { // (from GetScroll's value: past the painting's edge, as the script left it)
             const App::FieldScroll& fs = app.scroll;
-            const float x = fs.scripted ? (fs.sliding ? fs.toX : fs.curX) : fs.offX;
-            const float y = fs.scripted ? (fs.sliding ? fs.toY : fs.curY) : fs.offY;
-            // Two shots the binary moves by hand: route 3's 0, 300 on map 86 goes 48 less far, route
-            // 2's 265, 0 on map 23 18 less
-            const int route = std::clamp(app.playerChar / 2, 0, 3);
-            float dx = d[0], dy = d[1];
-            if (route == 3 && app.mapNumber == 86 && dy == 300) dy -= 48;
-            if (route == 2 && app.mapNumber == 23 && dx == 265) dx -= 18;
+            // (GetScroll as it is now - mid-slide too: FUN_00055234 writes it each frame (53283-53320), PanCam
+            // reads it, asm 0x22b84-0x22c1c. 1.0.1's two hand nudges - route 3's 300 on map 86, route 2's 265
+            // on map 23 - are gone in 2.2.0)
+            const float x = fs.scripted ? fs.curX : fs.offX;
+            const float y = fs.scripted ? fs.curY : fs.offY;
+            const float dx = d[0], dy = d[1];
             // (GetScroll's x is the painting's offset, as this scroll's is, but its y the camera's - + y
             // up -, this one's the other way: d01's 0, 400 then 0, -400 over 200 frames starts high and
             // pans down to the player, as the reference video shows, and d02's 265 brings the two on the
@@ -1431,6 +1454,45 @@ void ViewerHost::warpCrystalCamera(int npc) { // SetFreeCamera, then the camera 
     app.cam.free = true;
 }
 void ViewerHost::sceneEffect(bool on, int id) { setSceneEffect(app, on, id); }
+// A field actor's node `user` (a model record's user id) as its model stands now - the leader (0) or an NPC
+// drawn; false without the node (eff3d_set 61393-61411: _btlcamera_getpos on the node table's entry)
+static bool fieldActorPoint(App& app, int actor, int user, cr::Vec3& out) {
+    if (user <= 0) return false;
+    LoadedModel* lm = nullptr;
+    cr::Mat4 world;
+    int action = -1;
+    float time = 0;
+    const cr::MotionBlend* blend = nullptr;
+    if (actor == 0) {
+        if (!app.havePlayer) return false;
+        lm = &app.player, world = playerWorld(shownWalker(app)), action = app.player.action, time = app.player.time, blend = &app.player.blend;
+    } else
+        for (App::NpcDraw& d : app.npcDraws)
+            if (d.id == actor) {
+                auto it = app.npcModels.find(d.model);
+                if (it == app.npcModels.end()) return false;
+                lm = &it->second, world = d.world, action = d.action, time = d.time, blend = &d.blend;
+                break;
+            }
+    if (!lm || lm->cpu.skeleton.nodes.empty()) return false;
+    const cr::Model& m = lm->cpu;
+    int node = -1;
+    for (const auto& t : m.records)
+        if (t.user == user)
+            for (const auto& [obj, n] : m.objectNodes)
+                if (obj == t.id) node = n;
+    if (node < 0) return false;
+    std::vector<cr::Mat4> pose;
+    const cr::Action* act = action >= 0 && action < int(lm->actions.size()) ? &lm->actions[size_t(action)] : nullptr;
+    poseWorld(m.skeleton, lm->actions, act, time, *blend, pose);
+    if (node >= int(pose.size())) return false;
+    const float* n = pose[size_t(node)].m;
+    const float* w = world.m;
+    out = {w[0] * n[12] + w[4] * n[13] + w[8] * n[14] + w[12], w[1] * n[12] + w[5] * n[13] + w[9] * n[14] + w[13],
+           w[2] * n[12] + w[6] * n[13] + w[10] * n[14] + w[14]};
+    return true;
+}
+
 void ViewerHost::frameEffect(int actor, int effect, int scale, const float* v, bool angled) {
     ++app.frameEffectCalls;
     cr::Vec3 p;
@@ -1439,7 +1501,10 @@ void ViewerHost::frameEffect(int actor, int effect, int scale, const float* v, b
                     angled ? " angled" : "", v ? v[0] : 0.0f, v ? v[1] : 0.0f, v ? v[2] : 0.0f, v ? v[3] : 0.0f, v ? v[4] : 0.0f,
                     v ? v[5] : 0.0f);
     float pitch = 0, roll = 0;
-    if (!actorPos(app, actor, p)) { // not an NPC: where the scene's record has it
+    // (an actor's at its model's node for this effect - 1101 the body, 1102 the head, 1003 the root - as
+    // eff3d_set puts it; its feet without the node)
+    if (actorPos(app, actor, p)) fieldActorPoint(app, actor, effectNode(effect), p);
+    else { // not an NPC: where the scene's record has it
         if (!v) return;
         p = {v[0], v[1], v[2]};
         // FrmPlayEff2 (eff3d_set_with_pos_and_ang) takes its angles too: X and Z stand; the Y
@@ -3076,7 +3141,9 @@ void step(App& app) {
         if (app.puzzle.stage == stageNo) { // FieldPCCtrl::reset: where and how it came in, standing
             setActor(app, 0, start, &heading, false);
             app.walker.gait = cr::Gait::Stand;
-            app.puzzle.leaderWas = start; // (FieldCamera::setScrollPlayer(1.0): followPlayerScroll's rate is 1.0 already)
+            app.leaderYawSet = false; // (FieldPCCtrl::reset 40940-40942: the drawn yaw too)
+            app.scroll.followed = false; // (FieldCamera::setScrollPlayer(1.0): the view there at once)
+            app.puzzle.leaderWas = start;
         }
         app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0; // (_SetMask(1), 500 ms)
         app.puzzle.scene = 3;
@@ -3187,12 +3254,14 @@ void stepCrystalCam(App& app) {
     const bool settled = std::fabs(app.scroll.offX - ox) <= still && std::fabs(app.scroll.offY - oy) <= still;
     if (!settled) return;
     if (cc.phase == 0 && app.game.vars[0] == 0) { // there: the crystal comes
+        // (_Uty_WarpCrystalCamera_Proc 0x25d18: any NPC call 2014 named - npc_born, mdl_set_alpha 0 -> 0xff over
+        // 4 frames, eff3d_set_fld 4, SE 0x2a; a puzzle object's own state as well; j001_d05's 5 / 17 / 25 aren't)
+        bool object = false;
         for (App::Puzzle::Obj& o : app.puzzle.objs)
-            if (o.npc == index) {
-                show(app, o, true);
-                npcEffect(app, 4, o.npc);
-                fade(app, o.npc, 0, 1, 4);
-            }
+            if (o.npc == index) show(app, o, true), object = true;
+        if (!object) ViewerHost(app).showNpc(cc.npc, true);
+        npcEffect(app, 4, index);
+        fade(app, index, 0, 1, 4);
         app.sound.play(0x2a);
         app.game.vars[0] = 1;
     } else if (cc.phase == 0 && app.game.vars[0] == 2) cc.phase = 1;
@@ -3527,7 +3596,7 @@ void playFootsteps(App& app) {
 // A field step's start and end (App::Between): what the step moves, recorded on either side of it
 void betweenRecord(App& app, int side) {
     App::Between& b = app.between;
-    b.walker[side] = app.walker.pos, b.heading[side] = app.walker.heading, b.playerAlpha[side] = app.playerAlpha;
+    b.walker[side] = app.walker.pos, b.heading[side] = drawnHeading(app), b.playerAlpha[side] = app.playerAlpha;
     b.eye[side] = app.cam.eye, b.target[side] = app.cam.target;
     b.scroll[side][0] = app.scroll.offX, b.scroll[side][1] = app.scroll.offY;
     if (side == 0) {
@@ -3575,8 +3644,21 @@ float lerpAngle(float a, float b, float k) {
 
 // The leader as a frame between steps shows it (a step's warp - further than it can walk - is
 // shown at once)
+float drawnHeading(const App& app) { return app.leaderYawSet ? app.leaderYaw : app.walker.heading; }
+
+// mdl_put's turn for the leader (slot 1: +0xd7c the heading FieldPCCtrl::operate writes, +0xd90 the drawn
+// yaw nothing copies - 40810-40820): 1/16 turn a field frame the short way round, after the frame's move
+static void stepLeaderTurn(App& app) {
+    if (app.battle.active || !app.havePlayer) return;
+    constexpr float kTurn = 6.28318531f, kStep = kTurn / 16.0f;
+    if (!app.leaderYawSet) { app.leaderYaw = app.walker.heading, app.leaderYawSet = true; return; }
+    const float d = std::remainder(app.walker.heading - app.leaderYaw, kTurn);
+    app.leaderYaw = std::fabs(d) <= kStep ? app.walker.heading : app.leaderYaw + (d > 0 ? kStep : -kStep);
+}
+
 cr::FieldWalker shownWalker(const App& app) {
     cr::FieldWalker w = app.walker;
+    w.heading = drawnHeading(app);
     const App::Between& b = app.between;
     if (!b.valid || !same(w.pos, b.walker[1]) || w.heading != b.heading[1]) return w;
     const cr::Vec3 d = b.walker[1] - b.walker[0];
@@ -3677,6 +3759,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
     while (app.walkClock >= kStep) {
         app.walkClock -= kStep;
         BetweenStep between(app);
+        struct LeaderTurn { App& a; ~LeaderTurn() { stepLeaderTurn(a); } } leaderTurn{app}; // (after the move, before the step's record)
         stepEvents(app);
         if (app.battle.active) break;
         if (!app.havePlayer) continue;
@@ -3693,11 +3776,13 @@ void updatePlayer(App& app, float dt, float camYaw) {
         const float walkedDist = cr::stepWalker(app.walker, app.collisionData, bodies, sx, sy, run, camYaw, !app.runner.running());
         if (sx == 0 && sy == 0) // FieldPCCtrl::operate's state 3 (FollowWindow::update's receiveMessage 3): standing in reach,
             if (const cr::FieldNpc* n = interactTarget(app)) { // the leader turns to the target by 0.35 of the angle left each frame
-                const float cx = n->boxCenterX(), cz = n->boxCenterZ();
-                float d = std::atan2(cx - app.walker.pos.x, cz - app.walker.pos.z) - app.walker.heading;
+                // (from the drawn yaw, both written: 2.2.0 0x433a0-0x43418)
+                const float cx = n->boxCenterX(), cz = n->boxCenterZ(), from = drawnHeading(app);
+                float d = std::atan2(cx - app.walker.pos.x, cz - app.walker.pos.z) - from;
                 while (d > 3.14159265f) d -= 2 * 3.14159265f;
                 while (d < -3.14159265f) d += 2 * 3.14159265f;
-                app.walker.heading += 0.35f * d;
+                app.walker.heading = app.leaderYaw = from + 0.35f * d;
+                app.leaderYawSet = true;
             }
         if (walkedDist >= 0) fieldWalked(app, walkedDist); // fldencount_walk(|velocity + pushes|)
         stepExamineWindows(app);
