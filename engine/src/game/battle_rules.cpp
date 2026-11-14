@@ -892,7 +892,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 break;
             }
             case 9: h.amount = std::max(0, tx.hp - 1); break; // 0414: down to 1
-            case 10: { // 0415: the purse loses power% (at least 1)
+            case 10: { // 0415: the purse loses power% (at least 1) - on the first target slot only (22644: param_3 == 0;
+                       // a pair's single target is both members, robbed once)
+                if (t != hitList.front()) { h.type = kHitQuiet; out.hits.push_back(h); continue; }
                 int take = purse > 0 ? std::max(1, a->power * purse / 100) : 0;
                 take = std::min(take, purse);
                 purse -= take;
@@ -946,7 +948,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             }
             case 19: // 0424: back on its feet with half (all, holding the Break) its HP
                 if (tx.hp > 0) { h.type = kHitQuiet; out.hits.push_back(h); continue; }
-                h.amount = -std::min(tx.hpMax, recovery(tx.hpMax * (holdsBreak(t) ? 100 : 50) / 100));
+                // (the figure is what _btlcalc_dmg_hp was asked for, 23748-23786 - 2 x the most with 155 holding the
+                // Break; the HP itself stops at the most)
+                h.amount = -recovery(tx.hpMax * (holdsBreak(t) ? 100 : 50) / 100);
                 h.revived = true;
                 break;
             case 22: case 23: // 042700 poison cured / 042701 every status (and the element) gone
