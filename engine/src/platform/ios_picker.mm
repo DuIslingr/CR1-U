@@ -81,7 +81,9 @@ extern "C" void CR_IosPickDocuments(SDL_DialogFileCallback callback, void* userd
         UIDocumentPickerViewController* picker =
             [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[ folder ? UTTypeFolder : UTTypeItem ] asCopy:NO];
         picker.allowsMultipleSelection = allowMany && !folder;
-        picker.modalPresentationStyle = UIModalPresentationFormSheet;
+        // (the whole screen in use: a form sheet is an iPad's card - on a large phone, a foldable's inner screen,
+        // it stayed a card of its own size; full screen follows the window as the device folds or opens)
+        picker.modalPresentationStyle = UIModalPresentationFullScreen;
         CRDocumentPicker* d = [CRDocumentPicker new];
         d.callback = callback;
         d.userdata = userdata;
@@ -91,6 +93,8 @@ extern "C" void CR_IosPickDocuments(SDL_DialogFileCallback callback, void* userd
         if (!top) { // (the first start's setup: before the game's window - one to present it from)
             UIWindowScene* scene = activeScene();
             UIWindow* w = scene ? [[UIWindow alloc] initWithWindowScene:scene] : [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+            if (scene) w.frame = scene.coordinateSpace.bounds; // (the scene's size - the screen in use -, resized with it)
+            w.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             w.rootViewController = [UIViewController new];
             w.windowLevel = UIWindowLevelAlert;
             [w makeKeyAndVisible];
