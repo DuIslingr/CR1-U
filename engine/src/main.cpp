@@ -403,6 +403,7 @@ void consumeInputCancel(App& app) {
     app.dragging = app.optionsBarDrag = false;
     app.campPointer = App::CampPointer();
     app.manualPointer = App::ManualPointer();
+    app.optionsGauge = App::OptGauge();
     app.press = App::Press();
     app.touchPad = App::TouchPad();
     app.tapPending = false;
@@ -1317,7 +1318,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         if (event->button.button == SDL_BUTTON_LEFT && app.fingers.mouseHeld)
             app.fingers.mouseHeld = false, app.fingers.held = std::max(0, app.fingers.held - 1);
         holdSkip(app, kSkipPointer, false); // the finger off the skip corner
-        if (app.pointerCancelled) { app.press = App::Press(), app.manualPointer = App::ManualPointer(); break; } // cancellation is not a click or a puzzle release
+        if (app.pointerCancelled) { // cancellation is not a click or a puzzle release
+            app.press = App::Press(), app.manualPointer = App::ManualPointer(), app.optionsGauge = App::OptGauge();
+            break;
+        }
         if (app.manualPointer.down) { // the manual's list: a tap as it lifts, else the drag's end
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1371,6 +1375,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             SDL_GetWindowSize(app.window, &ww, &wh);
             app.press.px = event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f);
             app.press.py = event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f);
+            if (app.press.screen == kPressOptions && app.optionsOpen) optionsPointerMove(app, app.press.px, app.press.py); // (a gauge held)
         }
         if (app.mode == Mode::Maps && app.puzzle.pkHeld && (event->motion.state & SDL_BUTTON_LMASK)) {
             int ww = 0, wh = 0; // the held block's touch: the detector follows it

@@ -4270,9 +4270,44 @@ int runSelfTest(App& app) {
                 lift(300, kOptBackY + 12);
                 touch += !app.optionsOpen;
             }
+            if (touch == 7) { // a gauge (FUN_000493b4): held, the knob follows the finger in steps of 10 and nothing is
+                // set; let go (or slid out of its box) the volume is written and sounded (__MuOptionSetInfo: SE 0x28)
+                openOptions(app, 1); // Sound: Master, BGM, Sound Effects, Voice
+                const int keepFx = app.mix.effects;
+                app.mix.effects = 80;
+                const float y = optRowY(2 - app.optionsScroll) + 16;
+                press(optCtrlX(299), y); // (design 299: trunc(85 x 0.4951 - 10) = 32 -> 30)
+                touch += app.mix.effects == 80 && app.optionsGauge.gauge == &app.mix.effects && app.optionsGauge.shown == 30;
+                float px, py;
+                toFrame(optCtrlX(395), y, px, py); // (181 -> 79 -> 70)
+                app.press.px = px, app.press.py = py;
+                optionsPointerMove(app, px, py);
+                touch += app.mix.effects == 80 && app.optionsGauge.shown == 70;
+                lift(optCtrlX(395), y);
+                touch += app.mix.effects == 70 && !app.optionsGauge.gauge;
+                press(optCtrlX(299), y);
+                toFrame(optCtrlX(299), y + 60, px, py); // (out of its box: let go there and then)
+                optionsPointerMove(app, px, py);
+                touch += app.mix.effects == 30 && !app.optionsGauge.gauge;
+                app.press = App::Press();
+                // the fill (ComUty_SideGuageDraw 45583-45592): the knob at once, the fill from the old knob over 10 frames
+                app.mix.effects = 100;
+                stepOptions(app);
+                app.optionsRow = 2;
+                optionsKey(app, SDLK_LEFT); // 90
+                stepOptions(app);
+                const int at0 = optionsFillAt(app, &app.mix.effects, 90); // (203: 100's knob)
+                for (int f = 0; f < 5; ++f) stepOptions(app);
+                const int at5 = optionsFillAt(app, &app.mix.effects, 90); // (203 - trunc(21 / 10) x 5)
+                for (int f = 0; f < 5; ++f) stepOptions(app);
+                touch += at0 == 203 && at5 == 193 && optionsFillAt(app, &app.mix.effects, 90) == -1;
+                if (at0 != 203 || at5 != 193) std::printf("  options: the gauge's fill %d, %d (want 203, 193)\n", at0, at5);
+                app.mix.effects = keepFx;
+                applyMix(app);
+            }
             app.pointerLast = keepPointer;
-            if (touch != 7) std::printf("  options: touch NOT as _pad_chk_updw_box's (%d/7)\n", touch);
-            problems += (touch != 7) + expectSounds("options touch", {1, 2, 2, 3});
+            if (touch != 12) std::printf("  options: touch NOT as _pad_chk_updw_box's (%d/12)\n", touch);
+            problems += (touch != 12) + expectSounds("options touch", {1, 2, 2, 3, 40, 40, 40});
             app.optionsOpen = false;
         }
         openOptions(app, 0);         // Game: Language

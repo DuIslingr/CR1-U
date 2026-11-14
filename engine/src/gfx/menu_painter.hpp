@@ -85,7 +85,8 @@ public:
     void plate(float x, float y, int icon, int word, bool selected, float alpha, bool dimmed,
                const std::string& text = std::string());
     // ComUty_SideGuageDraw: the track at (x, y), the fill and knob for `value` 0..100
-    void gauge(float x, float y, int value, float alpha, bool highlight);
+    // (fillAt: the fill's end as the knob's offset from x + 11 - SideGuageDraw's slide, 45583-45592; -1 the knob's)
+    void gauge(float x, float y, int value, float alpha, bool highlight, int fillAt = -1);
     // ComUty_CmdBack type 2: the Back bar at (x, y), `pressed` lights it, `bob` 0..5 moves the arrows
     void backButton(float x, float y, int pressed, int bob, float alpha); // pressed: 0 none, 1 Back, 2 right, 3 left
     // ComUty_CmdBack type 1 (the shop's): a plain 232-wide bar, white fading in over 24 at each end,

@@ -191,7 +191,7 @@ void MenuPainter::plate(float x, float y, int icon, int word, bool selected, flo
     else if (!text.empty()) textCentred(text, x + 40 + (88 - textWidth(text, 15)) / 2, y + 20, true, a, 15);
 }
 
-void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight) {
+void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight, int fillAt) {
     value = std::clamp(value, 0, 100);
     picture(103, x, y, alpha);
     for (int k = 0; k < 24; ++k) picture(105, x + 20 + 8 * k, y, alpha);
@@ -201,7 +201,7 @@ void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight
     // The fill (0xFFFF0000: tex2d's A B G R - blue, as Omega's Part 8 4927.3 s shows) up to the knob at 235 + value x 2.03 (SideGuageInit; menus
     // place gauges at x 224, so it is x + 11 + ...)
     const float knob = x + 11 + std::floor(value * 2.03f);
-    const float fill = knob - (x + 14);
+    const float fill = (fillAt >= 0 ? x + 11 + float(fillAt) : knob) - (x + 14);
     const float red[4] = {0, 0, 1, alpha}; // (named for the old reading)
     if (fill > 0) {
         quad(x + 13, y + 6, 1, 2, red, red);

@@ -221,6 +221,13 @@ struct App {
     bool optionsBarDrag = false;           // the scroll bar's thumb held
     int optionsAnim = 0;                   // frames since the page appeared (windows slide in)
     int optionsBob = 0, optionsBobDir = 1; // ComUty_CmdBack's arrows
+    // A gauge a touch holds (FUN_000493b4: ComUty_PadChkMove's 3 - the knob follows the finger in steps of 10; let go
+    // or slid out of its box, 2 - __MuOptionSetInfo writes the volume and sounds it): its setting, row and the value shown
+    struct OptGauge { int* gauge = nullptr; int row = -1, shown = 0, sound = -1; } optionsGauge;
+    // ComUty_SideGuageDraw's fill (+0x14 the knob, +0x1c a count of 10, +0x20 the old knob): the knob moves at once, the
+    // blue fill slides from the old knob to the new over 10 frames
+    struct GaugeFill { const int* gauge = nullptr; int to = 0, from = 0, count = 0; };
+    std::vector<GaugeFill> optionsFills;
     float optionsClock = 0;
     bool environmentEffects = true;        // the original's Environment Effects (weather; stored)
     bool lockLandscapeFlipped = false; // the landscape direction retained by the orientation lock
@@ -1534,6 +1541,9 @@ void resetAnswer(App& app, bool yes, bool cancelled = false);
 void optionsKey(App& app, SDL_Keycode key);
 int optionsBackPart(float mx, float my);
 bool optionsPointerDown(App& app, float px, float py);
+void optionsPointerMove(App& app, float px, float py);
+int optionsGaugeAt(float design);
+int optionsFillAt(const App& app, const int* gauge, int value);
 float optRowY(int i);
 float optCtrlX(float x);
 bool optionsHeld(const App& app, float x0, float y0, float x1, float y1);

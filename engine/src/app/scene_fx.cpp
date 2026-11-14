@@ -1247,7 +1247,11 @@ void drawOptions(App& app, float, float) {
         auto held = [&](float x0, float x1) { return row.enabled && optionsHeld(app, optCtrlX(x0), y - 4, optCtrlX(x1), y + 28); };
         switch (row.kind) {
         case OptControl::Check: m.button(cx + 120, y - 8, 23, "", false, dim, (cursor && row.enabled) || held(344, 456)); break;
-        case OptControl::Gauge: m.gauge(cx, y + 4, row.value, ac, cursor); break;
+        case OptControl::Gauge: { // (held: the knob where the finger is; the fill sliding to it)
+            const int v = app.optionsGauge.gauge && app.optionsGauge.gauge == row.gauge ? app.optionsGauge.shown : row.value;
+            m.gauge(cx, y + 4, v, ac, cursor, optionsFillAt(app, row.gauge, v));
+            break;
+        }
         case OptControl::Pair:
             for (int k = 0; k < 2; ++k)
                 m.button(cx + 120 * k, y - 8, row.words[k], row.texts[k], row.selected == k, ac, false);
@@ -1331,6 +1335,17 @@ void stepOptions(App& app) {
     if (!app.optionsOpen) return;
     if (optionsAbout(app)) { app.optionsAnim = 0; return; } // (the page slides in once "Option" has shut)
     ++app.optionsAnim;
+    // ComUty_SideGuageDraw (45583-45592): a gauge's value changed - the knob there at once, the fill from the old knob
+    // over 10 frames (FUN_000493b4 sets +0x1c to 10 and +0x20 to the old knob; the draw counts it down)
+    for (App::GaugeFill& f : app.optionsFills)
+        if (f.count > 0) --f.count;
+    for (const OptRow& row : optionRows(app, app.optionsPage)) {
+        if (row.kind != OptControl::Gauge || !row.gauge) continue;
+        const int v = app.optionsGauge.gauge == row.gauge ? app.optionsGauge.shown : *row.gauge;
+        auto it = std::find_if(app.optionsFills.begin(), app.optionsFills.end(), [&](const App::GaugeFill& f) { return f.gauge == row.gauge; });
+        if (it == app.optionsFills.end()) app.optionsFills.push_back({row.gauge, v, v, 0});
+        else if (it->to != v) it->from = it->to, it->to = v, it->count = 10;
+    }
     app.optionsBob += app.optionsBobDir;
     if (app.optionsBob >= 5 || app.optionsBob <= 0) app.optionsBobDir = -app.optionsBobDir;
 }
@@ -1436,6 +1451,52 @@ int optionsBackPart(float mx, float my) {
     return mx >= 0xf8 && mx < 0xf8 + 0x78 ? 0 : 3;
 }
 
+// FUN_000493b4 (45333-45360): the value under the finger - x kept to 235..438, trunc(trunc(x - 224 + 10) x 0.4951 - 10),
+// in steps of 10, 0..100 (design units: the gauge at x 224, as SideGuageInit's 0xe0)
+int optionsGaugeAt(float design) {
+    const float x = std::clamp(design, 235.0f, 438.0f);
+    const int v = int(float(int(x - 224 + 10)) * 0.4950980f - 10);
+    return std::clamp(v / 10 * 10, 0, 100);
+}
+// The knob's offset from x + 11 the fill reaches now (SideGuageDraw: the old knob less a tenth of the way a frame -
+// trunc((old - new) / 10) x (10 - count) - then the new); -1 the knob's own
+int optionsFillAt(const App& app, const int* gauge, int value) {
+    for (const App::GaugeFill& f : app.optionsFills)
+        if (f.gauge == gauge && f.count > 0 && f.to == value) {
+            const int from = int(float(f.from) * 2.03f), to = int(float(f.to) * 2.03f);
+            return from - int(float(from - to) / 10.0f) * (10 - f.count);
+        }
+    return -1;
+}
+// A gauge's box (ComUty_PadChkMove(x + 10, y - 5, w + 11, h): 234..449 x the gauge's y - 5 .. + 25, SideGuageInit's
+// 0xcc x 0x1e) on row `i` shown, in menu units
+bool optionsGaugeBox(const App& app, int i, float mx, float my) {
+    const float y = optRowY(i - app.optionsScroll), mid = y + 12, gy = y + 4; // (scaled about the bar's middle)
+    const float top = mid + (gy - 5 - mid) * kOptCtrlScale, bottom = mid + (gy + 25 - mid) * kOptCtrlScale;
+    return mx >= optCtrlX(234) && mx < optCtrlX(449) && my >= top && my < bottom;
+}
+// Let go (or slid out of its box): __MuOptionSetInfo (71079-71113) - the volume written, the Sound Effects' gauge SE
+// 0x28, the Voice's voice 0x200075, every time (changed or not); the BGM's silent
+void optionsGaugeLet(App& app) {
+    App::OptGauge g = app.optionsGauge;
+    app.optionsGauge = App::OptGauge();
+    if (!g.gauge) return;
+    *g.gauge = g.shown;
+    applyMix(app);
+    saveMix(app);
+    if (g.sound >= 0) menuSound(app, uint32_t(g.sound));
+    if (g.gauge == &app.mix.voice && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
+}
+// The held touch moving: a held gauge's knob follows it, in steps of 10, until it leaves the box (then let go)
+void optionsPointerMove(App& app, float px, float py) {
+    if (!app.optionsGauge.gauge) return;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointFit(app, lx, ly, mx, my);
+    if (!optionsGaugeBox(app, app.optionsGauge.row, mx, my)) { optionsGaugeLet(app); return; }
+    app.optionsGauge.shown = optionsGaugeAt(kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale);
+}
+
 // A touch going down at frame pixel (px, py): what 2.2.0 takes on the press - page 2's On / Off
 // (pad_chk_trg_down_box, OptionPrc 7 70625) and the port's own pairs with them, a gauge (FUN_000493b4, held) and the
 // port's scroll bar; anything else is held and runs as it lifts there (optionsClick). False: taken here
@@ -1468,18 +1529,11 @@ bool optionsPointerDown(App& app, float px, float py) {
             if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
             return false;
         }
-        if (r.kind == OptControl::Gauge && inX(224, 444)) {
+        if (r.kind == OptControl::Gauge && optionsGaugeBox(app, i, mx, my)) { // held: set as it is let go (optionsClick)
             app.optionsRow = i;
             if (!r.enabled || !r.gauge) return false;
-            const float design = kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale; // back to design units
-            // (FUN_000493b4 45333-45345: trunc(((x - 214) x 0.4956 - 10) / 10) x 10 - truncated, steps of 10)
-            *r.gauge = std::clamp(int(((design - 214) * 0.4956f - 10) / 10) * 10, 0, 100);
-            applyMix(app);
-            saveMix(app);
-            if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
-            // (__MuOptionSetInfo 71108-71113: the voice gauge speaks on every release, changed or not)
-            if (r.gauge == &app.mix.voice && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
-            return false;
+            app.optionsGauge = App::OptGauge{r.gauge, i, optionsGaugeAt(kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale), r.sound};
+            return true;
         }
         return true;
     }
@@ -1489,6 +1543,11 @@ bool optionsPointerDown(App& app, float px, float py) {
 // A touch lifting at frame pixel (px, py) where it went down on Options (_pad_chk_updw_box's trg: OptionPrc 5 / 7's
 // buttons, __ComUty_BackButtonProc type 2, ComUty_YesNoChoiceProc): menu units, then the control there
 void optionsClick(App& app, float px, float py) {
+    if (app.optionsGauge.gauge) { // (a gauge let go: where the finger left it)
+        optionsPointerMove(app, px, py);
+        optionsGaugeLet(app);
+        return;
+    }
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
@@ -1528,7 +1587,8 @@ void optionsClick(App& app, float px, float py) {
         if (my < y - 4 || my >= y + 28) continue;
         auto inX = [&](float x0, float x1) { return mx >= optCtrlX(x0) && mx < optCtrlX(x1); };
         // (the pairs and gauges took the press: optionsPointerDown)
-        if ((r.kind == OptControl::Pair && (inX(224, 336) || inX(344, 456))) || (r.kind == OptControl::Gauge && inX(224, 444))) return;
+        if ((r.kind == OptControl::Pair && (inX(224, 336) || inX(344, 456))) || (r.kind == OptControl::Gauge && optionsGaugeBox(app, i, mx, my)))
+            return;
         app.optionsRow = i;
         if (!r.enabled || !r.act) return;
         int dir = 2; // the control hit: -1 / 0 / +1, or 2 for the row's label (just moves the cursor)
