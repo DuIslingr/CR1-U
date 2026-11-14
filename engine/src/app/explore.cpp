@@ -7991,6 +7991,7 @@ int runExplore(App& app, int maxActions) {
         if (it == plates.end()) return false;
         saveScreenChoose(app, int(it - plates.begin()));
         saveScreenYes(app);
+        for (int f = 0; f < 25 && app.saveScreen.startAfter; ++f) stepSaveScreen(app); // ("Load complete." first: the last battle / clear-data New start after it)
         std::printf("     title: pair %d, %s\n", pair, lastBattle ? "the last battle" : app.saveScreen.kind == 3 ? "new game with the clear data" : "new game");
         return true;
     };
