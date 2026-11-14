@@ -1891,16 +1891,19 @@ void drawFrontFade(App& app) {
 }
 
 // One 20 Hz frame of the running script and of the things it set going.
-// Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e), one
-// after another; a new page's line replaces one still playing.
+// Voiced builds: a page's clips start when the page is shown (PrcMsg reaching code 0x1e - in 2.2.0's text always at a
+// page's start), one after another; a new page's line replaces one still playing.
 // The taps that turn a page (0x12) or close the window (0; not a 0x13 / 0x14 end) cut the line (__voicego(0x20100000)) - unless
-// the page said 0x1e 0xffff (G+0x337f0), which keeps it over that one tap; a page's clip waits for a kept
-// one to finish (0x1e: _voice_evnt_is_playing)
+// the page said 0x1e 0xffff (G+0x337f0), which keeps it over that one tap. A page's 0x1e met while the line's slot is
+// busy (_voice_evnt_is_playing: a kept line, one cut in its first 4 frames, or the two frames after one stopped)
+// returns from PrcMsg (25455-25457): the page's text waits with its clip (voiceHold, stepTyping's). Run as a page
+// is shown or turned, by the typing and once a frame after it; idempotent
 void updateVoices(App& app) {
     if (app.dialogue.empty()) {
         app.voiceQueue.clear(); // a closed/replaced scene cannot restart its remaining clips
+        app.voiceHold = false;
         if (app.voicedPage >= 0 && app.sound.hasVoices()) { // the closing tap
-            if (!app.voiceKeep && !app.voiceCloseKeeps) app.sound.stopLine();
+            if (!app.voiceKeep && !app.voiceCloseKeeps) cutVoiceLine(app);
             app.voiceKeep = false, app.voicedPage = -1;
         }
         app.voiceCloseKeeps = false;
@@ -1913,27 +1916,54 @@ void updateVoices(App& app) {
         app.voicedSerial = app.dialogueSerial;
         app.voicedPage = page;
         app.voiceQueue.clear();
+        app.voiceHold = false;
         const bool kept = app.voiceKeep;
-        if (!kept) app.sound.stopLine(); // an unvoiced page replaces the previous page too (a kept clip goes on)
+        if (!kept) cutVoiceLine(app); // an unvoiced page replaces the previous page too (a kept clip goes on)
         app.voiceKeep = false;
         if (page < int(app.dialogueVoices.size()) && !app.dialogueVoices[page].empty()) {
-            std::vector<int> clips;
             for (int c : app.dialogueVoices[page])
                 if (c < 0) app.voiceKeep = true; // the page's 0x1e 0xffff
-                else clips.push_back(c);
-            if (!clips.empty() && kept && app.sound.linePlaying()) app.voiceQueue = clips; // (after the kept one)
-            else if (!clips.empty()) {
-                app.sound.playLine(clips[0]);
-                ++app.voicesPlayed;
-                app.voiceQueue.assign(clips.begin() + 1, clips.end());
-            }
+                else app.voiceQueue.push_back(c);
+            app.voiceHold = !app.voiceQueue.empty(); // (its 0x1e first: the text after it)
         }
     }
-    if (!app.voiceQueue.empty() && !app.sound.linePlaying()) {
-        app.sound.playLine(app.voiceQueue.front());
-        ++app.voicesPlayed;
+    // (the page's first clip is stepTyping's - its 0x1e before the text -, the others follow it once the slot is free)
+    if (!app.voiceHold && !app.voiceQueue.empty() && !app.voiceLine.busy) {
+        startVoiceLine(app, app.voiceQueue.front());
         app.voiceQueue.erase(app.voiceQueue.begin());
     }
+}
+
+// __voicego(clip | 0x100000) -> __voiceplay (3820-3838): a slot of its own (none with the voice option at 0), busy at
+// once, its first-4-frames count (+0x31) and its tail (+0x30 = 2) set
+void startVoiceLine(App& app, int clip) {
+    ++app.voicesPlayed;
+    if (app.mix.voice <= 0) return;
+    app.sound.playLine(clip);
+    app.voiceLine = App::VoiceLine();
+    if (!app.sound.linePlaying()) return;
+    app.voiceLine.busy = true, app.voiceLine.first = 4, app.voiceLine.tail = 2;
+}
+
+// __voicego(0x20100000) -> __effstop (3662-3700): a line in its first 4 frames is marked to stop once they are over
+// (+0x32), any other stops now - its slot still busy until _sound_effprc has seen it stopped (tickVoiceLine)
+void cutVoiceLine(App& app) {
+    App::VoiceLine& l = app.voiceLine;
+    if (!l.busy) { app.sound.stopLine(); return; } // (one started by hand: the sound test, tests)
+    if (l.first > 0) l.cutLater = true;
+    else app.sound.stopLine();
+}
+
+// _sound_effprc (3551-3620), once a frame after the frame's prc: the first-4-frames count down; a playing line marked
+// to stop stops once it is 0; a stopped one (or one at its end) counts its tail down, then the slot is free
+void tickVoiceLine(App& app) {
+    App::VoiceLine& l = app.voiceLine;
+    if (!l.busy) return;
+    if (l.first > 0) --l.first;
+    if (app.sound.linePlaying()) {
+        if (l.cutLater && l.first == 0) l.cutLater = false, app.sound.stopLine();
+    } else if (l.tail > 0) --l.tail;
+    else l.busy = false;
 }
 
 // Pieces of window_hd.mct (2048 x 2048), measured from its alpha

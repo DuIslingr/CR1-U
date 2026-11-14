@@ -3144,51 +3144,88 @@ int sceneAudioSelfTest(App& app) {
         }
         check(clip >= 0, "a real story clip can play");
         if (clip >= 0) {
-            app.dialogue = {{"Old page"}};
-            app.dialogueVoices = {{clip, clip}};
-            ++app.dialogueSerial;
-            app.dialoguePage = 0;
+            const App::MsgWin keepWin = app.msgWin;
+            const bool keepType = app.typeOn;
+            app.msgWin.state = 3, app.typeOn = true; // (the window up: PrcMsg runs; typed a unit a frame)
+            app.voiceLine = App::VoiceLine(); // (the line above started by hand)
+            auto show = [&](std::vector<std::vector<std::string>> pages, std::vector<std::vector<int>> voices) {
+                app.dialogue = std::move(pages);
+                app.dialogueVoices = std::move(voices);
+                app.dialogueInfo.clear();
+                ++app.dialogueSerial;
+                app.dialoguePage = 0;
+                resetTyping(app);
+                app.dialogueHold = 0;
+            };
+            show({{"Old page"}}, {{clip, clip}});
             updateVoices(app);
-            check(app.voiceQueue.size() == 1, "a page queues its second clip");
+            check(app.voiceHold && app.voiceQueue.size() == 2, "a page's clip waits for its 0x1e, before its text");
+            stepTyping(app);
+            check(!app.voiceHold && app.voiceQueue.size() == 1 && app.dialogueTyped == 1, "the 0x1e starts it and the text goes on");
             app.dialogue.clear(); // a scene closes the window directly, without a page tap
             app.sound.stopLine(); // the first clip has finished
             const int played = app.voicesPlayed;
             updateVoices(app);
             check(app.voiceQueue.empty() && app.voicesPlayed == played && !app.sound.linePlaying(),
                   "a closed page cannot restart its remaining clip");
+            app.voiceLine = App::VoiceLine();
             app.sound.playLine(clip);
-            app.dialogue = {{"Silent replacement"}};
-            app.dialogueVoices = {{}};
-            ++app.dialogueSerial;
+            show({{"Silent replacement"}}, {{}});
             updateVoices(app);
             check(!app.sound.linePlaying(), "an unvoiced replacement stops the previous page's line");
-            app.dialogue = {{"Kept"}, {"Next"}}; // _PrcMsg 0x1e 0xffff: the clip goes on over the next tap
-            app.dialogueVoices = {{clip, -1}, {}};
-            ++app.dialogueSerial;
-            app.dialoguePage = 0;
-            updateVoices(app);
+            show({{"Kept"}, {"Next"}}, {{clip, -1}, {}}); // _PrcMsg 0x1e 0xffff: the clip goes on over the next tap
+            stepTyping(app);
             advanceDialogue(app, true); // (the reader's tap, as in play)
             updateVoices(app);
             check(app.sound.linePlaying() && !app.voiceKeep, "0x1e 0xffff keeps the clip over the page turn");
             app.dialogue.clear();
             updateVoices(app);
-            check(!app.sound.linePlaying(), "the closing tap cuts an unkept clip");
+            // (the closing tap's __effstop in the line's first 4 frames: it plays them out - _sound_effprc's +0x31 -,
+            // then its slot is busy two frames more, +0x30)
+            bool firstFour = app.sound.linePlaying();
+            for (int f = 0; f < 3; ++f) tickVoiceLine(app), firstFour &= app.sound.linePlaying();
+            tickVoiceLine(app);
+            firstFour &= !app.sound.linePlaying() && app.voiceLine.busy;
+            tickVoiceLine(app), tickVoiceLine(app);
+            firstFour &= app.voiceLine.busy;
+            tickVoiceLine(app);
+            check(firstFour && !app.voiceLine.busy, "a line cut in its first 4 frames plays them, its slot free 3 frames after");
+            { // a kept line holds the next page's text, its 0x1e, till it ends (_PrcMsg 25455-25457); a tap only hurries it
+                show({{"Kept"}, {"Held"}}, {{clip, -1}, {clip}});
+                stepTyping(app);
+                for (int f = 0; f < 4; ++f) tickVoiceLine(app);
+                advanceDialogue(app, true);
+                const int before = app.voicesPlayed;
+                bool held = true;
+                for (int f = 0; f < 6; ++f) stepTyping(app), tickVoiceLine(app), held &= app.dialogueTyped == 0 && app.voiceHold;
+                tapDialogue(app);
+                stepTyping(app), tickVoiceLine(app);
+                held &= app.dialoguePage == 1 && app.dialogueTyped == 0 && !pageTyped(app) && app.sound.linePlaying();
+                app.sound.stopLine(); // (heard out: the dummy audio plays in real time)
+                for (int f = 0; f < 3; ++f) stepTyping(app), held &= app.dialogueTyped == 0, tickVoiceLine(app);
+                stepTyping(app);
+                check(held && !app.voiceHold && app.voicesPlayed == before + 1 && pageTyped(app) && app.sound.linePlaying(),
+                      "a kept line holds the next page's text and clip till it has ended");
+                app.dialogue.clear();
+                updateVoices(app);
+                app.sound.stopLine();
+                app.voiceLine = App::VoiceLine();
+            }
             {   // a message ended by 0x13 / 0x14: its close leaves the clip playing (_PrcMsg's cut is a 0 end's)
                 const std::vector<cr::MessageInfo> keepInfo = app.dialogueInfo;
                 cr::MessageInfo mi;
                 mi.closeCutsVoice = false;
-                app.dialogue = {{"Ends with 0x13"}};
+                show({{"Ends with 0x13"}}, {{clip}});
                 app.dialogueInfo = {mi};
-                app.dialogueVoices = {{clip}};
-                ++app.dialogueSerial;
-                app.dialoguePage = 0;
-                updateVoices(app);
+                stepTyping(app);
                 advanceDialogue(app, false); // (the page closing by itself, as stepTyping does)
                 updateVoices(app);
                 check(app.sound.linePlaying() && !app.voiceCloseKeeps, "a 0x13 / 0x14 end leaves the clip at the close");
                 app.sound.stopLine();
+                app.voiceLine = App::VoiceLine();
                 app.dialogueInfo = keepInfo;
             }
+            app.msgWin = keepWin, app.typeOn = keepType;
             app.voiceQueue = {clip};
         }
     }
@@ -7673,7 +7710,10 @@ int runSelfTest(App& app) {
         int problems = 0;
         const cr::EventFile keepEvents = app.events;
         const bool keepType = app.typeOn;
+        const int keepVoice = app.mix.voice;
         app.typeOn = true;
+        app.mix.voice = 0; // (the Voice option at 0: no line - __voiceplay - so no page waits on one; the dummy audio is real time)
+        app.sound.stopLine(), app.voiceLine = App::VoiceLine();
         app.dialogue.clear();
         showMessages(app, {57006}); // a page with no codes
         const int chars = app.dialogue.empty() ? 0 : pageChars(app.dialogue[0]);
@@ -7714,6 +7754,7 @@ int runSelfTest(App& app) {
                     "characters, %d pauses (%d frames), then closes by itself (%d frames after the last) %s in %d frames; %d problems\n",
                     rate ? "yes" : "NO", whole ? "yes" : "NO", turned ? "yes" : "NO", total, pauses, pauseFrames, closeAfter,
                     closed ? "yes" : "NO", frames, problems);
+        app.mix.voice = keepVoice;
         mapErrors += problems;
         app.dialogue.clear();
         app.events = keepEvents;

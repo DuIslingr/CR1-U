@@ -342,7 +342,12 @@ struct App {
     int fontFaceGeneration = -1;           // (the face `font` was assigned at)
     std::vector<std::vector<int>> dialogueVoices; // per page: voice clips it starts (0x1e)
     int dialogueSerial = 0, voicedSerial = -1, voicedPage = -1; // which page's voices were started
-    std::vector<int> voiceQueue;           // further clips of the same page
+    std::vector<int> voiceQueue;           // further clips of the same page (the first too while voiceHold)
+    // The story line's slot as _sound_effprc runs it: busy (+0x2c, what _voice_evnt_is_playing reads) from the start
+    // until two frames after its sound has stopped (+0x30 = 2, counted down once stopped); a stop asked in its first 4
+    // frames (+0x31 = 4, down a frame) waits for them (+0x32): __effstop. tickVoiceLine is the frame's _sound_effprc
+    struct VoiceLine { bool busy = false, cutLater = false; int first = 0, tail = 0; } voiceLine;
+    bool voiceHold = false;                // PrcMsg's 0x1e met with a line busy (25455-25457): the page's text waits
     bool voiceKeep = false;                // PrcMsg 0x1e 0xffff (G+0x337f0): the clip goes on past the next tap
     bool voiceCloseKeeps = false;          // the message shown ends with 0x13 / 0x14: its close leaves the clip
     int voicesPlayed = 0;                  // for tests
@@ -1651,6 +1656,9 @@ float backFadeAlpha(const App& app);
 void drawItemBand(App& app);
 std::string itemBandText(const App& app);
 void updateVoices(App& app);
+void tickVoiceLine(App& app);
+void startVoiceLine(App& app, int clip);
+void cutVoiceLine(App& app);
 int androidCutinWidth(float wv);
 void drawMessageBox(App& app, const std::vector<std::string>& page, const std::string& speaker, bool next, const std::string& pageNo);
 void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h, float alpha = 1);

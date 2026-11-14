@@ -452,7 +452,10 @@ c101/c102/c104/m207a, 2026-10-12).
       the gate choice (Util 1) lead into the first dungeon
 - [x] Voiced 2.2.0 iPhone data (`--data …/ChaosRings.app/data`, also found automatically next to
       the executable): Japanese voices play with each voiced page (0x1e cues → voiceevnt.bin) on
-      the Voice slider, and battles speak as 2.2.0's do (`_btlvoice_*`, voicebtl.bin): command
+      the Voice slider (none at 0: `__voiceplay`); a page's 0x1e met while the story line's slot is
+      busy - a line kept over the tap (0x1e 0xffff), one cut in its first 4 frames (it plays them
+      out, `__effstop` / `_sound_effprc`), or the two frames after one stopped - holds the page's
+      text and clip until it is free (`_PrcMsg` 25446-25457), and battles speak as 2.2.0's do (`_btlvoice_*`, voicebtl.bin): command
       lines as a member's menu opens, attack lines by how the targets fared, hit / down / revive /
       healed reactions, a round's gene and special lines, escaping, the victory (scripted
       battles' own) and defeat - one line per speaker at a time, three variants each. 2.2.0's

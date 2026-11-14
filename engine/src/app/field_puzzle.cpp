@@ -618,6 +618,7 @@ void advanceDialogue(App& app, bool tapped) {
     // unless the page's 0x1e 0xffff kept it, and a 0x13 / 0x14 end leaves it)
     app.sound.stopVoiceEffects();
     app.voiceQueue.clear();
+    app.voiceHold = false;
     if (tapped) app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
     resetTyping(app);
     if (++app.dialoguePage < app.dialogue.size()) {
@@ -682,7 +683,9 @@ const cr::MessageInfo* pageInfo(const App& app) {
 
 // Out: every character typed and every pause over (a 0x1a before the wait holds the "next" mark too)
 bool pageTyped(const App& app) {
-    if (app.dialogue.empty() || !app.typeOn) return true;
+    if (app.dialogue.empty()) return true;
+    if (app.voiceHold) return false; // (its 0x1e waits on the line before: none of it out yet)
+    if (!app.typeOn) return true;
     const cr::MessageInfo* info = pageInfo(app);
     return app.dialogueTyped >= pageChars(app.dialogue[std::min(app.dialoguePage, app.dialogue.size() - 1)]) &&
            (!info || app.dialoguePause >= int(info->pauses.size())) && app.dialogueHold == 0;
@@ -699,12 +702,20 @@ int pauseHold(int frames) { return frames == 0 ? 1 : frames - 1; }
 // pauses are over
 void stepTyping(App& app) {
     if (app.dialogue.empty()) return;
+    updateVoices(app); // (a page shown since: its clip waits on its 0x1e below)
     if (app.msgWin.state == 1 || app.msgWin.state == 2) return; // PrcMsg: nothing until the window is up (state 3)
     const cr::MessageInfo* info = pageInfo(app);
     const std::vector<std::string>& page = app.dialogue[std::min(app.dialoguePage, app.dialogue.size() - 1)];
     const int total = pageChars(page);
-    if (!app.typeOn) app.dialogueTyped = total, app.dialoguePause = info ? int(info->pauses.size()) : 0;
+    if (!app.typeOn && !app.voiceHold) app.dialogueTyped = total, app.dialoguePause = info ? int(info->pauses.size()) : 0;
     if (app.dialogueHold > 0 && --app.dialogueHold > 0) return;
+    if (app.voiceHold) { // the page's 0x1e (_PrcMsg 25446-25457): with an event line busy PrcMsg returns - the text
+        if (app.voiceLine.busy) return; // waits -, else __voicego(clip | 0x100000) and on to the text in the same frame
+        startVoiceLine(app, app.voiceQueue.front());
+        app.voiceQueue.erase(app.voiceQueue.begin());
+        app.voiceHold = false;
+        if (!app.typeOn) app.dialogueTyped = total, app.dialoguePause = info ? int(info->pauses.size()) : 0;
+    }
     for (;;) {
         if (info && app.dialoguePause < int(info->pauses.size()) && info->pauses[size_t(app.dialoguePause)].at <= app.dialogueTyped) {
             app.dialogueHold = pauseHold(info->pauses[size_t(app.dialoguePause++)].frames);
@@ -3605,6 +3616,7 @@ void stepEvents(App& app) {
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
     if (app.choiceOut > 0 && ++app.choiceOut >= 9) app.choiceOut = 0; // (F+7: EventPrc's count, see answerChoice)
     updateVoices(app);
+    tickVoiceLine(app); // (drawView: _sound_effprc after the frame's prc)
     if (!app.battle.active) stepEffects(app, app.fieldEffects), stepQuake(app.fieldQuake); // eff3d_prc, UpdateQuake
     if (app.nowLoading.on) // NowLoadProc (76675-76680): the cell frame % 8 taken before the count steps
         app.nowLoading.cell = app.nowLoading.frame % 8, app.nowLoading.frame = (app.nowLoading.frame + 1) & 15;

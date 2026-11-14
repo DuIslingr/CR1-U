@@ -773,6 +773,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     }
     app.sound.stopDialogueVoices();
     app.voiceQueue.clear();
+    app.voiceHold = false;
     app.game.setFlag(0xffe, false); // (btl_main 0, 6272-6273: the defeat's and the scripted early end's flags cleared)
     app.game.setFlag(0xffd, false);
     b.active = true;
