@@ -1026,7 +1026,7 @@ void battleMenu(App& app, App::Battle::Menu menu) {
     if (menu == App::Battle::Top) b.cursor = b.topCursor, b.cmdCursor[0] = b.cmdCursor[1] = 0;
     else if (menu == App::Battle::Commands) b.cursor = b.cmdCursor[b.rules.pair ? 0 : std::clamp(b.member, 0, 1)];
     b.pick = 0;
-    b.listScroll = 0;
+    b.listScroll.key = -1; // (a new list: settled on its focus - scrlist::ready)
     // the pages' own kept lines (the target prompt) go with them; a timed message stays until it runs out
     // or the next replaces it - 2.2.0's __menub_mainPrc (0x17920) writes slot 11 only for the escape question
     if (menu != App::Battle::Targets && b.bannerFrames > (1 << 19)) setBanner(app, "");
@@ -1273,7 +1273,7 @@ void battleOpenList(App& app, App::Battle::Menu menu) {
     const int last = menu == App::Battle::Genes ? b.lastGene : b.lastItem;
     const auto at = std::find(b.picks.begin(), b.picks.end(), last);
     b.pick = at == b.picks.end() ? 0 : int(at - b.picks.begin());
-    b.listScroll = 48.0f * float(b.pick);
+    b.listScroll.key = -1; // (settled there: scrlist::ready)
 }
 
 void battleChooseCommand(App& app, int i) {
@@ -2713,10 +2713,10 @@ void stepMenuView(App& app) {
     if (b.optionsOut && !b.optionsDue && !app.optionsOpen) b.optionsOut = false;
     const bool hudOut = battletalk::on(app) || b.phase == App::Battle::Results || b.optionsOut;
     b.hudSlide = hudOut ? std::min(480, b.hudSlide + 120) : std::max(0, b.hudSlide - 120);
-    // the lists' rows (MuScrList_Proc): 8 a frame toward 48 x the focus row, at once from further than a row
-    const float to = 48.0f * float(b.pick);
-    if (std::fabs(to - b.listScroll) > 48) b.listScroll = to;
-    else b.listScroll = b.listScroll < to ? std::min(to, b.listScroll + 8) : std::max(to, b.listScroll - 8);
+    // the lists' rows (MuScrList_Proc: scrlist:: - the ease, a flick; the focus row follows them, SE 1 as it changes)
+    if ((b.menu == App::Battle::Genes || b.menu == App::Battle::Items) &&
+        scrlist::frame(b.listScroll, b.page, b.pick, int(b.picks.size())))
+        menuSound(app, se::kListFocus);
     const int dist = battleSlideDistance(app);
     const int want = b.phase == App::Battle::Command && !battletalk::on(app) && !app.optionsOpen && !b.optionsDue ? b.page : -1;
     auto live = [&]() { // the page as the logic has it
@@ -2786,14 +2786,9 @@ void battlePoint(const App& app, float px, float py, float& rx, float& cx, float
     rx = (lx - rightX) / 2, cx = (lx - uiX) / 2, my = ly / 2;
 }
 
-namespace btllist { // the battle's MuScrList (mode 0, in tex2d units less btlui::kListDx / kListDy)
-using namespace campui;
-inline bool inRows(float x, float y) { return x >= kRowX && x < kRowX + 256 && y >= kListTop && y < kListBottom; }
-inline bool onBar(float x, float y) { return x >= kGaugeX - 2 && x < kGaugeX + 22 && y >= kGaugeY + 12 && y < kGaugeY + kGaugeH - 12; }
-inline int barRow(float y, int n) { // (the knob dragged or tapped: the row that far down the list)
-    return int(std::lround(std::clamp((y - kGaugeY - 24) / (kGaugeH - 48), 0.0f, 1.0f) * float(std::max(0, n - 1))));
-}
-} // namespace btllist
+// The lists' touch in their units (the battle's MuScrList: tex2d, battleClick's less btlui::kListDx / kListDy) - a
+// battle frame at a time (scrlist::)
+double battleListClock(const App& app) { return app.battle.listScroll.lastT + 1.0 / 20; }
 
 // The lists' focus moved (keys, a drag, the gauge): __effgo(1) as another row comes to the line
 void battleListFocus(App& app, int to) {
@@ -2826,11 +2821,13 @@ void battlePressDown(App& app, float px, float py) {
     t.down = true, t.page = b.page;
     float rx, cx, my;
     battlePoint(app, px, py, rx, cx, my);
-    t.sx = rx, t.cx = cx, t.sy = my, t.lastY = my;
+    t.sx = rx, t.cx = cx, t.sy = my;
     const float lx = rx - btlui::kListDx, ly = my - btlui::kListDy;
-    if (b.menu == App::Battle::Genes || b.menu == App::Battle::Items) {
-        t.inList = btllist::inRows(lx, ly);
-        t.bar = b.picks.size() > 1 && btllist::onBar(lx, ly);
+    if (b.menu == App::Battle::Genes || b.menu == App::Battle::Items) { // (MuScrList_Proc: the gauge, else the drag area)
+        const int n = int(b.picks.size());
+        scrlist::ready(b.listScroll, b.page, b.pick);
+        scrlist::press(b.listScroll, lx, ly, n, battleListClock(app));
+        if (scrlist::follow(b.listScroll, b.pick, n)) menuSound(app, se::kListFocus);
     }
     if (b.menu == App::Battle::Targets) t.mode = battlePlateColumn(app, rx, my) ? 1 : 2; // (FUN_0001bff4)
 }
@@ -2851,16 +2848,10 @@ void battleTouchStep(App& app) {
     if (std::fabs(rx - t.sx) > 6 || std::fabs(my - t.sy) > 6) t.dragged = true;
     switch (b.menu) {
     case App::Battle::Genes: case App::Battle::Items: {
-        const float ly = my - btlui::kListDy;
-        if (t.bar && t.dragged) battleListFocus(app, btllist::barRow(ly, int(b.picks.size())));
-        else if (t.inList && t.dragged) { // (the rows follow the finger, a row each 48 it goes)
-            t.remainder += t.lastY - my;
-            if (const int rows = int(t.remainder / campui::kRowH)) {
-                battleListFocus(app, b.pick + rows);
-                t.remainder -= float(rows) * campui::kRowH;
-            }
-        }
-        t.lastY = my;
+        // (MuScrList_Proc case 3: the rows with the finger, pixel for pixel; ComUty_PadChkMove: the gauge held)
+        const int n = int(b.picks.size());
+        scrlist::move(b.listScroll, rx - btlui::kListDx, my - btlui::kListDy, n, battleListClock(app));
+        if (scrlist::follow(b.listScroll, b.pick, n)) menuSound(app, se::kListFocus);
         break;
     }
     case App::Battle::Targets:
@@ -3854,7 +3845,7 @@ void drawBattleHud(App& app, float W, float H) {
     struct Keep {
         App::Battle::Menu menu;
         int cursor, member, pick;
-        float listScroll;
+        ScrList listScroll;
         int confirm, targetAction;
         bool pair;
         std::vector<int> picks, pickGroup;
@@ -3906,7 +3897,9 @@ void drawBattleHud(App& app, float W, float H) {
             using namespace campui;
             const bool genes = b.menu == App::Battle::Genes;
             const int n = int(b.picks.size()), have = battleGeneMp(app);
-            const float scroll = b.listScroll;
+            const bool settled = b.listScroll.key == -1; // (not stepped yet: on its focus)
+            const float scroll = settled ? kRowH * float(b.pick) : float(b.listScroll.shown());
+            const int focus = settled ? b.pick : scrlist::focusOf(b.listScroll, n); // (__MuScrList_GetFocusPos: lit, its HELP)
             m.setOffset(float(b.slide) + kListDx, kListDy);
             // row k at (192, 150 + 48 k - offset), the focus row's plate lit (9), cut to y 76..280 (the masks)
             m.setClip(kListTop, kListBottom);
@@ -3920,22 +3913,22 @@ void drawBattleHud(App& app, float W, float H) {
                     // (0x5a730: MP short of the cost - the name grey (ComPlate_Base's style 2), the digits red (PictNumDraw
                     // style 3); else white digits (0); the plate, icon and "MP/" as ever)
                     const bool short_ = have < cost;
-                    drawCampRow(app, m, kRowX, y, it, 0, index == b.pick, a, short_ ? 2 : 0);
+                    drawCampRow(app, m, kRowX, y, it, 0, index == focus, a, short_ ? 2 : 0);
                     m.picture(27, kRowX + 188, y + 34, a);
                     drawShopNumber(m, cost, kRowX + 218, y + 30, 3, 10, a, short_ ? 3 : 0); // (PictNumDraw's field from 0xda, right-aligned)
                 } else { // FUN_0005a848: the plate (8 / 9), icon, name, how many at (222, 30)
                     const auto held = app.game.items.find(it);
-                    drawCampRow(app, m, kRowX, y, it, held == app.game.items.end() ? 0 : held->second, index == b.pick, a);
+                    drawCampRow(app, m, kRowX, y, it, held == app.game.items.end() ? 0 : held->second, index == focus, a);
                 }
             }
             if (n > 2) { // the jump pills (0x8c over the first rows, 0x8d under the last, at x 0x118: 55945-55970)
-                if (b.pick < 2) m.picture(0x8c, 280, 112 - scroll, a);
-                if (b.pick >= n - 2) m.picture(0x8d, 280, 208 + kRowH * float(n - 1) - scroll, a);
+                if (focus < 2) m.picture(0x8c, 280, 112 - scroll, a);
+                if (focus >= n - 2) m.picture(0x8d, 280, 208 + kRowH * float(n - 1) - scroll, a);
             }
             m.clearClip();
             drawCampScrollBar(m, scroll, n, a); // (ComUty_GuageBarDraw at (456, 72), 208 long)
             // the HELP board (ComUty_HelpWindowDraw on the list's window 5: in and out with it) - the row on the line's
-            if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]);
+            if (focus >= 0 && focus < n) helpBoard(b.picks[size_t(focus)]);
             m.setOffset(float(b.slide), 0);
             m.backBar(btlui::kBackX, btlui::kBackY, backHeld, a); // (MuScrList's BackButtonProc: held)
             break;
@@ -4021,10 +4014,13 @@ void battleKey(App& app, SDL_Keycode key) {
         break;
     }
     case App::Battle::Items:
-    case App::Battle::Genes: { // MuScrList: the focus row up or down, stopping at the ends; ○ the row on the line
+    case App::Battle::Genes: { // MuScrList: the focus row up or down; ○ the row on the line
         const int n = int(b.picks.size());
-        if (up || down) battleListFocus(app, b.pick + (up ? -1 : 1));
-        else if (enter) {
+        // (the Vita's FUN_8105880a, 64836-64870: a fresh press on the first row up goes to the last, on the last down to
+        // the first; the pad's held repeat stops at the ends - padStep; ○ taken only with the rows at rest, 65420-65426)
+        if (up || down) battleListFocus(app, n > 0 ? (b.pick + (up ? n - 1 : 1)) % n : 0);
+        else if (enter && !scrlist::rests(b.listScroll, b.page)) {
+        } else if (enter) {
             if (b.pick < 0 || b.pick >= n) menuSound(app, se::kBuzzer); // (an empty list: GetChoiceListNo's -4)
             else if (b.menu == App::Battle::Genes) battleChooseGene(app, b.picks[size_t(b.pick)]);
             else battleChooseItem(app, b.picks[size_t(b.pick)]);
@@ -4076,10 +4072,6 @@ void battleClick(App& app, float px, float py) {
     b.touch = App::Battle::Touch();
     b.pan = 0;
     if (std::fabs(rx - t.sx) > 6 || std::fabs(my - t.sy) > 6) t.dragged = true;
-    if ((b.menu == App::Battle::Genes || b.menu == App::Battle::Items) && t.inList && t.dragged) { // (the last of a drag)
-        t.remainder += t.lastY - my;
-        if (const int rows = int(t.remainder / campui::kRowH)) battleListFocus(app, b.pick + rows);
-    }
     const bool lists = b.menu == App::Battle::Genes || b.menu == App::Battle::Items; // (BackButtonProc type 1: 256 x 34 from y 286)
     const bool onBack = lists ? my >= kBackY - 2 && my < kBackY + 32 && rx >= kBackX && rx < kBackX + 256
                               : my >= kBackY && my < kBackY + 24 && rx >= kBackX && rx < kBackX + 232;
@@ -4120,31 +4112,23 @@ void battleClick(App& app, float px, float py) {
     }
     case App::Battle::Items:
     case App::Battle::Genes: {
-        // MuScrList_Proc as the touch lifts (not after a drag): the row on the line chosen
-        // (pad_chk_updw_box(192, 150, 256, 48)), another brought to it; over the first row the down pill's box
-        // jumps to the end, under the last the up pill's to the top; the gauge's arrows step it, its track
-        // takes the row that far down; Back (BackButtonProc)
-        using namespace campui;
-        const float lx = rx - kListDx, ly = my - kListDy;
+        // MuScrList_Proc as the touch lifts (scrlist::): a drag's or the gauge's lift moves only the rows; a tap over /
+        // under the line a row on, the pills' boxes to the other end, the line's row chosen once the rows rest (+0x50 ==
+        // +0x58, no flick) - an empty one -4 (SE 4); Back (BackButtonProc)
         const int n = int(b.picks.size());
-        if (t.dragged && (t.inList || t.bar)) break;
-        if (t.bar) { battleListFocus(app, btllist::barRow(ly, n)); break; }
-        if (lx >= kGaugeX - 4 && lx < kGaugeX + 20 && ly >= kGaugeY - 4 && ly < kGaugeY + 20) { battleListFocus(app, b.pick - 1); break; }
-        if (lx >= kGaugeX - 4 && lx < kGaugeX + 20 && ly >= kGaugeY + kGaugeH - 12 && ly < kGaugeY + kGaugeH + 16) {
-            battleListFocus(app, b.pick + 1);
-            break;
-        }
-        if (btllist::inRows(lx, ly)) {
-            const int row = int(std::floor((ly - kFocusY + b.listScroll) / kRowH));
-            if (row >= 0 && row < n) {
-                // (MuScrList_Proc chooses only with the rows at rest: +0x50 == +0x58)
-                if (row != b.pick || b.listScroll != kRowH * float(b.pick)) battleListFocus(app, row);
-                else if (b.menu == App::Battle::Genes) battleChooseGene(app, b.picks[size_t(row)]);
-                else battleChooseItem(app, b.picks[size_t(row)]);
-            } else if (n > 2 && row < 0 && b.pick < 2) battleListFocus(app, n - 1), b.listScroll = kRowH * float(n - 1);
-            else if (n > 2 && row >= n && b.pick >= n - 2) battleListFocus(app, 0), b.listScroll = 0;
-            else if (n == 0 && row == 0) menuSound(app, se::kBuzzer); // (an empty row on the line: -4)
-        } else if (onBack)
+        ScrList& sl = b.listScroll;
+        scrlist::ready(sl, b.page, b.pick);
+        const float lx = rx - kListDx, ly = my - kListDy;
+        const bool tap = scrlist::lift(sl, lx, ly, n, battleListClock(app));
+        if (scrlist::follow(sl, b.pick, n)) menuSound(app, se::kListFocus);
+        if (!tap || t.dragged) break;
+        if (const int r = scrlist::tap(sl, lx, ly, n); r == 2) {
+            if (n == 0) menuSound(app, se::kBuzzer);
+            else if (b.menu == App::Battle::Genes) battleChooseGene(app, b.picks[size_t(b.pick)]);
+            else battleChooseItem(app, b.picks[size_t(b.pick)]);
+        } else if (r == 1) {
+            if (scrlist::follow(sl, b.pick, n)) menuSound(app, se::kListFocus);
+        } else if (!r && onBack)
             battleBack(app);
         break;
     }

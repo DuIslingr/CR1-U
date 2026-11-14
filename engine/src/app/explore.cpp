@@ -896,20 +896,22 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             if (b.active && !(b.rules.f[1].alive() && !b.rules.allyAuto)) bad.push_back("no-second-member");
             else if (b.active) {
                 b.rules.f[0].mp = b.rules.f[1].mp = 999;
-                // 1: the gene list - a drag up two rows, the focus two on; a tap on the line chooses
+                // 1: the gene list (MuScrList_Proc, scrlist::) - the rows with the finger pixel for pixel, a drag of 96 up two
+                // rows on (16 a frame at the last: no flick); a tap under the line a row on; on the line chooses at rest
                 ready();
                 battleChooseTop(app, 0), ready();
                 battleChooseCommand(app, 1);
                 b.picks = genes;
                 ready();
                 check(b.menu == App::Battle::Genes, "genes-open");
-                touch({{lx + 300, ly + 200}, {lx + 300, ly + 170}, {lx + 300, ly + 140}, {lx + 300, ly + 100}});
-                check(b.pick == 2, "drag-two-rows");
+                touch({{lx + 300, ly + 200}, {lx + 300, ly + 180}, {lx + 300, ly + 160}, {lx + 300, ly + 140}, {lx + 300, ly + 120},
+                       {lx + 300, ly + 104}});
+                check(b.pick == 2 && b.listScroll.off == 96 && b.listScroll.momentum == 0, "drag-two-rows");
                 for (int f = 0; f < 12; ++f) stepBattle(app);
-                check(b.view.listScroll == 96, "rows-eased");
-                touch({{lx + 300, ly + 150 + 48 + 10}}); // (the row under the line: brought to it)
-                check(b.pick == 3 && b.menu == App::Battle::Genes, "tap-row-focus");
-                b.listScroll = 3 * 48 - 8; // (the rows still moving: no choice - MuScrList_Proc waits for them)
+                check(b.view.listScroll.shown() == 96, "rows-eased");
+                touch({{lx + 300, ly + 150 + 48 + 10}}); // (under the line: 32 on, the snap the next row)
+                check(b.pick == 3 && b.menu == App::Battle::Genes && b.listScroll.target == 144, "tap-row-focus");
+                b.listScroll.off = 3 * 48 - 8; // (the rows still moving: no choice - MuScrList_Proc waits for them)
                 touch({{lx + 300, ly + 150 + 20}});
                 check(b.menu == App::Battle::Genes && b.pick == 3, "moving-no-choice");
                 for (int f = 0; f < 12; ++f) stepBattle(app);
@@ -922,9 +924,25 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 { const auto at = std::find(b.picks.begin(), b.picks.end(), b.lastGene); b.pick = at == b.picks.end() ? 0 : int(at - b.picks.begin()); }
                 check(b.lastGene == 94 && b.pick == 3, "list-remembers");
                 ready();
-                b.pick = 0, b.listScroll = 0;
-                touch({{lx + 300, ly + 150 - 20}}); // (over the first row: the down pill's box - to the end)
-                check(b.pick == int(genes.size()) - 1, "pill-jump");
+                b.pick = 0, b.listScroll.key = -1;
+                touch({{lx + 300, ly + 150 - 20}}); // (over the first row: the down pill's box - a row past the end, eased back)
+                check(b.pick == int(genes.size()) - 1 && b.listScroll.off == 48 * int(genes.size()), "pill-jump");
+                for (int f = 0; f < 8; ++f) stepBattle(app);
+                check(b.listScroll.off == 48 * (int(genes.size()) - 1), "pill-eased-back");
+                // a flick: 30 a frame at the last (10 a 60th of a second: touchesMoved's 0.01) runs a row on - from row 1 a
+                // drag of 60 (snapped to row 2 without it), 50 more 10 a frame, then on to the next row: 4
+                b.pick = 1, b.listScroll.key = -1;
+                ready();
+                touch({{lx + 300, ly + 230}, {lx + 300, ly + 200}, {lx + 300, ly + 170}});
+                check(b.listScroll.momentum == 48 && b.listScroll.target == 96 && b.listScroll.off == 108, "flick-one-row");
+                for (int f = 0; f < 16; ++f) stepBattle(app);
+                check(b.pick == 4 && b.listScroll.off == 192, "flick-rows");
+                // the gauge (448, 68, 32, 208): held at y 180 the rows at 48 n (180 - 76) / 208, the next row as it lifts
+                touch({{lx + 460, ly + 180}});
+                for (int f = 0; f < 12; ++f) stepBattle(app);
+                check(b.pick == std::min(int(genes.size()) - 1, 48 * int(genes.size()) * 104 / 208 / 48 + 1), "gauge");
+                touch({{lx + 460, ly + 72}});
+                check(b.pick == 0 && b.listScroll.off == 0, "gauge-top");
                 // 4: a gene the MP won't pay - SE 4, no banner, the list stays
                 b.rules.f[0].mp = 0;
                 app.menuSoundLog.clear();
@@ -2492,6 +2510,85 @@ int fieldPresentationSelfTest(App& app) {
     return problems;
 }
 
+// 2.2.0's MuScrList touch (MuScrList_Proc 54610-55160, scrlist::) on a list of 10 in its own units: the rows with the
+// finger pixel for pixel, pulled toward an end from near it by a part, the lift's snap (20 past a row is the next), a
+// flick's 1 / 2 / 3 rows, the gauge's box, the taps over / under / on the line, the pills
+int scrListSelfTest() {
+    int bad = 0, bit = 0;
+    auto check = [&](bool ok) { bad |= (ok ? 0 : 1) << bit++; };
+    constexpr int n = 10;
+    auto at = [&](int row) { ScrList s; int cursor = row; scrlist::frame(s, 1, cursor, n); return s; };
+    auto run = [&](ScrList& s, int frames) {
+        int cursor = s.focus;
+        scrlist::follow(s, cursor, n);
+        for (int f = 0; f < frames; ++f) scrlist::frame(s, 1, cursor, n);
+        return cursor;
+    };
+    { // a drag: 13 is 13; 30 is row 1 on the line (28 and more), let go it snaps on to row 1; 15 back to row 0
+        ScrList s = at(0);
+        scrlist::press(s, 300, 250, n, 0);
+        scrlist::move(s, 300, 237, n, 1);
+        check(s.drag == 13 && s.shown() == 13 && scrlist::focusOf(s, n) == 0);
+        scrlist::move(s, 300, 220, n, 1.5);
+        check(s.shown() == 30 && scrlist::focusOf(s, n) == 1);
+        check(!scrlist::lift(s, 300, 220, n, 2) && s.off == 30 && s.target == 48 && s.momentum == 0);
+        check(run(s, 6) == 1 && s.off == 48);
+        s = at(0);
+        scrlist::press(s, 300, 250, n, 0);
+        scrlist::lift(s, 300, 235, n, 1);
+        check(s.target == 0);
+    }
+    { // pulled toward an end: from row 0 a quarter, row 2 a half, row 5 all; at the last row up a quarter
+        auto pull = [&](int row, float dy) { ScrList s = at(row); scrlist::press(s, 300, 200, n, 0); scrlist::move(s, 300, 200 + dy, n, 1); return s.drag; };
+        check(pull(0, 40) == -10 && pull(2, 40) == -20 && pull(5, 40) == -40 && pull(9, -40) == 10 && pull(3, -40) == 40);
+    }
+    { // a flick (the last move's way in a 60th of a second - here over a 30th): 12 one row, 20 two, 150 three - from
+      // row 2 a drag of 20 (snapped to 3)
+        auto flick = [&](float last) {
+            ScrList s = at(2);
+            scrlist::press(s, 300, 250, n, 0);
+            scrlist::move(s, 300, 230 + 2 * last, n, 1);
+            scrlist::move(s, 300, 230, n, 1 + 1.0 / 30);
+            scrlist::lift(s, 300, 230, n, 1.1);
+            return run(s, 40);
+        };
+        check(flick(5) == 3 && flick(12) == 4 && flick(20) == 5 && flick(150) == 6);
+        ScrList s = at(0); // (none from the top pulled down on)
+        scrlist::press(s, 300, 200, n, 0);
+        scrlist::move(s, 300, 230, n, 1.0 / 60);
+        scrlist::lift(s, 300, 230, n, 0.02);
+        check(s.momentum == 0 && s.off == -7 && run(s, 4) == 0 && s.off == 0);
+    }
+    { // the gauge: at y 180 48 n 104 / 208 = 240 (row 5), the next row as it settles; at 74 the top; not with two rows
+        ScrList s = at(0);
+        scrlist::press(s, 460, 180, n, 0);
+        check(s.hold == ScrList::Gauge && s.off == 240 && scrlist::focusOf(s, n) == 5);
+        scrlist::move(s, 460, 300, n, 1); // (slid out of its box: no more)
+        check(!scrlist::lift(s, 460, 300, n, 1) && s.off == 240 && run(s, 8) == 6);
+        scrlist::press(s, 460, 74, n, 0);
+        scrlist::lift(s, 460, 74, n, 0);
+        check(s.off == 0 && s.target == 0);
+        ScrList two;
+        int c0 = 0;
+        scrlist::frame(two, 1, c0, 2);
+        scrlist::press(two, 460, 180, 2, 0);
+        check(two.hold == ScrList::None);
+    }
+    { // taps: over the line a row back, under it a row on; on it chosen at rest only; the pills jump to the other end
+        ScrList s = at(3);
+        check(scrlist::tap(s, 300, 100, n) == 1 && run(s, 8) == 2);
+        check(scrlist::tap(s, 300, 220, n) == 1 && scrlist::focusOf(s, n) == 3 && scrlist::tap(s, 300, 170, n) == 3);
+        run(s, 8);
+        check(scrlist::tap(s, 300, 170, n) == 2 && s.quiet == 4);
+        s = at(0);
+        check(scrlist::tap(s, 300, 100, n) == 1 && s.off == 480 && scrlist::focusOf(s, n) == 9 && run(s, 8) == 9 && s.off == 432);
+        check(scrlist::tap(s, 300, 220, n) == 1 && s.off == -48 && run(s, 8) == 0 && s.off == 0);
+    }
+    std::printf("MuScrList touch (scrlist): drag, pull, snap, flicks, gauge, taps, pills: %d problems%s\n", bad ? 1 : 0,
+                bad ? (" (checks " + std::to_string(bad) + ")").c_str() : "");
+    return bad ? 1 : 0;
+}
+
 // Exercise the SDL input path, including window/frame scaling and the phone projection.
 int mobileInputSelfTest(App& app) {
     int problems = 0, gestures = 0, slots = 0;
@@ -2548,29 +2645,44 @@ int mobileInputSelfTest(App& app) {
             const auto phase = c.phase;
             const int n = campScrollCount(app);
             if (n <= 6) { ++problems; std::printf("mobile input: view %d has %d rows\n", view, n); continue; }
+            // (MuScrList_Proc, scrlist::) a drag of 100 up: the rows with it, the lift's snap row 2 (4 past it)
             pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, campListX(app) + 60, 250);
             pointer(SDL_EVENT_MOUSE_MOTION, campListX(app) + 60, 150);
+            bool ok = c.scroll.shown() == 100 && campFocus(app) == 2;
             pointer(SDL_EVENT_MOUSE_BUTTON_UP, campListX(app) + 60, 150);
-            bool ok = campFocus(app) == 2 && c.phase == phase;
+            ok &= campFocus(app) == 2 && c.phase == phase && c.scroll.target == 96;
             SDL_Event wheel{};
             wheel.type = SDL_EVENT_MOUSE_WHEEL, wheel.wheel.y = -1;
             SDL_AppEvent(&app, &wheel);
             ok &= campFocus(app) == 3;
+            auto settle = [&]() { for (int f = 0; f < 12; ++f) stepCamp(app); };
+            settle();
+            ok &= c.scroll.off == 144;
+            // the gauge's box (448, 68, 32, 208): held, the rows at 48 n (y - 76) / 208 (a finger slid out of it no more),
+            // the next row as it lifts; at its top end the first row
+            const int v = 48 * n * (270 - 76) / 208;
             pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 468, 140);
-            pointer(SDL_EVENT_MOUSE_MOTION, 468, 284);
-            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 284);
-            ok &= campFocus(app) == n - 1; // (the gauge's foot: the last row on the line)
+            pointer(SDL_EVENT_MOUSE_MOTION, 468, 270);
+            pointer(SDL_EVENT_MOUSE_MOTION, 468, 300);
+            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 300);
+            ok &= campFocus(app) == std::min(n - 1, (v + 28) / 48);
+            settle();
+            ok &= campFocus(app) == std::min(n - 1, v / 48 + 1);
             pointer(SDL_EVENT_MOUSE_BUTTON_DOWN, 468, 250);
-            pointer(SDL_EVENT_MOUSE_MOTION, 468, 92);
-            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 92);
+            pointer(SDL_EVENT_MOUSE_MOTION, 468, 72);
+            pointer(SDL_EVENT_MOUSE_BUTTON_UP, 468, 72);
+            ok &= campFocus(app) == 0 && c.scroll.off == 0;
+            tap(468, 180); // (a tap on it: set as it goes down)
+            ok &= campFocus(app) == std::min(n - 1, (48 * n * 104 / 208 + 28) / 48);
+            tap(468, 74);
             ok &= campFocus(app) == 0;
-            tap(468, 292);
-            ok &= campFocus(app) == 1;
-            tap(468, 82);
-            ok &= campFocus(app) == 0;
-            // (a row under the line comes to it; the row on it is the one a tap chooses)
+            // (a tap under the line: 32 on, the snap a row; over it back; the line's row is the one a tap chooses)
             tap(campListX(app) + 60, campui::kFocusY + campui::kRowH + 20);
             ok &= campFocus(app) == 1 && c.phase == phase;
+            settle();
+            tap(campListX(app) + 60, campui::kFocusY - 20);
+            ok &= campFocus(app) == 0 && c.phase == phase;
+            settle();
             if (!ok) std::printf("mobile input: layout %d wide %d view %d FAILED (focus %d slot %d phase %d)\n",
                                       layout, wide, view, c.listCursor, c.slot, int(c.phase));
             problems += !ok;
@@ -3708,7 +3820,7 @@ int runSelfTest(App& app) {
     }
     if (SDL_getenv("CR_SELFTEST_CANCEL")) return inputCancelSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_LIFECYCLE")) return fieldLifecycleSelfTest(app) ? 1 : 0;
-    if (SDL_getenv("CR_SELFTEST_MOBILE")) return mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
+    if (SDL_getenv("CR_SELFTEST_MOBILE")) return scrListSelfTest() + mobileInputSelfTest(app) + mobileTransitionSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_CONTROLS")) return controlHintsSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_TROPHIES")) return trophiesSelfTest(app) ? 1 : 0;
     if (SDL_getenv("CR_SELFTEST_FIELD")) return fieldPresentationSelfTest(app) ? 1 : 0;
@@ -3724,7 +3836,8 @@ int runSelfTest(App& app) {
         setMode(app, Mode::Maps);
         return battleSelfTest(app, frames, glErrors) ? 1 : 0;
     }
-    int glErrors = controlHintsSelfTest(app) + trophiesSelfTest(app) + fieldPresentationSelfTest(app) + fieldRenderSelfTest(app), frames = 0, failedModels = 0;
+    int glErrors = controlHintsSelfTest(app) + trophiesSelfTest(app) + fieldPresentationSelfTest(app) + fieldRenderSelfTest(app) +
+                   scrListSelfTest(), frames = 0, failedModels = 0;
     setMode(app, Mode::Models);
     for (size_t i = 0; i < app.models.size(); ++i) {
         showModel(app, int(i));
@@ -9241,7 +9354,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             for (int item = kManualFirstItem; item <= kManualLastItem; ++item) app.game.items[item] = 1;
         if (app.captureAt[0] == app.captureAt[0]) // (that topic on the line, settled)
             app.manualCursor = std::clamp(int(app.captureAt[0]), 0, int(manualTopics(app).size()) - 1),
-            app.manualScroll = campui::kRowH * float(app.manualCursor);
+            app.manualScroll.key = -1; // (scrlist::ready: settled there)
         if (const char* fr = SDL_getenv("CR_CAPTURE_MANUAL_FRAMES")) { // (n frames after the list's start)
             app.manualAnim = 0;
             for (int f = 0; f < SDL_atoi(fr); ++f) stepManual(app);

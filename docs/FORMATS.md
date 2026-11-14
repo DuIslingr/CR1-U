@@ -1051,6 +1051,26 @@ battle.
   10) or, all known, picture 96 (MASTER) at (176, 24); the name in colour 3 when worn, 2 when none
   of it is known (`GetSkillNumFromPlate`). The list also draws its "more" marks (pictures 0x8c at
   (280, 112) / 0x8d below), a scroll gauge (`ComUty_GuageBarDraw`), Back and a HELP window.
+- **MuScrList's touch** (`MuScrList_Proc` 0x569b0; its layouts at 0xbc1e0, 0x8c each - 0 for every
+  list the port has, 1 (rows 64) only `__menuu_StorePrc`'s): layout 0 = row 48, ease 8, flick 10,
+  snap 20, the line's box (192, 150, 256, 48), the gauge drawn at (456, 72) 208 long, the drag area
+  (0, 76, 456, 208), the gauge's box (448, 68, 32, 208), the boxes over / under the line (192, 76 /
+  198, 256, 74). Per list (0x60 apart): d1f50 the offset (row k on the line at -48k), d1f58 the
+  target, d1f4c the held drag (`MuCom_PadChkScroll`'s finger less its start; added as it lifts),
+  d1f60 the flick left, d1f5c its way. Held: the rows follow the finger; from an offset
+  within four rows of an end, toward it, by 1 / (8 + (offset ∓ 192) / 48) - a half, third, quarter,
+  past the end a fifth, sixth, none. Lifted after a move: a flick (`touchesMoved`'s last move,
+  points x 0.001: 0.01 / 0.02 / 0.15) adds 48 / 96 / 144 at 10 a frame - none from an end pulled
+  on - then the target is the next row on; else the target is the row within 20, otherwise the
+  next down the list; 8 a frame toward it, back from past an end. The gauge (`ComUty_PadChkMove`,
+  3 rows or more, no other touch): the offset 48 n (y - 76) / 208 while held, the target the next
+  row (under 5: the top). A tap (no move) over the line: the rows 32 back, under it 32 on, the
+  snap a row; on the line: chosen when no flick runs and the offset is at its target
+  (`__ScrListSelectSePlay`: SE 2..5, d1ee0 = 4 - no focus SE 1 for 4 frames). With the focus on the
+  first row (3 rows or more) the box over the line jumps to a row past the end (`FUN_000558d0(n,
+  0)`), on the last the box under it to a row above the top; both ease back. The Vita's pad
+  (`FUN_8105880a`): up / down move the rows 32 and snap; a fresh press on an end row jumps to the
+  other end as the pills; the held repeat (`FUN_81008500(6, 3)`) stops at the ends; ○ only at rest.
 - **World choice** (`_menuu_WldChoice*`): a list of gates, then a level and a yes/no. On close
   `_menuu_WldChoiceClr` sets flag 0 if cancelled; otherwise var 0 = gate (0 = 1st), var 1 = level,
   var 2 = the party (route), flag 1 set for the second choice (cleared for gates 4 and 5), and

@@ -116,6 +116,48 @@ struct Effect {
     int key = 0;     // FrmPlayEff's (effect + 1) x (actor + 1)
 };
 
+// A MuScrList's rows and touch (2.2.0 MuScrList_Proc 0x569b0, layout 0 of the table at 0xbc1e0: rows 48, the ease
+// 8 a frame, a flick 10 a frame, the snap 20; the drag area (0, 76, 456, 208), the gauge (448, 68, 32, 208), the taps'
+// boxes (192, 76 / 198, 256, 74), the line's (192, 150, 256, 48)). Positive down the list here (the original's d1f50
+// is negative), in the list's units (tex2d - the table's boxes); scrlist:: (menus.cpp) runs it
+struct ScrList {
+    int off = 0;           // the rows' offset (-d1f50): row k on the line 150 at 48 k
+    int target = 0;        // where the ease takes it (-d1f58)
+    int drag = 0;          // the held drag's way (-d1f4c), added to off as the touch lifts
+    int momentum = 0;      // a flick's way still to go (d1f60), 10 a frame
+    bool momDown = false;  // (d1f5c == 0: the flick goes down the list)
+    int key = -1;          // the list it belongs to (another starts settled on its focus row)
+    int focus = 0;         // the focus row last seen (MuScrList_Draw's d1f84: SE 1 as it changes)
+    int quiet = 0;         // d1ee0: no focus SE for 4 frames after a pick or Back (__ScrListSelectSePlay)
+    bool byKey = false;    // the port's keys moved the focus: the rows ease after it (the focus doesn't follow them)
+    enum Hold : uint8_t { None, Rows, Gauge } hold = None; // MuCom_PadChkScroll's touch on the rows, ComUty_PadChkMove's on the gauge
+    bool moved = false;    // (d1eec: the touch went from where it started - its lift is no tap)
+    float startY = 0;      // (+0x10: where the touch started)
+    float lastY = 0;       // where it was at the last move seen
+    double lastT = 0;      // and when (s)
+    float vel = 0;         // touchesMoved's +0x98: the finger's way up in a 60th of a second (points), the last move's
+    int shown() const { return off + drag; }
+};
+namespace scrlist {
+constexpr int kRow = 48, kEase = 8, kFlick = 10, kSnap = 20; // (0xbc1e0 +0 / +4 / +8 / +0xc)
+int focusOf(const ScrList& s, int n);          // __MuScrList_GetFocusPos
+bool atRest(const ScrList& s);                 // no flick, at its target: a tap on the line chooses
+bool rests(const ScrList& s, int key);         // ... and not held (or not stepped yet): a confirm on its row is taken
+void settle(ScrList& s, int row);              // FUN_000558d0(row, 1): MuScrList_SetListPosFromItemNo
+void jump(ScrList& s, int row);                // FUN_000558d0(row, 0): the pills' jumps
+// A list frame: a new list (`key`) settled on `cursor`; a cursor moved by a key brought the rows after it; the ease and
+// the flick; `cursor` follows the rows. True as the focus row changes with them (SE 1, MuScrList_Draw)
+bool frame(ScrList& s, int key, int& cursor, int n);
+bool ready(ScrList& s, int key, int cursor);   // (the frame's first: a new list settled; true then)
+bool follow(ScrList& s, int& cursor, int n);   // `cursor` from the rows now (true: changed, SE 1)
+void press(ScrList& s, float x, float y, int n, double t); // a touch going down (the list's units; t in s)
+void move(ScrList& s, float x, float y, int n, double t);  // ... held there
+bool lift(ScrList& s, float x, float y, int n, double t);  // ... lifting: true when it was a tap (scrlist::tap's)
+// A tap's lift at (x, y): 0 none of the list's boxes, 1 the list moved (a pill, a row up or down), 2 the line's
+// row chosen, 3 the line's while the rows still move (nothing)
+int tap(ScrList& s, float x, float y, int n, float rowX = 192);
+} // namespace scrlist
+
 struct App {
     crinput::CancelWatch inputCancel;
     crtime::LifecycleClock clock;
@@ -123,6 +165,7 @@ struct App {
     SDL_ThreadID gameThread = 0;
     bool pointerCancelled = false;
     bool pointerLast = false;           // the last press a touch / click (no key or pad since): touch play's look
+    double inputTime = 0;               // the event being handled's time (s): a list's flick (scrlist::move)
     SDL_Window* window = nullptr;
     bool rendererReady = false;
     cr::Renderer renderer;
@@ -443,7 +486,7 @@ struct App {
         // listCursor: the focus row, on MuScrList's line at y 150; scroll: the rows' offset now, on
         // its way to 48 x the focus 8 a frame (listTop: kept equal to the focus)
         int cursor = 0, category = 0, listCursor = 0, listTop = 0, count = 1, confirm = 0;
-        float scroll = 0;
+        ScrList scroll;
         int mark = 0;                      // the message board's mark (ComUty_PictAnimInit(1, 4, 20): out and back)
         int bob = 0, bobDir = 1;           // ComUty_CmdBack's arrows (0..5 and back)
         int member = 0;                    // the board's character: the pair's first (0) or second
@@ -473,13 +516,13 @@ struct App {
     // The topics' MuScrList (layout 0, as the Camp's Items list): the focus row - the one on the line at 150 -
     // and the rows' offset now, 48 x the focus row once settled, 8 a frame toward it (MuScrList_Proc)
     int manualCursor = 0;
-    float manualScroll = 0;
+    ScrList manualScroll;
     int manualAnim = 0;                    // frames since the list was started (MuScrList_Start: its windows come)
     int manualFrames = 0;                  // frames since the manual was chosen (Options' windows going: FUN_00071444)
     int manualOut = 0;                     // its Back (OptionPrc 0x11): frames since the list's windows began going + 1, 0 none
     struct ManualPointer {                 // a touch on the list (MuScrList_Proc): a drag scrolls it, the gauge's thumb follows
         bool down = false, dragging = false, bar = false;
-        float startX = 0, startY = 0, lastY = 0, remainder = 0;
+        float startX = 0, startY = 0, lastY = 0;
         float curPx = -1e9f, curPy = -1e9f; // where it is now (the frame's pixels): Back lit while held
     } manualPointer;
     int manualIntro = 0;                   // the page shown before a topic is chosen (56035), 0 none
@@ -514,8 +557,7 @@ struct App {
         int anim = 0;                      // game frames (20 Hz) since the page came up: the windows' moves
         // The scrolling list's offset (MuScrList, here positive, in menu units): 48 x the focus row once
         // settled, stepping 8 a frame toward it; scrollKey names the list it belongs to (-1 none yet)
-        float scroll = 0;
-        int scrollKey = -1;
+        ScrList scroll;                    // (its key: the list it belongs to - campScrollKey)
         int mark = 0;                      // the message board's mark (one a frame)
         int leaving = 0;                   // Back on the main page: frames of the windows going, then the Camp closes
         // Back from a page to the main page (CampMainPrc's last states, then CampMain 9): frames since the page's
@@ -537,9 +579,10 @@ struct App {
         struct View {
             Page page = Main;
             Phase phase = List;
-            int member = 0, slot = 0, statusView = 0, category = 0, plate = 0, listCursor = 0, scrollKey = -1;
+            int member = 0, slot = 0, statusView = 0, category = 0, plate = 0, listCursor = 0;
             std::vector<int> list;
-            float scroll = 0, swipe = 0;
+            ScrList scroll;
+            float swipe = 0;
         };
         struct Slide {
             int t = 100, wait = 0;
@@ -562,7 +605,7 @@ struct App {
     struct CampPointer {
         bool down = false, dragging = false, bar = false;
         bool sideways = false, upright = false; // a list's drag taken as a swipe (MuScrList d1f9d) or a scroll (d1f9e)
-        float startX = 0, startY = 0, lastY = 0, remainder = 0;
+        float startX = 0, startY = 0, lastY = 0;
         float px = 0, py = 0;
         float curPx = -1e9f, curPy = -1e9f; // where it is now (the frame's pixels): the control held lights
         Camp::Page page = Camp::Main;
@@ -746,7 +789,7 @@ struct App {
         // (+0x94c) - the cursor (+0x984) steps from group to group, and every plate of its group is lit
         std::vector<int> pickCam, pickGroup;
         int pick = 0;                      // the cursor; the lists' focus row (the one on MuScrList's line)
-        float listScroll = 0;              // the lists' rows' offset (MuScrList_Proc: 8 a frame toward 48 x the focus row)
+        ScrList listScroll;                // the lists' rows (MuScrList_Proc: scrlist::)
         // FUN_00055ce4 / FUN_00055d30 (2.2.0 DAT_000c7824 genes, DAT_000c7820 items): the entry last chosen
         // from each list, its focus row when the list opens again; _MuScrList_BattleClrItem clears both as a
         // target is confirmed (-1 none)
@@ -756,9 +799,9 @@ struct App {
         // the targets page's mode (+0x986, FUN_0001bff4: 1 down on the plates' column, 2 elsewhere - a swipe
         // steps a group, a drag pans the 3D: FUN_00017668's +0xf0, kept in `pan`)
         struct Touch {
-            bool down = false, dragged = false, bar = false, inList = false;
+            bool down = false, dragged = false;
             int mode = 0, page = -1;
-            float sx = 0, sy = 0, cx = 0, lastY = 0, remainder = 0;
+            float sx = 0, sy = 0, cx = 0;
         } touch;
         float pan = 0;                     // +0xf0 less the screen's centre, in tex2d units (-48..48)
         int guardDue = 0;                  // Defend's guard loop due as the page has slid out (0x66 case 4): a mask of members
@@ -771,7 +814,7 @@ struct App {
             int page = -1;                 // the page shown (-1 none)
             Menu menu = Top;
             int cursor = 0, member = 0, pick = 0, confirm = 0, targetAction = 0;
-            float listScroll = 0;
+            ScrList listScroll;
             bool pair = false;
             std::vector<int> picks, pickGroup;
         } view;
@@ -1173,7 +1216,7 @@ struct App {
         bool skip = false;                 // +0x26: ... and Yes (flag 1)
         bool cancelled = false;            // +0x24: Back (flag 0)
         float win[11] = {}, winTo[11] = {}, fromX[11] = {}, fromY[11] = {};
-        float scroll = 0, levelScroll = 0;  // MuScrList: the rows' offset, on its way to 48 x the focus row
+        ScrList scroll, levelScroll;       // MuScrList: the lists' rows (scrlist::)
         int mark = 0;                      // the board's mark (one a frame)
         cr::Texture maps[6];               // MAP_01..06.mct (slots 0x11..)
         float clock = 0;
@@ -1640,6 +1683,7 @@ float campListX(const App& app);
 int campScrollCount(const App& app);
 bool campScrollable(const App& app);
 void campScrollBy(App& app, int rows);
+void manualScrollBy(App& app, int rows, bool wrap = false);
 int shopUnitPrice(const App& app, int item);
 std::vector<int> campItems(const App& app, int category);
 std::vector<int> campEquipList(const App& app, int c, int slot);

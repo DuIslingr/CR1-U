@@ -956,6 +956,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         return SDL_APP_CONTINUE;
     }
     if (!consumeGraphicsReset(app)) return SDL_APP_FAILURE;
+    app.inputTime = double(event->common.timestamp) * 1e-9; // (the lists' flicks: the finger's speed)
     if (app.inputCancel.note(*event)) return SDL_APP_CONTINUE;
     consumeInputCancel(app);
     switch (event->type) {
@@ -1442,7 +1443,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         if (app.optionsOpen && !app.resetAsk) { optionsScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0); break; }
         if (app.campOpen) { campScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0); break; }
         if (app.scenariosOpen) { scenariosScrollBy(app, event->wheel.y * 96); break; }
-        if (app.manualOpen) { manualKey(app, event->wheel.y > 0 ? SDLK_UP : SDLK_DOWN); break; }
+        if (app.manualOpen) { // (the port's wheel: a row, stopping at the ends - as the Camp's)
+            if (app.manualMsg.state == 0 && !app.manualOut) manualScrollBy(app, event->wheel.y > 0 ? -1 : event->wheel.y < 0 ? 1 : 0);
+            break;
+        }
         app.zoom = std::clamp(app.zoom * (event->wheel.y > 0 ? 0.9f : 1.1f), 0.1f, 10.0f);
         break;
     default:

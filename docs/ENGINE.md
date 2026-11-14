@@ -310,8 +310,8 @@ c101/c102/c104/m207a, 2026-10-12).
       Manual** (`__menuu_OptionPrc` 0xf..0x16): the manual items held (439..478, then 501 / 502; new
       data holds 19 of them - `prty_init_all`'s 0xc4fd0) in a layout-0 `MuScrList` as the Camp's
       Items list - the rows under the focus line, the HELP board with the focused topic's text, the
-      gauge, the one-part Back; a tap on the line's row (as it lifts) opens it, on another brings it
-      there, a drag scrolls - in from the right as Options' windows go; a topic opens its page (system message 56000 + item - 439, 501 / 502 item - 0x1d2) in the
+      gauge, the one-part Back; touched as every MuScrList (`scrlist::`, see the Camp's) - a tap on the
+      line's row at rest opens it - in from the right as Options' windows go; a topic opens its page (system message 56000 + item - 439, 501 / 502 item - 0x1d2) in the
       standard message window (style 8, at `_mwin[4]` with a picture, else `_mwin[5]`), paged by tap,
       five of them with their tutorial picture (MsgUty_SetMsg's table at 0xbe100), and closes back to
       the list at that topic. The first Options of a game (flag 0x43) open on 56035 "Option" in that
@@ -558,8 +558,14 @@ c101/c102/c104/m207a, 2026-10-12).
       **Status** - a member's portrait and board, < > to its equipment and skills; **Genes** - the
       gene plates in the bag on the gene board (n / 6 known, the known entries by name), a plate
       opens its known entries (the plate's picture). As 2.2.0's `__MuCamp_NextProc` runs it: the
-      lists on MuScrList's focus line (the row on the line is chosen, another tapped comes to it;
-      swipes, the gauge and the mouse wheel move it), the windows' four-frame moves, a page's after
+      lists on MuScrList's focus line, touched as 2.2.0's `MuScrList_Proc` (`scrlist::`, the table
+      at 0xbc1e0): the rows follow a drag pixel for pixel (pulled toward an end from within three rows
+      of it by a half / third / quarter), its lift snaps them to a row (20 past one is the next), a
+      flick (the last touch move's way: 10 / 20 / 150 points) runs 1 / 2 / 3 rows on 10 a frame, then
+      they ease 8 a frame; the gauge's box (448, 68, 32, 208) with 3 rows or more sets them where the
+      finger is; a tap over / under the line moves them a row, on it chooses at rest, the pills' boxes
+      jump a row past the other end and ease back. Keys and the wheel move the focus a row (a key's
+      fresh press wraps at the ends - the Vita's; ○ waits for the rows to rest), the windows' four-frame moves, a page's after
       the main page's, Back the other way. Every state change slides as 2.2.0's states put each
       window off and on (`campSlide`: the view left drawn going, the new one's windows coming at
       their state's frame, input waiting for the state that takes it): Equip's member choice (the
@@ -646,10 +652,11 @@ c101/c102/c104/m207a, 2026-10-12).
       effects <dataHD>` lists `eff.bin`
 - [x] The battle's pages as 2.2.0's `__menub_mainPrc` / `__menub_mainPut`: **Genes** and **Items** are
       MuScrLists (`MuScrList_Init(0, 4)`: mode 0, as the Camp's and the shop's) - rows at tex2d (192,
-      150 + 48k - offset) cut to 76..280, the focus row on the line lit, a drag moving the rows, a tap
-      on the line choosing (with the rows at rest), another tapped coming to it, the jump pills (0x8c /
-      0x8d at x 280), `ComUty_GuageBarDraw`'s gauge with its arrows at (456, 72), the HELP board and
-      Back, all sliding with the page; keys step the focus and stop at the ends. The entry chosen last
+      150 + 48k - offset) cut to 76..280, the focus row on the line lit, touched as the Camp's
+      (`scrlist::`: the drag, snap, flick, gauge box and taps of `MuScrList_Proc`), the jump pills
+      (0x8c / 0x8d at x 280), `ComUty_GuageBarDraw`'s gauge at (456, 72), the HELP board and Back,
+      all sliding with the page; keys step the focus, a fresh press wrapping at the ends (the
+      Vita's `FUN_8105880a`; the pad's held repeat stops there), ○ taken with the rows at rest. The entry chosen last
       from each list is its focus when it opens again (`FUN_00055ce4` / `FUN_00055d30`), forgotten as
       a target is confirmed (`_MuScrList_BattleClrItem`). Every pick - an attack, a gene, an item, a
       self or whole-side one too - goes to the targets page (state 900, `_btlord_make_select`): the

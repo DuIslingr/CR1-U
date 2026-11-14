@@ -756,6 +756,33 @@ void startShopTalk(App& app) {
     app.shop.timer = 0;
 }
 
+// The shop's list (ShopPrc -> FUN_0006a9d8 -> MuScrList_Proc, layout 0): the held touch a frame at a time (shopClick's
+// right-hand units), its rows (scrlist::); the focus row follows them
+void shopListPoint(const App& app, float px, float py, float& rx, float& my) {
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
+    float cx = (lx - uiX) / 2;
+    rx = (lx - rightX) / 2, my = ly / 2;
+    phoneMenuPoint(app, cx, my);
+    if (app.renderer.phoneLayout()) rx -= 16;
+}
+void stepShopList(App& app) {
+    App::Shop& s = app.shop;
+    const int n = int(s.list.size());
+    scrlist::ready(s.scroll, 1, s.listCursor);
+    if (s.phase == App::Shop::List && app.press.down && app.press.screen == kPressShop) {
+        float rx, my;
+        shopListPoint(app, app.press.px, app.press.py, rx, my);
+        const double t = s.scroll.lastT + 1.0 / 20; // (a frame's way: the touch sampled a game frame at a time)
+        if (s.scroll.hold == ScrList::None) scrlist::press(s.scroll, rx, my, n, t);
+        else scrlist::move(s.scroll, rx, my, n, t);
+    } else if (s.phase != App::Shop::List) s.scroll.hold = ScrList::None;
+    const bool sound = scrlist::frame(s.scroll, 1, s.listCursor, n);
+    s.listTop = s.listCursor; // (kept equal to the focus)
+    if (sound && s.phase == App::Shop::List) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1))
+}
+
 void stepShop(App& app) {
     App::Shop& s = app.shop;
     if (!s.open) return;
@@ -763,9 +790,7 @@ void stepShop(App& app) {
     ++s.mark;
     s.bob += s.bobDir;
     if (s.bob >= 5 || s.bob <= 0) s.bobDir = -s.bobDir;
-    const float to = shopui::kRowH * float(s.listCursor); // (MuScrList_Proc: 8 a frame toward the focus row)
-    if (std::fabs(to - s.scroll) > shopui::kRowH) s.scroll = to;
-    else s.scroll = s.scroll < to ? std::min(to, s.scroll + 8) : std::max(to, s.scroll - 8);
+    stepShopList(app); // (FUN_0006a9d8: MuScrList_Proc)
     if (s.phase == App::Shop::Talk) {
         // (ShopPrc 3, 65811-65830: 0 -> 1 with a count of 4, run down past 0 - the talk on the 7th frame after the tap)
         if (s.timer >= 0 && ++s.timer > 6) {
@@ -814,7 +839,7 @@ void shopChooseCategory(App& app, int c) {
     capPairMp(app); // (65891 / 66500: the gear lists' boards built afresh)
     s.category = c;
     s.listCursor = s.listTop = 0;
-    s.scroll = 0;
+    s.scroll.key = -1; // (a new list: settled on its focus)
     menuSound(app, se::kChoose);
     s.anim = 0;
     if (shopAsksMember(app)) {
@@ -829,7 +854,7 @@ void shopChooseMember(App& app, int k) {
     App::Shop& s = app.shop;
     s.member = std::clamp(k, 0, campMembers(app) - 1);
     s.listCursor = s.listTop = 0;
-    s.scroll = 0;
+    s.scroll.key = -1;
     refreshShopList(app);
     menuSound(app, se::kChoose);
     s.phase = App::Shop::List;
@@ -1147,10 +1172,12 @@ void drawShop(App& app) {
         }
     if (list) { // MuScrList_Draw mode 0: rows from the focus line at 150 less the scroll, cut to 76..280
         const int n = int(s.list.size());
+        const float scroll = s.scroll.key == 1 ? float(s.scroll.shown()) : kRowH * float(s.listCursor);
+        const int focus = s.scroll.key == 1 ? scrlist::focusOf(s.scroll, n) : s.listCursor; // (__MuScrList_GetFocusPos)
         m.setClip(kClipTop, kClipBottom);
         for (int index = 0; index < n; ++index) {
             const int it = s.list[size_t(index)];
-            const float x = kRowX + 160 * slide, y = kFocusY + kRowH * float(index) - s.scroll;
+            const float x = kRowX + 160 * slide, y = kFocusY + kRowH * float(index) - scroll;
             if (y + kRowH <= kClipTop || y >= kClipBottom) continue;
             // (ShopPut's rows, 55665-55695: the name yellow (style 3) for what the board's character wears,
             // grey (2) when it costs more than the purse or 99 are held; the plate and icon as they are)
@@ -1165,7 +1192,7 @@ void drawShop(App& app) {
                     if (std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip)) style = 3;
                 }
             const float ra = a;
-            m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
+            m.picture(index == focus ? 9 : 8, x, y, ra);
             if (const cr::ItemParam* p = app.itemTable.item(it); p && p->icon >= 0)
                 m.piece(x + 12, y + 8, float(p->icon % 16) * 32, 248 + float(p->icon / 16) * 32, 32, 32, ra);
             plateText(app, m, itemName(app, it), x + 56, y + 12, style, ra);
@@ -1174,11 +1201,11 @@ void drawShop(App& app) {
             m.picture(101, x + 226, y + 34, ra);
         }
         if (n > 2) { // the jump pills: down over the first rows, up under the last (0x8c / 0x8d at x 280)
-            if (s.listCursor < 2) m.picture(0x8c, 280 + 160 * slide, 112 - s.scroll, a);
-            if (s.listCursor >= n - 2) m.picture(0x8d, 280 + 160 * slide, 208 + kRowH * float(n - 1) - s.scroll, a);
+            if (focus < 2) m.picture(0x8c, 280 + 160 * slide, 112 - scroll, a);
+            if (focus >= n - 2) m.picture(0x8d, 280 + 160 * slide, 208 + kRowH * float(n - 1) - scroll, a);
         }
         m.clearClip();
-        drawCampScrollBar(m, s.scroll, n, a); // (ComUty_GuageBarDraw at (456, 72), 208 long)
+        drawCampScrollBar(m, scroll, n, a); // (ComUty_GuageBarDraw at (456, 72), 208 long)
     }
     if (asking && item > 0) {
         if (s.phase == App::Shop::Count) {
@@ -1257,7 +1284,9 @@ void shopKey(App& app, SDL_Keycode key) {
             s.listTop = s.listCursor; // (the focus row on the line)
             menuSound(app, se::kListFocus);
         } else if ((left || right) && shopEquipment(app)) shopSwitchMember(app);
-        else if (enter) shopChooseItem(app, s.listCursor);
+        else if (enter) { // (the Vita's: with the rows at rest)
+            if (scrlist::rests(s.scroll, 1)) shopChooseItem(app, s.listCursor);
+        }
         else if (back) shopBack(app);
         break;
     }
@@ -1316,19 +1345,21 @@ void shopClick(App& app, float px, float py) {
         using namespace shopui;
         const bool arrows = shopEquipment(app) && shopTwoMembers(app) && my >= kBackY && my < kBackY + 24;
         const int n = int(s.list.size());
-        auto focusTo = [&](int i) { s.listCursor = s.listTop = i; menuSound(app, se::kListFocus); };
-        if (rx >= kRowX && rx < kRowX + 256 && my >= kClipTop && my < kClipBottom) {
-            // MuScrList_Proc: the row on the line is chosen; another comes to it; over the first row the down
-            // pill's box jumps to the end, under the last the up pill's to the top
-            const int row = int(std::floor((my - kFocusY + s.scroll) / kRowH));
-            if (row >= 0 && row < n) {
-                if (row == s.listCursor) shopChooseItem(app, row);
-                else focusTo(row);
-            } else if (n > 2 && row < 0 && s.listCursor < 2) focusTo(n - 1), s.scroll = kRowH * float(n - 1);
-            else if (n > 2 && row >= n && s.listCursor >= n - 2) focusTo(0), s.scroll = 0;
-        } else if (rx >= 452 && rx < 476 && my >= 68 && my < 92 && s.listCursor > 0) focusTo(s.listCursor - 1); // the gauge's arrows
-        else if (rx >= 452 && rx < 476 && my >= 268 && my < 296 && s.listCursor + 1 < n) focusTo(s.listCursor + 1);
-        else if (arrows && ((cx >= 0xc0 && cx < 0xf3) || (cx >= 0x175 && cx < 0x1a8)))
+        // MuScrList_Proc (scrlist::): a drag's or the gauge's lift moves only the rows; a tap over / under the line a row
+        // on, the pills' boxes to the other end, the line's row chosen once the rows rest
+        scrlist::ready(s.scroll, 1, s.listCursor);
+        float sx, sy;
+        shopListPoint(app, px, py, sx, sy);
+        if (!scrlist::lift(s.scroll, sx, sy, n, s.scroll.lastT + 1.0 / 20)) {
+            if (scrlist::follow(s.scroll, s.listCursor, n)) menuSound(app, se::kListFocus);
+            s.listTop = s.listCursor;
+            break;
+        }
+        if (const int r = scrlist::tap(s.scroll, sx, sy, n); r) {
+            if (r == 2) scrlist::follow(s.scroll, s.listCursor, n), shopChooseItem(app, s.listCursor);
+            else if (r == 1 && scrlist::follow(s.scroll, s.listCursor, n)) menuSound(app, se::kListFocus);
+            s.listTop = s.listCursor;
+        } else if (arrows && ((cx >= 0xc0 && cx < 0xf3) || (cx >= 0x175 && cx < 0x1a8)))
             shopSwitchMember(app);
         else if (onBack) shopBack(app);
         break;
@@ -1634,7 +1665,7 @@ App::Camp::Slide& campSlide(App& app, int wait, bool ghost = true) {
         App::Camp::View& v = s.view;
         v.page = c.page, v.phase = c.phase, v.member = c.member, v.slot = c.slot, v.statusView = c.statusView;
         v.category = c.category, v.plate = c.plate, v.listCursor = c.listCursor, v.list = c.list;
-        v.scroll = c.scroll, v.scrollKey = c.scrollKey, v.swipe = c.swipe;
+        v.scroll = c.scroll, v.swipe = c.swipe;
     }
     c.swipe = 0; // (the new list's: MuScrList_DispOn / DispActive clear d1fa4)
     return s;
@@ -1643,7 +1674,7 @@ void campSwapView(App::Camp& c, App::Camp::View& v) { // (to draw the view left,
     std::swap(c.page, v.page), std::swap(c.phase, v.phase), std::swap(c.member, v.member), std::swap(c.slot, v.slot);
     std::swap(c.statusView, v.statusView), std::swap(c.category, v.category), std::swap(c.plate, v.plate);
     std::swap(c.listCursor, v.listCursor), std::swap(c.list, v.list), std::swap(c.scroll, v.scroll);
-    std::swap(c.scrollKey, v.scrollKey), std::swap(c.swipe, v.swipe);
+    std::swap(c.swipe, v.swipe);
 }
 bool campSliding(const App& app) { return app.camp.slide.t < app.camp.slide.wait; }
 
@@ -1662,8 +1693,193 @@ bool campScrollable(const App& app) {
             (app.camp.phase == App::Camp::List || app.camp.phase == App::Camp::Entries));
 }
 int campScrollCount(const App& app) { return campSlotList(app) ? campui::kEquipSlots : int(app.camp.list.size()); }
-// MuScrList (mode 0): the rows move under a fixed line - the focus row is the one on it - so a scroll
-// is a move of the focus (keys, the wheel, a drag, the gauge's arrows)
+// ---- MuScrList's rows and touch (2.2.0 MuScrList_Proc 0x569b0, 54610-55160; layout 0 of the table at 0xbc1e0) ----
+// The rows sit at 150 + 48 k less the offset; a touch on the drag area moves them pixel for pixel, its lift snaps them
+// to a row (20 past one is the next) and a flick runs one to three rows on; the gauge's box sets them where the finger
+// is; a tap over or under the line moves them a row, on the line chooses; the pills jump to the other end
+namespace scrlist {
+namespace {
+int most(int n) { return kRow * std::max(0, n - 1); } // (iVar6: 48 (n - 1) - the last row on the line)
+// ComUty_PadChkMove's box (448, 68, 32, 208) - inside, not on its edge - only with 3 rows or more (54778-54800); held,
+// the rows go to 48 n (y - 76) / 208 (bc228 / bc224) and on to the next row as it lifts; under 5 the top
+bool onGauge(float x, float y) { return x > 448 && x < 480 && y > 68 && y < 276; }
+void gauge(ScrList& s, float y, int n) {
+    const int v = kRow * n * int(std::trunc(y - 76)) / 208;
+    if (v < 5) s.off = s.target = 0;
+    else s.off = v, s.target = v - v % kRow + kRow;
+}
+// The lift after a drag (case 1 / 4, 54985-55020): the way added; a flick (the last touch move's way, points per
+// touchesMoved - 1.0's x 0.001 against 0.01 / 0.02 / 0.15) runs 1 / 2 / 3 rows more 10 a frame, none from an end pulled
+// on; the rows' target the row within 20, else the next down the list
+void commit(ScrList& s, int n, int dyO, float vel) {
+    if ((s.off <= 0 && dyO < 0) || (s.off >= most(n) && float(dyO) > float(kRow))) vel = 0;
+    const int now = s.off + s.drag;
+    s.drag = 0;
+    if (now > 0 && now < most(n) && vel != 0) {
+        const float a = std::fabs(vel);
+        if (a >= 10) s.momentum = kRow * (a >= 150 ? 3 : a >= 20 ? 2 : 1);
+        s.momDown = vel > 0;
+    }
+    s.off = now;
+    const int r = now % kRow;
+    s.target = std::abs(r) < kSnap ? now - r : now + kRow - r;
+}
+// No touch on the rows (case 0, 57688-57790): 8 a frame toward the target; past an end back to it
+void ease(ScrList& s, int n) {
+    if (s.momentum != 0) return;
+    if (s.off > most(n)) {
+        s.off -= kEase;
+        if (s.off <= most(n)) s.off = s.target = most(n);
+    } else if (s.off >= 0) {
+        if (s.target > s.off) s.off = std::min(s.target, s.off + kEase);
+        else if (s.target < s.off) s.off = std::max(s.target, s.off - kEase);
+    } else {
+        s.off += kEase;
+        if (s.off >= 0) s.off = s.target = 0;
+    }
+}
+// A flick's frame (57800-57878): 10 on; spent, or past an end, the target the next row on from there
+void flick(ScrList& s, int n) {
+    if (s.momentum <= 0) return;
+    s.momentum -= kFlick;
+    s.off += s.momDown ? kFlick : -kFlick;
+    if (s.off >= 0 && s.off <= most(n) && s.momentum >= 0) return;
+    s.target = s.off - s.off % kRow + (s.momDown ? kRow : -kRow);
+    s.momentum = 0;
+}
+} // namespace
+
+int focusOf(const ScrList& s, int n) {
+    const int v = s.shown(); // (d1f4c + d1f50)
+    if (v <= 0) return 0;
+    if (v >= most(n)) return std::max(0, n - 1);
+    return (v + kRow - kSnap) / kRow;
+}
+bool atRest(const ScrList& s) { return s.momentum <= 0 && s.off == s.target; }
+bool rests(const ScrList& s, int key) { return s.key != key || (s.hold == ScrList::None && atRest(s)); }
+void settle(ScrList& s, int row) {
+    s.off = s.target = kRow * row;
+    s.drag = 0, s.momentum = 0;
+}
+void jump(ScrList& s, int row) { // (the top: one row above it, eased back - 53709-53712)
+    s.off = s.target = row ? kRow * row : -kRow;
+    s.byKey = false;
+}
+bool follow(ScrList& s, int& cursor, int n) {
+    if (s.byKey) return false;
+    const int f = std::clamp(focusOf(s, n), 0, std::max(0, n - 1));
+    const bool sound = f != s.focus && s.quiet == 0; // (MuScrList_Draw 55408: __effgo(1) unless d1ee0)
+    cursor = s.focus = f;
+    return sound;
+}
+bool ready(ScrList& s, int key, int cursor) {
+    if (s.key == key) return false;
+    const int quiet = s.quiet;
+    s = ScrList();
+    s.key = key, s.quiet = quiet, s.focus = cursor;
+    settle(s, cursor);
+    return true;
+}
+bool frame(ScrList& s, int key, int& cursor, int n) {
+    if (s.quiet > 0) --s.quiet; // (54660)
+    if (ready(s, key, cursor)) return false;
+    if (s.hold == ScrList::Gauge) return follow(s, cursor, n); // (PadChkMove held: MuScrList_Proc returns there)
+    if (s.hold == ScrList::None && cursor != s.focus) {
+        // the keys / pad (and the code's moves): the rows 8 a frame after the focus, at once from further than a row; a
+        // wrap past an end (the Vita's FUN_8105880a, 64836-64870: a fresh press on the first row up, the last down) lands a
+        // row beyond the other end and eases back, as the pills' jumps
+        s.byKey = true;
+        s.drag = 0, s.momentum = 0;
+        s.target = kRow * cursor;
+        if (n > 2 && s.focus == 0 && cursor == n - 1) s.off = kRow * n;
+        else if (n > 2 && s.focus == n - 1 && cursor == 0) s.off = -kRow;
+        else if (std::abs(s.off - s.target) > kRow) s.off = s.target;
+        s.focus = cursor;
+    }
+    if (s.hold == ScrList::None) ease(s, n);
+    flick(s, n);
+    if (n < 3) s.off = std::clamp(s.off, -kRow, kRow * n); // (5787c-578a4)
+    return follow(s, cursor, n);
+}
+void press(ScrList& s, float x, float y, int n, double t) {
+    s.hold = ScrList::None, s.drag = 0; // (a new touch: one lost on the way is dropped)
+    if (n >= 3 && s.drag == 0 && onGauge(x, y)) { // (the gauge first: 54778)
+        s.hold = ScrList::Gauge, s.byKey = false;
+        gauge(s, y, n);
+        return;
+    }
+    if (x > 0 && x < 456 && y > 76 && y < 284) { // MuCom_PadChkScroll(0, 76, 456, 208) (bc22c): its start
+        s.hold = ScrList::Rows, s.byKey = false, s.moved = false;
+        s.startY = s.lastY = y, s.lastT = t, s.vel = 0;
+    }
+}
+void move(ScrList& s, float x, float y, int n, double t) {
+    if (s.hold == ScrList::Gauge) {
+        if (onGauge(x, y)) gauge(s, y, n);
+        return;
+    }
+    if (s.hold != ScrList::Rows) return;
+    // touchesMoved (2.2.0 0x3b30, 594-608): the way since the last move, up positive (x 0.001 there) - here over a 60th
+    // of a second at least, as the iPhone's touches come
+    if (y != s.lastY && t - s.lastT >= 1.0 / 60) {
+        s.vel = float((s.lastY - y) / ((t - s.lastT) * 60));
+        s.lastY = y, s.lastT = t;
+    }
+    if (std::fabs(y - s.startY) > 6) s.moved = true; // (the port's slop for a tap: the original takes any move)
+    // case 3 (55045-55090): the rows follow the finger; pulled toward an end from within three rows of it (the offset
+    // the drag started from) by a half / third / quarter, past it a fifth / sixth, not from two rows beyond
+    const int dyO = int(std::trunc(s.startY - y)), o = -s.off, last = most(n);
+    if (o <= -4 * kRow || dyO >= 0) {
+        if (o >= 4 * kRow - last || dyO <= 0) s.drag = dyO;
+        else if (const int k = (o + last + 4 * kRow) / kRow; k >= 2) s.drag = -std::min(kRow, int(std::trunc(float(-dyO) / float(8 - k))));
+    } else if (const int k = (o - 4 * kRow) / kRow; k < -1)
+        s.drag = -std::max(-kRow, int(std::trunc(float(-dyO) / float(k + 8))));
+}
+bool lift(ScrList& s, float x, float y, int n, double t) {
+    if (s.hold == ScrList::Gauge) { // (PadChkMove's 2 as it lifts: set once more)
+        if (onGauge(x, y)) gauge(s, y, n);
+        s.hold = ScrList::None;
+        return false;
+    }
+    if (s.hold != ScrList::Rows) { // (a press not seen - down and up within a frame: the gauge set there, else a tap)
+        if (n >= 3 && s.drag == 0 && onGauge(x, y)) {
+            s.byKey = false;
+            gauge(s, y, n);
+            return false;
+        }
+        return true;
+    }
+    move(s, x, y, n, t);
+    s.hold = ScrList::None;
+    if (!s.moved) {
+        s.drag = 0;
+        return true;
+    }
+    commit(s, n, int(std::trunc(s.startY - y)), s.vel);
+    return false;
+}
+int tap(ScrList& s, float x, float y, int n, float rowX) {
+    auto box = [&](float by, float bh) { return x >= rowX && x <= rowX + 256 && y >= by && y <= by + bh; }; // (_pad_chk_updw_box)
+    const int f = focusOf(s, n);
+    s.byKey = false;
+    // the pills' boxes (54880-54910, with 3 rows or more): over the first row on the line the end, under the last the top
+    if (n >= 3 && f == 0 && box(76, 74)) { jump(s, n); return 1; }
+    if (n >= 3 && f == n - 1 && box(198, 74)) { jump(s, 0); return 1; }
+    // over / under the line (54950-54970: bc24c / bc25c): the rows 32 (2/3 of a row) on, the lift's snap a row
+    if (box(76, 74)) { s.drag = -kRow * 2 / 3; commit(s, n, 0, 0); return 1; }
+    if (box(198, 74)) { s.drag = kRow * 2 / 3; commit(s, n, 0, 0); return 1; }
+    // the line (bc1f0: (192, 150, 256, 48), 55140-55160): chosen with the rows at rest (+0x50 == +0x58, no flick)
+    if (box(150, 48)) {
+        if (!atRest(s)) return 3;
+        s.quiet = 4; // (__ScrListSelectSePlay: d1ee0)
+        return 2;
+    }
+    return 0;
+}
+} // namespace scrlist
+
+// MuScrList (mode 0): the rows move under a fixed line - the focus row is the one on it. Keys and the wheel move the
+// focus a row (the rows ease after it: scrlist::frame); the touch moves the rows and the focus follows them
 void campScrollBy(App& app, int rows) {
     if (!campScrollable(app)) return;
     auto& c = app.camp;
@@ -1680,18 +1896,18 @@ int campScrollKey(const App& app) {
     const App::Camp& c = app.camp;
     return int(c.page) * 4096 + int(c.phase) * 256 + c.statusView * 64 + c.category * 8 + c.member;
 }
-// The rows' offset now: 48 x the focus row, or on the way to it (MuScrList_Proc: steps 8 a frame toward it;
-// a jump - the down / up pills, SetListPosFromNo - sets both at once)
+// The rows' offset now (scrlist::): 48 x the focus row once settled; a list not yet stepped settled on its focus
 float campScrollPx(const App& app) {
-    return app.camp.scrollKey == campScrollKey(app) ? app.camp.scroll : campui::kRowH * float(campFocus(app));
+    return app.camp.scroll.key == campScrollKey(app) ? float(app.camp.scroll.shown()) : campui::kRowH * float(campFocus(app));
+}
+int& campCursor(App& app) { return campSlotList(app) ? app.camp.slot : app.camp.listCursor; }
+// The focus row brought by the rows (a drag, a flick, the gauge, a tap): SE 1 (MuScrList_Draw), the Status lists' memory
+void campFollowed(App& app, bool sound) {
+    if (campScrollable(app)) (campSlotList(app) ? app.camp.slotTop : app.camp.listTop) = campFocus(app);
+    if (sound) menuSound(app, se::kListFocus);
 }
 void stepCampScroll(App& app) {
-    App::Camp& c = app.camp;
-    const int key = campScrollKey(app);
-    const float to = campui::kRowH * float(campFocus(app));
-    if (c.scrollKey != key || std::fabs(to - c.scroll) > campui::kRowH) c.scrollKey = key, c.scroll = to;
-    else if (c.scroll < to) c.scroll = std::min(to, c.scroll + 8);
-    else c.scroll = std::max(to, c.scroll - 8);
+    campFollowed(app, scrlist::frame(app.camp.scroll, campScrollKey(app), campCursor(app), campScrollCount(app)));
 }
 
 int campEntries(const App& app) { return app.renderer.phoneLayout() ? campui::kEntries - 1 : campui::kEntries; }
@@ -2282,7 +2498,10 @@ void campKey(App& app, SDL_Keycode key) {
     if (c.phase == App::Camp::Exit) return;
     if (c.phase == App::Camp::Result) { if (enter || back) campChoose(app); return; } // (pad_chk_updw_box: the whole screen)
     if (back) { campBack(app); return; }
-    if (enter) { campChoose(app); return; }
+    if (enter) { // (the Vita's MuScrList_Proc, 65420-65426: ○ on a list taken only with its rows at rest)
+        if (!campScrollable(app) || scrlist::rests(c.scroll, campScrollKey(app))) campChoose(app);
+        return;
+    }
     const int step = up ? -1 : down ? 1 : 0;
     if (c.page == App::Camp::Status && c.phase == App::Camp::Slot) { // the details: the arrows turn, the lists scroll
         if (left || right) campStatusTurn(app, right ? 1 : -1);
@@ -2412,28 +2631,15 @@ void campClick(App& app, float px, float py) {
     }
     if (c.page == App::Camp::Status && c.phase == App::Camp::Slot && c.statusView == 0) return; // (the board: arrows and swipes)
     if (campScrollable(app)) {
-        // The gauge's arrows (0x4c / 0x4d at (456, 72) / (456, 272)) step the list
-        if (in(kGaugeX - 4, kGaugeY - 4, 24, 24)) { campScrollBy(app, -1); return; }
-        if (in(kGaugeX - 4, kGaugeY + kGaugeH - 12, 24, 28)) { campScrollBy(app, 1); return; }
-        // A row (MuScrList_Proc): the one on the line is chosen (pad_chk_updw_box(192, 150, 256, 48)); another
-        // is brought to the line (the original scrolls it there by a drag). Above the first row is the down
-        // pill's box (SetListPosFromNo(n) - the end), under the last the up pill's (the top)
-        if (in(campListX(app), kListTop, 256, kListBottom - kListTop)) {
-            const int n = campScrollCount(app);
-            int& cursor = campSlotList(app) ? c.slot : c.listCursor;
-            const int row = int(std::floor((my - kFocusY + campScrollPx(app)) / kRowH));
-            if (row >= 0 && row < n) {
-                if (row == cursor) {
-                    if (c.page != App::Camp::Status && !(c.page == App::Camp::Equip && c.phase == App::Camp::Entries)) campChoose(app);
-                } else { cursor = row; menuSound(app, se::kListFocus); }
-            } else if (n > 2 && row < 0 && cursor < 2) { cursor = n - 1; c.scrollKey = -1; menuSound(app, se::kListFocus); }
-            else if (n > 2 && row >= n && cursor >= n - 2) { cursor = 0; c.scrollKey = -1; menuSound(app, se::kListFocus); }
-            return;
-        }
-    }
-    if (c.phase == App::Camp::List && c.page == App::Camp::Items && inAt(lx0, 0, 40, 180, 40)) {
-        campTurnCategory(app, 1);
-        return;
+        // A tap's lift on the rows (scrlist::tap - MuScrList_Proc): over / under the line a row on, the line's row
+        // chosen (the Status lists and a plate's entries in Equip choose nothing), the pills' boxes to the other end.
+        // (The gauge, arrows and all, is a held control: campPointerDown.) The Items category's label takes no tap:
+        // CampMainPrc 0's state 2 runs only MuScrList_Proc (63400-63445) - the arrows and swipes turn it
+        scrlist::ready(c.scroll, campScrollKey(app), campFocus(app));
+        const int r = scrlist::tap(c.scroll, mx, my, campScrollCount(app));
+        if (r == 2 && c.page != App::Camp::Status && !(c.page == App::Camp::Equip && c.phase == App::Camp::Entries)) campChoose(app);
+        else if (r == 1) campFollowed(app, scrlist::follow(c.scroll, campCursor(app), campScrollCount(app)));
+        if (r) return;
     }
     if (c.phase == App::Camp::Ask) {
         const int item = c.list.empty() ? 0 : c.list[size_t(c.listCursor)];
@@ -2458,6 +2664,7 @@ bool campPressIn(const App& app, float origin, float x, float y, float w, float 
     menuPointAt(app, lx, ly, origin, mx, my);
     return mx >= x && mx < x + w && my >= y && my < y + h;
 }
+bool campSwipeBoard(const App& app, const App::CampPointer& p);
 void campPointerDown(App& app, float px, float py) {
     auto& p = app.campPointer;
     p = App::CampPointer();
@@ -2466,9 +2673,15 @@ void campPointerDown(App& app, float px, float py) {
     p.curPx = px, p.curPy = py;
     campPointerPoint(app, px, py, p.startX, p.startY);
     p.lastY = p.startY;
-    const bool list = campScrollable(app);
-    p.bar = list && campScrollCount(app) > 1 && p.startX >= campui::kGaugeX - 2 && p.startX < campui::kGaugeX + 22 &&
-        p.startY >= campui::kGaugeY + 12 && p.startY < campui::kGaugeY + campui::kGaugeH - 12;
+    // MuScrList_Proc: the gauge's box, else the drag area (0, 76, 456, 208) - the boards' side too (widescreen: all left
+    // of the gauge) - its touch (scrlist::press)
+    if (campScrollable(app) && !campSwipeBoard(app, p)) {
+        App::Camp& c = app.camp;
+        scrlist::ready(c.scroll, campScrollKey(app), campFocus(app));
+        scrlist::press(c.scroll, std::max(p.startX, 1.0f), p.startY, campScrollCount(app), app.inputTime);
+        p.bar = c.scroll.hold == ScrList::Gauge;
+        campFollowed(app, scrlist::follow(c.scroll, campCursor(app), campScrollCount(app)));
+    }
 }
 // The lists MuScrList_SetSwipeMove marks (d1f9c): the Items list (__MuCampScrListItemInit, 64719), the equipment
 // slots with two members (__MuCampScrListEquipInit kind 4, 65096) and the Status details' two lists (kind 0xc and
@@ -2492,28 +2705,25 @@ void campPointerMove(App& app, float px, float py) {
     campPointerPoint(app, px, py, mx, my);
     p.curPx = px, p.curPy = py;
     const bool list = campScrollable(app);
-    const bool inList = p.startX >= campListX(app) && p.startX < campListX(app) + 256 &&
-        p.startY >= campui::kListTop && p.startY < campui::kListBottom;
     if (std::fabs(mx - p.startX) > 6 || std::fabs(my - p.startY) > 6) p.dragging = true;
     const float dx = mx - p.startX, dy = my - p.startY;
-    if (list && p.bar && p.dragging) {
-        const int most = std::max(0, campScrollCount(app) - 1);
-        const int to = int(std::lround(std::clamp((my - campui::kGaugeY - 24) / (campui::kGaugeH - 48), 0.0f, 1.0f) * float(most)));
-        campScrollBy(app, to - campFocus(app));
+    ScrList& sl = app.camp.scroll;
+    if (list && p.bar) {
+        scrlist::move(sl, std::max(mx, 1.0f), my, campScrollCount(app), app.inputTime); // (ComUty_PadChkMove held)
+        campFollowed(app, scrlist::follow(sl, campCursor(app), campScrollCount(app)));
     } else if (campSwipeBoard(app, p)) {
         app.camp.swipe = dx; // (the board drawn at d304c + 0x134: the finger's way, 64350)
-    } else if (list && inList) {
+    } else if (list && sl.hold == ScrList::Rows) {
         // MuScrList_Proc (54700-54760): a drag past 5 up or down scrolls (d1f9e); past 10 sideways first, on a list that
         // swipes, the list follows the finger less those 10 (d1f9d, d1fa4) and scrolls no more
         if (!p.sideways && !p.upright) {
             if (std::fabs(dy) > 5) p.upright = true;
-            else if (campSwipeList(app) && std::fabs(dx) > 10) p.sideways = true;
+            else if (campSwipeList(app) && std::fabs(dx) > 10) p.sideways = true, sl.hold = ScrList::None, sl.drag = 0;
         }
         if (p.sideways) app.camp.swipe = dx > 0 ? dx - 10 : dx + 10;
-        else if (p.dragging) {
-            p.remainder += p.lastY - my;
-            const int rows = int(p.remainder / campui::kRowH);
-            if (rows) { campScrollBy(app, rows); p.remainder -= rows * campui::kRowH; }
+        else { // (case 3: the rows with the finger, pixel for pixel)
+            scrlist::move(sl, std::max(mx, 1.0f), my, campScrollCount(app), app.inputTime);
+            campFollowed(app, scrlist::follow(sl, campCursor(app), campScrollCount(app)));
         }
     }
     p.lastY = my;
@@ -2538,13 +2748,16 @@ void campPointerUp(App& app, float px, float py) {
             campKey(app, app.camp.swipe > 0 ? SDLK_LEFT : SDLK_RIGHT);
         return;
     }
-    if (p.down && !p.dragging && app.campOpen && app.camp.page == p.page && app.camp.phase == p.phase) {
-        if (p.bar) {
-            const int most = std::max(0, campScrollCount(app) - 1);
-            const int to = int(std::lround(std::clamp((p.startY - campui::kGaugeY - 24) / (campui::kGaugeH - 48), 0.0f, 1.0f) * float(most)));
-            campScrollBy(app, to - campFocus(app));
-        } else campClick(app, px, py);
-    }
+    const bool same = p.down && app.campOpen && app.camp.page == p.page && app.camp.phase == p.phase;
+    ScrList& sl = app.camp.scroll;
+    if (same && campScrollable(app) && sl.hold != ScrList::None) { // (the list's touch lifting: MuScrList_Proc case 1 / 4)
+        float mx, my;
+        campPointerPoint(app, px, py, mx, my);
+        const bool tap = scrlist::lift(sl, std::max(mx, 1.0f), my, campScrollCount(app), app.inputTime);
+        campFollowed(app, scrlist::follow(sl, campCursor(app), campScrollCount(app)));
+        if (!tap || p.dragging) return;
+    } else sl.hold = ScrList::None;
+    if (same && !p.dragging && !p.bar) campClick(app, px, py);
 }
 
 // A plate's name at the ComPlate's (x, y) (ComUty_ComPlate_Base: + (0x38, 0xc)): MuComFontPlateDisp (0x5242c,
@@ -3081,7 +3294,7 @@ void levelList(App& app, float from, bool fresh = false) {
     App::WorldSelect& ws = app.worldSelect;
     on(app, 3, -140, 0);
     on(app, 7, from, 0);
-    if (fresh) ws.levelCursor = ws.levelTop = 0, ws.levelScroll = 0; // (FUN_00050934: the list built anew, focus at the top)
+    if (fresh) ws.levelCursor = ws.levelTop = 0, ws.levelScroll.key = -1; // (FUN_00050934: the list built anew, focus at the top)
     ws.levelCursor = std::clamp(ws.levelCursor, 0, ws.levels - 1);
     ws.state = 6;
 }
@@ -3202,19 +3415,35 @@ void worldSelectAnswer(App& app, bool yes, bool cancelled) { // states 4 (skip?)
     ws.state = 9, ws.timer = 4;
 }
 
+// A point in the lists' units (tex2d: menuPointAt takes off the phone layout's 16, 32 - drawWorldSelect's ownPlace)
+void worldListPoint(const App& app, float px, float py, float& x, float& y) {
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, wideRight(app), x, y);
+}
 void stepWorldSelect(App& app) {
     App::WorldSelect& ws = app.worldSelect;
     if (!app.worldChoiceOpen) return;
     for (int w = 0; w < 11; ++w)
         ws.win[w] = ws.win[w] < ws.winTo[w] ? std::min(ws.winTo[w], ws.win[w] + 0.25f) : std::max(ws.winTo[w], ws.win[w] - 0.25f);
     ++ws.mark;
-    auto toward = [](float& s, int focus) { // (MuScrList_Proc: 8 a frame toward the focus row)
-        const float to = wldsel::kListStep * float(focus);
-        if (std::fabs(to - s) > wldsel::kListStep) s = to;
-        else s = s < to ? std::min(to, s + 8) : std::max(to, s - 8);
-    };
-    toward(ws.scroll, ws.cursor);
-    toward(ws.levelScroll, ws.levelCursor);
+    // (WldChoicePrc 2 / 6: MuScrList_Proc on the list up - the held touch a frame at a time, worldSelectClick's units)
+    for (int k = 0; k < 2; ++k) {
+        ScrList& sl = k ? ws.levelScroll : ws.scroll;
+        int& cursor = k ? ws.levelCursor : ws.cursor;
+        const int n = k ? ws.levels : int(ws.worlds.size());
+        const bool up = ws.state == (k ? 6 : 1);
+        scrlist::ready(sl, 1, cursor);
+        if (up && app.press.down && app.press.screen == kPressWorld) {
+            float x, y;
+            worldListPoint(app, app.press.px, app.press.py, x, y);
+            const double t = sl.lastT + 1.0 / 20;
+            if (sl.hold == ScrList::None) scrlist::press(sl, x, y, n, t);
+            else scrlist::move(sl, x, y, n, t);
+        } else if (!up) sl.hold = ScrList::None;
+        if (scrlist::frame(sl, 1, cursor, n) && up) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1))
+        (k ? ws.levelTop : ws.top) = cursor;
+    }
     switch (ws.state) {
     // (asm 0x50094 / 0x502ac: the count at 1 or more moves on at once, then counts down - with 4, one frame)
     case 3: if (ws.timer-- >= 1) ws.state = 4; break;
@@ -3268,11 +3497,13 @@ void drawWorldSelect(App& app) {
     // __menuu_WldChoicePut (0x4054c) draws its lists through MuScrList_Draw - mode 0 of the table at 0xbc1f0, as the
     // Camp's and the shop's: the focus row on the line at 150, the rows moving under it, cut to 76..280, the
     // pills (0x8c / 0x8d at x 280) and ComUty_GuageBarDraw's gauge at (456, 72)
-    auto scrollList = [&](float sx, int n, int focus, float scroll, auto&& row, float a) {
+    auto scrollList = [&](float sx, int n, const ScrList& sl, int cursor, auto&& row, float a) {
+        const float scroll = sl.key == 1 ? float(sl.shown()) : kListStep * float(cursor);
+        const int focus = sl.key == 1 ? scrlist::focusOf(sl, n) : cursor; // (__MuScrList_GetFocusPos)
         m.setClip(campui::kListTop, campui::kListBottom);
         for (int i = 0; i < n; ++i) {
             const float y = campui::kFocusY + kListStep * float(i) - scroll;
-            if (y + kListStep > campui::kListTop && y < campui::kListBottom) row(i, sx, y);
+            if (y + kListStep > campui::kListTop && y < campui::kListBottom) row(i, sx, y, i == focus);
         }
         if (n > 2) {
             if (focus < 2) m.picture(0x8c, sx + 88, 112 - scroll, a);
@@ -3288,14 +3519,14 @@ void drawWorldSelect(App& app) {
     if (ws.win[6] > 0) { // the gates
         ownPlace(true);
         const int n = int(ws.worlds.size());
-        scrollList(kListX + dx(6), n, ws.cursor, ws.scroll, [&](int i, float x, float y) {
+        scrollList(kListX + dx(6), n, ws.scroll, ws.cursor, [&](int i, float x, float y, bool lit) {
             const int g = ws.worlds[size_t(i)];
             int pips = -1;
             if (g < 5) {
                 pips = 0;
                 for (int k = 0; k < 4; ++k) pips |= app.game.flag(kPipFlag[g][k][ws.pair]) ? 1 << k : 0;
             }
-            plate(x, y, ws.state == 1 && i == ws.cursor, sysText(app, 58002 + g), pips, ws.win[6]);
+            plate(x, y, ws.state == 1 && lit, sysText(app, 58002 + g), pips, ws.win[6]);
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[6]); // icon 0x3d
         }, ws.win[6]);
         ownPlace(false);
@@ -3303,8 +3534,8 @@ void drawWorldSelect(App& app) {
     }
     if (ws.win[7] > 0) { // the level bands
         ownPlace(true);
-        scrollList(kListX + dx(7), ws.levels, ws.levelCursor, ws.levelScroll, [&](int i, float x, float y) {
-            plate(x, y, ws.state == 6 && i == ws.levelCursor, sysText(app, 58008 + i), -1, ws.win[7]);
+        scrollList(kListX + dx(7), ws.levels, ws.levelScroll, ws.levelCursor, [&](int i, float x, float y, bool lit) {
+            plate(x, y, ws.state == 6 && lit, sysText(app, 58008 + i), -1, ws.win[7]);
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[7]);
         }, ws.win[7]);
         ownPlace(false);
@@ -3344,11 +3575,11 @@ void worldSelectKey(App& app, SDL_Keycode key) {
     if (ws.state == 1) {
         const int n = int(ws.worlds.size());
         if ((up || down) && n > 0) ws.cursor = (ws.cursor + (up ? n - 1 : 1)) % n, menuSound(app, se::kListFocus);
-        else if (enter) worldSelectChoose(app, ws.cursor);
+        else if (enter) { if (scrlist::rests(ws.scroll, 1)) worldSelectChoose(app, ws.cursor); } // (the Vita's: at rest)
         else if (back) worldSelectChoose(app, -1);
     } else if (ws.state == 6) {
         if (up || down) ws.levelCursor = (ws.levelCursor + (up ? ws.levels - 1 : 1)) % ws.levels, menuSound(app, se::kListFocus);
-        else if (enter) worldSelectLevel(app, ws.levelCursor);
+        else if (enter) { if (scrlist::rests(ws.levelScroll, 1)) worldSelectLevel(app, ws.levelCursor); }
         else if (back) worldSelectLevel(app, -1);
     } else if (ws.state == 4 || ws.state == 8) {
         if (up || down || key == SDLK_LEFT || key == SDLK_RIGHT) ws.confirm ^= 1, menuSound(app, se::kCursor);
@@ -3372,20 +3603,22 @@ void worldSelectClick(App& app, float px, float py) {
             else worldSelectLevel(app, -1);
             return;
         }
-        // (MuScrList_Proc: the row on the line is chosen, another comes to it; the pills' boxes jump to the other end)
+        // MuScrList_Proc (scrlist::): a drag's or the gauge's lift moves only the rows; a tap over / under the line a row
+        // on, the pills' boxes to the other end, the line's row chosen once the rows rest
         const int n = ws.state == 1 ? int(ws.worlds.size()) : ws.levels;
         int& focus = ws.state == 1 ? ws.cursor : ws.levelCursor;
-        const float scroll = ws.state == 1 ? ws.scroll : ws.levelScroll;
-        if (in(kListX, campui::kListTop, 256, campui::kListBottom - campui::kListTop)) {
-            const int row = int(std::floor((my - campui::kFocusY + scroll) / kListStep));
-            if (row >= 0 && row < n) {
-                if (row != focus) { focus = row; menuSound(app, se::kListFocus); }
-                else if (ws.state == 1) worldSelectChoose(app, row);
-                else worldSelectLevel(app, row);
-            } else if (n > 2 && row < 0 && focus < 2) focus = n - 1, menuSound(app, se::kListFocus);
-            else if (n > 2 && row >= n && focus >= n - 2) focus = 0, menuSound(app, se::kListFocus);
-            return;
+        ScrList& sl = ws.state == 1 ? ws.scroll : ws.levelScroll;
+        scrlist::ready(sl, 1, focus);
+        float x, y;
+        worldListPoint(app, px, py, x, y);
+        const bool tapped = scrlist::lift(sl, x, y, n, sl.lastT + 1.0 / 20);
+        const int r = tapped ? scrlist::tap(sl, x, y, n, kListX) : 1;
+        if (scrlist::follow(sl, focus, n)) menuSound(app, se::kListFocus);
+        if (r == 2) {
+            if (ws.state == 1) worldSelectChoose(app, focus);
+            else worldSelectLevel(app, focus);
         }
+        if (r) return;
     } else if (ws.state == 4 || ws.state == 8) {
         if (in(336, 104, 136, 40)) worldSelectAnswer(app, true);
         else if (in(336, 160, 136, 40)) worldSelectAnswer(app, false);
@@ -3545,9 +3778,9 @@ void drawCamp(App& app) {
                 const float y = kFocusY + kRowH * float(k) - scroll;
                 if (y + kRowH > kListTop && y < kListBottom) row(k, x, y, k == focus);
             }
-            if (n > 2) {
-                if (focus < 2) m.picture(0x8c, x + 88, 112 - scroll, e);
-                if (focus >= n - 2) m.picture(0x8d, x + 88, 208 + kRowH * float(n - 1) - scroll, e);
+            if (n > 2) { // (MuScrList_Draw 55930-55950: at 0x118 on the list's window - the swipe's d1fa4 moves only the rows)
+                if (focus < 2) m.picture(0x8c, x - c.swipe + 88, 112 - scroll, e);
+                if (focus >= n - 2) m.picture(0x8d, x - c.swipe + 88, 208 + kRowH * float(n - 1) - scroll, e);
             }
             m.clearClip();
             const float gauge = ghost ? (curList ? 0.0f : e) : ghostList ? ease : e;
@@ -4610,7 +4843,7 @@ void openManual(App& app, int intro) { // intro: a page shown before any topic (
     app.manualOpen = true;
     app.manualIntro = intro;
     app.manualCursor = 0;
-    app.manualScroll = 0;
+    app.manualScroll = ScrList();
     app.manualAnim = app.manualFrames = app.manualOut = 0;
     app.manualPointer = App::ManualPointer();
     App::ManualMsg& mm = app.manualMsg;
@@ -4646,9 +4879,8 @@ void manualBack(App& app) {
 void stepManual(App& app) {
     App::ManualMsg& mm = app.manualMsg;
     ++app.manualAnim, ++app.manualFrames;
-    const float to = campui::kRowH * float(app.manualCursor);
-    if (std::fabs(to - app.manualScroll) > campui::kRowH) app.manualScroll = to;
-    else app.manualScroll = app.manualScroll < to ? std::min(to, app.manualScroll + 8) : std::max(to, app.manualScroll - 8);
+    if (scrlist::frame(app.manualScroll, 1, app.manualCursor, int(manualTopics(app).size())) && app.manualMsg.state == 0)
+        menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1) as the focus row changes)
     if (app.manualOut && ++app.manualOut > 5) { // (WinDispOff: whole a frame, then 4 frames to gone)
         app.manualOpen = false, app.manualOut = 0;
         return;
@@ -4713,8 +4945,9 @@ void drawManual(App& app) {
         manualWindows(app, list, bar);
         const std::vector<int> topics = manualTopics(app);
         const int n = int(topics.size());
-        const float scroll = app.manualScroll;
-        const int focus = std::clamp(int((scroll + 28) / kRowH), 0, std::max(0, n - 1)); // (__MuScrList_GetFocusPos)
+        const ScrList& sl = app.manualScroll;
+        const float scroll = sl.key == 1 ? float(sl.shown()) : kRowH * float(app.manualCursor);
+        const int focus = std::clamp(sl.key == 1 ? scrlist::focusOf(sl, n) : app.manualCursor, 0, std::max(0, n - 1)); // (__MuScrList_GetFocusPos)
         r.setOrigin(wideRight(app)); // (widescreen: the list, its HELP and gauge to the right, as the Camp's)
         if (list.a > 0 && n > 0) {
             drawHelpWindow(app, m, topics[size_t(focus)], list.a, list.dx);
@@ -4750,10 +4983,13 @@ void drawManual(App& app) {
     r.setOrigin(r.uiX());
 }
 
-// MuScrList (layout 0): the rows move under the line, so a key, the wheel, a drag or the gauge's arrows move the focus
-void manualScrollBy(App& app, int rows) {
+// MuScrList (layout 0): a key or the wheel moves the focus a row, the rows easing after it (scrlist::frame)
+void manualScrollBy(App& app, int rows, bool wrap) { // (wrap: a key / the pad)
     const int n = int(manualTopics(app).size()), before = app.manualCursor;
-    app.manualCursor = std::clamp(app.manualCursor + rows, 0, std::max(0, n - 1));
+    // (the Vita's FUN_8105880a: up on the first row the last, down on the last the first - a fresh press; the pad's held
+    // repeat stops at the ends, padStep)
+    if (wrap && n > 0 && std::abs(rows) == 1 && (before + rows < 0 || before + rows >= n)) app.manualCursor = rows < 0 ? n - 1 : 0;
+    else app.manualCursor = std::clamp(app.manualCursor + rows, 0, std::max(0, n - 1));
     if (before != app.manualCursor) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1) as the focus row changes)
 }
 
@@ -4767,10 +5003,13 @@ void manualKey(App& app, SDL_Keycode key) {
         return;
     }
     if (mm.state != 0 || app.manualOut) return; // (the list going, or the window closing)
-    if (confirm) { manualChoose(app); return; }
+    if (confirm) { // (the Vita's MuScrList_Proc, 65420-65426: ○ taken only with the rows at rest)
+        if (scrlist::rests(app.manualScroll, 1)) manualChoose(app);
+        return;
+    }
     switch (key) {
-    case SDLK_UP: case SDLK_W: manualScrollBy(app, -1); break;
-    case SDLK_DOWN: case SDLK_S: manualScrollBy(app, 1); break;
+    case SDLK_UP: case SDLK_W: manualScrollBy(app, -1, true); break;
+    case SDLK_DOWN: case SDLK_S: manualScrollBy(app, 1, true); break;
     case SDLK_PAGEUP: case SDLK_PAGEDOWN: { // (L / R: the port's - a list flicked a view on)
         const int before = app.manualCursor, n = int(manualTopics(app).size());
         app.manualCursor = std::clamp(before + (key == SDLK_PAGEUP ? -campui::kRows : campui::kRows), 0, std::max(0, n - 1));
@@ -4782,9 +5021,9 @@ void manualKey(App& app, SDL_Keycode key) {
     }
 }
 
-// A touch lifting (frame pixels), not a drag (MuScrList_Proc): Back (lit while held) closes; on the list the row on
-// the line is chosen (pad_chk_updw_box(192, 150, 256, 48)), another is brought to the line; above the first row the
-// down pill's box jumps to the end, under the last the up pill's to the top; the gauge's arrows step it
+// A touch lifting (frame pixels), not a drag (MuScrList_Proc): Back (lit while held) closes; on the list a tap over /
+// under the line moves it a row, on the line (pad_chk_updw_box(192, 150, 256, 48)) chooses at rest; the pills' boxes
+// jump to the other end (scrlist::tap)
 void manualClick(App& app, float px, float py) {
     using namespace campui;
     App::ManualMsg& mm = app.manualMsg;
@@ -4795,18 +5034,13 @@ void manualClick(App& app, float px, float py) {
     menuPointAt(app, lx, ly, app.renderer.uiX(), mx, my);
     if (mx >= kBackX && mx < kBackX + 256 && my >= campBackY(app) && my < campBackY(app) + 34) { manualBack(app); return; }
     menuPointAt(app, lx, ly, wideRight(app), mx, my);
-    auto in = [&](float x, float y, float w, float h) { return mx >= x && mx < x + w && my >= y && my < y + h; };
-    if (in(kGaugeX - 4, kGaugeY - 4, 24, 24)) { manualScrollBy(app, -1); return; }
-    if (in(kGaugeX - 4, kGaugeY + kGaugeH - 12, 24, 28)) { manualScrollBy(app, 1); return; }
-    if (!in(kRowX, kListTop, 256, kListBottom - kListTop)) return;
+    // a tap on the rows (scrlist::tap - MuScrList_Proc): over / under the line a row on, the line's row chosen once the
+    // rows rest, the pills' boxes to the other end (the gauge is a held control: manualPointerDown)
     const int n = int(manualTopics(app).size());
-    int& cursor = app.manualCursor;
-    const int row = int(std::floor((my - kFocusY + app.manualScroll) / kRowH));
-    if (row >= 0 && row < n) {
-        if (row == cursor) manualChoose(app);
-        else cursor = row, menuSound(app, se::kListFocus);
-    } else if (n > 2 && row < 0 && cursor < 2) cursor = n - 1, app.manualScroll = kRowH * float(n - 1), menuSound(app, se::kListFocus);
-    else if (n > 2 && row >= n && cursor >= n - 2) cursor = 0, app.manualScroll = 0, menuSound(app, se::kListFocus);
+    scrlist::ready(app.manualScroll, 1, app.manualCursor);
+    const int r = scrlist::tap(app.manualScroll, mx, my, n);
+    if (r == 2) manualChoose(app);
+    else if (r == 1 && scrlist::follow(app.manualScroll, app.manualCursor, n)) menuSound(app, se::kListFocus);
 }
 
 // The list's touch (the Camp's model: campPointerDown / Move / Up). On the page a tap turns it as it goes down
@@ -4823,29 +5057,31 @@ void manualPointerDown(App& app, float px, float py) {
     app.renderer.toLogical(px, py, lx, ly);
     menuPointAt(app, lx, ly, wideRight(app), p.startX, p.startY);
     p.lastY = p.startY;
-    p.bar = manualTopics(app).size() > 1 && p.startX >= kGaugeX - 2 && p.startX < kGaugeX + 22 && p.startY >= kGaugeY + 12 &&
-            p.startY < kGaugeY + kGaugeH - 12;
+    // MuScrList_Proc: the gauge's box, else the drag area (scrlist::press)
+    const int n = int(manualTopics(app).size());
+    scrlist::ready(app.manualScroll, 1, app.manualCursor);
+    scrlist::press(app.manualScroll, std::max(p.startX, 1.0f), p.startY, n, app.inputTime);
+    p.bar = app.manualScroll.hold == ScrList::Gauge;
+    if (scrlist::follow(app.manualScroll, app.manualCursor, n)) menuSound(app, se::kListFocus);
 }
 void manualPointerMove(App& app, float px, float py) {
     using namespace campui;
     App::ManualPointer& p = app.manualPointer;
     if (!p.down) return;
-    if (!app.manualOpen || app.manualMsg.state != 0 || app.manualOut) { p = App::ManualPointer(); return; }
+    if (!app.manualOpen || app.manualMsg.state != 0 || app.manualOut) {
+        p = App::ManualPointer();
+        app.manualScroll.hold = ScrList::None, app.manualScroll.drag = 0;
+        return;
+    }
     p.curPx = px, p.curPy = py;
     float lx, ly, mx, my;
     app.renderer.toLogical(px, py, lx, ly);
     menuPointAt(app, lx, ly, wideRight(app), mx, my);
     if (std::fabs(mx - p.startX) > 6 || std::fabs(my - p.startY) > 6) p.dragging = true;
+    // (MuScrList_Proc case 3: the rows with the finger, pixel for pixel; ComUty_PadChkMove: the gauge held)
     const int n = int(manualTopics(app).size());
-    if (p.bar && p.dragging) { // (MuScrList_Proc's ComUty_PadChkMove on the gauge: the rows follow its thumb)
-        const int to = int(std::lround(std::clamp((my - kGaugeY - 24) / (kGaugeH - 48), 0.0f, 1.0f) * float(std::max(0, n - 1))));
-        manualScrollBy(app, to - app.manualCursor);
-    } else if (!p.bar && p.dragging && p.startX >= kRowX && p.startX < kRowX + 256 && p.startY >= kListTop && p.startY < kListBottom) {
-        // (MuScrList_Proc 54700-54760: a drag past 5 up or down scrolls - row by row here, the rows easing to the line)
-        p.remainder += p.lastY - my;
-        const int rows = int(p.remainder / kRowH);
-        if (rows) { manualScrollBy(app, rows); p.remainder -= float(rows) * kRowH; }
-    }
+    scrlist::move(app.manualScroll, std::max(mx, 1.0f), my, n, app.inputTime);
+    if (scrlist::follow(app.manualScroll, app.manualCursor, n)) menuSound(app, se::kListFocus);
     p.lastY = my;
 }
 void manualPointerUp(App& app, float px, float py) {
@@ -4854,12 +5090,14 @@ void manualPointerUp(App& app, float px, float py) {
     manualPointerMove(app, px, py);
     const App::ManualPointer p = app.manualPointer;
     app.manualPointer = App::ManualPointer();
-    if (!p.down || p.dragging) return;
-    if (p.bar) {
-        const int n = int(manualTopics(app).size());
-        const int to = int(std::lround(std::clamp((p.startY - kGaugeY - 24) / (kGaugeH - 48), 0.0f, 1.0f) * float(std::max(0, n - 1))));
-        manualScrollBy(app, to - app.manualCursor);
-    } else manualClick(app, px, py);
+    if (!p.down) return;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPointAt(app, lx, ly, wideRight(app), mx, my);
+    const int n = int(manualTopics(app).size());
+    const bool tap = scrlist::lift(app.manualScroll, std::max(mx, 1.0f), my, n, app.inputTime); // (case 1 / 4)
+    if (scrlist::follow(app.manualScroll, app.manualCursor, n)) menuSound(app, se::kListFocus);
+    if (tap && !p.dragging && !p.bar) manualClick(app, px, py);
 }
 
 // ---- Character Select (Util 4: __menuu_StartPut) ----
