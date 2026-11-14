@@ -3249,8 +3249,9 @@ void stepBattle(App& app) {
         }
         // 0x513: a tap (pad_chk_trg_up) once +0xa46 reads 40 - at once for any battle but an event's, whose count
         // starts at 0 with the picture; nothing else ends it
-        if (b.phaseFrames >= (b.eventBattle ? 50 : 10) && b.lostTap) b.exit = b.eventBattle ? 2 : 3;
-        b.lostTap = false;
+        // (the Vita's 0x513, 15391-15398: only the touch waits for the count to pass 0x27 - its buttons end it at once)
+        if (b.phaseFrames >= 10 && (b.lostButton || (b.phaseFrames >= (b.eventBattle ? 50 : 10) && b.lostTap))) b.exit = b.eventBattle ? 2 : 3;
+        b.lostTap = b.lostButton = false;
         break;
     case App::Battle::Fled:
         if (b.phaseFrames >= 30) b.exit = 1;
@@ -3992,7 +3993,7 @@ void battleKey(App& app, SDL_Keycode key) {
         return;
     }
     if (b.phase == App::Battle::Lost) {
-        if (enter || back) b.lostTap = true;
+        if (enter || back) b.lostButton = true; // (keys as the Vita's buttons)
         return;
     }
     if (b.analyze.on) { // Analyze's lines: the next

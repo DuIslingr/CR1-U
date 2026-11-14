@@ -525,7 +525,10 @@ void saveScreenKey(App& app, SDL_Keycode key) {
         return;
     }
     if (ss.phase == 1) {
-        if (key == SDLK_LEFT || key == SDLK_A || key == SDLK_RIGHT || key == SDLK_D) { ss.confirm ^= 1; menuSound(app, se::kCursor); }
+        // (the Vita's SaveLoadPrc 4 (62580): the plates stacked at 104 / 160, moved with up / down - FUN_81008704;
+        // video 04 458.5 s; left / right kept for keyboards)
+        if (key == SDLK_LEFT || key == SDLK_A || key == SDLK_RIGHT || key == SDLK_D || key == SDLK_UP || key == SDLK_W ||
+            key == SDLK_DOWN || key == SDLK_S) { ss.confirm ^= 1; menuSound(app, se::kCursor); }
         else if (enter && ss.confirm == 0) saveScreenYes(app);
         else if (enter || back) { // No
             // (SaveLoadPrc 4 / 8 play 2 themselves - ComUty_YesNoChoiceProc(.., 0); 0xc's "without saving?"
@@ -722,8 +725,10 @@ void capPairMp(App& app) {
 void openShop(App& app) {
     App::Shop& s = app.shop;
     cr::Texture keeper = s.keeper;
+    const int category = s.category; // (the Vita's DAT_81114530: set only by a pick, 67112 - kept from visit to visit)
     s = App::Shop();
     s.keeper = keeper;
+    s.category = category;
     s.open = true;
     s.level = cr::shopLevel(app.game, shopRoute(app));
     s.member = std::clamp(app.playerChar - shopRoute(app) * 2, 0, 1);
@@ -5095,7 +5100,8 @@ bool titleKey(App& app, SDL_Keycode key) {
     if (app.resumePrompt) return true; // (its windows going: nothing to answer)
     // (the Vita's __menuu_TitlePrc 1: 0xf008 - □ △ ○ × START, no D-pad; the pad's D-pad comes as the arrows)
     const bool padArrow = app.padKeyNow && (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT);
-    if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { if (!padArrow) titleTap(app); return true; }
+    const bool padShoulder = app.padKeyNow && (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN); // (L / R: not in 0xf008)
+    if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { if (!padArrow && !padShoulder) titleTap(app); return true; }
     if (!titlePlatesLive(app) && key != SDLK_ESCAPE && key != SDLK_AC_BACK) return true;
     switch (key) {
     case SDLK_UP: case SDLK_W: app.titleCursor = (app.titleCursor + 2) % 3; menuSound(app, se::kCursor); break;

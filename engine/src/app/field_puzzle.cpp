@@ -1753,9 +1753,11 @@ void stepPuzzleHud(App& app) {
     if (esp != pz.shownEsp) {
         // (PuzzleManager::init 42715-42725 zeroes the HUD, then SetFldMenu_puzzle_count swells on any change - the
         // room's first value too, unless it is 0)
-        if ((pz.shownEsp == -1000 ? 0 : pz.shownEsp) != esp) pz.pop = 4;
+        if ((pz.shownEsp == -1000 ? 0 : pz.shownEsp) != esp) pz.pop = 5;
         pz.shownEsp = esp;
     }
+    // (_SetFldMenu_puzzle_count sets 4 in the update, 31743; __menuf_mainPut draws with it, then counts down, 32325 /
+    // 32361: 1.4, 1.3, 1.2, 1.1 - set one higher here, as this counts down before the draw; video 10 628.3 s)
     if (pz.pop > 0) --pz.pop;
     for (App::Puzzle::Arrow& ar : pz.arrows) // _ArrowOff's fade: the alpha byte down 0x50 (wrapping) / 0x33 a frame
         if (ar.timer > 0) {
@@ -2682,7 +2684,7 @@ void punish(App& app, int t) {
     if (tx < 0) tx = 240, ty = 160;
     pz.punishX = tx - 32, pz.punishY = ty - 32;
     pz.punished = 11, pz.punishPhase = 0;
-    pz.pop = 4;
+    pz.pop = 5; // (as the count's swell: 1.4 first)
     app.sound.play(se::kBuzzer);
 }
 
@@ -2797,13 +2799,15 @@ void stepPkBlock(App& app, App::Puzzle::Obj& o) {
             const float dx = to.x - from.x, dz = to.z - from.z, d = std::sqrt(dx * dx + dz * dz);
             o.pkTimer = std::max(1, int(d / 3.0f));
             o.vx = d > 0 ? dx / d * 3.0f : 0, o.vz = d > 0 ? dz / d * 3.0f : 0;
+            n.kind &= ~2; // (onWaitSlide 52703: no longer solid while it slides - RectWrapper::checkHitWallToSphere reads
+                          // the bit live, 36853 - so it reaches the leader and IsHitPC squashes, not shoves)
             o.pk = 3;
         }
         break;
     }
     case 3: // onMove: the leader in the block's box squashes the try
         place(app, o, {n.pos[0] + o.vx, n.pos[1], n.pos[2] + o.vz});
-        if (inBox(app, n)) { squash(app); return; }
+        if (inBox(app, n)) { n.kind |= 2; squash(app); return; } // (onMove 52513: solid again on the squash)
         if (--o.pkTimer > 0) break;
         {
             if (int* from = cellSlot(app, o.layer, o.row, o.col); from && *from >= 0 && &app.puzzle.objs[size_t(*from)] == &o) *from = -1;
@@ -2813,6 +2817,7 @@ void stepPkBlock(App& app, App::Puzzle::Obj& o) {
             const cr::Vec3 c = centre(app, o.row, o.col);
             place(app, o, {c.x, n.pos[1], c.z});
             startQuake(app.fieldQuake, 0.5f, 100, 0, 8, false); // Quake::start(0.5, 100 -> 0, 8 frames)
+            n.kind |= 2; // (onMove 52537: solid again as it lands)
             o.vy = 0;
             o.pk = switchAt(app, o.row, o.col) ? 5 : 4;
         }
@@ -3385,7 +3390,10 @@ bool click(App& app, float px, float py) {
     const float bx = tx + (app.renderer.uiX() - wideLeft(app)) / 2; // (widescreen: the pad in the corner)
     if (bx >= 8 && bx < 52 && ty >= 56 && ty < 84 && ask(app, 0)) return true;
     if (bx >= 84 && bx < 124 && ty >= 14 && ty < 46 && ask(app, 1)) return true;
-    if (cleared(app) || pz.scene != 4 || pz.scroll.state == 1) return false;
+    // (ScrollCamera 77509-77517: while the view is scrolled every touch is marked used - CrossKey skips it, 37983 - so a
+    // drag doesn't walk the leader; the touch only brings the view back)
+    if (pz.scroll.state == 1) return true;
+    if (cleared(app) || pz.scene != 4) return false;
     float ox = 0, oy = 0;
     const int t = pick(app, tx, ty, &ox, &oy);
     if (t < 0) return false;
@@ -3398,8 +3406,11 @@ bool click(App& app, float px, float py) {
         return true;
     }
     pz.tap = App::Puzzle::Tap(); // CheckTap state 1: this touch, from here
-    pz.tap.state = 1, pz.tap.x = tx, pz.tap.y = ty;
-    return true;
+    // (CheckTap::update 77372-77387: the frame it first sees the touch counts 0, then +1 a frame and a tap when it
+    // ends at a count under 6 - stepTap adds 1 on this frame too, so start one lower)
+    pz.tap.state = 1, pz.tap.x = tx, pz.tap.y = ty, pz.tap.frames = -1;
+    // (CheckTap doesn't mark the touch used: CrossKey takes it too - a drag from a block walks the leader)
+    return false;
 }
 
 // The held touch moved (the frame's pixels): where the detector sees it

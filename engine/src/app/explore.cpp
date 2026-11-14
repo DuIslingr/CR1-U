@@ -829,9 +829,9 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 wonWaits = !b.wonTap;
                 battleKey(app, SDLK_RETURN);
                 wonWaits = wonWaits && b.wonTap;
-                b.phase = App::Battle::Lost, b.lostTap = false;
+                b.phase = App::Battle::Lost, b.lostTap = b.lostButton = false;
                 padButton(app, SDL_GAMEPAD_BUTTON_NORTH);
-                lostEnds = b.lostTap;
+                lostEnds = b.lostButton; // (a button: at once, 0x513 15391-15398)
                 b.phase = App::Battle::Command;
                 endBattle(app, false);
                 app.runner.stop();

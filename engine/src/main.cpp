@@ -174,7 +174,7 @@ void padButton(App& app, int b) {
     const bool face = confirm || cancel || b == SDL_GAMEPAD_BUTTON_WEST || b == SDL_GAMEPAD_BUTTON_NORTH || b == SDL_GAMEPAD_BUTTON_START;
     // a defeat (the Vita's _btl_main 0x513: FUN_8106c116 of □ × ○ △ START) ends on any of them
     if (face && app.mode == Mode::Maps && app.battle.active && app.battle.phase == App::Battle::Lost) {
-        app.battle.lostTap = true;
+        app.battle.lostButton = true;
         return;
     }
     // the Vita's title (__menuu_TitlePrc 1: FUN_8100876a, 0xf008 - □ △ ○ × START) starts on any of them
@@ -1057,9 +1057,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             }
             break;
         }
-        if (app.mapScreen.open) { // any of these closes it (the original: a tap anywhere)
+        if (app.mapScreen.open) { // any of these closes it (the original: a tap anywhere; the Vita's MapPrc 50155-50162:
+            // x alone of the buttons - the pad's confirm does nothing)
             switch (event->key.key) {
-            case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E:
+            case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E:
+                if (app.padKeyNow) break;
+                [[fallthrough]];
+            case SDLK_ESCAPE: case SDLK_BACKSPACE:
                 closeMapScreen(app);
                 break;
             default: break;
