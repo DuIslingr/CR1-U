@@ -162,7 +162,7 @@ int BattleRules::leaderLevel() const {
 void BattleRules::setupEnemies(const BattleData& data, const std::array<int, 3>& ids, int band) {
     const int L = leaderLevel();
     const int hi = L > 98 ? 100 : L + 2, lo = L < 6 ? 1 : L - 5;
-    band = std::clamp(band, 0, 9);
+    band = std::clamp(band, -1, 9); // (-1: a Back out of World Select's band list before the last gate - top 0)
     for (int k = 0; k < 3; ++k) {
         Fighter& x = f[size_t(2 + k)];
         x = Fighter();
@@ -185,7 +185,7 @@ void BattleRules::setupEnemies(const BattleData& data, const std::array<int, 3>&
             }
         } else
             lv = m->level > 0 ? m->level : L;
-        x.level = std::clamp(lv, 1, 100);
+        x.level = std::clamp(lv, 0, 100); // (_btl_enemy_init_lv: band -1's top, 0, kept)
         x.hp = x.hpMax = int(m->hpAt(x.level));
         x.atk = m->atkAt(x.level);
         x.grd = m->grdAt(x.level);
@@ -676,14 +676,15 @@ std::vector<int> BattleRules::resolveTargets(const BattleActionDef& a, const Ent
     if (e.target2 >= 0 && !isGroupScope(a) && a.scope != 0 && f[size_t(e.target2)].alive() &&
         std::find(out.begin(), out.end(), e.target2) == out.end())
         out.push_back(e.target2); // (btlque_add_counter: all the blow's actors)
-    // btlque_make_que: in pair mode a single target on the pair's side is both; with the enemy
-    // pair (+0xaec) one on the enemies' side is enemies 2 and 3
-    if (pair && out.size() == 1 && out[0] < 2 && a.scope != 1) {
+    // btlque_make_que (31164-31183): in pair mode a single target on the pair's side is both; with the
+    // enemy pair (+0xaec) one on the enemies' side is enemies 2 and 3 - whatever the scope (a self
+    // action too: Counter Stance gives both the stance)
+    if (pair && out.size() == 1 && out[0] < 2) {
         out.clear();
         for (int i = 0; i < 2; ++i)
             if (f[size_t(i)].alive()) out.push_back(i);
     }
-    if (enemyPair && out.size() == 1 && out[0] >= 2 && a.scope != 1) {
+    if (enemyPair && out.size() == 1 && out[0] >= 2) {
         out.clear();
         for (int i = 2; i < 4; ++i)
             if (f[size_t(i)].alive()) out.push_back(i);
@@ -968,7 +969,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                             out.hits.push_back(self);
                         }
                 }
-                if (a->variance > 0 && h.amount != 0) h.amount = (100 - a->variance + random(2 * a->variance + 1)) * h.amount / 100;
+                // (FUN_00029f5c 23594: the roll is drawn whenever the action has a variance, a 0 too)
+                if (a->variance > 0) h.amount = (100 - a->variance + random(2 * a->variance + 1)) * h.amount / 100;
                 break;
             }
             case 17: h.amount = -a->power * (has(e.actors[0], 155) ? 20 : 10); break; // btlcalc_0422: HP
@@ -1251,7 +1253,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
             else item = lv >= 20 && random(2) ? row(0xc2) : row(0xc0);
             if (item >= 81 && item <= 186) { // FUN_0002ae14: an ability or skill into the bag at once, no result line
                 if (std::find(learned.begin(), learned.end(), item) == learned.end()) learned.push_back(item);
-            } else if (item > 0) drops.push_back(item);
+            } else if (item > 0 && drops.size() < 16) drops.push_back(item); // (+0xa58: 16 slots - one past them is lost)
         }
     }
     if (itemsAndGenes && row(0xb4) != 0) { // a gene
@@ -1274,7 +1276,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
         }
     }
     const int plate = plateDrop(x.def->model); // chk_dead: 481 + (model - 13) / 3
-    if (plate > 0 && !knows(plate)) drops.push_back(plate);
+    if (plate > 0 && !knows(plate) && drops.size() < 16) drops.push_back(plate);
 }
 
 int BattleRules::outcome() const {

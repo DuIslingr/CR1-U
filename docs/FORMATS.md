@@ -1005,7 +1005,9 @@ battle.
 - **World choice** (`_menuu_WldChoice*`): a list of gates, then a level and a yes/no. On close
   `_menuu_WldChoiceClr` sets flag 0 if cancelled; otherwise var 0 = gate (0 = 1st), var 1 = level,
   var 2 = the party (route), flag 1 set for the second choice (cleared for gates 4 and 5), and
-  G+0x30540[pair] = var 1. It only ever sets flags 0 / 1: the Ark's script clears both before
+  G+0x30540[pair] = var 1 - 0 from the open, −1 after a Back out of a band list, the last gate
+  (no band list) keeping it; band −1 puts monsters without a level of their own at level 0
+  (`_btl_enemy_init_lv`: top 0). It only ever sets flags 0 / 1: the Ark's script clears both before
   `Util 1` (j001_t01 0x4f8 / 0x504). The Ark's script returns when flag 0 is set, else warps: gate 0 →
   area 2 (d01) map 0, gate 1 → area 3 map 14, …
   Set: the pair's gates in its order (0xca7d0, 6 bytes a pair: 0 1 2 3 4 5 / 1 2 0 3 4 5 / 2 0 1
@@ -1357,7 +1359,8 @@ not known of the six it carries - its plate's three abilities and three skills, 
 / +0xb8 / +0xba / +0xbc / +0xbe, the later ones once it's level 5 / 10 / 15 / 20 / 25; leaves an
 item (rolled first, 20 / 30 / 40 / 50% for their level + 10 less its; then row +0xc0, +0xc2 half
 the time from level 20, +0xc4 a third of the time from 40, `btlcalc_0505`); and models 13..72
-leave plate 481 + (model − 13) / 3, three models a plate (chk_dead). A
+leave plate 481 + (model − 13) / 3, three models a plate (chk_dead). The battle keeps 16 drops
+(btl +0xa58, FUN_0002ae14; an ability or skill goes straight to the bag) - one more is lost. A
 new game (`prty_init_new`, 14 bytes per character at 0xcb3f0: weapon, armor, jewel, plate,
 ability, skill) adds 3 Emergency Exits and 2 Chocolates. Messages: 57010 "You got …!", 57049 /
 57050 learned a command / skill, 57081 not enough MP.

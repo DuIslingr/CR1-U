@@ -2719,10 +2719,11 @@ void toYesNo(App& app, bool ask) {
 }
 // MuScrList_Draw's scroll bar (ComUty_GuageBarDraw) beside the rows while some are out of sight,
 // as the shop's: track, the arrows (76 / 77), the knob (106)
-void levelList(App& app, float from) {
+void levelList(App& app, float from, bool fresh = false) {
     App::WorldSelect& ws = app.worldSelect;
     on(app, 3, -140, 0);
     on(app, 7, from, 0);
+    if (fresh) ws.levelCursor = ws.levelTop = 0, ws.levelScroll = 0; // (FUN_00050934: the list built anew, focus at the top)
     ws.levelCursor = std::clamp(ws.levelCursor, 0, ws.levels - 1);
     ws.state = 6;
 }
@@ -2761,7 +2762,8 @@ void closeWorldSelect(App& app) { // __menuu_WldChoiceClr
     // and the band takes var 1's value, d1b48, whatever the world)
     if (ws.cancelled) { app.game.setFlag(0, true); return; }
     app.game.vars[0] = ws.world;
-    app.game.vars[1] = ws.world == 5 ? 0 : ws.level;
+    app.game.vars[1] = ws.level; // (d1b48: 0 from the open's memset, -1 after a Back out of a band list - the last
+                                 // gate, with no band list of its own, keeps it)
     app.game.vars[2] = ws.pair;
     if (ws.skip) app.game.setFlag(1, true);
     if (ws.world == 4 || ws.world == 5) app.game.setFlag(1, false);
@@ -2793,7 +2795,7 @@ void worldSelectChoose(App& app, int pos) { // state 1: a gate, or Back (-1)
         toYesNo(app, true);
         ws.state = 3, ws.timer = 4;
     } else
-        levelList(app, 480);
+        levelList(app, 480, true); // (WldChoicePrc 49398)
 }
 
 void worldSelectLevel(App& app, int n) { // state 6: a band, or Back (-1)
@@ -2803,6 +2805,7 @@ void worldSelectLevel(App& app, int n) { // state 6: a band, or Back (-1)
     if (n < 0) {
         menuSound(app, se::kBack);
         off(app, 3, 0, -140), off(app, 7, 480, 0), on(app, 6, -480, 0);
+        ws.level = -1; // (WldChoicePrc 6, 49440-49447: d1b48 = MuScrList_GetChoiceListNo's -1)
         ws.skip = false;
         ws.state = 1;
         return;
@@ -2824,7 +2827,7 @@ void worldSelectAnswer(App& app, bool yes) { // states 4 (skip?) and 8 (okay?)
         off(app, 8, -360, 0), off(app, 9, 0, 160), off(app, 10, 0, 160);
         on(app, 4), on(app, 5);
         ws.skip = yes;
-        levelList(app, 480);
+        levelList(app, 480, true); // (49424)
         return;
     }
     if (!yes) {
