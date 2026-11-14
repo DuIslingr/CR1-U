@@ -119,7 +119,7 @@ void pressRelease(App& app, int screen, float px, float py) {
         break;
     }
     case kPressHistory: // its Back: __menuu_HistoryPrc's ComUty_BackButtonProc(1) trg
-        if (historyBackAt(app, px, py)) { menuSound(app, se::kBack); closeScenarios(app); }
+        if (historyBackAt(app, px, py)) scenariosBack(app);
         break;
     case kPressOptions: optionsClick(app, px, py); break;
     case kPressMap: closeMapScreen(app); break; // (__menuu_MapPrc 1: the whole screen's box)
@@ -1226,9 +1226,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             if (app.manualOpen) manualPointerDown(app, event->button.x * kx, event->button.y * ky); // (MuScrList_Proc: on the lift)
             else {
                 // its Back: held, closing as the touch lifts there (pressRelease); elsewhere a drag to scroll
+                if (app.scenariosOut) break; // (going)
                 if (historyBackAt(app, event->button.x * kx, event->button.y * ky))
                     app.press = App::Press{true, kPressHistory, event->button.x * kx, event->button.y * ky};
-                else app.dragging = true;
+                else if (historyDragAt(app, event->button.x * kx, event->button.y * ky)) app.dragging = true;
             }
             break;
         }

@@ -2960,8 +2960,10 @@ void drawFrame(App& app, bool present) {
         drawCharSelect(app);
     }
     if (app.scenariosOpen) {
-        ++app.scenariosAnim;
-        drawScenarios(app);
+        for (app.scenariosClock += dt; app.scenariosClock >= 1.0f / kFramesPerSecond && app.scenariosOpen;
+             app.scenariosClock -= 1.0f / kFramesPerSecond)
+            stepScenarios(app);
+        if (app.scenariosOpen) drawScenarios(app);
     }
     if (app.campOpen && !app.optionsOpen) {
         for (app.campClock += dt; app.campClock >= 1.0f / kFramesPerSecond && app.campOpen; app.campClock -= 1.0f / kFramesPerSecond)

@@ -463,7 +463,10 @@ struct App {
     bool scenariosOpen = false;            // Scenarios (the title's; __menuu_History*): the story flow chart
     float scenariosScroll = 0;
     float scenariosHScroll = 0;            // the iPhone layout's (2.2.0): sideways, tex2d 0..-120
-    int scenariosAnim = 0;
+    int scenariosAnim = 0;                 // frames since __menuu_HistorySet (HistoryPrc 0's WinDispOn a frame on)
+    int scenariosOut = 0;                  // Back (HistoryPrc 1 -> 2): frames since the tap + 1, 0 none
+    int scenariosBob = 0, scenariosBobDir = 1; // ComUty_PictMoveDraw's count for the arrows: 0..4 and back, a unit a draw
+    float scenariosClock = 0;
     cr::Texture scenariosSheet;            // flow_hd.mct
     cr::GameState scenariosFlags;          // every pair's saves together (the original's system data)
     bool manualOpen = false;               // Options > Instruction Manual
@@ -1720,6 +1723,9 @@ void drawScenarios(App& app);
 void scenariosScrollBy(App& app, float d);
 void scenariosScrollSideways(App& app, float d);
 void scenariosKey(App& app, SDL_Keycode key);
+void stepScenarios(App& app);
+void scenariosBack(App& app);
+bool historyDragAt(const App& app, float px, float py);
 std::vector<int> manualTopics(const App& app);
 std::vector<std::string> manualPage(const App& app, int id);
 void manualTap(App& app);

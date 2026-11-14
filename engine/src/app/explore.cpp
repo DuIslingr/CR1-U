@@ -5105,10 +5105,35 @@ int runSelfTest(App& app) {
         problems += !app.scenariosOpen || !app.scenariosSheet.id;
         app.lastTicks = 0;
         drawFrame(app, false);
-        scenariosKey(app, SDLK_DOWN);
-        problems += app.scenariosScroll >= 0;
-        scenariosKey(app, SDLK_ESCAPE);
-        problems += app.scenariosOpen;
+        { // HistorySet / HistoryPrc: the window in a frame on over 4 frames; the arrows' PictMove count 0..4 and back; a
+          // drag only from the chart's box (tex2d (0, 62)-(480, 285)); Back gone 7 frames after the tap
+            int hist = 0;
+            app.scenariosAnim = 0, app.scenariosBob = 0, app.scenariosBobDir = 1;
+            std::vector<int> bobs;
+            for (int f = 0; f < 10; ++f) stepScenarios(app), bobs.push_back(app.scenariosBob);
+            hist += bobs == std::vector<int>{1, 2, 3, 4, 3, 2, 1, 0, 1, 2} && app.scenariosAnim == 10;
+            if (app.renderer.phoneLayout()) {
+                cr::Renderer& r = app.renderer;
+                auto toFrame = [&](float x, float y, float& px, float& py) { // tex2d -> the frame's pixels
+                    const float lx = r.uiX() + 2 * (x + 16), ly = 2 * (y + 32);
+                    float ax, ay, bx, by;
+                    r.toLogical(0, 0, ax, ay), r.toLogical(1000, 1000, bx, by);
+                    px = (lx - ax) * 1000 / (bx - ax), py = (ly - ay) * 1000 / (by - ay);
+                };
+                float px, py, qx, qy;
+                toFrame(240, 150, px, py), toFrame(240, 20, qx, qy);
+                hist += historyDragAt(app, px, py) && !historyDragAt(app, qx, qy);
+            } else ++hist;
+            scenariosKey(app, SDLK_DOWN);
+            hist += app.scenariosScroll < 0;
+            scenariosKey(app, SDLK_ESCAPE);
+            for (int f = 0; f < 6; ++f) stepScenarios(app);
+            hist += app.scenariosOpen;
+            stepScenarios(app);
+            hist += !app.scenariosOpen;
+            if (hist != 5) std::printf("scenarios: NOT as HistoryPrc's (%d/5)\n", hist);
+            problems += hist != 5;
+        }
         problems += expectSounds("scenarios", {3}); // scrolling is silent
         std::printf("scenarios chart drawn\n");
         std::printf("saves: save -> title Start -> load %s (map %d, flags, items, vars, Oz, party, play time, position); "
@@ -5560,16 +5585,20 @@ int runSelfTest(App& app) {
                     ms.marks[0][0] != 84 || ms.marks[1][0] != 104;
         closeMapScreen(app); // (MapPrc 1: no tap for 4 frames)
         problems += ms.closing;
-        for (int f = 0; f < 4; ++f) stepMapScreen(app);
-        const float hidden = ms.pulseAlpha; // (0 through MapPrc's 4-frame wait, then full: MapSet starts the pulse at 2)
+        problems += ms.fade != -1; // (MapPrc 0 a frame after MapSet: alpha 0 there, then 4 frames in)
+        for (int f = 0; f < 5; ++f) stepMapScreen(app);
+        problems += ms.fade != 4;
+        const float hidden = ms.pulseAlpha; // (0 through MapPrc 0's frame and 1's 4-frame wait, then full: MapSet starts the pulse at 2)
         stepMapScreen(app);
         if (hidden != 0 || ms.pulseAlpha != 255) std::printf("  map spot pulse %.0f -> %.0f (want 0 -> 255)\n", hidden, ms.pulseAlpha), ++problems;
         app.lastTicks = 0;
         drawFrame(app, false);
         const int mapErrs = app.renderer.takeErrors();
         closeMapScreen(app);
-        for (int f = 0; f < 5; ++f) stepMapScreen(app);
-        problems += !ms.open; // (MapPrc 2: 6 frames from the tap to the close)
+        stepMapScreen(app);
+        problems += ms.fade != 4; // (ClrWin: whole the frame after, then out over 4)
+        for (int f = 0; f < 4; ++f) stepMapScreen(app);
+        problems += !ms.open || ms.fade != 0; // (MapPrc 2: 6 frames from the tap to the close)
         stepMapScreen(app);
         problems += ms.open + mapErrs + expectSounds("map screen", {2, 2}) + offMap + (spots != 60);
         app.mapNumber = keepMap;

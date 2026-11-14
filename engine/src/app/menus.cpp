@@ -4229,7 +4229,7 @@ void openScenarios(App& app) {
     app.scenariosOpen = true;
     app.scenariosScroll = 0;
     app.scenariosHScroll = 0;
-    app.scenariosAnim = 0;
+    app.scenariosAnim = app.scenariosOut = app.scenariosBob = 0, app.scenariosBobDir = 1;
     app.scenariosFlags = allPairsFlags(app);
     if (!app.scenariosSheet.id) {
         cr::Image img;
@@ -4239,7 +4239,24 @@ void openScenarios(App& app) {
 
 void closeScenarios(App& app) {
     app.scenariosOpen = false;
+    app.scenariosOut = 0;
     app.renderer.destroy(app.scenariosSheet);
+}
+// Back (__menuu_HistoryPrc 1, 77757-77779): __effgo(3), the window off (WinDispOff); 2 counts 4 down past 0, 3 a frame
+// on leaves (__mc_SetMenuStat(0xe, 4)) - gone 7 frames after the tap
+void scenariosBack(App& app) {
+    if (!app.scenariosOpen || app.scenariosOut) return;
+    menuSound(app, se::kBack);
+    app.scenariosOut = 1;
+}
+// A frame (20 Hz): the window's moves, the arrows' bob (HistorySet 77553-77563: ComUty_PictMoveInit(.., 1, dx, dy, 4, ..)
+// for each - ComUty_PictMoveDraw 46240-46256 moves the count a unit a draw, 0 up to 4 and back), Back's wait
+void stepScenarios(App& app) {
+    if (!app.scenariosOpen) return;
+    ++app.scenariosAnim;
+    app.scenariosBob += app.scenariosBobDir;
+    if (app.scenariosBob >= 4 || app.scenariosBob <= 0) app.scenariosBobDir = -app.scenariosBobDir;
+    if (app.scenariosOut && ++app.scenariosOut > 7) closeScenarios(app);
 }
 
 // 0 locked, 1 next, 2 reached, 3 cleared (HistorySet)
@@ -4291,6 +4308,15 @@ bool historyBackAt(const App& app, float px, float py) {
     const float x = phone ? 192 : 272, y = phone ? 286 : 330, w = phone ? 256 : 232, h = phone ? 34 : 24;
     return mx >= x && mx < x + w && my >= y && my < y + h;
 }
+// Where a drag may start (HistoryPrc 1: ComUty_PadPhotoProc(.., 0, 0x3e, 0x1e0, 0xdf) - tex2d (0, 62)-(480, 285) in the
+// iPhone layout; the iPad layout's chart between its black bands)
+bool historyDragAt(const App& app, float px, float py) {
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPoint(app, lx, ly, mx, my);
+    if (app.renderer.phoneLayout()) return mx >= 0 && mx < 480 && my >= 62 && my < 62 + 223;
+    return ly >= kHistoryTop && ly < kHistoryBottom;
+}
 
 void drawScenarios(App& app) {
     cr::Renderer& r = app.renderer;
@@ -4299,7 +4325,9 @@ void drawScenarios(App& app) {
     r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 1);
     r.setOrigin(r.uiX());
     if (!t.id) return;
-    const float a = std::min(1.0f, app.scenariosAnim / 8.0f);
+    // (HistoryPrc 0: WinDispOn the frame after HistorySet - in over 4 frames; Back's WinDispOff: whole a frame, then out)
+    const float a = app.scenariosOut ? campWinOff(app.scenariosOut - 1, 0, 0).a : campWinOn(app.scenariosAnim, 1, 0).a;
+    const float bob = float(app.scenariosBob); // (the arrows: up -1, down +1, left -1, right +1 x the count, tex2d)
     auto rect = [&](int n) -> const short* {
         if (app.phoneData && (n == 13 || n == 15 || n == 16)) return kPhoneDataHistoryPiece[n == 13 ? 0 : n == 15 ? 1 : 2];
         return kHistoryPiece[n];
@@ -4363,10 +4391,10 @@ void drawScenarios(App& app) {
         r.fillRect(32, 64, 960, 96, 0, 0, 0, 1);               // (0, 0, 480, 48)
         r.fillRect(32, 2 * 285 + 64, 960, 70, 0, 0, 0, 1);      // (0, 285, 480, 35)
         at(0, 8, 4);
-        if (vs < 0) at(1, 218, 92);
-        if (2 * vs > scenarioLowest(app)) at(2, 218, 276);
-        if (hs < 0) at(3, 0, 174);
-        if (hs > -120) at(4, 469, 174);
+        if (vs < 0) at(1, 218, 92 - bob);
+        if (2 * vs > scenarioLowest(app)) at(2, 218, 276 + bob);
+        if (hs < 0) at(3, 0 - bob, 174);
+        if (hs > -120) at(4, 469 + bob, 174);
         at(36, 4, 296);
         const int pct = scenarioPercent(g);
         const int digits[3] = {pct / 100, pct / 10 % 10, pct % 10};
@@ -4422,8 +4450,8 @@ void drawScenarios(App& app) {
     r.fillRect(-32, -64, 1088, 96, 0, 0, 0, 1);
     r.fillRect(-32, kHistoryBottom, 1088, 768 - kHistoryBottom, 0, 0, 0, 1);
     piece(0, 8, -12); // ("Scenarios": the binary's -28 clips the word on this sheet)
-    if (sy < 0) piece(1, 436, 100);
-    if (sy > kHistoryBottom - (1272 + 40 + 80)) piece(2, 436, 616);
+    if (sy < 0) piece(1, 436, 100 - 2 * bob);
+    if (sy > kHistoryBottom - (1272 + 40 + 80)) piece(2, 436, 616 + 2 * bob);
     piece(36, 8, 656);
     const int pct = scenarioPercent(g);
     const int digits[3] = {pct / 100, pct / 10 % 10, pct % 10};
@@ -4449,6 +4477,7 @@ void scenariosScrollSideways(App& app, float d) { // the iPhone layout's chart (
 }
 
 void scenariosKey(App& app, SDL_Keycode key) {
+    if (app.scenariosOut) return; // (HistoryPrc 2 / 3: going)
     switch (key) {
     case SDLK_UP: case SDLK_W: scenariosScrollBy(app, 96); break;
     case SDLK_DOWN: case SDLK_S: scenariosScrollBy(app, -96); break;
@@ -4456,7 +4485,7 @@ void scenariosKey(App& app, SDL_Keycode key) {
     case SDLK_PAGEDOWN: scenariosScrollBy(app, -480); break;
     case SDLK_LEFT: case SDLK_A: scenariosScrollSideways(app, 40); break;
     case SDLK_RIGHT: case SDLK_D: scenariosScrollSideways(app, -40); break;
-    case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: case SDLK_RETURN: menuSound(app, se::kBack); closeScenarios(app); break;
+    case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: case SDLK_RETURN: scenariosBack(app); break;
     default: break;
     }
 }

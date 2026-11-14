@@ -2252,12 +2252,13 @@ void openMapScreen(App& app) {
         }
     ms.open = true;
     ms.closing = false;
-    ms.fade = 0;
+    ms.fade = -1; // (MapPrc 0, the frame after MapSet: WinDispOn - its alpha 0 that frame, in over 4 more)
     ms.blink = 0;
     ms.clock = 0;
     // (__menuu_MapSet 76391 / 76416: the pulse starts in its 255 state - the spot full once MapPrc's 4-frame
     // wait is over, as video 12 1264.4 s shows)
-    ms.wait = 4, ms.pulse = 2, ms.pulseCount = 0, ms.pulseAlpha = 0;
+    // (MapPrc 0 sets the count 4 a frame after MapSet; 1 runs it down before taps count: 5 frames from here)
+    ms.wait = 5, ms.pulse = 2, ms.pulseCount = 0, ms.pulseAlpha = 0;
 }
 
 void closeMapScreen(App& app) {
@@ -2272,7 +2273,7 @@ void stepMapScreen(App& app) {
     if (!ms.open) return;
     ms.blink = (ms.blink + 1) % 12;
     if (ms.closing) {
-        ms.fade = std::max(0, ms.fade - 1);
+        if (ms.closeWait < 6) ms.fade = std::max(0, ms.fade - 1); // (ClrWin: the window whole the frame after, then out)
         if (--ms.closeWait <= 0) ms.open = false, ms.closing = false;
         ms.pulseAlpha = 0;
         return;
@@ -2295,7 +2296,7 @@ void drawMapScreen(App& app) {
     if (!ms.open) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    const float a = float(ms.fade) / 4;
+    const float a = float(std::max(0, ms.fade)) / 4;
     // __menuu_MapPut (0x7a598): PutWin / CmdBase of the menu's window, then the map sheet's picture and the
     // marks; no mask - __menuu_MapSet (0x7a104) sets none - so the field shows untouched around the map's
     // own panel (the port dimmed the whole screen under it as well)
