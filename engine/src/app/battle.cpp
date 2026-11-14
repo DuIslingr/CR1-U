@@ -819,6 +819,11 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         if (!b.models.count(a.model)) loadModelFile(app, a.model, b.models[a.model], true), readMdl2Rules(b.models[a.model]); // (read_mdl2)
         if (fighter >= 0 && fighter < 5) battleSlotsLoaded(b.models[a.model], modelId, fighter < 2, false);
         a.pos = a.home = {float(place[0]), 0.0f, float(place[1])};
+        // (read_btlcpl 5814-5832: m102 / m103 (models 9, 10) and m216a..c (0x3a..0x3c) 20 nearer the pair, m217a..c
+        // (0x3d..0x3f) 30)
+        if (fighter >= 2) a.pos.z = a.home.z += modelId == 9 || modelId == 10 || (modelId >= 0x3a && modelId <= 0x3c) ? 20.0f
+                                                 : modelId >= 0x3d && modelId <= 0x3f                                  ? 30.0f
+                                                                                                                       : 0.0f;
         a.yaw = a.homeYaw = a.wantYaw = yaw; // (+0x558 = 15: btl_main 100, read_btlcpl)
         a.fighter = fighter;
         b.actors.push_back(a);
@@ -851,7 +856,10 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         if (!rules.f[size_t(k)].present) continue;
         const int c = rules.f[size_t(k)].character;
         App::Battle::Actor& a = add(c, cr::kBattlePosition[0][k], 3.14159265f, k);
-        a.name = sysText(app, 58028 + c + 1); // the name plates' character names
+        // (MuStr_GetCharNameId 49111: c + 0x1d - character 7 as Shea, 0x2f, under MuCom_GetManaSheaCheck: flag 0x996 on
+        // the fourth pair or flag 0x997; btl_prty_init's +0xaa likewise, 5651-5679)
+        const bool shea = c == 7 && ((app.game.flag(0x996) && route == 3) || app.game.flag(0x997));
+        a.name = sysText(app, 58000 + (shea ? 0x2f : 0x1d + c)); // the name plates' character names
         a.level = rules.f[size_t(k)].level;
     }
     for (int k = 0; k < 3; ++k) {
@@ -862,7 +870,9 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
         a.monster = m->id;
         a.level = rules.f[size_t(2 + k)].level;
         a.hp = a.hpMax = uint32_t(rules.f[size_t(2 + k)].hpMax);
-        a.name = sysText(app, 53000 + m->id - 1); // font block 2: monster names
+        // (read_btlcpl 5770-5781: ids 71..73 (Mana as a foe) as id + 2 - Shea - under the same flags)
+        const bool sheaFoe = m->id >= 71 && m->id <= 73 && ((app.game.flag(0x996) && route == 3) || app.game.flag(0x997));
+        a.name = sysText(app, 53000 + (sheaFoe ? m->id + 2 : m->id - 1)); // font block 2: monster names
         // read_btlcpl (0xceec-0xcf14): slot 0's frame get_random(btlanm_get_max_frm(slot 0)) - the
         // monsters' idles out of step
         a.time = float(app.rng.get(int(actorDuration(app, a) - 1.0f)));
@@ -1105,6 +1115,7 @@ void battleOpenTargets(App& app, int action) {
 void battleStartRound(App& app) {
     App::Battle& b = app.battle;
     b.rules.beginRound(b.cmds, app.battleActions);
+    app.sound.stopBattleLines(); // (__menub_mainPrc 0x270e, 11789: _btlvoice_stop_all - the last command's line cut)
     for (int k = 0; k < 2; ++k) // defending holds the guard pose through the round (one chosen just now: as its page has gone)
         if (b.rules.f[size_t(k)].guarding && !(b.guardDue & (1 << k)))
             if (App::Battle::Actor* a = battleActor(app, k)) playSlot(app, *a, btlui::kSlotGuard);
@@ -2416,6 +2427,7 @@ void showHits(App& app) {
         }
     }
     for (uint32_t id : sounds) app.sound.play(id);
+    if (b.rules.breakStartSound) b.rules.breakStartSound = false, app.sound.play(0x7a); // (btlbreak_set's first event: __effgo 0x7a)
     if (b.rules.breakGauge != b.gaugeShown && b.rules.breakGauge != 0 && (b.gaugeShown == 0 || (b.gaugeShown > 0) != (b.rules.breakGauge > 0)))
         b.breakPop = 5.0f; // btlbreak_set: the label pops when a side takes the Break
 }
@@ -3847,7 +3859,9 @@ void drawBattleHud(App& app, float W, float H) {
         auto helpBoard = [&](int item) { drawHelpWindow(app, m, item, a); };
         // (a held control lights only on the page the logic is on - not on one sliding out)
         const bool live = keep.menu == v.menu;
-        const bool backHeld = live && battlePressIn(app, kBackX, kBackY, 232, 24);
+        // (the lists' BackButtonProc type 1 takes (0xc0, 0x11e, 0x100, 0x22), 45901; the command pages' cmd_back (0xc0, 0x120, 0xe8, 0x18))
+        const bool lists = b.menu == App::Battle::Genes || b.menu == App::Battle::Items;
+        const bool backHeld = live && (lists ? battlePressIn(app, kBackX, kBackY - 2, 256, 34) : battlePressIn(app, kBackX, kBackY, 232, 24));
         switch (b.menu) {
         case App::Battle::Top:
             for (int i = 0; i < 4; ++i) {
@@ -3891,10 +3905,12 @@ void drawBattleHud(App& app, float W, float H) {
                 if (genes) { // ComUty_ComPlate_Gene: the plate, icon, name, "MP/" (picture 27 at (188, 34)) and the
                     // cost (three digits to (218, 30)), dim when the MP won't pay
                     const int cost = geneMpCost(app, it);
-                    const float ra = cost <= have ? a : a * 0.5f;
-                    drawCampRow(app, m, kRowX, y, it, 0, index == b.pick, ra);
-                    m.picture(27, kRowX + 188, y + 34, ra);
-                    drawShopNumber(m, cost, kRowX + 218, y + 30, 3, 10, ra, 2); // (PictNumDraw's field from 0xda, right-aligned)
+                    // (0x5a730: MP short of the cost - the name grey (ComPlate_Base's style 2), the digits red (PictNumDraw
+                    // style 3); else white digits (0); the plate, icon and "MP/" as ever)
+                    const bool short_ = have < cost;
+                    drawCampRow(app, m, kRowX, y, it, 0, index == b.pick, a, short_ ? 2 : 0);
+                    m.picture(27, kRowX + 188, y + 34, a);
+                    drawShopNumber(m, cost, kRowX + 218, y + 30, 3, 10, a, short_ ? 3 : 0); // (PictNumDraw's field from 0xda, right-aligned)
                 } else { // FUN_0005a848: the plate (8 / 9), icon, name, how many at (222, 30)
                     const auto held = app.game.items.find(it);
                     drawCampRow(app, m, kRowX, y, it, held == app.game.items.end() ? 0 : held->second, index == b.pick, a);
@@ -4052,7 +4068,9 @@ void battleClick(App& app, float px, float py) {
         t.remainder += t.lastY - my;
         if (const int rows = int(t.remainder / campui::kRowH)) battleListFocus(app, b.pick + rows);
     }
-    const bool onBack = my >= kBackY && my < kBackY + 24 && rx >= kBackX && rx < kBackX + 232;
+    const bool lists = b.menu == App::Battle::Genes || b.menu == App::Battle::Items; // (BackButtonProc type 1: 256 x 34 from y 286)
+    const bool onBack = lists ? my >= kBackY - 2 && my < kBackY + 32 && rx >= kBackX && rx < kBackX + 256
+                              : my >= kBackY && my < kBackY + 24 && rx >= kBackX && rx < kBackX + 232;
     auto buttonAt = [&]() {
         for (int i = 0; i < 4; ++i)
             if (rx >= kButtonX && rx < kButtonX + 136 && my >= kButtonY + kButtonStep * i && my < kButtonY + kButtonStep * i + 40) return i;

@@ -155,7 +155,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
             x = Fighter();
             x.present = x.guest = true;
             x.character = g.character;
-            x.level = std::min(kMaxLevel, f[0].level + 5);
+            x.level = f[0].level + 5; // (btl_prty_init 5627-5650: no cap - 101..105 with a leader at 96+)
             x.saveLevel = gs.party[size_t(g.character)].level; // (btlcalc_0505 / 0506 read this, not the battle's)
             // btlpcparam_prty_init_special: base + level x 50 / x 5, nothing else - and (in both
             // releases) Speed and Luck from the base Defense too
@@ -300,6 +300,7 @@ void BattleRules::breakEvent(int who, int event, int target) {
     if (!breakStarted) { // the battle's first event: four for whoever caused it
         breakStarted = true;
         breakTarget = party ? 4 : -4;
+        breakStartSound = true; // (btlbreak_set 40058: __effgo(0x7a), the pop at 5)
         if (event == 2) breakFlags |= 0x200;
         return;
     }

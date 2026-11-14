@@ -226,6 +226,7 @@ public:
     int breakGauge = 0;          // +0x12, -8..8
     int breakTarget = 0;         // +0x14 (the menu moves the gauge to it a step a frame)
     bool breakStarted = false;   // G+0x2c0 bit 15
+    bool breakStartSound = false; // the first event's SE 0x7a, for the scene to play (btlbreak_set 40058)
     unsigned breakFlags = 0;     // +0x18
     int round = 0;               // +0x1a
     int strike = 0;              // BattleStart::strike, for the first round
