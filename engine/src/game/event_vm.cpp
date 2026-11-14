@@ -423,8 +423,9 @@ bool EventRunner::step(EventHost* host) {
             // Uty_mdl_set_alpha: GetXmpStkData 0..3 = the npc, the alpha from, to (0..255), frames (mdl_set_alpha)
             else if (id == 2019 && host) host->fadeNpc(vm.arg(3), float(vm.arg(2)) / 255.0f, float(vm.arg(1)) / 255.0f, vm.arg(0));
             else if (id == 2034 && host) host->lookAtNpc(a0); // Uty_LookatRect_Init: SetFreeCamera, SetScroll3D to the npc at rate 1
-            // Uty_Mode (2017): an npc's table word (0..3: +0xe .. +0x14) bit tested into var 0 / set / cleared -
-            // used once, clearing an npc's bits right after its Kill: nothing left to change here
+            // Uty_Mode (2017, 21219-21268): an npc's table word (0..3: +0xe .. +0x14) bit tested into var 0 / set /
+            // cleared. The four uses (j00x_d03 0x4cbe / 0x4cd7) clear bits 1 and 3 of npc 460's +0xe (kind) right
+            // after the npc Kills itself and flag 1166 - its hide - is set: nothing that can show, so not modelled
             break;
         }
         case 14: { // Wait: frames, or 0xFFFF/0xFFFC fade, 0xFFFE loading, 0xFFFD + npc
