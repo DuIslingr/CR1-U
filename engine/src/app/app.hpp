@@ -704,6 +704,7 @@ struct App {
         int introStep = 300;               // the opening's btl_main state past 200: 300 (the counter), 400, 499
         bool roundFirst = false;           // btl_main 500 / 600: the round's first action doesn't wait for the banner
         int handover = 0;                  // frames before the next action's turn (btl_main 700's frame and 799's)
+        int nodeFx = -1;                   // m103's blow: its effect 0x3f (b.effects' index), kept on node 1204
         // the pair flags the action's calculation left (a member's fall ends pair mode, a monster's the enemy
         // pair round), held back until its hit: the original calculates there (_btlcalc_prc at the hit frame,
         // after _btlact_*_init chose the cameras, spots and slots from +0xae8 / +0xaec)

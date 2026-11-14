@@ -1806,6 +1806,7 @@ void startTurn(App& app) {
         }
     }
     b.turnFrame = 0;
+    b.nodeFx = -1;
     b.hitsShown = false;
     b.hitFrame = 20;
     b.bounceAt = -1;
@@ -2574,6 +2575,15 @@ void stepBattle(App& app) {
             const App::Battle::Actor* u = battleActor(app, b.turn.actors[0]);
             const int m = u ? u->modelId : -1, f = b.turnFrame;
             if ((m == 8 && f == 22) || (m == 9 && f == 7) || (m == 10 && f == 30)) app.sound.play(m == 8 ? 0x7f : m == 9 ? 0x80 : 0xcc);
+            // (2.2.0 _btlact_attack 0x76c, 11476-11505: m103's frame 0x12 sets effect 0x3f at its node 1204
+            // - eff3d_set_with_pos(.., 50%), its own angles (+0x56f 0) - and keeps it on that node while it lasts)
+            if (u && m == 10 && f == 18) {
+                const size_t n = b.effects.size();
+                startEffect(app, b.effects, 0x3f, actorPoint(app, *u, 1204), false, 0.5f, 0.0f);
+                keepEffectAngles(app, n);
+                b.nodeFx = n < b.effects.size() ? int(n) : -1;
+            } else if (u && m == 10 && f > 18 && b.nodeFx >= 0 && b.nodeFx < int(b.effects.size()) && b.effects[size_t(b.nodeFx)].id == 0x3f)
+                b.effects[size_t(b.nodeFx)].pos = actorPoint(app, *u, 1204);
         } else if (b.turn.kind == cr::kCmdGene && !b.hitsShown) { // btlact_gene 1000: the bosses' casting sounds
             const App::Battle::Actor* u = battleActor(app, b.turn.actors[0]);
             const int m = u ? u->modelId : -1, f = b.turnFrame; // (m102 .. m105a)
