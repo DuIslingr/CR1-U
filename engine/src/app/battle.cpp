@@ -81,9 +81,21 @@ int battleMaxFrame(App& app, int fighter, int slot) {
     return i >= 0 ? std::max(0, int(lm.actions[size_t(i)].duration - 1.0f)) : 0;
 }
 
-// Plays action slot `slot` from its start; `then` >= 0 follows it once it ends (else it loops)
-void playSlot(App& app, App::Battle::Actor& a, int slot, int then) {
+// Plays action slot `slot` from its start; `then` >= 0 follows it once it ends (else it loops).
+// mdl_set_act_motion / _nextanm / _loop (2.2.0 10270-10345, 9805-9853): the slot already playing (the
+// model's +0x564 against the slot asked for) goes on as it is - _loop's only clears its follower -;
+// another blends in over 2 frames from this frame (MotionBlend::change: the old at its next frame
+// under the new at 0, then the new alone at 0). `cut`: _mdl_set_act / _mdl_set_act_nextanm2 (9033-9058,
+// 9704-9732) - bound with no controllers, the new at 0 at once, started over even when playing
+void playSlot(App& app, App::Battle::Actor& a, int slot, int then, bool cut) {
     const LoadedModel& lm = app.battle.models[a.model];
+    if (!cut && a.action >= 0 && a.slot == slot) {
+        if (then == -1) a.then = -1;
+        return;
+    }
+    const int oldAction = a.action;
+    const float oldEnd = oldAction >= 0 && oldAction < int(lm.actions.size()) ? lm.actions[size_t(oldAction)].duration - 1 : 0;
+    const float oldTime = std::clamp(a.time, 0.0f, std::max(oldEnd, 0.0f)); // (its frame as this frame would show it)
     slot = realSlot(lm, slot);
     a.slot = slot;
     a.action = battleAction(lm, slot);
@@ -94,6 +106,15 @@ void playSlot(App& app, App::Battle::Actor& a, int slot, int then) {
     a.time = 0;
     a.then = then;
     a.castRest = false;
+    a.loopFrom = a.loopTo = -1;
+    a.blend.change(a.action, oldTime, cut, lm.actions);
+}
+
+// _mdl_set_act_nextanm(model, 0) (2.2.0 9079-9091): the slot playing keeps on, its loop cleared, and
+// the idle follows it once it ends (nothing when the idle plays)
+void endIntoIdle(App::Battle::Actor& a) {
+    if (a.action >= 0 && a.slot == btlui::kSlotIdle) return;
+    a.then = btlui::kSlotIdle;
     a.loopFrom = a.loopTo = -1;
 }
 
@@ -2229,17 +2250,19 @@ void showHits(App& app) {
         // strong-growth one down (5, 6) when of size 1, else standing (5, 0); a blow on one standing -
         // 5 then 0, unless nothing was taken (a miss, fended off, the invincible's 0) or its model is
         // defending (slot 4 playing)
-        if (h.revived) playSlot(app, *a, btlui::kSlotRise, btlui::kSlotIdle);
+        // (each _mdl_set_act_nextanm2: a cut, the slot started over even when it plays)
+        if (h.revived) playSlot(app, *a, btlui::kSlotRise, btlui::kSlotIdle, true);
         else if (h.fell) {
             const cr::MonsterDef* def = a->enemy ? f.def : nullptr;
             if (def && def->strongGrowth)
-                playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle);
+                playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle, true);
             else {
-                if (a->enemy) a->fading = true; // monsters fade out over 20 frames (mdl_set_alpha(.., 0, 0x14))
-                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown);
+                if (a->enemy) // monsters fade out over 20 frames (mdl_set_alpha(.., 0, 0x14)), this frame's mdl_put the first
+                    a->fading = true, a->alpha = std::max(0.0f, a->alpha - 1.0f / 20.0f);
+                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown, true);
             }
         } else if (h.amount > 0 && a->slot != btlui::kSlotGuard)
-            playSlot(app, *a, btlui::kSlotHit, btlui::kSlotIdle);
+            playSlot(app, *a, btlui::kSlotHit, btlui::kSlotIdle, true);
     }
     // The calcs' sounds (__effgo in btlcalc_*, a target at a time; each heard once an action)
     std::vector<uint32_t> sounds;
@@ -2551,8 +2574,8 @@ void endRound(App& app) {
     const bool wonBefore = b.rules.outcome() == 2; // (btlord_chk's win at 799, before the round's end)
     battletalk::rules(app); // (status_prc's boss rules as the round ends)
     b.rules.endRound();
-    for (int k = 0; k < 2; ++k) // the guard pose ends with the round
-        if (App::Battle::Actor* a = battleActor(app, k); a && a->slot == btlui::kSlotGuard) playSlot(app, *a, btlui::kSlotIdle);
+    for (int k = 0; k < 2; ++k) // the guard pose ends with the round: played to its end, then the idle (nextanm 0)
+        if (App::Battle::Actor* a = battleActor(app, k); a && a->slot == btlui::kSlotGuard) endIntoIdle(*a);
     for (int i = 0; i < 5; ++i) b.shownHp[i] = b.rules.f[size_t(i)].hp, b.shownMp[i] = b.rules.f[size_t(i)].mp;
     switch (b.rules.outcome()) {
     case 2: // won: the victory pose and tune, then the results (btl_main 0x44b) - a story boss's
@@ -2577,10 +2600,11 @@ void endRound(App& app) {
     default: // btl_main 800 -> 899: thirty frames on the formation's camera (btlcamera_set(formation - 2)), then
         // the commands (400) and chk_karaok_between
         // (0x320, decomp 6131-6154: the pair standing - not getting up, slot 7 - and formation 2's first two
-        // monsters back to their idles, mdl_set_act_nextanm 0: a cast's loop ends here)
+        // monsters back to their idles, mdl_set_act_nextanm 0: a cast's or guard's loop ends here - the clip
+        // plays on to its end, then the idle)
         for (int k = 0; k < (b.formation == 2 ? 4 : 2); ++k)
-            if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive() && a->slot != btlui::kSlotRise && a->slot != btlui::kSlotIdle)
-                playSlot(app, *a, btlui::kSlotIdle);
+            if (App::Battle::Actor* a = battleActor(app, k); a && b.rules.f[size_t(k)].alive() && a->slot != btlui::kSlotRise)
+                endIntoIdle(*a);
         b.phase = App::Battle::RoundEnd;
         b.phaseFrames = 0;
         b.member = 0;
@@ -2822,6 +2846,9 @@ void stepBattle(App& app) {
                     a.moveFrom = a.moveTo = 0;
                 } else if (back) startAttackReturn(app, a); // (a melee gene's: back as its clip ends)
                 else playSlot(app, a, next, -1);
+                // (the follower already playing - an idle's idle -: mdl_actctl_prc kept the last frame, and
+                // _loop only cleared the follower; it shows that frame once more, then starts over)
+                if (a.time >= std::max(dur, 1.0f)) a.time = std::max(dur - 1, 0.0f);
                 if (!back && next == btlui::kSlotIdle) { // (the yaw is left: the attack's end turns it home)
                     a.pos = a.home;
                     a.moveFrom = a.moveTo = 0;
@@ -2996,8 +3023,8 @@ void stepBattle(App& app) {
                 // on (0x100e) the barrier's side sends it back, and it lands on them
                 for (int k : b.turn.barriers) spawnEffect(app, effects::kBuff, k);
                 app.sound.play(0x78);
-                for (int k : b.turn.actors)
-                    if (App::Battle::Actor* u = k >= 0 ? battleActor(app, k) : nullptr) playSlot(app, *u, btlui::kSlotIdle, btlui::kSlotIdle);
+                for (int k : b.turn.actors) // (_mdl_set_act(user, 0), 38459 / 39182: a cut to the idle)
+                    if (App::Battle::Actor* u = k >= 0 ? battleActor(app, k) : nullptr) playSlot(app, *u, btlui::kSlotIdle, btlui::kSlotIdle, true);
                 b.bounceAt = b.turnFrame + 40;
                 b.hitFrame = b.bounceAt + 1; // (0x1004 counts 40 and swaps the targets; 0x100e the next frame sets the camera
                                              // and calculates - no glow, no wait: 2.2.0 _btlact_gene decomp 38655-38778)

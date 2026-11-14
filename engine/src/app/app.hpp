@@ -1845,7 +1845,8 @@ void victory(App& app);
 } // namespace btlvoice
 void startTurn(App& app);
 void showHits(App& app);
-void playSlot(App& app, App::Battle::Actor& a, int slot, int then = -1);
+void playSlot(App& app, App::Battle::Actor& a, int slot, int then = -1, bool cut = false);
+void endIntoIdle(App::Battle::Actor& a);
 int hitLabel(int type);
 void placePopup(App::Battle& b, int slot, float& x, float& y, float wide);
 void rollPartyNumbers(App::Battle& b);

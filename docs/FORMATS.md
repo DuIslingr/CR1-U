@@ -215,7 +215,21 @@ half, the old motion running on, the new held at its first frame; then the new a
 first frame. `__mceActionSegment_calcBlendTransform` blends per node: keyed translations and scales
 summed by weight (an unkeyed scale counts as 1), rotations as quaternions (the first action's, then
 each later one slerped in by its weight); what no action keys stays at rest (scene/pose.hpp
-`MotionBlend`).
+`MotionBlend`). The call takes effect in that frame's `_mdl_actctl_prc` (2.2.0 9859-9975): the frame
+of the call is the blend - the old slot at its next frame (+0x394 + slot x 0x18 + 8, already one past
+the frame last shown) under the new at 0 -, the next frame the new alone at 0, then 1 (the battle's
+`playSlot` -> `MotionBlend::change`). A slot already playing (+0x564) is left as it is (`_loop` only
+clears its follower, +0x3a4 = -1). `_mdl_set_act` and `_mdl_set_act_nextanm2` (9033-9058, 9704-9732)
+bind the action with no controllers: a cut, the new at 0 that frame, started over even when it
+plays - the battle's hit reaction and fall (slot 5, `_btlcalc_chk_dead`), getting up (slot 7,
+`_btlcalc_0424`) and the users stopped by a barrier (`_mdl_set_act(0)`). `_mdl_set_act_nextanm(m, 0)`
+(9079-9091) only clears the playing slot's loop and names the idle its follower: btl_main 0x320's
+round end lets a guard or cast pose play to its end (j00x's guard: frames 27..33 after its 7..27
+loop) before the idle. `_mdl_set_act_motion_loop_frm` (a script's Anim2) on the slot playing sets
+that slot's frame, so both sides of its blend are the new start: a clean cut. A slot without a
+follower set to hold (+0x3aa) stops on its last frame, max - 1. Each slot entry: +0 table, +4 max
+frame, +8 frame, +0xc / +0xe loop start / end (end not shown: the next frame reaching it goes to the
+start), +0x10 follower (>= 10000: `_mdl_set_act(follower - 10000)`), +0x12 / +0x14 its loop, +0x16 hold.
 
 | keyType | used kind | applied by | meaning |
 |---|---|---|---|
@@ -1570,8 +1584,10 @@ waits 6 / 6).
   0x19 at the leader, sound 0x54, `PuzzleScene::reset`. Landing sends the ability message 4:
   after a slide `decESPCount` (var 13 + 1, ESP − 1 stopping at 0), effect 5 off, the leader free.
   Stages 16–23 have no switches (paths to clear), 24–31 a WarpCrystalWS and one or two switches.
-  Holding: `mdl_set_act_motion_loop(leader, 3, 2, 2)` - the field model's action slot 3 (its 17-
-  frame fourth built-in action) blended in over 2 frames, then looping from frame 2. Landing:
+  Holding: `mdl_set_act_motion_loop(leader, 3, 2, 2, 4)` (2.2.0 0x43d80..0x43da8: the fifth argument
+  4 on the stack) - the field model's action slot 3 (its 17-frame fourth built-in action) blended in
+  over 2 frames, then frames 2..3 over and over (the loop end 4 is never shown: `mdl_actctl_prc` goes
+  back to the start when the next frame reaches it). Landing:
   `Quake::start(0.5, 100, 0, 8 frames, no hold)` (`NormalBlockPK::onMove`).
 - **Toughness** (`Toughness::update`, `FragileBlock`, `RedBlock`, `BlueBlock`): with the leader on
   the grid, a tap on the nearest block-layer object, when it's a fragile (3), red (5) or blue (6)

@@ -812,7 +812,7 @@ void animate(App& app, LoadedModel& lm, float dt) {
         if (!lm.blend.step(lm.action, lm.time, dt * kFramesPerSecond * app.speed, lm.actions))
             lm.time += dt * kFramesPerSecond * app.speed;
         const float end = lm.loopTo > 0 && lm.loopTo < act->duration ? float(lm.loopTo) : act->duration;
-        if (lm.once) lm.time = std::min(lm.time, act->duration); // (played once, its end held)
+        if (lm.once) lm.time = std::min(lm.time, std::max(act->duration - 1, 0.0f)); // (played once, its last frame held: mdl_actctl_prc's +0x3aa)
         else if (lm.loopFrom > 0 && lm.loopFrom < end && lm.time >= end)
             lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), end - float(lm.loopFrom));
         else if (end > 0 && lm.time >= end) lm.time = std::fmod(lm.time, end);
@@ -1033,20 +1033,22 @@ void ViewerHost::autoMove(int id, float x, float z, float speed) {
 }
 // mdl_set_alpha (0x1409c): from -> to over `frames` (mdl_put's steps); 0 frames leaves the alpha
 // as it is (+0x56d = 0: mdl_put keeps the colour) - either way the model's colour arrays are off
-// from now on (fadedMaterial)
+// from now on (fadedMaterial). The op's own frame already shows the first step: this frame's mdl_put
+// counts +0x834 up before it colours the model (2.2.0 10156-10170) - the step loop ran before the script
 void ViewerHost::fadeNpc(int id, float from, float to, int frames) {
+    const float first = frames > 0 ? to + (from - to) * float(frames - 1) / float(frames) : from;
     if (id == 0) { // the player's model (NpcFade 0: __EvtNpcFade's gac + 0x83c), as mdl_set_alpha
         app.playerFaded = true;
         if (frames <= 0) { app.playerFadeLeft = 0; return; }
-        app.playerAlphaFrom = from, app.playerAlphaTo = to, app.playerAlpha = from;
-        app.playerFadeFrames = app.playerFadeLeft = frames;
+        app.playerAlphaFrom = from, app.playerAlphaTo = to, app.playerAlpha = first;
+        app.playerFadeFrames = frames, app.playerFadeLeft = frames - 1;
         return;
     }
     for (auto* d : npc(id)) {
         d->faded = true;
         if (frames <= 0) { d->fadeLeft = 0; continue; }
-        d->alphaFrom = from; d->alphaTo = to; d->alpha = from;
-        d->fadeFrames = d->fadeLeft = frames;
+        d->alphaFrom = from; d->alphaTo = to; d->alpha = first;
+        d->fadeFrames = frames, d->fadeLeft = frames - 1;
     }
 }
 void ViewerHost::showNpc(int id, bool shown) {
@@ -3821,8 +3823,9 @@ void updatePlayer(App& app, float dt, float camYaw) {
     }
     app.between.alpha = app.walkClock / kStep; // (how far into the next step this frame is)
     // Actions 0/1/2 = stand / walk / run (mdl_set_act_motion in FieldPCCtrl::operate); while a
-    // block is held, slot 3 looped from frame 2 (Psychokinesis::onCheckTouch's
-    // mdl_set_act_motion_loop(leader, 3, 2, 2))
+    // block is held, slot 3's frames 2..3 looped (Psychokinesis::onCheckTouch's
+    // mdl_set_act_motion_loop(leader, 3, 2, 2, 4) - 2.2.0 0x43d80..0x43da8: loop start 2, end 4, the end
+    // not shown: mdl_actctl_prc goes back to the start when the next frame reaches it)
     // A scene's Anim on npc 0 holds the leader's action while the scene holds the field
     const bool hold = app.puzzle.pkState != 0 && app.player.actions.size() > 3;
     App::PlayerAnim& pa = app.playerAnim;
@@ -3835,7 +3838,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
         app.footPrev = 0;
     }
     app.player.loopFrom = hold ? 2 : scripted ? pa.loopFrom : -1;
-    app.player.loopTo = scripted ? pa.loopTo : 0;
+    app.player.loopTo = hold ? 4 : scripted ? pa.loopTo : 0;
     app.player.once = scripted && pa.once;
     animate(app, app.player, dt);
     playFootsteps(app);
@@ -3977,7 +3980,7 @@ void animateNpcs(App& app, float dt) {
         if (const char* tr = SDL_getenv("CR_NPC_TRACE"); tr && (SDL_atoi(tr) < 0 || d.id == SDL_atoi(tr))) // (debugging: an NPC's animation clock; -1 every one)
             std::printf("npc %d action %d time %.3f dur %.1f once %d loop %d..%d\n", d.id, d.action, d.time, dur, int(d.once), d.loopFrom, d.loopTo);
         if (dur <= 0) continue;
-        if (d.once) { d.time = std::min(d.time, dur); continue; } // loop from -1: play once, hold the end
+        if (d.once) { d.time = std::min(d.time, std::max(dur - 1, 0.0f)); continue; } // loop from -1: play once, hold the last frame (duration - 1: mdl_actctl_prc)
         const float end = d.loopTo > 0 && d.loopTo < dur ? float(d.loopTo) : dur;
         if (d.time >= end) { // then repeat frames loopFrom..loopTo
             const float start = std::clamp(float(d.loopFrom), 0.0f, end), len = end - start;

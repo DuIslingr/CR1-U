@@ -37,18 +37,33 @@ struct MotionBlend {
     bool step(int action, float& time, float frames, const std::vector<Action>& actions);
     // A change made on purpose (mdl_set_act_motion_loop_frm): `action` from frame `start`, the one
     // before blended under it over `frames` (0: a cut), the same action started over too
+    // (the action already playing: 2.2.0's _frm overwrites that slot's frame, so both sides of its
+    // blend are the new start - a clean cut, 9734-9797)
     void restart(int action, float start, float frames, const std::vector<Action>& actions) {
-        const bool blend = frames > 0 && lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 && action < int(actions.size());
+        const bool blend = frames > 0 && action != lastAction && lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 &&
+                           action < int(actions.size());
         from = blend ? lastAction : -1, fromTime = lastTime, changed = blend;
         length = blend ? frames : kFrames, holdTime = blend ? start : 0, since = blend ? 0 : length;
         lastAction = action, lastTime = start;
+    }
+    // A change made now, taking effect in this frame (mdl_set_act_motion* as this frame's mdl_actctl_prc
+    // runs it, 2.2.0 9859-9975): this frame the old action at `oldTime` - its next frame - under the new
+    // at 0, half and half; the next the new alone at 0; then it runs. `cut` (_mdl_set_act /
+    // _mdl_set_act_nextanm2: the action bound with no controllers) shows the new at 0 at once
+    void change(int action, float oldTime, bool cut, const std::vector<Action>& actions) {
+        const bool blend = !cut && lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 && action < int(actions.size());
+        from = blend ? lastAction : -1, fromTime = oldTime, changed = blend;
+        length = kFrames, holdTime = 0, since = blend ? 0 : kFrames;
+        lastAction = action, lastTime = 0;
     }
     // The old action to blend under the current one now (the change's frames but the last), else null
     const Action* under(const std::vector<Action>& actions) const {
         return from >= 0 && from < int(actions.size()) && since < length - 1 ? &actions[size_t(from)] : nullptr;
     }
     float weight() const { return std::min(1.0f, (since + 1) / length); } // the new action's, while under() is set
-    float lag() const { return !changed ? 0 : since < length ? since : length; } // frames its clock lags the change
+    // frames its clock lags the change: the new holds its first frame through the change's frames, so
+    // past them it runs length - 1 behind the frames since the change
+    float lag() const { return !changed ? 0 : since < length ? since : length - 1; }
     void reset() { *this = MotionBlend(); }
 };
 

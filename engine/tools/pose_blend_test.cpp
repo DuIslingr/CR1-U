@@ -47,7 +47,23 @@ int main() {
     time = 0;                                           // (a change: the caller resets the time)
     bad += !mb.step(1, time, 1, acts) || mb.under(acts) != &acts[0] || !near(mb.fromTime, 4) || !near(mb.weight(), 0.5f);
     bad += !mb.step(1, time, 1, acts) || mb.under(acts) || time != 0; // the new alone, still at its first frame
-    bad += mb.step(1, time, 1, acts) || !near(mb.lag(), 2);          // then it runs (the caller advances it)
+    bad += mb.step(1, time, 1, acts) || !near(mb.lag(), 1);          // then it runs (the caller advances it), a frame behind
+    // a change made in the frame (change): blended at once with the old at its next frame, then the new
+    // alone at 0, then on; a cut shows the new at 0 at once
+    cr::MotionBlend now;
+    time = 5;
+    now.step(0, time, 1, acts);
+    now.change(1, 6, false, acts);
+    time = 0;
+    bad += now.under(acts) != &acts[0] || !near(now.fromTime, 6) || !near(now.weight(), 0.5f) || now.lag() != 0;
+    bad += !now.step(1, time, 1, acts) || now.under(acts) || time != 0 || now.lag() != 1;
+    bad += now.step(1, time, 1, acts) || now.lag() != 1;
+    now.change(0, 1, true, acts);
+    time = 0;
+    bad += now.under(acts) || now.step(0, time, 1, acts) || now.lag() != 0;
+    // Anim2 on the action playing: a cut to its start
+    now.restart(0, 3, 2, acts);
+    bad += now.under(acts) != nullptr;
     // sub-frame updates: blended for the first frame's length only
     cr::MotionBlend fine;
     time = 0;
@@ -70,6 +86,6 @@ int main() {
     cr::Action keyedTail = spin;
     keyedTail.segments[12] = keyedTail.segments[3];
     bad += cr::emptyTail(s12, keyedTail);
-    std::printf("pose blend: weighted sum, slerp, 2-frame change, sub-frame steps, empty tail; %d problems\n", bad);
+    std::printf("pose blend: weighted sum, slerp, 2-frame change, changes in the frame, cuts, sub-frame steps, empty tail; %d problems\n", bad);
     return bad ? 1 : 0;
 }
