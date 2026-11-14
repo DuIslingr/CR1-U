@@ -1395,8 +1395,6 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     // Analyze (0xe9; _btlact_gene 0xc1c..0xc9e): the target's name, its HP, its weak and its resisted
                     // elements - "No results" for an empty list - a line a tap, the action 40 frames after the last
                     {
-                        void startAnalyze(App & app);
-                        void analyzeTap(App & app);
                         b.turn = cr::BattleTurn();
                         b.turn.kind = cr::kCmdGene, b.turn.action = 0xe9, b.turn.actors[0] = 0;
                         b.turn.hits.resize(1);
@@ -9020,7 +9018,6 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             b.rules.forceAction = action;
             // (CR_BATTLE_PAIR: the pair stands in pair mode - a single blow on it hits both; the battle may open on
             // the enemy's turn, so it is set again before each one)
-            void placePair(App & app, bool pair);
             const bool asPair = SDL_getenv("CR_BATTLE_PAIR") && b.rules.f[0].alive() && b.rules.f[1].alive() && !b.rules.allyAuto;
             for (int f = 0; f < 6000 && b.active; ++f) {
                 if (asPair && !b.turnOn && !b.rules.pair) b.rules.pair = true, placePair(app, true);

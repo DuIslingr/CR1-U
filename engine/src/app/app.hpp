@@ -1979,6 +1979,9 @@ void step(App& app);
 } // namespace battletalk
 int battleInSound(int g);
 void startBattle(App& app, const cr::BattleStart& start, int flags);
+void startAnalyze(App& app);          // Analyze's lines (battle.cpp; declared here, not at block scope: MSVC would
+void analyzeTap(App& app);            // put a block-scope declaration in the global namespace and fail to link)
+void placePair(App& app, bool pair);
 void endBattle(App& app, bool won, bool keepMusic = false); // keepMusic: btl_lose's return - the defeat tune plays on
 void setBanner(App& app, const std::string& text, int frames = btlui::kBannerFrames);
 void battleMenu(App& app, App::Battle::Menu menu);
