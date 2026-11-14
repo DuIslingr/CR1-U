@@ -1323,6 +1323,7 @@ void battleEscapeAnswer(App& app, bool yes, bool cancelled) {
     b.cmds[0] = b.cmds[1] = cr::BattleCommand();
     b.cmds[0].kind = cr::kCmdEscape;
     menuSound(app, se::kChoose);
+    setBanner(app, ""); // (0x321's answer: the banner's timer to 0)
     // the escape is the pair's one action this round (both members' commands become it)
     b.rules.pair = true;
     battleStartRound(app);
@@ -2629,6 +2630,9 @@ void stepMenuView(App& app) {
     if (want < 0) return;
     live();
     b.viewState = 1;
+    // the escape question (state 3 -> 800, 12652): 57015 in the top banner (slot 11), kept there while it is
+    // asked (0x321 holds the timer at 0x14) - gone as it is answered
+    if (v.menu == App::Battle::EscapeAsk) setBanner(app, sysText(app, 57015), 1 << 20);
 }
 
 // Taps and keys are taken once the page is in (and the logic's page is the one shown)
@@ -3779,22 +3783,15 @@ void drawBattleHud(App& app, float W, float H) {
             m.backBar(btlui::kBackX, btlui::kBackY, backHeld, a); // (MuScrList's BackButtonProc: held)
             break;
         }
-        case App::Battle::EscapeAsk: { // 57015 on the board, Yes / No beneath
-            const float mx = 96, my = 200;
-            r.setOrigin(r.uiX());
-            drawWinPiece(app, kWinSmallPanel, mx * 2, my * 2, 320 * 2, 48 * 2);
-            m.textCentred(sysText(app, 57015), mx + 20, my + 24, false, a, 15);
-            // (__ComUty_YesNoChoiceProc: a held one takes the cursor - the boxes battleClick tests, centred)
-            float hx = -1e9f, hy = -1e9f;
-            if (live && app.press.down && app.press.screen == kPressBattle) {
-                float lx, ly;
-                app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
-                hx = (lx - app.renderer.uiX()) / 2, hy = ly / 2;
-            }
-            const bool heldYes = hy >= 264 && hy < 304 && hx >= 128 && hx < 240, heldNo = hy >= 264 && hy < 304 && hx >= 272 && hx < 384;
-            const bool yes = heldYes || (!heldNo && b.confirm == 0), no = heldNo || (!heldYes && b.confirm == 1);
-            m.button(128, 264, 0, "", yes, a, yes); // Yes
-            m.button(272, 264, 1, "", no, a, no);   // No
+        case App::Battle::EscapeAsk: { // _ComUty_YesNoChoiceDraw(.., 6, held): Yes / No plates at (336, 104) / (336, 160)
+            // on window 6 (in and out with the page); one lit while a finger holds it (+0x34) - for keys the cursor's
+            m.setOffset(float(b.slide) + kListDx, kListDy);
+            const bool hy = live && battlePressIn(app, 336 + kListDx, 104 + kListDy, 136, 40);
+            const bool hn = live && battlePressIn(app, 336 + kListDx, 160 + kListDy, 136, 40);
+            const bool keys = battleCursorLit(app);
+            m.plate(336, 104, 0, 0, hy || (!hn && keys && b.confirm == 0), a, false);
+            m.plate(336, 160, 1, 1, hn || (!hy && keys && b.confirm == 1), a, false);
+            m.setOffset(float(b.slide), 0);
             break;
         }
         }
@@ -3992,9 +3989,9 @@ void battleClick(App& app, float px, float py) {
             battleBack(app);
         break;
     }
-    case App::Battle::EscapeAsk:
-        if (my >= 264 && my < 304 && cx >= 128 && cx < 240) battleEscapeAnswer(app, true);
-        else if (my >= 264 && my < 304 && cx >= 272 && cx < 384) battleEscapeAnswer(app, false);
+    case App::Battle::EscapeAsk: // (__ComUty_YesNoChoiceProc: the plates at (336, 104) / (336, 160), 136 x 40, on the lift)
+        if (rx >= 336 + kListDx && rx < 472 + kListDx && my >= 104 + kListDy && my < 144 + kListDy) battleEscapeAnswer(app, true);
+        else if (rx >= 336 + kListDx && rx < 472 + kListDx && my >= 160 + kListDy && my < 200 + kListDy) battleEscapeAnswer(app, false);
         break;
     }
 }

@@ -854,6 +854,14 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 ready();
                 battleBack(app), ready(); // (the commands)
                 battleBack(app), ready(); // (the first page)
+                // 3: the escape question - 57015 in the banner, a lift on No's plate: the first page
+                if (!b.rules.escapeBlocked) {
+                    battleChooseTop(app, 2), ready();
+                    check(b.menu == App::Battle::EscapeAsk && b.banner == sysText(app, 57015), "escape-banner");
+                    touch({{336 + lx + 60, 160 + ly + 20}});
+                    check(b.menu == App::Battle::Top && b.banner.empty(), "escape-no-plate");
+                    ready();
+                }
                 endBattle(app, false);
                 app.runner.stop();
             } else bad.push_back("no-battle");
@@ -862,7 +870,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             for (int r = 0; r < 4; ++r) app.game.setFlag(4077 + r, keepAway[r]);
             std::string list;
             for (const std::string& w : bad) list += " " + w;
-            std::printf("battle menus (2.2.0's lists, targets, refusals): %zu problems%s\n", bad.size(), list.c_str());
+            std::printf("battle menus (2.2.0's lists, targets, escape, refusals): %zu problems%s\n", bad.size(), list.c_str());
             problems += int(bad.size());
         }
 

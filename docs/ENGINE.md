@@ -612,7 +612,9 @@ c101/c102/c104/m207a, 2026-10-12).
       pans the 3D (`FUN_00017668`, 48 at most) and, swiped over 48 sideways, steps a group; a tap at x
       92..256 confirms the cursor's. Refusals: a gene the MP won't pay SE 4 alone (`GetChoiceListNo`
       -4); Genes refused only while sealed (+0x8f; the plate dimmed for it alone), an empty list
-      opens, Items always opens with SE 2. `--battle-view genes[@n]` / `genetarget<id>` (with
+      opens, Items always opens with SE 2. Escape asks in the banner (57015, slot 11, kept while
+      asked) with Yes / No plates at (336, 104) / (336, 160) (`_ComUty_YesNoChoiceDraw`), lit while
+      held (for keys the cursor's). `--battle-view genes[@n]` / `genetarget<id>` (with
       `CR_CAPTURE_GENES=id,id,...` the list's entries) capture them.
 - [x] Story battles' line-ups (`btl_prty_init`): a member alone, a guest beside the leader
       (Olgar / Ayuta, level + 5, acting by itself in the original's rotation) or the partner away
