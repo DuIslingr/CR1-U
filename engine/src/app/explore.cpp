@@ -3178,6 +3178,42 @@ int walkCollisionSelfTest(App& app, int& spawned, int& walked, int& mapErrors) {
 // price - price / 10), the Camp's healing on the home maps (CampMainSet), the Equip list's grey empty
 // slots (__MuScrList_ScrListEquip_Main), the held-back member's spare jewel (MuComMakeItemData), and
 // the Android staff roll's measures (InitStaffRollMenu)
+// The text's faces and sizes (2.2.0 FUN_000375bc / _setfont_utf16_text): English in the Arial-metric face with the
+// CJK one behind it for the glyphs it lacks, Japanese in the CJK bold; FUN_000373e4's languages; a 16-point message
+// line as wide as ArialMT makes it ("You don't want to tell me? Fine.": 223.6 tex2d of advances, a little less kerned)
+int textFacesSelfTest(App& app) {
+    const int keep = app.language;
+    int problems = 0;
+    app.language = 1;
+    applyLanguage(app);
+    const bool latin = !app.fontLatin.loaded() || app.font.path() == app.fontLatin.path();
+    const bool fallback = !app.fontLatin.loaded() || !app.fontCjk.loaded() || app.font.covers("Escher \xe8\x89\xbe\xe5\xa4\x8f");
+    float width = -1;
+    if (app.fontLatin.loaded()) {
+        cr::Hud h;
+        h.setFont(&app.font);
+        const float s = msgScale(app, 16);
+        width = (h.measure(app.renderer, {"You don't want to tell me? Fine."}, s) - 2 * cr::Hud::pad(s)) / 2; // (tex2d: 2 logical units)
+        h.destroy(app.renderer);
+    }
+    const bool wide = width < 0 || (width > 219.5f && width < 224.5f);
+    app.language = 0;
+    applyLanguage(app);
+    const bool bold = !app.fontCjk.loaded() || app.font.path() == (app.fontCjkBold.loaded() ? app.fontCjkBold : app.fontCjk).path();
+    bool cjk = true;
+    for (int l = 0; l < cr::kLanguages; ++l) app.language = l, cjk = cjk && cjkTextLanguage(app) == (l == 0 || l >= 5);
+    app.language = keep;
+    applyLanguage(app);
+    problems += !latin + !fallback + !wide + !bold + !cjk;
+    std::printf("text faces: English in %s %s (Chinese from the CJK face %s), a 16-point line %.1f tex2d %s, Japanese in %s %s, "
+                "FUN_000373e4's languages %s; %d problems\n",
+                app.fontLatin.loaded() ? app.fontLatin.path().c_str() : "(no Arial-metric face)", latin ? "ok" : "WRONG",
+                fallback ? "ok" : "NO", width, wide ? "ok" : "WRONG",
+                (app.fontCjkBold.loaded() ? app.fontCjkBold : app.fontCjk).path().c_str(), bold ? "ok" : "WRONG", cjk ? "ok" : "WRONG",
+                problems);
+    return problems;
+}
+
 int menusAuditSelfTest(App& app) {
     const cr::GameState keepGame = app.game;
     const int keepChar = app.playerChar, keepMap = app.mapNumber;
@@ -5904,6 +5940,7 @@ int runSelfTest(App& app) {
         mapErrors += problems;
     }
     mapErrors += menusAuditSelfTest(app);
+    mapErrors += textFacesSelfTest(app);
     { // The last battle's pair choice (Util 8): four rounds, each pair once; a No goes back to the
       // plates; the camp menu opens for the chosen pair; flag 1 clears after the fourth
         int problems = 0;

@@ -28,6 +28,11 @@ public:
     // The width `lines` take at `scale` (rasterising them), and the distance between lines
     float measure(Renderer& r, const std::vector<std::string>& lines, float scale);
     float lineStep(float scale) const;
+    // Baselines `stepPerEm` ems apart instead of the default 12 / 8.5 (the game's message lines:
+    // 24 tex2d at a 16-point font, 1.5); 0 the default
+    void setLineRatio(float stepPerEm) { lineRatio_ = stepPerEm; }
+    // The `scale` whose em is `em` logical units (a font of n points: em 2n, the tex2d unit's two)
+    static float scaleForEm(float em);
     // The blank margin round the rasterised text (logical units): drawAt's (x, y) is this far
     // above and left of the glyphs' box
     static float pad(float scale);
@@ -35,7 +40,8 @@ public:
 private:
     bool update(Renderer& r, const std::vector<std::string>& lines, float scale);
     std::vector<std::string> cached_;
-    float cachedScale_ = 0, cachedDensity_ = 0;
+    float cachedScale_ = 0, cachedDensity_ = 0, cachedRatio_ = 0;
+    float lineRatio_ = 0;
     float density_ = 1; // texture pixels per logical pixel
     const Font* font_ = nullptr;
     const void* cachedFont_ = nullptr;

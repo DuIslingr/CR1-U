@@ -520,18 +520,39 @@ bool interact(App& app, bool instant) {
 }
 
 // An item's name (sys.evt block 0; descriptions are block 1)
-// Whether `language` can be shown: the data has it, and Japanese / Chinese / Korean need the font.
+// Whether `language` can be shown: the data has it, and Japanese / Chinese / Korean need a CJK font.
 bool languageUsable(const App& app, int language) {
     if (language < 0 || language >= cr::kLanguages || !app.systemText.hasLanguage(language)) return false;
-    return (language >= 1 && language <= 4) || app.font.loaded();
+    return (language >= 1 && language <= 4) || app.fontCjk.loaded() || (language == 0 && app.fontCjkBold.loaded());
 }
 
-// The font face for the language: the collection's regional Han forms (Noto Sans CJK JP / SC /
-// TC / KR); Latin text uses the Japanese face like the Japanese release's system font.
+// FUN_000373e4 (2.2.0 0x373e4, decomp 32921): the language is Japanese, Chinese or Korean (0, 5, 6, 7) -
+// the menus' 14-unit text, the message window's own margins; false for English, French, German, Spanish
+bool cjkTextLanguage(const App& app) {
+    const int l = app.language;
+    return l >= 0 && l <= 7 && ((1 << l) & 0xe1) != 0;
+}
+
+// The language's face (2.2.0 FUN_000375bc, decomp 32980-33035: UIFont fontWithName:size:):
+// Japanese HiraKakuProN-W6 - the CJK font's bold weight (Noto Sans CJK JP Bold; Regular if there is
+// none), its line as Hiragino's (OS/2 ascent 0.88 em) -, every other language ArialMT - a face with
+// Arial's metrics, the glyphs it lacks (Chinese, Korean) from the CJK font's regional face (SC / TC /
+// KR) on its baseline, as iOS's font fallback draws them. With no Arial-metric face the CJK font
+// draws everything (its Latin wider than Arial's).
 void applyLanguage(App& app) {
     if (!languageUsable(app, app.language)) app.language = 1;
     static const char* const kRegion[cr::kLanguages] = {"JP", "JP", "JP", "JP", "JP", "SC", "TC", "KR"};
-    app.font.selectRegion(kRegion[app.language]);
+    app.fontCjk.selectRegion(kRegion[app.language]);
+    app.fontCjkBold.selectRegion(kRegion[app.language]);
+    const bool japanese = app.language == 0;
+    const cr::Font& face = japanese ? (app.fontCjkBold.loaded() ? app.fontCjkBold : app.fontCjk)
+                           : app.fontLatin.loaded() ? app.fontLatin : app.fontCjk;
+    if (face.path() != app.font.path() || face.generation() != app.fontFaceGeneration) {
+        app.font.assign(face);
+        app.fontFaceGeneration = face.generation();
+    }
+    app.font.setFallback(&face == &app.fontLatin && app.fontCjk.loaded() ? &app.fontCjk : nullptr);
+    app.font.setTypoMetrics(japanese);
 }
 
 std::string itemName(const App& app, int item) {

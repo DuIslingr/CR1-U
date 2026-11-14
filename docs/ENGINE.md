@@ -388,9 +388,14 @@ c101/c102/c104/m207a, 2026-10-12).
       dark ink); 64 the grey panel (960 x 192 at its rect - one line low, else high; no "next"
       mark); 8 the tutorials' dark band with soft edges (at the top, or the middle for one line,
       the text further left); 32 a black band across the bottom, the speaker's name on its top edge
-      (tex2d (16, 236), outlined); 16 the text alone, outlined in
-      black. Lines marked with code 0x17 flip their alignment (centred about the layout's middle;
-      the boxless style centres every line but those), as `CmdFont` does. Pages type out a character a
+      (tex2d (16, 236), black edged white - `drawfont_l`); 16 the text alone, outlined in
+      black. The ink is black, white for styles with 8 / 0x10 / 0x20 / 0x40 (`FUN_0002bd10`). The
+      lines are a 16-point font 24 tex2d apart (`PutMsg` / `CmdFont`: `_setfont_utf16_text` takes the
+      size in points, doubled on Retina), the speaker's name 14 points (17 on style 0x20's band, 16
+      in Japanese, Chinese and Korean - `PrcMsg` 0x15). Lines marked with code 0x17 flip their
+      alignment (centred about the layout's middle; the boxless style centres every line but those -
+      a flipped one there starts at x 8 in English, French, German and Spanish), as `CmdFont` does;
+      the tutorials' band (8) starts its lines at x 8 in those four languages too. Pages type out a character a
       frame (a centred line from where the whole line starts); a tap brings the rest out at once,
       the next turns the page; code 0x1a pauses the typing, and a message ending in 0x14 closes by
       itself (after the 0x1a before it). `CR_CAPTURE_TYPED=n` captures a page n frames into its
@@ -426,11 +431,21 @@ c101/c102/c104/m207a, 2026-10-12).
       `window_cutin_<w>` for the screen's width (docs/ANDROID.md)
 - [x] Text in all eight languages (Options, Language / Text Language, or `--language n`: 0 Japanese,
       1 English, 2 French, 3 German, 4 Spanish, 5/6 Chinese simplified/traditional, 7 Korean;
-      1.0.1 has Japanese and English). Drawn with a system font through stb_truetype
-      (`engine/third_party/stb`, public domain), as the iOS game uses the system font: Noto
-      Sans CJK on Linux (its JP / SC / TC / KR face per language), Hiragino / PingFang / Apple
-      SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows; `CR_FONT=<file>` picks one,
-      `CR_FONT=none` keeps the 8x8 font (English and the Latin languages, accents folded)
+      1.0.1 has Japanese and English). Drawn with system fonts through stb_truetype
+      (`engine/third_party/stb`, public domain) in the faces 2.2.0 asks UIKit for (`FUN_000375bc`):
+      Japanese in HiraKakuProN-W6 - a CJK font's bold weight (Noto Sans CJK JP Bold on Linux,
+      Hiragino W6 on macOS, Yu Gothic Bold / Meiryo Bold on Windows; Regular when there is no bold),
+      its line as Hiragino's (the OS/2 ascent, 0.88 em) -; every other language in ArialMT - Arial
+      itself on macOS / Windows, Liberation Sans or Arimo (Arial's metrics) on Linux -, the
+      Chinese and Korean glyphs it lacks from the CJK font's SC / TC / KR face on its baseline,
+      as iOS's font fallback draws them. The CJK font: Noto Sans CJK on Linux, Hiragino / PingFang /
+      Apple SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows. `CR_FONT=<file>` picks
+      the CJK font, `CR_FONT_BOLD=<file>` its bold, `CR_LATIN_FONT=<file>` the Latin one (`none`:
+      without - the CJK font draws Latin text then, the messages at 94% of their size, its Latin
+      being about 5% wider than Arial's); `CR_FONT=none` keeps the 8x8 font (English and the Latin
+      languages, accents folded). At 16 points in Arial's metrics every English, French and Spanish
+      message line fits the 480-unit screen from x 36 (the widest English 443.8 tex2d, French 417.9,
+      Spanish 420.3); one German line of the Lite edition's ending (j001_d01 2205, 517.6) does not
 - [x] Vita assets (Options, Game, Vita Assets: pick your copy's PCSG00497 folder - saved as
       settings.ini's `vita=`, used from the next start - or `--vita <folder | cr1.psarc>`, `CR_VITA`;
       `--vita none` for a run without): from your Vita copy the textures and model packages

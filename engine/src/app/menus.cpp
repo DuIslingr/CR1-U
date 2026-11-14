@@ -369,10 +369,7 @@ int pictAnimFrame(int draws, int ticks, int frames) {
 
 // The menu font's size (_MuComFontFromIdRegist 0x52684: 14, but 13 when FUN_000373e4 finds the
 // language outside 0, 5, 6, 7 - English, French, German, Spanish)
-float menuFontSize(const App& app) {
-    const int l = app.language;
-    return l >= 0 && l <= 7 && ((1 << l) & 0xe1) ? 14.0f : 13.0f;
-}
+float menuFontSize(const App& app) { return cjkTextLanguage(app) ? 14.0f : 13.0f; }
 
 void drawSaveDate(App& app, cr::MenuPainter& m, const cr::SaveData& d, float a, float dx = 0) { // dx: the window's slide
     (void)app;
@@ -3608,9 +3605,11 @@ void drawTrophyNotice(App& app) {
     const int n = nt.id;
     if (n >= 0 && n < cr::trophies::kCount && app.trophy.icons[size_t(n)].id)
         r.drawQuad(app.trophy.icons[size_t(n)], x + 15 * s, y + 8 * s, 64 * s, 64 * s);
-    if (!app.font.loaded() || n < 0 || n >= cr::trophies::kCount) return;
+    // (Vita3K's notification, not the game's text: the CJK font in every language, as it was measured against Part 01)
+    const cr::Font& font = app.fontCjk.loaded() ? app.fontCjk : app.font;
+    if (!font.loaded() || n < 0 || n >= cr::trophies::kCount) return;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &font);
     const float ink = 54 / 255.0f;
     const float line1 = 24 * s, line2 = 21 * s; // (the glyph boxes: the name's 24 rows with its brackets, the second line's cap 15)
     std::string head = std::string(cr::trophies::gradeWord(trophyGrade(app, n))) + " " + trophyName(app, n);

@@ -277,7 +277,11 @@ struct App {
     std::string modelsDir;                 // replacement models: models/hd/ in the game folder, or CR_HD_MODELS
     int hdModelsLoaded = 0;                // since startup
     int language = 1;                      // text language (cr::kLanguageName): English by default
-    cr::Font font;                         // system font for the game's text (all languages)
+    cr::Font font;                         // the game's text in the language's face (applyLanguage: one of these three)
+    cr::Font fontLatin;                    // ArialMT's metrics (Arial / Liberation Sans): every language but Japanese
+    cr::Font fontCjk;                      // a CJK system font: Chinese / Korean glyphs Arial lacks; the rest without a Latin face
+    cr::Font fontCjkBold;                  // its bold weight: Japanese (2.2.0's HiraKakuProN-W6)
+    int fontFaceGeneration = -1;           // (the face `font` was assigned at)
     std::vector<std::vector<int>> dialogueVoices; // per page: voice clips it starts (0x1e)
     int dialogueSerial = 0, voicedSerial = -1, voicedPage = -1; // which page's voices were started
     std::vector<int> voiceQueue;           // further clips of the same page
@@ -1664,6 +1668,8 @@ const cr::FieldNpc* interactTarget(const App& app);
 bool npcExaminable(const App& app, const cr::FieldNpc& n);
 bool interact(App& app, bool instant = false);
 bool languageUsable(const App& app, int language);
+bool cjkTextLanguage(const App& app);
+float msgScale(const App& app, float points);
 void applyLanguage(App& app);
 std::string itemName(const App& app, int item);
 void resetTyping(App& app);

@@ -95,7 +95,7 @@ MenuPainter::Cached& MenuPainter::rasterise(const std::string& s, float size) {
     Cached& c = text_[key];
     const float density = std::max(1.0f, std::round(r_->pixelScale() * 4.0f) / 4.0f);
     const int generation = font_ ? font_->generation() : -2;
-    if (c.tex.id && c.density == density && c.generation == generation) return c;
+    if (c.tex.id && c.density == density && c.generation == generation && c.font == font_) return c;
     r_->destroy(c.tex);
     c = Cached();
     if (!font_ || !font_->loaded() || s.empty()) return c;
@@ -107,6 +107,7 @@ MenuPainter::Cached& MenuPainter::rasterise(const std::string& s, float size) {
     c.h = img.height / density;
     c.density = density;
     c.generation = generation;
+    c.font = font_;
     return c;
 }
 

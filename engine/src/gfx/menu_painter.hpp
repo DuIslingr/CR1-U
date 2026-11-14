@@ -111,6 +111,7 @@ private:
         Texture tex;
         float w = 0, h = 0, density = 0; // logical size, texture pixels per logical pixel
         int generation = -1;
+        const Font* font = nullptr; // (the one it was drawn with: the trophy box's isn't the menus')
     };
     std::map<std::string, Cached> text_;
     Texture white_;

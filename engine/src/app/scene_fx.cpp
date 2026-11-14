@@ -1738,15 +1738,34 @@ constexpr float kWinNext[2][4] = {{1024, 72, 40, 40}, {1064, 72, 40, 40}};
 constexpr float kWinBadge[4] = {936, 880, 88, 96};         // the "!" bubble over an NPC in reach (menuf_mainPut's FollowWindow type 0: tex2d (468, 440) 44 x 48)
 constexpr float kWinFlag[4] = {960, 32, 64, 64};           // FlagWindow's plain "!" over a person with news (type 1: tex2d (480, 16) 32 x 32)
 
+// The message window's text sizes in points - tex2d units, two logical ones each (2.2.0's _setfont_utf16_text
+// 0x395cc makes the size a UIFont's points, doubled on Retina: 0x39624-0x3963c `size << retina`): _PutMsg's
+// _CmdFont lines 0x10 (16), 0x18 (24) apart; the speaker's name (_PrcMsg's 0x15, 25334-25342) 14, on style
+// 0x20's band 17 - 16 in Japanese, Chinese and Korean (FUN_000373e4)
+constexpr float kMsgPoints = 16, kMsgLineStep = 24, kNamePoints = 14;
+// The Hud scale for a font of `points` (the 8x8 font, without a system font: the size it always had). Latin
+// text with no Arial-metric face on the system (Android) is in the CJK font, whose Latin runs about 5% wider:
+// 94% of the size keeps the longest lines inside the 480 (English 469.5 tex2d at 16 points in Noto Sans CJK,
+// 444 from x 36 fits)
+float msgScale(const App& app, float points) {
+    if (!app.font.loaded()) return 2.2f;
+    const bool wideLatin = !cjkTextLanguage(app) && !app.fontLatin.loaded();
+    return cr::Hud::scaleForEm(2 * points * (wideLatin ? 0.94f : 1.0f));
+}
+
 // A message page in the game's message window, across the whole screen's width: the parchment
 // while portraits are up, else the grey band; `next`: the page waits for a tap (the diamond)
 // The page's lines at (x, y): as one block, or - when a line is centred (0x17 flips a line; the
 // windowless style 0x10 centres them all unless flipped) - one by one, the centred ones about the
-// layout's middle (CmdFont: tex2d x 240)
-void drawMessageLines(App& app, const std::vector<std::string>& page, float x, float y, float scale, bool centreAll) {
+// layout's middle (CmdFont: tex2d x 240); a flipped line in the boxless style starts at `flipX` (CmdFont
+// 24946-24951: tex2d 8 for English, French, German and Spanish, else where the others do). The lines
+// 24 tex2d apart (PutMsg 25018-25048: + 0x18 a slot)
+void drawMessageLines(App& app, const std::vector<std::string>& page, float x, float y, float scale, bool centreAll,
+                      float flipX) {
     drawFrontFade(app); // (the text over the front fade)
     app.order2d.text = ++app.order2d.seq;
     cr::Renderer& r = app.renderer;
+    app.dialogueHud.setLineRatio(kMsgLineStep / kMsgPoints);
     bool any = centreAll;
     for (const std::string& l : page) any |= !l.empty() && l[0] == '\x01';
     const std::vector<std::string> shown = typedPage(page, app.textLimit); // typing: centred on the whole line
@@ -1766,7 +1785,7 @@ void drawMessageLines(App& app, const std::vector<std::string>& page, float x, f
         app.dialogueHud.tint(tint);
         h.setTint(tint[0], tint[1], tint[2]);
         const float w = h.measure(r, {text}, scale);
-        const float lx = flip != centreAll ? cr::Renderer::kLogicalW / 2 - w / 2 : x - pad;
+        const float lx = flip != centreAll ? cr::Renderer::kLogicalW / 2 - w / 2 : (flip ? flipX : x) - pad;
         if (k >= shown.size()) break; // (not typed yet)
         const std::string& part = shown[k];
         const std::string drawn = flip && !part.empty() ? part.substr(1) : part;
@@ -1975,12 +1994,17 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                 // 140 x 22 at tex2d (0, 238) (the HD binary's iPad at (-16, 238))
                 static const float kWinNameStreak[4] = {1224, 28, 280, 44};
                 drawWinPiece(app, kWinNameStreak, 2.0f * (phone ? 0 : -16) + 32, 2.0f * 238 + 64, 280, 44, wa);
-                const float nx = 2.0f * 16 + 32, ny = 2.0f * 236 + 64, namePad = cr::Hud::pad(2.2f); // (the glyphs' left)
+                // The name: drawfont_l(0x1f, 16, 236, .., 0xff000000) (25058) - black, so _drawfont_l (33187-33190)
+                // edges it white: 8 copies a tex2d unit off (+-1, +-1), then the text; its line's top at y.
+                // 17 points (16 in Japanese, Chinese, Korean: _PrcMsg 0x15)
+                const float s = msgScale(app, cjkTextLanguage(app) ? 16.0f : 17.0f);
+                const float nx = 2.0f * 16 + 32, ny = 2.0f * 236 + 64, namePad = cr::Hud::pad(s); // (the line's top-left)
                 drawFrontFade(app); // (the name: text, over the front fade)
-                app.nameHud.setTint(0, 0, 0); // (an outline, so it reads over a bright scene too)
-                for (int k = 0; k < 4; ++k) app.nameHud.drawAt(r, {speaker}, nx - namePad + (k & 1 ? 2 : -2), ny + (k & 2 ? 2 : -2), 2.2f, 0, 0, 0.0f);
                 app.nameHud.setTint(1, 1, 1);
-                app.nameHud.drawAt(r, {speaker}, nx - namePad, ny, 2.2f, 0, 0, 0.0f);
+                for (int k = 0; k < 9; ++k)
+                    if (k != 4) app.nameHud.drawAt(r, {speaker}, nx - namePad + 2.0f * float(k % 3 - 1), ny - namePad + 2.0f * float(k / 3 - 1), s, 0, 0, 0.0f);
+                app.nameHud.setTint(0, 0, 0);
+                app.nameHud.drawAt(r, {speaker}, nx - namePad, ny - namePad, s, 0, 0, 0.0f);
             }
         } else if (style & 8) { // a tutorial's band: dark, its edges soft (8 / 88 / 8 tex2d), the text further left
             // (draw_abeblack: 0xc0 at the window's alpha; Android 1.1.1 0x7d48c: x - ox / scale .. the
@@ -1992,26 +2016,33 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                 r.fillRect(bl, y2 + 2.0f * float(k), bw, 2.0f, 0, 0, 0, a * (1 - t));
             }
             r.fillRect(bl, y1, bw, y2 - y1, 0, 0, 0, a);
-            if (app.language == 1) tx = 2.0f * 8 + 32;
+            if (!cjkTextLanguage(app)) tx = 2.0f * 8 + 32; // (PutMsg 25023-25027: x 8 unless FUN_000373e4 - English, French, German, Spanish)
         } else if (style & 0x40) { // the grey panel (960 x 192 at its rect)
             drawWinPiece(app, kWinMessagePanel, 32, wy, 960, 192, wa);
             if (!speaker.empty() && textOn) {
                 drawWinPiece(app, kWinSmallPanel, 32, wy - 36, 300, 40);
                 drawFrontFade(app); // (the name: text, over the front fade)
                 app.nameHud.setTint(1, 1, 1);
-                app.nameHud.drawAt(r, {speaker}, 62, wy - 34, 1.9f, 0, 0, 0.0f);
+                const float s = msgScale(app, kNamePoints); // (14 points; the line where the port had it - this small panel is the port's)
+                app.nameHud.drawAt(r, {speaker}, 62 + cr::Hud::pad(1.9f) - cr::Hud::pad(s), wy - 34 + cr::Hud::pad(1.9f) - cr::Hud::pad(s), s, 0, 0, 0.0f);
             }
         }
         const bool centreAll = (style & 0x10) != 0;
+        const float s = msgScale(app, kMsgPoints);
+        // a flipped line in the boxless style: x 8 in English, French, German, Spanish (CmdFont 24946-24951)
+        const float flipX = cjkTextLanguage(app) ? tx : 2.0f * 8 + 32;
         if (outline && textOn) {
             app.dialogueHud.setTint(0, 0, 0);
             for (int k = 0; k < 8; ++k) {
                 static const float d[8][2] = {{-2, -2}, {0, -2}, {2, -2}, {-2, 0}, {2, 0}, {-2, 2}, {0, 2}, {2, 2}};
-                drawMessageLines(app, page, tx + d[k][0], ty + d[k][1], 2.2f, centreAll);
+                drawMessageLines(app, page, tx + d[k][0], ty + d[k][1], s, centreAll, flipX + d[k][0]);
             }
         }
-        app.dialogueHud.setTint(1, 1, 1);
-        if (textOn) drawMessageLines(app, page, tx, ty, 2.2f, centreAll);
+        // The ink (FUN_0002bd10, 24892-24899, as __EvtMsg opens the text): black (0xff000000), white when the
+        // style has 8 / 0x10 / 0x20 / 0x40 (& 0x78)
+        const float ink = style & 0x78 ? 1.0f : 0.0f;
+        app.dialogueHud.setTint(ink, ink, ink);
+        if (textOn) drawMessageLines(app, page, tx, ty, s, centreAll, flipX);
         (void)pageNo; // (PutMsg draws no page count)
         if (next && textOn) drawMessageMark(app, style, rect[0], right, H);
         drawMessageSkip(app, right, top);
@@ -2053,10 +2084,12 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (!speaker.empty() && textOn) {
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
+            // (drawfont_text(0x1f, 24, 206, .., white): the line's top-left there, 14 points)
             const float nx = parchX + (2.0f * 24 + 32 - 32) * parchK, ny = parchY + (2.0f * 206 + 64 - parchY) * parchK;
-            app.nameHud.drawAt(r, {speaker}, nx - cr::Hud::pad(2.0f), ny - 14, 2.0f, 0, 0, 0.0f);
+            const float s = msgScale(app, kNamePoints);
+            app.nameHud.drawAt(r, {speaker}, nx - cr::Hud::pad(s), ny - cr::Hud::pad(s), s, 0, 0, 0.0f);
         }
-        app.dialogueHud.setTint(0.12f, 0.10f, 0.08f);
+        app.dialogueHud.setTint(0, 0, 0); // (black: FUN_0002bd10's 0xff000000 for style 2)
         textX = 2.0f * 36 + 32;
         textY = 2.0f * (pr[0] + pr[1]) + 64;
     } else if (true) { // the parchment (style 2, and the default)
@@ -2065,9 +2098,11 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (!speaker.empty() && textOn) {
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
-            app.nameHud.drawAt(r, {speaker}, left + 44 - cr::Hud::pad(2.0f), H - 274, 2.0f, 0, 0, 0.0f); // on the streak (piece y 14..52)
+            const float s = msgScale(app, kNamePoints); // (14 points; the line where the port had it on the iPad's streak)
+            app.nameHud.drawAt(r, {speaker}, left + 44 - cr::Hud::pad(s), H - 274 + cr::Hud::pad(2.0f) - cr::Hud::pad(s), s, 0, 0,
+                               0.0f); // on the streak (piece y 14..52)
         }
-        app.dialogueHud.setTint(0.12f, 0.10f, 0.08f); // ink
+        app.dialogueHud.setTint(0, 0, 0); // ink (black: FUN_0002bd10's 0xff000000 for style 2)
         textY = H - 196;
     } else {
         drawWinPiece(app, kWinMessagePanel, left, H - 170, width, 170);
@@ -2080,7 +2115,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         app.dialogueHud.setTint(1, 1, 1);
         textY = H - 140;
     }
-    if (textOn) drawMessageLines(app, page, textX, textY, 2.2f, false); // text and name from the screen's left
+    if (textOn) drawMessageLines(app, page, textX, textY, msgScale(app, kMsgPoints), false, textX); // text and name from the screen's left
     if (next && textOn) drawMessageMark(app, style, 0, right, H); // (steady: PutMsg doesn't blink it)
     drawMessageSkip(app, right, top); // a scene is playing
 }

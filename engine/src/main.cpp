@@ -707,8 +707,13 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     else SDL_EnumerateDirectory(app->dataDir.c_str(), collectAssets, app);
     app->systemText.load(app->dataDir);
     // The game's text in every language: a system font (CR_FONT overrides), else the 8x8 font
-    if (cr::loadSystemFont(app->font)) SDL_Log("font: %s", app->font.path().c_str());
+    cr::loadSystemFonts(app->fontLatin, app->fontCjk, app->fontCjkBold);
+    if (app->fontCjk.loaded()) SDL_Log("font: %s", app->fontCjk.path().c_str());
     else SDL_Log("no CJK font found (set CR_FONT): Japanese, Chinese and Korean text unavailable");
+    if (app->fontLatin.loaded()) SDL_Log("latin font: %s", app->fontLatin.path().c_str());
+    else SDL_Log("no Arial / Liberation Sans found (set CR_LATIN_FONT): Latin text in the CJK font, wider than the original's");
+    if (app->fontCjkBold.loaded()) SDL_Log("bold font: %s", app->fontCjkBold.path().c_str());
+    app->font.assign(app->fontLatin.loaded() ? app->fontLatin : app->fontCjk); // (applyLanguage picks the language's)
     // (the options menu is the engine's own, column-aligned for the 8x8 font)
     for (cr::Hud* h : {&app->dialogueHud, &app->promptHud, &app->itemHud, &app->choiceHud, &app->nameHud,
                        &app->pageHud, &app->battleHud})

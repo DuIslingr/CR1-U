@@ -159,3 +159,20 @@ out.bmp --area 1 --event 0 --frames 4` (the puzzle reward's Uty_GetItem with fla
 | Battle stage textures scrolling (`_mdl_uv`, 9536-9618) | 25 205-220 s, 19 1090-1100 s, 29 775-860 s: no scrolling part in a still view | Code reading only: in the port's views the scrolling Appearances (skies, mist, the swirl) are off screen or too slow to tell (the d0555 / d0556 swirl has period 2000: 100 s a turn); `stages.jpg` / `CR_NO_UV_SCROLL=1` pairs differ only where they show |
 | A battle motion change blends from the frame it's made (mdl_actctl_prc 9859-9975), cuts for _mdl_set_act / _nextanm2, the slot playing left alone, guard / cast ends played out (btl_main 0x320's nextanm 0) | - | Code reading only (one-frame and 7-frame differences; no video stretch measured) |
 | Psychokinesis' hold looping frames 2..3 (0x43d80..0x43da8: `mdl_set_act_motion_loop(leader, 3, 2, 2, 4)`), play-once holds on max - 1, NpcFade / the battle's death fade showing their first step on the call's frame | - | Code reading only |
+
+## Text sizes, faces and colours (round 8 text audit, 2026-11-14)
+
+The video's text is the Vita's own font (`_setfont_utf16_text` 0x81000902 renders through its font
+library at the size doubled, while the layout is 2.2.0's x 0.85 doubled), so its widths stay within
+about 4% of ArialMT's at 2.2.0's sizes, not equal. Measured at 1280 x 720: the port's iPhone layout
+(2.2.0 data, `CR_CAPTURE_SIZE=1280x720`) is 2.25 px a tex2d unit, the video's 2.27. Captures, crops
+and the scripts: ~/.cache/cro-issue/cr1-text (`cmp_*.png`: video / before / after).
+
+| Behaviour (source) | Video, time | Result |
+|---|---|---|
+| Message lines a 16-point font 24 tex2d apart (`_PutMsg` 25018-25048 steps 0x18; `_CmdFont` passes 0x10, `_setfont_utf16_text` makes it the UIFont's points - `size << retina`, 0x39624-0x3963c) | 01 106.5 s (1004, style 0x20, "You don't want to tell me? Fine."): lines 55 px apart, glyph rows 28 / 29 px, the lines 511 / 738 px wide. 01 146.5 s (14150, the parchment): 55 apart, 441 / 652 px. 01 2199.5 s (2200, style 8): the first line's top at 77, 53 apart | Contradicted, fixed: the port drew 9.35-unit text 13.2 apart - 29 / 16 px rows, 303 / 443 px; 29 apart, 262 / 386; top 80, 29 apart. Now 54 apart, rows 26 px, 494 / 716 px; 54, 428 / 635; top 79, 54 apart (`--capture d0201_10.cmp --message 1004 --at 88.3 177.2 --area 7`, `CR_CAPTURE_STYLE=32` / 2; 2200 `--area 2` style 8) |
+| The faces (`FUN_000375bc` 32980-33035): Japanese HiraKakuProN-W6, every other language - Chinese and Korean too - ArialMT | the English parts: an Arial-like sans throughout | Contradicted, fixed: the port drew every language in Noto Sans CJK Regular, whose Latin runs about 5% wider than Arial's (at 16 points four English lines would run off the 480-unit screen). Now an Arial-metric face (Liberation Sans here) with the CJK font behind it for the glyphs it lacks, Japanese in Noto Sans CJK JP Bold; the widths above are Liberation's (ArialMT's advances) |
+| Speaker names 14 points, 17 on style 0x20's band (16 in Japanese, Chinese, Korean) (`_PrcMsg` 0x15, 25334-25342) | 01 146.5 s: "Garrick" 101 px wide; 01 106.5 s: "Escher" 114 px | Contradicted, fixed: 61 px / 64 px before; now 97-100 px and 114 px |
+| Style 0x20's name black, edged white (`drawfont_l(0x1f, 16, 236, .., 0xff000000)` 25058; `_drawfont_l` 33187-33190: the 8 copies in the opposite colour) | 01 106.5 s: "Escher" black with a white edge over the grey streak | Contradicted, fixed: the port drew it white edged black (4 diagonal copies) |
+| The parchment's ink black (`FUN_0002bd10` 24892-24899: 0xff000000 unless the style has 0x78) | 01 146.5 s: black lines on the parchment | Contradicted, fixed: the port tinted it (0.12, 0.10, 0.08) |
+| Style 8's lines from x 8 in English, French, German, Spanish (`_PutMsg` 25023-25027: unless `FUN_000373e4`); a flipped line in style 0x10 at x 8 for them too (`_CmdFont` 24946-24951) | - (01 2199.5 s's lines are flipped: centred) | Code reading only; the port checked English alone for style 8 and kept x 36 for style 0x10's flipped lines |

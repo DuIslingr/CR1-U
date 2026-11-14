@@ -908,12 +908,16 @@ window; 0x20 a black band x −16..512, y 252..352; 4 a light band x..480, y..+0
 (alpha 0xc0) x−16..496, faded in over y..+8, solid to +0x60, faded out by +0x68; 0x40 window_hd
 (0, 704, 480, 96) at (x, y) - the grey panel; otherwise (2) window_hd (512, 120, 512, 144) at
 (x − 16, y + 32) - the parchment. `PutMsg`: lines 24 apart from y + text y (+18 for style 2),
-x 8 for style 8 in English (else 36); style 0x10 draws each line in black at the 8 one-pixel
-offsets first, 0x20 uses font 0x10; the name at (24, 222) (0x20: (16, 236)); the "next" mark at
+x 8 for style 8 in English, French, German and Spanish (`FUN_000373e4` false; else 36); style 0x10
+draws each line in black at the 8 one-pixel offsets first; every line a 16-point font (`CmdFont`'s
+0x10; 1.0.1 17, 16 for 0x20); the name at (24, 222) (0x20: (16, 236), black edged white by
+`drawfont_l`), 14 points (0x20: 17, or 16 in Japanese / Chinese / Korean); the "next" mark at
 x 452, y 328 (style 4: 100; 8: y + 84; 0x40: none). Message code 0x17 (no operand) sets the line's
 +0x10e: `CmdFont` centres a line about tex2d x 240 (240 − width / 2) when the window's style has
-no 0x10 and the line is marked, or the style has 0x10 and it isn't; 0x16 v sets the text colour
-(1 black, 0 white); 0x18 takes two digit characters (a number, d1 × 10 + d2: the typing's
+no 0x10 and the line is marked, or the style has 0x10 and it isn't (marked there: x 8 in English,
+French, German and Spanish); 0x16 v sets the text colour
+(1 black, 0 white; the default black, white when the style has 8 / 0x10 / 0x20 / 0x40 -
+`FUN_0002bd10`); 0x18 takes two digit characters (a number, d1 × 10 + d2: the typing's
 frames per character less one, while typing; neither release's text uses it). **Typing**
 (`PrcMsg`): a page comes out a character a frame (+0x334a4 counts to the speed +0x334a0, 0 from
 start); +0x33433 set means typing - a tap (or the skip circle at tex2d (476, −16) r 20) clears it
@@ -2060,8 +2064,14 @@ from the title screen, Reset Data (58122). `__MuOptionSetInfo` writes them back:
 volumes to AppCtl +0x31dd1 / +0x31dd2, the two flags to +0x31dd4 and bit 0 of +0x31dd3.
 
 Text is drawn with the system font (`font_getfont_utf16`). `font.mct` is only a 256×64 strip.
-The port does the same with whatever CJK font the system has (`gfx/font.cpp`); the text is
-plain UTF-16 (surrogate pairs allowed), decoded to UTF-8.
+2.2.0's `FUN_000375bc` asks UIKit for HiraKakuProN-W6 in Japanese and ArialMT in every other
+language (Chinese and Korean included: their glyphs come from iOS's font fallback), at the size the
+caller gives in points (`_setfont_utf16_text` shifts it left on Retina): messages 16, names 14 /
+17, menu labels 13 (14 in Japanese, Chinese, Korean - `_MuComFontChangeTex` / `FromIdRegist`), the
+HELP lines 14 (`_MuComFontHelpStrSet`), the battle banner 14. `MuComFontDisp` / `MuComFontPlateDisp`
+draw a unit below the y they are given. The port does the same with the system's fonts
+(`gfx/font.cpp`: an Arial-metric face, a CJK one and its bold); the text is plain UTF-16
+(surrogate pairs allowed), decoded to UTF-8.
 
 Field weather (`ScnEffect`, native 2009): snow, fog, sun and rain overlays (`d0101_snow`,
 `d0101_fog`, `d0201_sun`, `d0401_rain01`, …), switched by scripts around warps. Not drawn yet.

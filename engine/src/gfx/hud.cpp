@@ -66,10 +66,10 @@ bool Hud::update(Renderer& r, const std::vector<std::string>& lines, float scale
     const void* fontKey = ttf ? static_cast<const void*>(font_) : nullptr;
     const int generation = ttf ? font_->generation() : -1;
     if (tex_.id && lines == cached_ && scale == cachedScale_ && density == cachedDensity_ && fontKey == cachedFont_ &&
-        generation == cachedGeneration_)
+        generation == cachedGeneration_ && lineRatio_ == cachedRatio_)
         return true;
     Image img;
-    const bool ok = ttf ? font_->rasterise(lines, kEm * scale * density, kFontLine * scale * density,
+    const bool ok = ttf ? font_->rasterise(lines, kEm * scale * density, lineStep(scale) * density,
                                            int(std::lround(kPad * scale * density)), img)
                         : rasterise(lines, img);
     if (!ok) return false;
@@ -80,6 +80,7 @@ bool Hud::update(Renderer& r, const std::vector<std::string>& lines, float scale
     cachedDensity_ = density;
     cachedFont_ = fontKey;
     cachedGeneration_ = generation;
+    cachedRatio_ = lineRatio_;
     density_ = ttf ? density : 1.0f / scale;
     return true;
 }
@@ -90,8 +91,11 @@ float Hud::measure(Renderer& r, const std::vector<std::string>& lines, float sca
 }
 
 float Hud::lineStep(float scale) const {
-    return font_ && font_->loaded() ? kFontLine * scale : float(kGlyph + kLineGap) * scale;
+    if (!font_ || !font_->loaded()) return float(kGlyph + kLineGap) * scale;
+    return lineRatio_ > 0 ? kEm * scale * lineRatio_ : kFontLine * scale;
 }
+
+float Hud::scaleForEm(float em) { return em / kEm; }
 
 float Hud::pad(float scale) { return kPad * scale; }
 
