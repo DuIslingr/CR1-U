@@ -45,7 +45,7 @@ int main() {
     time = 4;
     bad += mb.step(0, time, 1, acts);                   // runs
     time = 0;                                           // (a change: the caller resets the time)
-    bad += !mb.step(1, time, 1, acts) || mb.under(acts) != &acts[0] || !near(mb.fromTime, 4) || !near(mb.weight(), 0.5f);
+    bad += !mb.step(1, time, 1, acts) || mb.under(acts) != &acts[0] || !near(mb.fromTime, 5) || !near(mb.weight(), 0.5f); // (the old at its next frame)
     bad += !mb.step(1, time, 1, acts) || mb.under(acts) || time != 0; // the new alone, still at its first frame
     bad += mb.step(1, time, 1, acts) || !near(mb.lag(), 1);          // then it runs (the caller advances it), a frame behind
     // a change made in the frame (change): blended at once with the old at its next frame, then the new

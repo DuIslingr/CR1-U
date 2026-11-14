@@ -70,7 +70,7 @@ bool parseAction(Reader& r, Action& act, std::string& err) {
     const uint32_t decodedSize = r.u32();
     act.duration = r.real();
     r.u8();
-    r.u8();
+    act.wrap = r.u8();
     const int nSegments = r.u16();
     if (!r.ok) { err = "truncated action header"; return false; }
 

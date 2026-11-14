@@ -835,7 +835,7 @@ void animate(App& app, LoadedModel& lm, float dt) {
         if (app.mode == Mode::Models) lm.blend.reset(); // (the viewer shows a chosen action at once)
         if (!lm.blend.step(lm.action, lm.time, dt * kFramesPerSecond * app.speed, lm.actions))
             lm.time += dt * kFramesPerSecond * app.speed;
-        const float end = lm.loopTo > 0 && lm.loopTo < act->duration ? float(lm.loopTo) : act->duration;
+        const float end = lm.loopTo > 0 ? float(lm.loopTo) : act->duration; // (a loop end set: no max-frame check, mdl_actctl_prc)
         if (lm.once) lm.time = std::min(lm.time, std::max(act->duration - 1, 0.0f)); // (played once, its last frame held: mdl_actctl_prc's +0x3aa)
         else if (lm.loopFrom > 0 && lm.loopFrom < end && lm.time >= end)
             lm.time = float(lm.loopFrom) + std::fmod(lm.time - float(lm.loopFrom), end - float(lm.loopFrom));
@@ -946,7 +946,7 @@ void ViewerHost::showItemWindow(int item, bool oz) {
     app.soundLog.push_back(se);
 }
 // Anim (__EvtAnim -> mdl_set_act_motion_loop(mdl, slot, 2, a, b)): a new action blends in over 2
-// frames (MotionBlend::step sees the change) with the loop a..b; the action already playing goes on
+// frames (MotionBlend::change, as this frame) with the loop a..b; the action already playing goes on
 // as it is, its loop too. Npc 0 is the leader's model (gac + 0x83c)
 void ViewerHost::playAnim(int id, int slot, int loopFrom, int loopTo) {
     int action = slot; // a slot LoadAct filled, else the model's own action of that number
@@ -961,6 +961,11 @@ void ViewerHost::playAnim(int id, int slot, int loopFrom, int loopTo) {
     }
     for (auto* d : npc(id)) {
         if (d->action == action) continue; // the same action keeps running, and its loop
+        // (this frame's mdl_actctl_prc runs the change at once: the old action at its next frame - animateNpcs has
+        // stepped it already - under the new at 0, half and half; the next frame the new alone at 0; then on)
+        const auto& acts = app.npcModels[d->model].actions;
+        const float oldEnd = d->action >= 0 && d->action < int(acts.size()) ? acts[size_t(d->action)].duration - 1 : 0;
+        d->blend.change(action, std::clamp(d->time, 0.0f, std::max(oldEnd, 0.0f)), false, acts);
         d->action = action;
         d->time = 0;
         d->once = loopFrom < 0;
@@ -4061,7 +4066,9 @@ void animateNpcs(App& app, float dt) {
             std::printf("npc %d action %d time %.3f dur %.1f once %d loop %d..%d\n", d.id, d.action, d.time, dur, int(d.once), d.loopFrom, d.loopTo);
         if (dur <= 0) continue;
         if (d.once) { d.time = std::min(d.time, std::max(dur - 1, 0.0f)); continue; } // loop from -1: play once, hold the last frame (duration - 1: mdl_actctl_prc)
-        const float end = d.loopTo > 0 && d.loopTo < dur ? float(d.loopTo) : dur;
+        // (mdl_actctl_prc skips its max-frame check while a loop end is set: one past the duration runs on to it, the
+        // action's wrap byte showing frame mod duration (2) or its last keys (1) meanwhile - j001_d05 0x8e02, j007_d01 0x5683)
+        const float end = d.loopTo > 0 ? float(d.loopTo) : dur;
         if (d.time >= end) { // then repeat frames loopFrom..loopTo
             const float start = std::clamp(float(d.loopFrom), 0.0f, end), len = end - start;
             d.time = len > 0 ? start + std::fmod(d.time - start, len) : start;

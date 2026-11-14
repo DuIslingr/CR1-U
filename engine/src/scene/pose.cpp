@@ -60,48 +60,6 @@ void resolveWorld(const Skeleton& skel, const std::vector<Mat4>& local, std::vec
     }
 }
 
-// Rotation matrix (columns) <-> unit quaternion (w, x, y, z), and the shortest-arc slerp
-// (__mceTransform_getRotateQuaternion / setRotateQuaternion)
-void toQuat(const float c[3][3], float q[4]) {
-    const float m00 = c[0][0], m11 = c[1][1], m22 = c[2][2];
-    const float m21 = c[1][2], m12 = c[2][1], m02 = c[2][0], m20 = c[0][2], m10 = c[0][1], m01 = c[1][0];
-    const float tr = m00 + m11 + m22;
-    if (tr > 0) {
-        const float k = std::sqrt(tr + 1) * 2;
-        q[0] = 0.25f * k, q[1] = (m21 - m12) / k, q[2] = (m02 - m20) / k, q[3] = (m10 - m01) / k;
-    } else if (m00 > m11 && m00 > m22) {
-        const float k = std::sqrt(std::fmax(0.0f, 1 + m00 - m11 - m22)) * 2;
-        q[0] = (m21 - m12) / k, q[1] = 0.25f * k, q[2] = (m01 + m10) / k, q[3] = (m02 + m20) / k;
-    } else if (m11 > m22) {
-        const float k = std::sqrt(std::fmax(0.0f, 1 + m11 - m00 - m22)) * 2;
-        q[0] = (m02 - m20) / k, q[1] = (m01 + m10) / k, q[2] = 0.25f * k, q[3] = (m12 + m21) / k;
-    } else {
-        const float k = std::sqrt(std::fmax(0.0f, 1 + m22 - m00 - m11)) * 2;
-        q[0] = (m10 - m01) / k, q[1] = (m02 + m20) / k, q[2] = (m12 + m21) / k, q[3] = 0.25f * k;
-    }
-}
-
-void fromQuat(const float in[4], float c[3][3]) {
-    const float l = std::sqrt(in[0] * in[0] + in[1] * in[1] + in[2] * in[2] + in[3] * in[3]);
-    const float k = l > 1e-8f ? 1 / l : 0;
-    const float w = l > 1e-8f ? in[0] * k : 1, x = in[1] * k, y = in[2] * k, z = in[3] * k;
-    c[0][0] = 1 - 2 * (y * y + z * z), c[0][1] = 2 * (x * y + w * z), c[0][2] = 2 * (x * z - w * y);
-    c[1][0] = 2 * (x * y - w * z), c[1][1] = 1 - 2 * (x * x + z * z), c[1][2] = 2 * (y * z + w * x);
-    c[2][0] = 2 * (x * z + w * y), c[2][1] = 2 * (y * z - w * x), c[2][2] = 1 - 2 * (x * x + y * y);
-}
-
-void slerp(const float a[4], const float in[4], float t, float out[4]) {
-    float b[4] = {in[0], in[1], in[2], in[3]};
-    float d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-    if (d < 0) d = -d, b[0] = -b[0], b[1] = -b[1], b[2] = -b[2], b[3] = -b[3];
-    float wa = 1 - t, wb = t;
-    if (d < 0.9995f) {
-        const float th = std::acos(std::fmin(d, 1.0f)), sn = std::sin(th);
-        wa = std::sin((1 - t) * th) / sn, wb = std::sin(t * th) / sn;
-    }
-    for (int i = 0; i < 4; ++i) out[i] = wa * a[i] + wb * b[i];
-}
-
 } // namespace
 
 // Segments past the skeleton's nodes that key nothing (c111's warp crystal: 13 segments for 12
@@ -122,7 +80,14 @@ bool actionNearlyFits(const Skeleton& skel, const Action& action) {
     return !action.segments.empty() && d >= 1 && d <= 4;
 }
 
+// _mceAnimatable_setFrame_i (121346): a frame at or past the duration wraps for a repeating action (2), and is
+// left as it is - the last keys holding - for a clamped one (1); a loop end past the duration runs on to it
+static float actionFrame(const Action* a, float t) {
+    return a && a->wrap == 2 && a->duration > 0 && t >= a->duration ? std::fmod(t, a->duration) : t;
+}
+
 void computeLocalPoses(const Skeleton& skel, const Action* action, float time, std::vector<NodePose>& out) {
+    time = actionFrame(action, time);
     const size_t n = skel.nodes.size();
     out.resize(n);
     // An action animates the first nodes in order (13 effects carry one or a few nodes more than
@@ -149,23 +114,23 @@ void computeLocalPoses(const Skeleton& skel, const Action* action, float time, s
 
 // __mceActionSegment_calcBlendTransform: per node, from the actions that have its segment - the keyed
 // translations and scales summed by weight (a scale left unkeyed counts as 1, once any action keys one),
-// the rotations as quaternions, the first action's taken and each later one slerped in by its weight;
+// the rotations as weighted sums of their axes made orthonormal again (FUN_00089d3c);
 // whatever no action keys stays at rest
 void computeBlendedLocalPoses(const Skeleton& skel, const Action* from, float fromTime, const Action* to, float toTime,
                               float toWeight, std::vector<NodePose>& out) {
     const size_t n = skel.nodes.size();
     out.resize(n);
     const Action* acts[2] = {from, to};
-    const float times[2] = {fromTime, toTime}, weights[2] = {1 - toWeight, toWeight};
+    const float times[2] = {actionFrame(from, fromTime), actionFrame(to, toTime)}, weights[2] = {1 - toWeight, toWeight};
     for (size_t i = 0; i < n; ++i) {
         const SkeletonNode& node = skel.nodes[i];
         NodePose& p = out[i];
         std::memcpy(p.cols, node.axes, sizeof p.cols);
         std::memcpy(p.t, node.translation, sizeof p.t);
         std::memcpy(p.s, node.scale, sizeof p.s);
-        float t[3] = {0, 0, 0}, s[3] = {0, 0, 0}, q[4] = {1, 0, 0, 0};
+        float t[3] = {0, 0, 0}, s[3] = {0, 0, 0}, ax[2][3] = {{0, 0, 0}, {0, 0, 0}};
         bool anyT = false, anyR = false, anyS = false, scaled[2] = {false, false}, used[2] = {false, false};
-        int k = 0; // the actions taking part so far
+        bool moved[2] = {false, false}, turned[2] = {false, false};
         for (int a = 0; a < 2; ++a) {
             const Action* act = acts[a];
             if (!act || act->segments.empty() || (act->segments.size() > n && !emptyTail(skel, *act)) || i >= act->segments.size())
@@ -176,23 +141,50 @@ void computeBlendedLocalPoses(const Skeleton& skel, const Action* from, float fr
                 if (tr.comps != 3 || !evaluateTrack(tr, times[a], v)) continue;
                 if (tr.type == 1) {
                     for (int c = 0; c < 3; ++c) t[c] += weights[a] * v[c];
-                    anyT = true;
+                    anyT = moved[a] = true;
                 } else if (tr.type == 11) {
                     for (int c = 0; c < 3; ++c) s[c] += weights[a] * v[c];
                     anyS = scaled[a] = true;
                 } else if (tr.type >= 5 && tr.type <= 10) {
-                    float cols[3][3], qa[4];
+                    float cols[3][3];
                     euler(tr.type, v, cols);
-                    toQuat(cols, qa);
-                    if (k == 0) std::memcpy(q, qa, sizeof q);
-                    else slerp(q, qa, weights[a], q);
-                    anyR = true;
+                    for (int r = 0; r < 2; ++r)
+                        for (int c = 0; c < 3; ++c) ax[r][c] += weights[a] * cols[r][c];
+                    anyR = turned[a] = true;
                 }
             }
-            ++k;
         }
-        if (anyT) std::memcpy(p.t, t, sizeof p.t);
-        if (anyR) fromQuat(q, p.cols);
+        // (FUN_00089d3c 91239-91312: an action taking part that doesn't key the node's translation adds the rest's x its
+        // weight; rotations are the weighted sums of the X and Y axes - the rest's for an action not keying it - then
+        // X normalised, Z = X x Y normalised, Y = Z x X)
+        if (anyT) {
+            for (int a = 0; a < 2; ++a)
+                if (used[a] && !moved[a])
+                    for (int c = 0; c < 3; ++c) t[c] += weights[a] * node.translation[c];
+            std::memcpy(p.t, t, sizeof p.t);
+        }
+        if (anyR) {
+            for (int a = 0; a < 2; ++a)
+                if (used[a] && !turned[a])
+                    for (int r = 0; r < 2; ++r)
+                        for (int c = 0; c < 3; ++c) ax[r][c] += weights[a] * node.axes[r][c];
+            float* x = ax[0];
+            float* y = ax[1];
+            if (x[0] == 0 && x[1] == 0 && x[2] == 0 && y[0] == 0 && y[1] == 0 && y[2] == 0) x[0] = y[1] = 1;
+            auto norm = [](float* v) {
+                const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                if (l > 0) v[0] /= l, v[1] /= l, v[2] /= l;
+            };
+            auto cross = [](const float* a, const float* b, float* o) {
+                o[0] = a[1] * b[2] - a[2] * b[1], o[1] = a[2] * b[0] - a[0] * b[2], o[2] = a[0] * b[1] - a[1] * b[0];
+            };
+            float z[3], y2[3];
+            norm(x);
+            cross(x, y, z);
+            norm(z);
+            cross(z, x, y2);
+            for (int c = 0; c < 3; ++c) p.cols[0][c] = x[c], p.cols[1][c] = y2[c], p.cols[2][c] = z[c];
+        }
         if (anyS) {
             for (int a = 0; a < 2; ++a)
                 if (used[a] && !scaled[a])
@@ -214,7 +206,11 @@ void computeBlendedWorld(const Skeleton& skel, const Action* from, float fromTim
 bool MotionBlend::step(int action, float& time, float frames, const std::vector<Action>& actions) {
     if (action != lastAction) {
         const bool blend = lastAction >= 0 && lastAction < int(actions.size()) && action >= 0 && action < int(actions.size());
-        from = blend ? lastAction : -1, fromTime = lastTime, since = blend ? 0 : kFrames, changed = blend;
+        // (the old action at its next frame, as mdl_actctl_prc shows it under the new - not the one already shown)
+        const float d = blend ? actions[size_t(lastAction)].duration : 0;
+        const float next = lastTime + frames;
+        from = blend ? lastAction : -1, fromTime = d > 0 && next >= d ? std::fmod(next, d) : next, since = blend ? 0 : kFrames,
+        changed = blend;
         length = kFrames, holdTime = 0;
         lastAction = action;
         if (blend) time = 0;
