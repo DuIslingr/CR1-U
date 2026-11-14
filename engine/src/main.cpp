@@ -81,6 +81,73 @@ bool padField(const App& app) { // the field itself, nothing over it
     return app.mode == Mode::Maps && app.havePlayer && !app.titleOpen && !app.booting && !app.runner.running() &&
            app.dialogue.empty() && !app.battle.active && !app.itemWindowOpen && !padMenus(app);
 }
+// The menu a touch goes down on (the mouse-down's order)
+int pressScreen(const App& app) {
+    if (app.saveScreen.open) return kPressSave;
+    if (app.charSelectOpen) return kPressCharSelect;
+    if (app.campOpen) return kPressCamp;
+    if (app.lastBattle.open) return kPressLastBattle;
+    if (app.worldChoiceOpen) return kPressWorld;
+    if (app.shop.open && app.shop.phase != App::Shop::Talk) return kPressShop;
+    if (app.mode == Mode::Maps && app.battle.active) return kPressBattle;
+    if (app.resumePrompt) return kPressResume;
+    if (app.mode == Mode::Maps && app.titleOpen) return kPressTitle;
+    return kPressNone;
+}
+// A battle's touch held for its menus (the command pages, lists, targets, the escape question:
+// __menub_mainPrc's _pad_chk_trg_up_box0 - the lift); a talk and the one-tap phases (results, victory,
+// defeat) take it as it goes down
+bool battleMenuPress(const App& app) { return !battletalk::on(app) && app.battle.phase == App::Battle::Command; }
+// The touch lifting on screen `screen`: its click there (the clicks test their boxes, so a touch slid
+// off the control it went down on does nothing - _pad_chk_updw_box's trg)
+void pressRelease(App& app, int screen, float px, float py) {
+    switch (screen) {
+    case kPressSave: saveScreenClick(app, px, py); break;
+    case kPressCharSelect: charSelectClick(app, px, py); break;
+    case kPressLastBattle: lastBattleClick(app, px, py); break;
+    case kPressWorld: worldSelectClick(app, px, py); break;
+    case kPressShop: shopClick(app, px, py); break;
+    case kPressBattle: battleClick(app, px, py); break;
+    case kPressResume: resumeClick(app, px, py); break;
+    case kPressTitle: titleClick(app, px, py); break;
+    case kPressChoice: { // an event's Yes / No plates (0x88 x 0x28): __menuu_EventPrc's ComUty_YesNoChoiceProc trg
+        float lx, ly, mx, my;
+        app.renderer.toLogical(px, py, lx, ly);
+        menuPoint(app, lx, ly, mx, my);
+        if (mx >= 336 && mx < 472 && my >= 104 && my < 144) answerChoice(app, true);
+        else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) answerChoice(app, false);
+        break;
+    }
+    case kPressHistory: // its Back: __menuu_HistoryPrc's ComUty_BackButtonProc(1) trg
+        if (historyBackAt(app, px, py)) { menuSound(app, se::kBack); closeScenarios(app); }
+        break;
+    default: break;
+    }
+}
+// _ComUty_NumCountProc (2.2.0 0x4a040): a touch held on a count's < or > steps it as it goes down, then -
+// its counter past 0x14 - one a frame; let go, it starts over (the shop's count, the Camp's seeds)
+void pressCountStep(App& app, float dt) {
+    int side = 0;
+    bool shop = false;
+    if (app.shop.open && app.shop.phase == App::Shop::Count) {
+        shop = true;
+        side = shopPressIn(app, true, 336, 60, 36, 31) ? -1 : shopPressIn(app, true, 436, 60, 36, 31) ? 1 : 0;
+    } else if (app.campOpen && app.camp.page == App::Camp::Items && app.camp.phase == App::Camp::Ask && !app.camp.list.empty()) {
+        const int item = app.camp.list[size_t(std::clamp(app.camp.listCursor, 0, int(app.camp.list.size()) - 1))];
+        if (item >= 3 && item <= 6)
+            side = campPressIn(app, wideRight(app), 336, 60, 36, 31) ? -1 : campPressIn(app, wideRight(app), 436, 60, 36, 31) ? 1 : 0;
+    }
+    const SDL_Keycode k = side < 0 ? SDLK_LEFT : SDLK_RIGHT;
+    auto stepIt = [&] { if (shop) shopKey(app, k); else campKey(app, k); };
+    if (side != app.countHeldSide) { // (held now: a step at once - its counter 0 -> 1)
+        app.countHeldSide = side, app.countHeldFrames = 0, app.countClock = 0;
+        if (side) stepIt();
+        return;
+    }
+    if (!side) return;
+    for (app.countClock += dt; app.countClock >= 1.0f / kFramesPerSecond; app.countClock -= 1.0f / kFramesPerSecond)
+        if (++app.countHeldFrames >= 20) stepIt(); // (the counter past 0x14: one a frame)
+}
 void padKey(App& app, SDL_Keycode key) { // the button as its key, through the same handling
     SDL_Event e{};
     e.type = SDL_EVENT_KEY_DOWN;
@@ -242,6 +309,7 @@ void consumeInputCancel(App& app) {
     if (SDL_GetCurrentThreadID() != app.gameThread || !app.inputCancel.consume()) return;
     app.dragging = app.optionsBarDrag = false;
     app.campPointer = App::CampPointer();
+    app.press = App::Press();
     app.touchPad = App::TouchPad();
     app.tapPending = false;
     clearSkip(app);
@@ -1043,13 +1111,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
             if (app.manualOpen) manualClick(app, event->button.x * kx, event->button.y * ky);
             else {
-                float lx, ly;
-                app.renderer.toLogical(event->button.x * kx, event->button.y * ky, lx, ly);
-                float mx, my;
-    menuPoint(app, lx, ly, mx, my);
-                const float backX = app.renderer.phoneLayout() ? 192 : 272, backY = app.renderer.phoneLayout() ? 286 : 330;
-                if (my >= backY && my < backY + 24 && mx >= backX && mx < backX + 232) { menuSound(app, se::kBack); closeScenarios(app); }
-                else app.dragging = true; // drag to scroll
+                // its Back: held, closing as the touch lifts there (pressRelease); elsewhere a drag to scroll
+                if (historyBackAt(app, event->button.x * kx, event->button.y * ky))
+                    app.press = App::Press{true, kPressHistory, event->button.x * kx, event->button.y * ky};
+                else app.dragging = true;
             }
             break;
         }
@@ -1069,15 +1134,13 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const float kx = ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f;
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
             const float px = event->button.x * kx, py = event->button.y * ky;
-            if (app.saveScreen.open) saveScreenClick(app, px, py);
-            else if (app.charSelectOpen) charSelectClick(app, px, py);
-            else if (app.campOpen) campPointerDown(app, px, py);
-            else if (app.lastBattle.open) lastBattleClick(app, px, py);
-            else if (app.worldChoiceOpen) worldSelectClick(app, px, py);
-            else if (app.shop.open) shopClick(app, px, py);
-            else if (app.mode == Mode::Maps && app.battle.active) battleClick(app, px, py);
-            else if (app.resumePrompt) resumeClick(app, px, py);
-            else titleClick(app, px, py);
+            // (2.2.0's menus act on the touch lifting inside a control - _pad_chk_updw_box's trg,
+            // _pad_chk_trg_up_box0 - and light it while held: the press is kept, the click runs on the
+            // release. A battle's talk and its one-tap phases and the Camp's pointer take the press itself)
+            const int screen = pressScreen(app);
+            if (app.campOpen) campPointerDown(app, px, py);
+            else if (screen == kPressBattle && !battleMenuPress(app)) battleClick(app, px, py);
+            else if (screen) app.press = App::Press{true, screen, px, py};
             break;
         }
         if (app.staffRoll.open) { // _pad_chk_updw_box(-16, -32, 512, 384): the end card's tap
@@ -1109,11 +1172,8 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 holdSkip(app, kSkipPointer, true);
                 break;
             }
-            if (app.choiceFlag >= 0) { // the Yes / No plates (0x88 x 0x28)
-                float mx, my;
-    menuPoint(app, lx, ly, mx, my);
-                if (mx >= 336 && mx < 472 && my >= 104 && my < 144) answerChoice(app, true);
-                else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) answerChoice(app, false);
+            if (app.choiceFlag >= 0) { // the Yes / No plates: held, answered as the touch lifts (pressRelease)
+                app.press = App::Press{true, kPressChoice, event->button.x * kx, event->button.y * ky};
                 break;
             }
             if (app.choiceFlag < 0 && !app.dialogue.empty()) {
@@ -1133,7 +1193,19 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_MOUSE_BUTTON_UP:
         holdSkip(app, kSkipPointer, false); // the finger off the skip corner
-        if (app.pointerCancelled) break; // cancellation is not a click or a puzzle release
+        if (app.pointerCancelled) { app.press = App::Press(); break; } // cancellation is not a click or a puzzle release
+        if (app.press.down) { // a menu's touch lifting: the control it lifts on (if the screen is still the one)
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            const float px = event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f);
+            const float py = event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f);
+            const App::Press pr = app.press;
+            app.press = App::Press();
+            const bool same = pr.screen == kPressChoice ? app.mode == Mode::Maps && app.choiceFlag >= 0
+                              : pr.screen == kPressHistory ? app.scenariosOpen : pressScreen(app) == pr.screen;
+            if (same) pressRelease(app, pr.screen, px, py);
+            break;
+        }
         if (app.campPointer.down) {
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1161,6 +1233,12 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         app.fingers.held = std::max(0, app.fingers.held - 1);
         break;
     case SDL_EVENT_MOUSE_MOTION:
+        if (app.press.down) { // (the held control follows the finger)
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            app.press.px = event->motion.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f);
+            app.press.py = event->motion.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f);
+        }
         if (app.mode == Mode::Maps && app.puzzle.pkHeld && (event->motion.state & SDL_BUTTON_LMASK)) {
             int ww = 0, wh = 0; // the held block's touch: the detector follows it
             SDL_GetWindowSize(app.window, &ww, &wh);
@@ -1230,6 +1308,7 @@ SDL_AppResult SDL_AppIterate(void* state) {
     App& app = *static_cast<App*>(state);
     const float activeDt = app.clock.step();
     padStep(app, activeDt);
+    pressCountStep(app, activeDt);
     stickPointerStep(app, activeDt);
     app.music.update(activeDt);
     // the frame rate's limit: each frame no sooner than its slot (vsync may hold it longer)

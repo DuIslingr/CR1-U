@@ -2026,6 +2026,7 @@ int inputCancelSelfTest(App& app) {
     for (Uint32 type : {Uint32(SDL_EVENT_WINDOW_FOCUS_LOST), Uint32(SDL_EVENT_FINGER_CANCELED), Uint32(SDL_EVENT_WILL_ENTER_BACKGROUND)}) {
         app.touchPad.down = app.touchPad.shown = true;
         app.campPointer.down = app.optionsBarDrag = app.dragging = true;
+        app.press.down = true; // (a menu's held touch)
         holdSkip(app, kSkipPointer, true), app.tapPending = true;
         SDL_Event e{};
         e.type = type;
@@ -2034,7 +2035,7 @@ int inputCancelSelfTest(App& app) {
         SDL_AppEvent(&app, &e);
         e.type = SDL_EVENT_USER; // main-thread checkpoint after a lifecycle callback
         SDL_AppEvent(&app, &e);
-        const bool clean = !app.touchPad.down && !app.touchPad.shown && !app.campPointer.down &&
+        const bool clean = !app.touchPad.down && !app.touchPad.shown && !app.campPointer.down && !app.press.down &&
                            !app.optionsBarDrag && !app.dragging && !app.skipScene && !app.tapPending;
         problems += !clean;
         if (!clean) std::printf("input cancel FAILED: event %u retained an active gesture\n", type);
@@ -3691,23 +3692,33 @@ int runSelfTest(App& app) {
         for (int f = 0; f < 16 && app.titleReturnIn > 0; ++f) stepEvents(app); // (the black's frames)
         problems += !app.booting;
         app.runner.stop();
-        { // touch play's look: no battle plate lit while a page is in after a click or touch, the one
-          // chosen as it goes; the cursor's for keys and pads
+        { // touch play's look: no battle plate lit after a click or touch - in or going -, the one a finger
+          // holds lit instead (__menub_mainPut's pad_chk_box0); the cursor's for keys and pads
             const bool keep = app.pointerLast;
             const int keepState = app.battle.viewState;
             app.battle.viewState = 2;
             app.pointerLast = false;
             const bool keyLit = battleCursorLit(app);
             app.pointerLast = true;
-            const bool touchDark = !battleCursorLit(app);
+            const bool touchDark = !battleCursorLit(app) || vitaLayout(app);
             app.battle.viewState = 3;
-            const bool goingLit = battleCursorLit(app);
+            const bool goingDark = !battleCursorLit(app) || vitaLayout(app);
             app.battle.viewState = keepState;
+            // a touch held on the second plate (Pair) finds it, not the first (the box's middle back to the frame's pixels)
+            const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
+            const float lx = rightX + 2 * (btlui::kButtonX + 68), ly = 2 * (btlui::kButtonY + btlui::kButtonStep + 20);
+            float ax, ay, bx, by;
+            app.renderer.toLogical(0, 0, ax, ay), app.renderer.toLogical(1000, 1000, bx, by);
+            const App::Press keepPress = app.press;
+            app.press = App::Press{true, kPressBattle, (lx - ax) * 1000 / (bx - ax), (ly - ay) * 1000 / (by - ay)};
+            const bool heldLit = battlePressIn(app, btlui::kButtonX, btlui::kButtonY + btlui::kButtonStep, 136, 40) &&
+                                 !battlePressIn(app, btlui::kButtonX, btlui::kButtonY, 136, 40);
+            app.press = keepPress;
             app.pointerLast = keep;
-            if (!keyLit || !touchDark || !goingLit)
-                std::printf("  touch play: the battle's cursor plate lit %s after keys, %s after a tap, %s as the page goes\n",
-                            keyLit ? "yes" : "NO", touchDark ? "not" : "STILL", goingLit ? "lit" : "NOT");
-            problems += !keyLit + !touchDark + !goingLit;
+            if (!keyLit || !touchDark || !goingDark || !heldLit)
+                std::printf("  touch play: the battle's cursor plate lit %s after keys, %s after a tap, %s as the page goes; a held plate %s\n",
+                            keyLit ? "yes" : "NO", touchDark ? "not" : "STILL", goingDark ? "dark" : "LIT", heldLit ? "lit" : "NOT LIT");
+            problems += !keyLit + !touchDark + !goingDark + !heldLit;
         }
         std::printf("options: %d pages, %d rows; FSR 3.1 modes drawn: %d; title menu after %d frames; %d problems\n",
                     kOptionPages, rows, upscaled, bootFrames, problems);
@@ -4250,6 +4261,32 @@ int runSelfTest(App& app) {
         problems += app.shop.phase != App::Shop::List || app.shop.list != std::vector<int>{201, 202};
         app.menuSoundLog.clear();
         shopKey(app, SDLK_RETURN); // Trusty Longsword, 450: how many, with Yes / No beside
+        { // a touch held on > (_ComUty_NumCountProc): a step at once, none for 19 frames, then one a frame
+            app.game.oz = 100000; // (room to count)
+            const int count = app.shop.count;
+            const auto keepSounds = app.menuSoundLog; // (the sound checks below count the keys' alone)
+            bool found = false;
+            for (int y = 0; y < app.renderer.frameHeight() && !found; y += 4)
+                for (int x = 0; x < app.renderer.frameWidth() && !found; x += 4) {
+                    app.press = App::Press{true, kPressShop, float(x), float(y)};
+                    found = shopPressIn(app, true, 446, 66, 16, 19);
+                }
+            const float tick = 1.0f / kFramesPerSecond;
+            pressCountStep(app, tick); // down: a step
+            const int c1 = app.shop.count;
+            for (int f = 0; f < 19; ++f) pressCountStep(app, tick); // 19 frames held: none
+            const int c20 = app.shop.count;
+            for (int f = 0; f < 3; ++f) pressCountStep(app, tick); // from the 20th: one a frame
+            const int c23 = app.shop.count;
+            app.press = App::Press();
+            pressCountStep(app, tick);
+            const bool held = found && c1 == count + 1 && c20 == count + 1 && c23 == count + 4 && app.countHeldSide == 0;
+            if (!held) std::printf("shops: a held > counted %d, %d, %d (want %d, %d, %d)\n", c1, c20, c23, count + 1, count + 1, count + 4);
+            problems += !held;
+            app.shop.count = count;
+            app.game.oz = 1000;
+            app.menuSoundLog = keepSounds;
+        }
         for (int k = 0; k < 3; ++k) shopKey(app, SDLK_RIGHT); // as many as the Oz buy: 2, then past the end
         problems += app.shop.phase != App::Shop::Count || app.shop.count != 2 ||
                     shopMessage(app).find(itemName(app, 201)) == std::string::npos;
@@ -6886,6 +6923,7 @@ void bootTitle(App& app) {
     app.touchPad = App::TouchPad();
     app.menuMask = App::MenuMask();
     app.campPointer = App::CampPointer();
+    app.press = App::Press();
     app.dragging = app.optionsBarDrag = app.tapPending = false;
     clearSkip(app);
     app.padHeld = -1;
@@ -8029,6 +8067,22 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         float y;
         if (cr::floorHeight(app.collisionData, app.captureAt[0], 1000.0f, app.captureAt[1], 0.0f, y))
             app.walker.pos = {app.captureAt[0], y, app.captureAt[1]};
+    }
+    if (const char* pr = SDL_getenv("CR_CAPTURE_PRESS")) { // (tests: a touch held there - fractions of the frame - as drawn)
+        float fx = 0, fy = 0;
+        if (std::sscanf(pr, "%f,%f", &fx, &fy) == 2) {
+            app.pointerLast = true;
+            const int screen = app.mode == Mode::Maps && app.choiceFlag >= 0 && !pressScreen(app) ? int(kPressChoice)
+                               : app.scenariosOpen ? int(kPressHistory) : pressScreen(app);
+            int ww = 0, wh = 0; // (the frame drawn: the window's pixels - no frame may have been drawn yet)
+            SDL_GetWindowSizeInPixels(app.window, &ww, &wh);
+            app.press = App::Press{true, screen, fx * float(ww), fy * float(wh)};
+            if (app.campOpen) { // (the Camp's own pointer)
+                app.campPointer = App::CampPointer();
+                app.campPointer.down = true, app.campPointer.page = app.camp.page, app.campPointer.phase = app.camp.phase;
+                app.campPointer.curPx = app.press.px, app.campPointer.curPy = app.press.py;
+            }
+        }
     }
     settleMenuMask(app);
     // The capture shows exactly the frames stepped above; --settle draws that moment first (an

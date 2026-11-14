@@ -1154,6 +1154,14 @@ void menuPoint(const App& app, float lx, float ly, float& mx, float& my) {
     mx = (lx - app.renderer.uiX()) / 2, my = ly / 2;
     phoneMenuPoint(app, mx, my);
 }
+bool pressIn(const App& app, int screen, float origin, float x, float y, float w, float h) {
+    if (!app.press.down || app.press.screen != screen) return false;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+    menuPointAt(app, lx, ly, origin, mx, my);
+    return mx >= x && mx < x + w && my >= y && my < y + h;
+}
+bool menuCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app); }
 
 void drawOptions(App& app, float, float) {
     cr::Renderer& r = app.renderer;
@@ -2615,9 +2623,11 @@ void drawFrame(App& app, bool present) {
             // ComUty_YesNoChoiceProc sets it only while a finger is down on one: touch play shows both
             // dark; keys and pads keep the cursor's lit. The Vita's EventPrc (0x81052a0a) keeps its
             // DAT_81121cc8 between frames: a cursor, lit after a tap too)
-            const bool lit = !app.pointerLast || vitaLayout(app);
-            app.menu.plate(336 + dx, 104, 0, 0, lit && app.choiceCursor == 0, 1, false);
-            app.menu.plate(336 + dx, 160, 1, 1, lit && app.choiceCursor == 1, 1, false);
+            // (a finger on one lights it - held, answered as it lifts there: pressRelease)
+            const bool lit = menuCursorLit(app);
+            const bool hy = pressIn(app, kPressChoice, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressChoice, r.uiX(), 336, 160, 136, 40);
+            app.menu.plate(336 + dx, 104, 0, 0, (lit && !hn && app.choiceCursor == 0) || hy, 1, false);
+            app.menu.plate(336 + dx, 160, 1, 1, (lit && !hy && app.choiceCursor == 1) || hn, 1, false);
         } else {
             const float cx = W - 260, cy = H - 360;
             r.fillRect(cx, cy, 200, 110, 0.05f, 0.08f, 0.2f, 0.85f);

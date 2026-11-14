@@ -87,7 +87,7 @@ public:
     // ComUty_SideGuageDraw: the track at (x, y), the fill and knob for `value` 0..100
     void gauge(float x, float y, int value, float alpha, bool highlight);
     // ComUty_CmdBack type 2: the Back bar at (x, y), `pressed` lights it, `bob` 0..5 moves the arrows
-    void backButton(float x, float y, bool pressed, int bob, float alpha);
+    void backButton(float x, float y, int pressed, int bob, float alpha); // pressed: 0 none, 1 Back, 2 right, 3 left
     // ComUty_CmdBack type 1 (the shop's): a plain 232-wide bar, white fading in over 24 at each end,
     // "Back" at x + 82
     void backBar(float x, float y, bool pressed, float alpha);

@@ -331,7 +331,8 @@ c101/c102/c104/m207a, 2026-10-12).
       boards, the clock and the purse, Items / Equip / Genes / Status / Options, and Save) or a script's Util 5/6 - "Save data?" Yes / No, "Save complete.". The
       title's **Start** runs as the boot script has it (j001_t99: Util 0 -> Util 4 -> Util 5):
       **Character Select** (`__menuu_StartPut`: the chara1 art scaled to the screen, plates
-      Escher / Eluca at (56 + 232k, 232), Back at (124, 288)), then that pair's save / load screen
+      Escher / Eluca at (56 + 232k, 232), Back at (124, 288) - with its arrows, once the later pairs are
+      open, the other sheet: `__menuu_StartPrc`'s BackButtonPosSetXYProc -2 / -3), then that pair's save / load screen
       (`__menuu_SaveLoadPut`: over the Character Select art again - piece 16 of its sheet at tex2d
       (-32, -64) -, the slot's face boards, its date and play time, the pair's three
       emblems for the stories it has cleared, Load / New at (328, 136 + 48k) - and "Final" once
@@ -395,7 +396,8 @@ c101/c102/c104/m207a, 2026-10-12).
       share a map, `--set-flags a,b` sets story flags first, `--win-battles` wins the battles it
       starts, `CR_CAPTURE_TRACE=1` prints the script's state as it changes, `CR_CAPTURE_UNTIL_MSG=id[:n[:p[:area]]]` ends a `--frames` run n frames (60) after message id comes up, with no taps meanwhile but p of its pages turned (45 frames apart) and only in that area (ids repeat across the areas' files); `CR_CAPTURE_SIZE=WxH` sets the window's size first (e.g. 1280x720 for a phone's 16:9; the logical screen is fitted before any step); `CR_CAPTURE_VARS=k:v,...`
       sets script variables before the map's entry and before `--event`'s script; `CR_CAPTURE_AT=<address>`
-      starts `--event`'s script at that address of the area's file instead)
+      starts `--event`'s script at that address of the area's file instead; `CR_CAPTURE_PRESS=fx,fy` holds a
+      touch there - fractions of the frame - for the held looks)
 - [x] New game: the opening plays as the original's script stages it (a 3D room filmed by the
       script camera: cuts and moves between shots, framed as `setCamera3D` does - the stage view
       doubled and centred, so the screen shows its middle), then the hall's characters can be talked

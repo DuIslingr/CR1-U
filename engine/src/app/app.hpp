@@ -498,6 +498,7 @@ struct App {
         bool down = false, dragging = false, bar = false;
         float startX = 0, startY = 0, lastY = 0, remainder = 0;
         float px = 0, py = 0;
+        float curPx = -1e9f, curPy = -1e9f; // where it is now (the frame's pixels): the control held lights
         Camp::Page page = Camp::Main;
         Camp::Phase phase = Camp::List;
     } campPointer;
@@ -541,6 +542,12 @@ struct App {
     int fieldSpeed = 1, battleSpeed = 1;
     int padHeld = -1;                      // the direction held for the menus' repeat (0 up 1 down 2 left 3 right)
     float padHeldFor = 0;
+    // A touch held on a menu (_pad_chk_updw_box, 2.2.0 0x1cdd4): the screen it went down on and where it is
+    // now (the frame's pixels). The control under it is lit while held (its held flag); its action runs as
+    // it lifts there (trg) - sliding off cancels
+    struct Press { bool down = false; int screen = 0; float px = 0, py = 0; } press;
+    int countHeldSide = 0, countHeldFrames = 0; // a count's < or > held by a touch (_ComUty_NumCountProc's +0x14)
+    float countClock = 0;
     crinput::HeldOver padHeldOver;         // (dead after a cancel or a session's end, until let go)
     int itemWindowItem = 0;
     bool tapPending = false;               // action key while a script waits for a tap
@@ -1394,6 +1401,14 @@ float androidEdgeY(const App& app);
 void menuPointAt(const App& app, float lx, float ly, float origin, float& mx, float& my);
 void menuPointFit(const App& app, float lx, float ly, float& mx, float& my);
 void menuPoint(const App& app, float lx, float ly, float& mx, float& my);
+// A menu's held touch (App::press): its screen, and whether it is now inside a control's box - in menu
+// units of the group drawn from `origin` (uiX, wideLeft, wideRight)
+enum PressScreen { kPressNone = 0, kPressSave, kPressCharSelect, kPressCamp, kPressLastBattle, kPressWorld, kPressShop,
+                   kPressBattle, kPressResume, kPressTitle, kPressChoice, kPressHistory };
+bool pressIn(const App& app, int screen, float origin, float x, float y, float w, float h);
+// The keys' and pad's cursor plate: lit without a touch (2.2.0 lights only the plate a finger holds); the
+// Vita copy as the game keeps its cursor
+bool menuCursorLit(const App& app);
 void stepOptions(App& app);
 void resetAnswer(App& app, bool yes);
 void optionsKey(App& app, SDL_Keycode key);
@@ -1460,6 +1475,7 @@ void drawShopNumber(cr::MenuPainter& m, int value, float x, float y, int digits,
 void drawShop(App& app);
 void shopKey(App& app, SDL_Keycode key);
 void shopClick(App& app, float px, float py);
+bool shopPressIn(const App& app, bool right, float x, float y, float w, float h);
 bool keyHints(const App& app);
 int plateIcon(int word);
 int campCharacter(const App& app, int member);
@@ -1489,6 +1505,7 @@ void campClick(App& app, float px, float py);
 void campPointerDown(App& app, float px, float py);
 void campPointerMove(App& app, float px, float py);
 void campPointerUp(App& app, float px, float py);
+bool campPressIn(const App& app, float origin, float x, float y, float w, float h);
 void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int count, bool lit, float a, int style = 0, const std::string& label = std::string());
 void drawCampScrollBar(cr::MenuPainter& m, float scroll, int n, float a);
 int staffLines(const App& app);
@@ -1557,6 +1574,8 @@ void drawCharArt(App& app, float alpha, bool banner, float grey = 1);
 void drawCharSelect(App& app);
 void charSelectKey(App& app, SDL_Keycode key);
 void charSelectClick(App& app, float px, float py);
+int charSelectBackPart(const App& app, float px, float py);
+bool historyBackAt(const App& app, float px, float py);
 void drawTitleMenu(App& app);
 void titleStart(App& app);
 void titleChoose(App& app, int i);
@@ -1774,6 +1793,7 @@ bool battleMenuReady(const App& app);
 void stepBattle(App& app);
 void drawBattle(App& app, float dt);
 bool battleCursorLit(const App& app);
+bool battlePressIn(const App& app, float x, float y, float w, float h);
 void resultsTap(App& app);
 void stepResults(App& app);
 void drawBattleHud(App& app, float W, float H);
@@ -1798,5 +1818,8 @@ void stickPointerRelease(App& app);
 void stickPointerStep(App& app, float dt);
 void drawStickPointer(App& app);
 void padStep(App& app, float dt);
+int pressScreen(const App& app);
+void pressRelease(App& app, int screen, float px, float py);
+void pressCountStep(App& app, float dt);
 
 } // namespace crapp

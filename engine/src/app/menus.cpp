@@ -441,10 +441,12 @@ void drawSaveScreen(App& app) {
         const std::vector<int> plates = savePlates(app);
         static const int kWord[3] = {4, 7, 6};
         for (size_t i = 0; i < plates.size(); ++i)
-            m.plate(328, 136 + 48.0f * float(plates[i]), plateIcon(kWord[plates[i]]), kWord[plates[i]], ss.cursor == int(i), a,
-                    false); // (window 3; the icon is the word's: ComUty_ChoicePlateDraw)
+            m.plate(328, 136 + 48.0f * float(plates[i]), plateIcon(kWord[plates[i]]), kWord[plates[i]],
+                    (ss.cursor == int(i) && menuCursorLit(app)) || pressIn(app, kPressSave, wideRight(app), 328, 136 + 48.0f * float(plates[i]), 136, 40),
+                    a, false); // (window 3; the icon is the word's: ComUty_ChoicePlateDraw; lit while held - SaveLoadPrc 2's DAT_000d34a0)
         r.setOrigin(r.uiX());
-        m.backBar(192, r.phoneLayout() ? 286 : 344, false, a); // (SaveLoadPut: BackButtonDraw mode 1, no arrows)
+        const float backY = r.phoneLayout() ? 286 : 344;
+        m.backBar(192, backY, pressIn(app, kPressSave, r.uiX(), 192, backY, 232, 24), a); // (SaveLoadPut: BackButtonDraw mode 1, no arrows; lit while held - DAT_000d34a4)
     } else if (r.phoneLayout()) { // the original's (SaveLoadPut, the same in 2.2.0): the message
         // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234); Yes / No the
         // plates at window 6 + (336, 104) / (336, 160). The board's mark (picture 13 at (458, 298), out and
@@ -457,9 +459,10 @@ void drawSaveScreen(App& app) {
         int extra = 0;
         for (int l : ss.lines)
             if (l > 0) m.text(sysText(app, l), 24, 234 + 16.0f * float(++extra), false, a, menuFontSize(app));
-        if (ss.phase == 1) {
-            m.plate(336, 104, 0, 0, ss.confirm == 0, a, false);
-            m.plate(336, 160, 1, 1, ss.confirm == 1, a, false);
+        if (ss.phase == 1) { // (__ComUty_YesNoChoiceProc: a held plate takes the cursor)
+            const bool hy = pressIn(app, kPressSave, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressSave, r.uiX(), 336, 160, 136, 40);
+            m.plate(336, 104, 0, 0, hy || (!hn && ss.confirm == 0), a, false);
+            m.plate(336, 160, 1, 1, hn || (!hy && ss.confirm == 1), a, false);
         }
     } else { // the message board, Yes / No under it while asking
         r.setOrigin(r.uiX());
@@ -471,9 +474,11 @@ void drawSaveScreen(App& app) {
         const float ty = my + 24 - 9.0f * float(extra);
         m.textCentred(msg.empty() ? "?" : msg, mx + 20, ty, false, a, 15);
         for (int l = 0; l < extra; ++l) m.textCentred(sysText(app, ss.lines[l]), mx + 20, ty + 18.0f * float(l + 1), false, a, 13);
-        if (ss.phase == 1) {
-            m.button(128, 296, 0, "", ss.confirm == 0, a, ss.confirm == 0); // Yes
-            m.button(272, 296, 1, "", ss.confirm == 1, a, ss.confirm == 1); // No
+        if (ss.phase == 1) { // (a held one takes the cursor, as the iPhone layout's plates)
+            const bool hy = pressIn(app, kPressSave, r.uiX(), 128, 288, 112, 48), hn = pressIn(app, kPressSave, r.uiX(), 272, 288, 112, 48);
+            const bool yes = hy || (!hn && ss.confirm == 0), no = hn || (!hy && ss.confirm == 1);
+            m.button(128, 296, 0, "", yes, a, yes); // Yes
+            m.button(272, 296, 1, "", no, a, no);   // No
         }
     }
     r.setOrigin(wideLeft(app));
@@ -986,19 +991,39 @@ void drawShopBoard(App& app, float bx, float by, int c, int item, float a, bool 
 // ComUty_NumCountDraw (0x4ad98) at (348, 68): white < and > buttons fading out at the ends around the
 // box (black at 0xb3) and the number in two big digits always (picture 26 on: 28 x 28; PictNumDraw of
 // count / 10 and count % 10, 1..99); both arrows always drawn whole. `dx`: the window's slide
-void drawNumCount(cr::MenuPainter& m, int count, int = 99, float dx = 0, float a = 1) {
+// A side held by a touch (its struct's +5 / +4, set by _ComUty_NumCountProc) turns its box's gradient
+// 0xEBFF4B - cyan
+void drawNumCount(cr::MenuPainter& m, int count, int = 99, float dx = 0, float a = 1, bool minusHeld = false, bool plusHeld = false) {
     const float on[4] = {1, 1, 1, a * 0xB3 / 255.0f}, off[4] = {1, 1, 1, 0}, dark[4] = {0, 0, 0, a * 0xB3 / 255.0f};
-    m.quad(336 + dx, 60, 15, 31, off, on);
-    m.quad(351 + dx, 60, 20, 31, on, on);
+    const float cyan[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, a * 0xB3 / 255.0f}, cyanOff[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, 0};
+    const float* mOn = minusHeld ? cyan : on;
+    const float* mOff = minusHeld ? cyanOff : off;
+    const float* pOn = plusHeld ? cyan : on;
+    const float* pOff = plusHeld ? cyanOff : off;
+    m.quad(336 + dx, 60, 15, 31, mOff, mOn);
+    m.quad(351 + dx, 60, 20, 31, mOn, mOn);
     m.quad(372 + dx, 60, 63, 31, dark, dark);
-    m.quad(436 + dx, 60, 19, 31, on, on);
-    m.quad(455 + dx, 60, 16, 31, on, off);
+    m.quad(436 + dx, 60, 19, 31, pOn, pOn);
+    m.quad(455 + dx, 60, 16, 31, pOn, pOff);
     m.picture(99, 348 + dx, 68, a);
     m.picture(100, 448 + dx, 68, a);
     const short* big = cr::kMenuPicture[26];
     const int n = std::clamp(count, 1, 99);
     m.piece(376 + dx, 62, big[0] + float(n / 10) * 28, big[1], 28, 28, a);
     m.piece(404 + dx, 62, big[0] + float(n % 10) * 28, big[1], 28, 28, a);
+}
+
+// A touch held on the shop (shopClick's units: the centre group, or the right-hand one) inside a box
+bool shopPressIn(const App& app, bool right, float x, float y, float w, float h) {
+    if (!app.press.down || app.press.screen != kPressShop) return false;
+    float lx, ly;
+    app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+    const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
+    float cx = (lx - uiX) / 2, rx = (lx - rightX) / 2, my = ly / 2;
+    phoneMenuPoint(app, cx, my);
+    if (app.renderer.phoneLayout()) rx -= 16;
+    const float px = right ? rx : cx;
+    return px >= x && px < x + w && my >= y && my < y + h;
 }
 
 void drawShop(App& app) {
@@ -1052,14 +1077,17 @@ void drawShop(App& app) {
     drawShopNumber(m, app.game.oz, 362, 0, 9, 12, 1);
     if (s.phase == App::Shop::Main)
         for (int i = 0; i < 3; ++i)
-            m.plate(328 + 240 * slide, 144 + 48.0f * float(i), kMainIcons[i], kMainWords[i], s.cursor == i, a, false);
+            m.plate(328 + 240 * slide, 144 + 48.0f * float(i), kMainIcons[i], kMainWords[i],
+                    (s.cursor == i && menuCursorLit(app)) || shopPressIn(app, true, 328, 144 + 48.0f * float(i), 136, 40), a, false);
     if (s.phase == App::Shop::Category)
         for (int i = 0; i < 4; ++i)
-            m.plate(328 + 240 * slide, 96 + 48.0f * float(i), kCategoryIcons[i], kCategoryWords[i], s.category == i, a, false);
+            m.plate(328 + 240 * slide, 96 + 48.0f * float(i), kCategoryIcons[i], kCategoryWords[i],
+                    (s.category == i && menuCursorLit(app)) || shopPressIn(app, true, 328, 96 + 48.0f * float(i), 136, 40), a, false); // (FUN_0006af18: held)
     if (s.phase == App::Shop::Member) // FUN_0006a634: window 9, the pair's plates at (328, 176 + 56k) (FUN_0004f234)
         for (int k = 0; k < campMembers(app); ++k) {
             const int word = 12 + campCharacter(app, k);
-            m.plate(328 + 240 * slide, 176 + 56.0f * float(k), plateIcon(word), word, s.member == k, a, false);
+            m.plate(328 + 240 * slide, 176 + 56.0f * float(k), plateIcon(word), word,
+                    (s.member == k && menuCursorLit(app)) || shopPressIn(app, true, 328, 176 + 56.0f * float(k), 136, 40), a, false); // (FUN_0006a860: held)
         }
     if (list) { // MuScrList_Draw mode 0: rows from the focus line at 150 less the scroll, cut to 76..280
         const int n = int(s.list.size());
@@ -1103,10 +1131,13 @@ void drawShop(App& app) {
             m.picture(98, 312, 40, 1); // PRICE and the total
             drawShopNumber(m, shopUnitPrice(app, item) * s.count, 362, 40, 9, 12, 1);
             m.picture(73, 362, 49, 1);
-            drawNumCount(m, s.count, shopMaxCount(app, item)); // (two digits, the box at 0xb3: ComUty_NumCountDraw)
+            drawNumCount(m, s.count, shopMaxCount(app, item), 0, 1, shopPressIn(app, true, 336, 60, 36, 31),
+                         shopPressIn(app, true, 436, 60, 36, 31)); // (two digits, the box at 0xb3: ComUty_NumCountDraw)
         }
-        m.plate(336, 104, 0, 0, s.confirm == 0, 1, false); // Yes
-        m.plate(336, 160, 1, 1, s.confirm == 1, 1, false); // No
+        // (a held plate takes the cursor: __ComUty_YesNoChoiceProc)
+        const bool hy = shopPressIn(app, true, 336, 104, 136, 40), hn = shopPressIn(app, true, 336, 160, 136, 40);
+        m.plate(336, 104, 0, 0, hy || (!hn && s.confirm == 0), 1, false); // Yes
+        m.plate(336, 160, 1, 1, hn || (!hy && s.confirm == 1), 1, false); // No
     }
 
     // Centre: Back (with ◀ ▶ for equipment lists) and the message board
@@ -1123,9 +1154,11 @@ void drawShop(App& app) {
             !have[0].empty())
             m.text(have[0][0], 24, 250, false, 1, kFont);
     } else if (list && shopEquipment(app)) {
-        m.backButton(kBackX, kBackY, false, s.bob, a); // ComUty_CmdBack 2: < Back >
+        // ComUty_CmdBack 2: < Back > - the part held lit (1 Back, 2 right, 3 left: the boxes shopClick tests)
+        m.backButton(kBackX, kBackY, shopPressIn(app, false, kBackX + 51, kBackY, 130, 24) ? 1 : shopPressIn(app, false, 0x175, kBackY, 0x33, 24) ? 2
+                                     : shopPressIn(app, false, 0xc0, kBackY, 0x33, 24) ? 3 : 0, s.bob, a);
     } else {
-        m.backBar(kBackX, kBackY, false, a);
+        m.backBar(kBackX, kBackY, shopPressIn(app, false, kBackX, kBackY, 232, 24), a); // (lit while held: DAT_000d307c)
     }
     const char* help = s.phase == App::Shop::Count     ? "Left/Right: 1  Shift: 10  Up/Down: Yes / No  Enter  Esc"
                        : s.phase == App::Shop::EquipAsk ? "Up/Down  Enter  Esc: no"
@@ -1241,8 +1274,8 @@ void shopClick(App& app, float px, float py) {
         break;
     }
     case App::Shop::Count:
-        if (my >= 60 && my < 91 && rx >= 336 && rx < 372) shopKey(app, SDLK_LEFT);
-        else if (my >= 60 && my < 91 && rx >= 436 && rx < 472) shopKey(app, SDLK_RIGHT);
+        // (the count's < >: stepped while held - pressCountStep, _ComUty_NumCountProc -, not on the lift)
+        if (my >= 60 && my < 91 && ((rx >= 336 && rx < 372) || (rx >= 436 && rx < 472))) {}
         else if (const int i = plateAt(336, 104, 56, 2); i == 0) shopPay(app);
         else if (i == 1) shopBack(app);
         break;
@@ -2145,8 +2178,7 @@ void campClick(App& app, float px, float py) {
     }
     if (c.phase == App::Camp::Ask) {
         const int item = c.list.empty() ? 0 : c.list[size_t(c.listCursor)];
-        if (in(336, 60, 36, 31) && item >= 3 && item <= 6) campKey(app, SDLK_LEFT);
-        else if (in(436, 60, 36, 31) && item >= 3 && item <= 6) campKey(app, SDLK_RIGHT);
+        if ((in(336, 60, 36, 31) || in(436, 60, 36, 31)) && item >= 3 && item <= 6) {} // (stepped while held: pressCountStep)
         else if (in(336, 104, 136, 40)) { c.confirm = 0; campChoose(app); }
         else if (in(336, 160, 136, 40)) { c.confirm = 1; campChoose(app); }
     }
@@ -2157,11 +2189,22 @@ void campPointerPoint(const App& app, float px, float py, float& mx, float& my) 
     app.renderer.toLogical(px, py, lx, ly);
     menuPointAt(app, lx, ly, wideRight(app), mx, my);
 }
+// A touch held inside a Camp box (menu units of the group drawn from `origin`): 2.2.0 lights the control
+// while _pad_chk_updw_box finds the finger on it (not once it drags a list)
+bool campPressIn(const App& app, float origin, float x, float y, float w, float h) {
+    const auto& p = app.campPointer;
+    if (!p.down || p.dragging) return false;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(p.curPx, p.curPy, lx, ly);
+    menuPointAt(app, lx, ly, origin, mx, my);
+    return mx >= x && mx < x + w && my >= y && my < y + h;
+}
 void campPointerDown(App& app, float px, float py) {
     auto& p = app.campPointer;
     p = App::CampPointer();
     p.down = true, p.page = app.camp.page, p.phase = app.camp.phase;
     p.px = px, p.py = py;
+    p.curPx = px, p.curPy = py;
     campPointerPoint(app, px, py, p.startX, p.startY);
     p.lastY = p.startY;
     const bool list = campScrollable(app);
@@ -2174,6 +2217,7 @@ void campPointerMove(App& app, float px, float py) {
     if (!app.campOpen || app.camp.page != p.page || app.camp.phase != p.phase) { p = App::CampPointer(); return; }
     float mx, my;
     campPointerPoint(app, px, py, mx, my);
+    p.curPx = px, p.curPy = py;
     const bool list = campScrollable(app);
     const bool inList = p.startX >= campListX(app) && p.startX < campListX(app) + 256 &&
         p.startY >= campui::kListTop && p.startY < campui::kListBottom;
@@ -2648,8 +2692,10 @@ void drawLastBattle(App& app) {
     if (lb.win[6] > 0) { // Yes / No (from 360 to the right)
         const float dx = 360 * (1 - ease(lb.win[6]));
         r.setOrigin(wideRight(app));
-        m.plate(336 + dx, 104, 0, 0, lb.confirm == 0, lb.win[6], false);
-        m.plate(336 + dx, 160, 1, 1, lb.confirm == 1, lb.win[6], false);
+        // (__menuu_LastBtPrc's ComUty_YesNoChoiceProc: a held plate takes the cursor)
+        const bool hy = pressIn(app, kPressLastBattle, wideRight(app), 336, 104, 136, 40), hn = pressIn(app, kPressLastBattle, wideRight(app), 336, 160, 136, 40);
+        m.plate(336 + dx, 104, 0, 0, hy || (!hn && lb.confirm == 0), lb.win[6], false);
+        m.plate(336 + dx, 160, 1, 1, hn || (!hy && lb.confirm == 1), lb.win[6], false);
     }
     r.setOrigin(r.uiX());
 }
@@ -2944,6 +2990,8 @@ void drawWorldSelect(App& app) {
         drawCampScrollBar(m, scroll, n, a);
         ownPlace(true);
     };
+    // (MuScrList_Proc's BackButtonProc: the Back bar lit while held - the box worldSelectClick tests)
+    const bool backHeld = pressIn(app, kPressWorld, wideRight(app), kBackX - (phone ? 16 : 0), kBackY - (phone ? 32 : 0), 232, 24);
     if (ws.win[6] > 0) { // the gates
         ownPlace(true);
         const int n = int(ws.worlds.size());
@@ -2958,7 +3006,7 @@ void drawWorldSelect(App& app) {
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[6]); // icon 0x3d
         }, ws.win[6]);
         ownPlace(false);
-        m.backBar(kBackX + dx(6), kBackY, false, ws.win[6]);
+        m.backBar(kBackX + dx(6), kBackY, ws.state == 1 && backHeld, ws.win[6]);
     }
     if (ws.win[7] > 0) { // the level bands
         ownPlace(true);
@@ -2967,7 +3015,7 @@ void drawWorldSelect(App& app) {
             m.piece(x + 12, y + 8, float(0x3d % 16) * 32, 248 + float(0x3d / 16) * 32, 32, 32, ws.win[7]);
         }, ws.win[7]);
         ownPlace(false);
-        m.backBar(kBackX + dx(7), kBackY, false, ws.win[7]);
+        m.backBar(kBackX + dx(7), kBackY, ws.state == 6 && backHeld, ws.win[7]);
     }
     r.setOrigin(r.uiX());
     if (ws.win[9] > 0) { // the board (ComUty_MsgBoardDraw at y 220, from 160 below)
@@ -2986,8 +3034,10 @@ void drawWorldSelect(App& app) {
     r.setOrigin(wideRight(app));
     if (ws.win[8] > 0) { // Yes / No
         ownPlace(true);
-        m.plate(336 + dx(8), 104, 0, 0, ws.confirm == 0, ws.win[8], false);
-        m.plate(336 + dx(8), 160, 1, 1, ws.confirm == 1, ws.win[8], false);
+        // (FUN_00050864's ComUty_YesNoChoiceProc: a held plate takes the cursor)
+        const bool hy = pressIn(app, kPressWorld, wideRight(app), 336, 104, 136, 40), hn = pressIn(app, kPressWorld, wideRight(app), 336, 160, 136, 40);
+        m.plate(336 + dx(8), 104, 0, 0, hy || (!hn && ws.confirm == 0), ws.win[8], false);
+        m.plate(336 + dx(8), 160, 1, 1, hn || (!hy && ws.confirm == 1), ws.win[8], false);
     }
     ownPlace(false);
     r.setOrigin(r.uiX());
@@ -3108,8 +3158,10 @@ void drawCamp(App& app) {
     right();
     for (int i = 0; i < campEntries(app); ++i) {
         const bool save = i == 5;
+        // (lit: the keys' cursor - touch play none -, or a touch holding it: __MuCamp_NextProc 5's DAT_000d2e10)
+        const bool held = main && campPressIn(app, wideRight(app), kPlateX, kPlateY + kPlateStep * float(i), 136, 40);
         m.plate(kPlateX + 360 * out, kPlateY + kPlateStep * float(i), save ? 6 : plateIcon(kWords[i]), save ? -1 : kWords[i],
-                main && c.cursor == i, 1 - outA, !save && !kReady[i], save ? "Save" : "");
+                (main && c.cursor == i && menuCursorLit(app)) || held, 1 - outA, !save && !kReady[i], save ? "Save" : "");
     }
     left();
     const int ch = campCharacter(app, c.member);
@@ -3119,7 +3171,11 @@ void drawCamp(App& app) {
         for (int k = 0; k < campMembers(app); ++k) {
             const int word = 12 + campCharacter(app, k);
             // (window 8: WinDispOn(8, 0x168) - in from 360 to the right, as the main plates go out)
-            m.plate(kPlateX + 360 * (1 - e), kMemberY + kMemberStep * float(k), plateIcon(word), word, lit && c.member == k, e, false);
+            // (__MuCommon_CharChoiceProc: the plate - or the member's face board - held lights it)
+            const bool held = lit && (campPressIn(app, wideRight(app), kPlateX, kMemberY + kMemberStep * float(k), 136, 40) ||
+                                      campPressIn(app, wideLeft(app), 8, 48 + 88.0f * float(k), 252, 80));
+            m.plate(kPlateX + 360 * (1 - e), kMemberY + kMemberStep * float(k), plateIcon(word), word,
+                    (lit && c.member == k && menuCursorLit(app)) || held, e, false);
         }
         left();
     };
@@ -3183,9 +3239,13 @@ void drawCamp(App& app) {
                 // (window 10: WinDispOn(10, 0x168) - in from 360 to the right; 0xb: WinDispOnTypeY(0xb, 0xa0) - up
                 // from 160 below)
                 const float dx = 360 * (1 - e), dy = 160 * (1 - e);
-                if (seed) drawNumCount(m, c.count, campSeedLimit(app, ch, item), dx, e);
-                m.plate(336 + dx, 104, plateIcon(0), 0, current && c.confirm == 0, e, false); // Yes
-                m.plate(336 + dx, 160, plateIcon(1), 1, current && c.confirm == 1, e, false); // No
+                const float wr = wideRight(app);
+                if (seed) drawNumCount(m, c.count, campSeedLimit(app, ch, item), dx, e, current && campPressIn(app, wr, 336, 60, 36, 31),
+                                       current && campPressIn(app, wr, 436, 60, 36, 31));
+                // (a held plate takes the cursor: __ComUty_YesNoChoiceProc)
+                const bool hy = current && campPressIn(app, wr, 336, 104, 136, 40), hn = current && campPressIn(app, wr, 336, 160, 136, 40);
+                m.plate(336 + dx, 104, plateIcon(0), 0, hy || (!hn && current && c.confirm == 0), e, false); // Yes
+                m.plate(336 + dx, 160, plateIcon(1), 1, hn || (!hy && current && c.confirm == 1), e, false); // No
                 centre();
                 // ComUty_MsgBoardDraw(0, 0xdc, .., 0, font 3): picture 12, the mark (picture 13, PictAnimInit(1 tick, 4
                 // frames, 20 px, out and back)) at (458, 298), the line at (24, 234) in the menu font
@@ -3311,10 +3371,14 @@ void drawCamp(App& app) {
     // during the Items Yes / No, its board and the Emergency Exit. (Window 4: CampMain 6 takes it off for Items -
     // the list brings its own and takes it with it -; Equip, Genes and Status keep the main page's)
     const float barA = main ? std::min(1 - leave, c.barIn ? ease : 1.0f) : items ? std::min(ease, campPhaseEase(app, App::Camp::List)) : 1.0f;
-    if (campBackShown(app)) {
-        if (campOkBar(app)) m.backOkBar(kBackX, campBackY(app), 0, barA);
-        else if (campArrows(app)) m.backButton(kBackX, campBackY(app), false, 0, barA);
-        else m.backBar(kBackX, campBackY(app), false, barA);
+    if (campBackShown(app)) { // (lit while a touch holds it - the boxes campClick tests: BackButtonProc's held)
+        const float ux = app.renderer.uiX(), by = campBackY(app);
+        if (campOkBar(app))
+            m.backOkBar(kBackX, by, campPressIn(app, ux, 0xc0, by, 0x72, 34) ? 1 : campPressIn(app, ux, 0x137, by, 0x72, 34) ? 5 : 0, barA);
+        else if (campArrows(app))
+            m.backButton(kBackX, by, campPressIn(app, ux, 0xf8, by, 0x78, 34) ? 1 : campPressIn(app, ux, 0x175, by, 0x33, 34) ? 2
+                                     : campPressIn(app, ux, 0xc0, by, 0x33, 34) ? 3 : 0, 0, barA);
+        else m.backBar(kBackX, by, campPressIn(app, ux, kBackX, by, 256, 34), barA);
     }
     if (items && !c.pageOut && ease <= 0) m.backBar(kBackX, campBackY(app), false, 1 - outA); // (the main page's going)
     // The title and section lines over everything else of the page (the section's line runs over the HELP
@@ -3599,8 +3663,10 @@ void drawResumePrompt(App& app) {
     }
     r.setOrigin(wideRight(app));
     drawSaveDate(app, m, app.resumeData, a, 360 * out);                    // window 5
-    m.plate(336 + 360 * out, 126, 0, 0, app.resumeCursor == 0, a, false); // window 4: Yes
-    m.plate(336 + 360 * out, 176, 1, 1, app.resumeCursor == 1, a, false); // No
+    // (TitlePrc's ComUty_YesNoChoicePosProc: a held plate takes the cursor)
+    const bool hy = pressIn(app, kPressResume, wideRight(app), 336, 126, 136, 40), hn = pressIn(app, kPressResume, wideRight(app), 336, 176, 136, 40);
+    m.plate(336 + 360 * out, 126, 0, 0, hy || (!hn && app.resumeCursor == 0), a, false); // window 4: Yes
+    m.plate(336 + 360 * out, 176, 1, 1, hn || (!hy && app.resumeCursor == 1), a, false); // No
     r.setOrigin(r.uiX());
     const float by = 220 + 160 * out; // window 7: ComUty_MsgBoardDraw, its mark out and back, the lines once still
     m.picture(12, 0, by, a);
@@ -3817,6 +3883,17 @@ int scenarioPercent(const cr::GameState& g) {
     return std::min(p, 100);
 }
 
+// The History's Back at a touch (the frame's pixels): __menuu_HistoryPrc's ComUty_BackButtonProc(1) - (192, 286,
+// 256 x 34) in the iPhone layout; the iPad layout's bar at (272, 330)
+bool historyBackAt(const App& app, float px, float py) {
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPoint(app, lx, ly, mx, my);
+    const bool phone = app.renderer.phoneLayout();
+    const float x = phone ? 192 : 272, y = phone ? 286 : 330, w = phone ? 256 : 232, h = phone ? 34 : 24;
+    return mx >= x && mx < x + w && my >= y && my < y + h;
+}
+
 void drawScenarios(App& app) {
     cr::Renderer& r = app.renderer;
     const cr::Texture& t = app.scenariosSheet;
@@ -3905,7 +3982,7 @@ void drawScenarios(App& app) {
         m.begin(r, app.windowTex, &app.font);
         const PhoneMenu phoneMenu(app, m);
         drawClockAndOz(app, m, a);
-        m.backBar(192, 286, false, a); // (HistoryPut: BackButtonDraw2 mode 1)
+        m.backBar(192, 286, app.press.down && app.press.screen == kPressHistory && historyBackAt(app, app.press.px, app.press.py), a); // (HistoryPut: BackButtonDraw2 mode 1; lit while held - DAT_000d37b8)
         return;
     }
     // (z: the entries -8 under the pairs' strips -4; the way-in locks -4 over them while above y 688;
@@ -3960,7 +4037,7 @@ void drawScenarios(App& app) {
     }
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
-    m.backBar(272, 330, false, a);
+    m.backBar(272, 330, app.press.down && app.press.screen == kPressHistory && historyBackAt(app, app.press.px, app.press.py), a);
     if (keyHints(app)) // (our key hints)
         m.text("Up/Down: scroll  Esc: back", 300, 372, false, a * 0.8f, 9);
 }
@@ -4288,11 +4365,16 @@ void drawCharSelect(App& app) {
     r.setOrigin(r.uiX());
     const float t = std::min(1.0f, app.charSelectAnim / 10.0f);
     drawCharArt(app, t, true); // __menuu_StartPut: the art (piece 16, z -5), the banner (piece 18, z -4)
-    for (int k = 0; k < 2; ++k)
+    for (int k = 0; k < 2; ++k) // (lit: the keys' cursor, or a touch holding it - StartPrc 2's DAT_000d3348)
         m.plate(56 + 232.0f * float(k), 232, plateIcon(kCharSelectWords[app.charSelectPage][k]), // (the word's icon)
-                kCharSelectWords[app.charSelectPage][k], app.charSelectCursor == k, t, false);
-    if (laterPairsOpen(app)) m.backButton(124, 288, false, 0, t); // ComUty_BackButtonPosSetXYDraw(124, 288): its arrows
-    else m.backBar(124, 288, false, t);                         // (mode 2) once the later pairs are open (flags 0x20 / 0x22)
+                kCharSelectWords[app.charSelectPage][k],
+                (app.charSelectCursor == k && menuCursorLit(app)) || pressIn(app, kPressCharSelect, r.uiX(), 56 + 232.0f * float(k), 232, 132, 40),
+                t, false);
+    // (the Back held lit - StartPrc 2's DAT_000d334c, minus BackButtonPosSetXYProc's answer: 1 Back, 2 the right
+    // arrow, 3 the left - the part held: charSelectBackPart)
+    const int held = app.press.down && app.press.screen == kPressCharSelect ? charSelectBackPart(app, app.press.px, app.press.py) : 0;
+    if (laterPairsOpen(app)) m.backButton(124, 288, held, 0, t); // ComUty_BackButtonPosSetXYDraw(124, 288): its arrows
+    else m.backBar(124, 288, held == 1, t);                      // (mode 2) once the later pairs are open (flags 0x20 / 0x22)
     if (keyHints(app)) // (our key hints)
     m.text(laterPairsOpen(app) ? "Left/Right  Q: other pairs  Enter  Esc: back" : "Left/Right  Enter  Esc: back", 20, 372,
            false, t * 0.8f, 9);
@@ -4314,6 +4396,18 @@ void charSelectKey(App& app, SDL_Keycode key) {
     }
 }
 
+// The Back's part at a touch (the frame's pixels): ComUty_BackButtonPosSetXYProc (0x4a018: __ComUty_BackButtonProc
+// with x -68) - mode 1 the bar's box (124, 286, 256 x 34) is 1; mode 2 (the later pairs open) Back (180, 286,
+// 120 x 34) 1, the right arrow's (305, 286, 51 x 34) 2, the left's (124, 286, 51 x 34) 3; else 0
+int charSelectBackPart(const App& app, float px, float py) {
+    float lx, ly, mx, my;
+    app.renderer.toLogical(px, py, lx, ly);
+    menuPoint(app, lx, ly, mx, my);
+    auto in = [&](float x, float w) { return mx >= x && mx < x + w && my >= 286 && my < 286 + 34; };
+    if (!laterPairsOpen(app)) return in(124, 256) ? 1 : 0;
+    return in(180, 120) ? 1 : in(305, 51) ? 2 : in(124, 51) ? 3 : 0;
+}
+
 void charSelectClick(App& app, float px, float py) {
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
@@ -4327,7 +4421,9 @@ void charSelectClick(App& app, float px, float py) {
             return;
         }
     }
-    if (my >= 288 && my < 312 && mx >= 124 && mx < 356) { menuSound(app, se::kBack); closeCharSelect(app, 0); }
+    // StartPrc 2's ComUty_BackButtonPosSetXYProc: -1 Back (SE 3), -3 / -2 the arrows (SE 5: the other sheet)
+    if (const int part = charSelectBackPart(app, px, py); part == 1) { menuSound(app, se::kBack); closeCharSelect(app, 0); }
+    else if (part) charSelectTurn(app);
 }
 
 // ---- The title menu (Util 0: __menuu_Title*) ----
@@ -4388,8 +4484,9 @@ void drawTitleMenu(App& app) {
         m.picture(155, 320, 16, pt);
         m.picture(124, 380, 16, pt);
         for (int i = 0; i < 3; ++i)
-            m.plate(328 + 240 * (1 - ease), 114 + 56.0f * float(i), kTitleIcons[i], kTitleWords[i], app.titleCursor == i, pt,
-                    !titleChoiceReady(i));
+            m.plate(328 + 240 * (1 - ease), 114 + 56.0f * float(i), kTitleIcons[i], kTitleWords[i],
+                    (app.titleCursor == i && menuCursorLit(app)) || pressIn(app, kPressTitle, wideRight(app), 328, 114 + 56.0f * float(i), 136, 40),
+                    pt, !titleChoiceReady(i)); // (lit: the keys' cursor, or a touch holding it - TitlePrc's pad_chk_updw_box)
     }
     app.renderer.setOrigin(wideLeft(app));
     if (keyHints(app) && !app.resumeNotice && !app.resumePrompt) // (our key hints)

@@ -211,18 +211,21 @@ void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight
     piece(knob, y - 16, p[0], p[1], p[2], p[3], alpha, r, 1, b);
 }
 
-void MenuPainter::backButton(float x, float y, bool pressed, int bob, float alpha) {
+void MenuPainter::backButton(float x, float y, int pressed, int bob, float alpha) {
     const float cyan[4] = {0x4B / 255.0f, 1, 0xEB / 255.0f, alpha}; // (tex2d's 0xEBFF4B is A B G R: cyan)
     const float white[4] = {1, 1, 1, alpha};
-    const float* c = pressed ? cyan : white;
-    const float clear[4] = {white[0], white[1], white[2], 0};
     // ComUty_CmdBack mode 2: the left arrow's box (24..51, faded in over 0..24), Back (56..176), the
-    // right arrow's box (181..208, fading out to 232); the arrows bob inward (0..5)
-    quad(x, y, 24, 24, clear, white);
-    quad(x + 24, y, 27, 24, white, white);
+    // right arrow's box (181..208, fading out to 232); the arrows bob inward (0..5). The part held
+    // tints cyan (2.2.0 0x4d4d0: 1 Back, 2 the right arrow's box, 3 the left's - with their fades)
+    const float* c = pressed == 1 ? cyan : white;
+    const float* l = pressed == 3 ? cyan : white;
+    const float* r = pressed == 2 ? cyan : white;
+    const float clearL[4] = {l[0], l[1], l[2], 0}, clearR[4] = {r[0], r[1], r[2], 0};
+    quad(x, y, 24, 24, clearL, l);
+    quad(x + 24, y, 27, 24, l, l);
     quad(x + 56, y, 120, 24, c, c);
-    quad(x + 181, y, 27, 24, white, white);
-    quad(x + 208, y, 24, 24, white, clear);
+    quad(x + 181, y, 27, 24, r, r);
+    quad(x + 208, y, 24, 24, r, clearR);
     piece(x + 24 + bob, y + 4, 336, 880, 16, 16, alpha);
     piece(x + 197 - bob, y + 4, 352, 880, 16, 16, alpha);
     piece(x + 80, y, 0, 224, 76, 24, alpha);

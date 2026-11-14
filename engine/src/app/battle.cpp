@@ -2941,9 +2941,19 @@ void drawBattleNumber(cr::MenuPainter& m, int value, float x, float y, int digit
 // touch-only: __menub_mainPut (0x19728) lights a plate while a finger is in its box (pad_chk_box0)
 // and __menub_mainPrc (0x17920) state 2 sets +0x92 to -1 every frame - no cursor. The Vita's
 // __menub_mainPut (0x81043646) keeps one (DAT_81120298 the top page's, DAT_8112029c[member] the
-// commands'; a touch moves it): the Vita copy as the game keeps it lit after a tap too. After a tap
-// the plate just chosen shows lit as its page slides out (as Omega's port)
-bool battleCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app) || app.battle.viewState == 3; }
+// commands'; a touch moves it): the Vita copy as the game keeps it lit after a tap too. Touch play lights
+// the plate a finger holds instead (battlePressIn), dark from the moment it lifts - as the page leaves
+bool battleCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app); }
+// A touch held inside a battle box (battleClick's units: rx from the right-hand group, my) - __menub_mainPut's
+// pad_chk_box0, the finger on it now
+bool battlePressIn(const App& app, float x, float y, float w, float h) {
+    if (!app.press.down || app.press.screen != kPressBattle) return false;
+    float lx, ly;
+    app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+    const float uiX = app.renderer.uiX(), rightX = app.renderer.phoneLayout() ? uiX : 2 * uiX;
+    const float rx = (lx - rightX) / 2, my = ly / 2;
+    return rx >= x && rx < x + w && my >= y && my < y + h;
+}
 
 // cmd_bottom: a battle button (`x` and `y` its corner): base, face (lit when selected), icon, word
 void drawBattleButton(cr::MenuPainter& m, float x, float y, int icon, int word, bool selected, bool dimmed, float a) {
@@ -3306,20 +3316,26 @@ void drawBattleHud(App& app, float W, float H) {
     if (shown && !app.optionsOpen) { // (Options covers them while it's up)
         // the HELP board across the top (ComUty_HelpWindowDraw): the item's or gene's target and effect
         auto helpBoard = [&](int item) { drawHelpWindow(app, m, item, a); };
+        // (a held control lights only on the page the logic is on - not on one sliding out)
+        const bool live = keep.menu == v.menu;
+        const bool backHeld = live && battlePressIn(app, kBackX, kBackY, 232, 24);
         switch (b.menu) {
         case App::Battle::Top:
             for (int i = 0; i < 4; ++i) {
                 const bool dim = (i == 1 && (!(b.rules.f[0].alive() && b.rules.f[1].alive()) || b.rules.allyAuto)) ||
                                  (i == 2 && b.rules.escapeBlocked);
-                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kTopIcon[i], kTopWord[i], b.cursor == i && battleCursorLit(app), dim, a);
+                // (__menub_mainPut: a plate held lights - never a dimmed one, cmd_bottom's colour not -1)
+                const bool held = !dim && live && battlePressIn(app, kButtonX, kButtonY + kButtonStep * float(i), 136, 40);
+                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kTopIcon[i], kTopWord[i], (b.cursor == i && battleCursorLit(app)) || held, dim, a);
             }
             break;
         case App::Battle::Commands:
             for (int i = 0; i < 4; ++i) {
                 const bool dim = i == 1 && (battleGeneList(app).empty() || battleGenesSilenced(app));
-                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kCmdIcon[i], kCmdWord[i], b.cursor == i && battleCursorLit(app), dim, a);
+                const bool held = !dim && live && battlePressIn(app, kButtonX, kButtonY + kButtonStep * float(i), 136, 40);
+                drawBattleButton(m, kButtonX, kButtonY + kButtonStep * float(i), kCmdIcon[i], kCmdWord[i], (b.cursor == i && battleCursorLit(app)) || held, dim, a);
             }
-            m.backBar(kBackX, kBackY, false, a);
+            m.backBar(kBackX, kBackY, backHeld, a); // (_cmd_back: lit while held - pad_chk_box0(0xc0, 0x120, 0xe8, 0x18))
             break;
         case App::Battle::Targets: {
             const int n = int(b.picks.size());
@@ -3327,7 +3343,7 @@ void drawBattleHud(App& app, float W, float H) {
             const bool all = act && b.rules.isGroupScope(*act);
             for (int i = 0; i < n; ++i)
                 drawBattlePlate(app, m, kPlateX, kPlateBottom - 48.0f * float(n - i), b.picks[size_t(i)], all || b.pick == i, a);
-            m.backBar(kBackX, kBackY, false, a);
+            m.backBar(kBackX, kBackY, backHeld, a);
             break;
         }
         case App::Battle::Items: { // MuScrList: the battle items in the bag, how many of each
@@ -3339,7 +3355,7 @@ void drawBattleHud(App& app, float W, float H) {
                 const auto it = app.game.items.find(item);
                 drawCampRow(app, m, 232, y, item, it == app.game.items.end() ? 0 : it->second, index == b.pick, a);
             }
-            m.backBar(kBackX, kBackY, false, a);
+            m.backBar(kBackX, kBackY, backHeld, a); // (MuScrList's BackButtonProc: held)
             if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // (MuScrList_SetIdInfo's help: the items' too)
             break;
         }
@@ -3354,7 +3370,7 @@ void drawBattleHud(App& app, float W, float H) {
                 m.picture(27, 232 + 188, y + 34, ra);
                 drawShopNumber(m, cost, 232 + 218, y + 30, 3, 10, ra, 2); // (ComUty_ComPlate_Gene: PictNumDraw's field from 0xda, right-aligned)
             }
-            m.backBar(kBackX, kBackY, false, a);
+            m.backBar(kBackX, kBackY, backHeld, a);
             if (b.pick >= 0 && b.pick < n) helpBoard(b.picks[size_t(b.pick)]); // the gene's target and effect
             break;
         }
@@ -3363,8 +3379,17 @@ void drawBattleHud(App& app, float W, float H) {
             r.setOrigin(r.uiX());
             drawWinPiece(app, kWinSmallPanel, mx * 2, my * 2, 320 * 2, 48 * 2);
             m.textCentred(sysText(app, 57015), mx + 20, my + 24, false, a, 15);
-            m.button(128, 264, 0, "", b.confirm == 0, a, b.confirm == 0); // Yes
-            m.button(272, 264, 1, "", b.confirm == 1, a, b.confirm == 1); // No
+            // (__ComUty_YesNoChoiceProc: a held one takes the cursor - the boxes battleClick tests, centred)
+            float hx = -1e9f, hy = -1e9f;
+            if (live && app.press.down && app.press.screen == kPressBattle) {
+                float lx, ly;
+                app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+                hx = (lx - app.renderer.uiX()) / 2, hy = ly / 2;
+            }
+            const bool heldYes = hy >= 264 && hy < 304 && hx >= 128 && hx < 240, heldNo = hy >= 264 && hy < 304 && hx >= 272 && hx < 384;
+            const bool yes = heldYes || (!heldNo && b.confirm == 0), no = heldNo || (!heldYes && b.confirm == 1);
+            m.button(128, 264, 0, "", yes, a, yes); // Yes
+            m.button(272, 264, 1, "", no, a, no);   // No
             break;
         }
         }
@@ -3480,7 +3505,7 @@ void battleClick(App& app, float px, float py) {
     };
     switch (b.menu) {
     case App::Battle::Top:
-        if (const int i = buttonAt(); i >= 0) { b.cursor = b.view.cursor = i; battleChooseTop(app, i); } // (the page as shown lights the tapped plate as it goes)
+        if (const int i = buttonAt(); i >= 0) { b.cursor = b.view.cursor = i; battleChooseTop(app, i); } // (the cursor follows the tap: the Vita copy's lit one)
         break;
     case App::Battle::Commands:
         if (const int i = buttonAt(); i >= 0) { b.cursor = b.view.cursor = i; battleChooseCommand(app, i); }
