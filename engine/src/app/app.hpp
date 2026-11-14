@@ -678,18 +678,36 @@ struct App {
         int pendingItem = 0;               // an item chosen, its target next
         int pendingGene = 0;               // a gene ability chosen, its target next
         int targetAction = 0;
-        std::vector<int> picks;            // Targets: fighters; Items: item numbers
-        int pick = 0, pickTop = 0;
+        std::vector<int> picks;            // Targets: fighters; Items: item numbers; Genes: abilities
+        // Targets: _btlord_make_select's table (+0x948, 12 apart): each fighter's camera (+0x94a) and group
+        // (+0x94c) - the cursor (+0x984) steps from group to group, and every plate of its group is lit
+        std::vector<int> pickCam, pickGroup;
+        int pick = 0;                      // the cursor; the lists' focus row (the one on MuScrList's line)
+        float listScroll = 0;              // the lists' rows' offset (MuScrList_Proc: 8 a frame toward 48 x the focus row)
+        // FUN_00055ce4 / FUN_00055d30 (2.2.0 DAT_000c7824 genes, DAT_000c7820 items): the entry last chosen
+        // from each list, its focus row when the list opens again; _MuScrList_BattleClrItem clears both as a
+        // target is confirmed (-1 none)
+        int lastGene = -1, lastItem = -1;
         int confirm = 0;                   // EscapeAsk: 0 Yes
+        // A touch on the battle's pages (its start, in battleClick's units): the lists' drags (MuScrList_Proc),
+        // the targets page's mode (+0x986, FUN_0001bff4: 1 down on the plates' column, 2 elsewhere - a swipe
+        // steps a group, a drag pans the 3D: FUN_00017668's +0xf0, kept in `pan`)
+        struct Touch {
+            bool down = false, dragged = false, bar = false, inList = false;
+            int mode = 0, page = -1;
+            float sx = 0, sy = 0, cx = 0, lastY = 0, remainder = 0;
+        } touch;
+        float pan = 0;                     // +0xf0 less the screen's centre, in tex2d units (-48..48)
         // The pages as drawn (__menub_mainPrc's slides, +0x38): each page comes in from the right (320 -> 0,
         // 80 a frame; 480, 120 in the Android layout: battleSlideDistance) and goes out again before the next
         // comes in; it takes taps only once in. The page the logic is on is `page`; the view follows it
         struct MenuView {
             int page = -1;                 // the page shown (-1 none)
             Menu menu = Top;
-            int cursor = 0, member = 0, pick = 0, pickTop = 0, confirm = 0, targetAction = 0;
+            int cursor = 0, member = 0, pick = 0, confirm = 0, targetAction = 0;
+            float listScroll = 0;
             bool pair = false;
-            std::vector<int> picks;
+            std::vector<int> picks, pickGroup;
         } view;
         int page = 0;                      // bumped at each page change
         int viewState = 0;                 // 0 out, 1 coming in, 2 in, 3 going out, 4 held out
@@ -1335,8 +1353,9 @@ inline constexpr short kBreakTick[8][4] = {{4, 4, 96, 120},    {4, 4, 64, 120}, 
 // __dmg_prc: the digits' hop (0xcb398) and the label's (0xcb390), by (383 - timer) / 16
 inline constexpr int kDigitHop[8] = {16, 20, 15, 10, 5, 0, 0, 0}, kLabelHop[8] = {3, 6, 12, 6, 3, 0, 0, 0};
 constexpr int kPopupTime = 0x17f; // __dmg_set; 16 off a frame
-constexpr int kItemRows = 4;      // the battle lists' rows shown, 48 apart (the plates 44 tall, as the camp's)
-constexpr float kItemPitch = 48;
+// The battle's lists (__menub_mainPrc 2 / 3: MuScrList_Init(0, 4) - mode 0 of the table at 0xbc1e0, as the
+// Camp's and the shop's): drawn in tex2d units, (16, 32) into battleClick's
+constexpr float kListDx = 16, kListDy = 32;
 constexpr int kBannerFrames = 40;  // font_set_utf16's 0x28 (the action's name)
 constexpr int kMessageFrames = 60; // 0x3c: the calcs' messages and the queued ones
 // Action slots (BattleAnim): 0 standing, 1 victory, 3 back to place, 4 defending, 5 hit,
@@ -1837,6 +1856,11 @@ void stepResults(App& app);
 void drawBattleHud(App& app, float W, float H);
 void battleKey(App& app, SDL_Keycode key);
 void battleClick(App& app, float px, float py);
+void battlePressDown(App& app, float px, float py); // a touch going down on a battle page (its start)
+int geneMpCost(const App& app, int ability);         // a gene's MP in the battle (skill 132 halves it)
+void battleTouchStep(App& app);
+void battleBack(App& app);
+void battleOpenTargets(App& app, int action);
 
 // explore.cpp
 int runSelfTest(App& app);

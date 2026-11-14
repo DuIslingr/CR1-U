@@ -708,6 +708,164 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             problems += cbad;
         }
 
+        // The battle's pages as 2.2.0's __menub_mainPrc / mainPut: the gene and item lists are MuScrLists (a drag
+        // moves the rows, a tap on the line chooses, the pills jump; the last entry chosen comes back with the
+        // list, forgotten as a target is confirmed); every pick goes to the targets page (_btlord_make_select:
+        // groups and cameras; a swipe steps a group, a tap at x 92..256 confirms); the escape question in the
+        // banner with Yes / No plates; refusals; Back and Defend's motions; Options after the page has gone
+        {
+            const auto keepItems = app.game.items;
+            const bool keepPointer = app.pointerLast;
+            bool keepAway[4];
+            for (int r = 0; r < 4; ++r) keepAway[r] = app.game.flag(4077 + r), app.game.setFlag(4077 + r, false); // (both members)
+            startBattle(app, {1, 0, -1, 0}, 0);
+            App::Battle& b = app.battle;
+            std::vector<std::string> bad;
+            auto check = [&](bool ok, const char* what) { if (!ok) bad.push_back(what); };
+            auto ready = [&]() { // (the page as shown, in place)
+                b.phase = App::Battle::Command;
+                for (int f = 0; f < 16 && !battleMenuReady(app); ++f) stepBattle(app);
+            };
+            auto toFrame = [&](float x, float y, bool right, float& px, float& py) { // battleClick's units -> the frame's
+                cr::Renderer& r = app.renderer;
+                const float uiX = r.uiX(), rightX = r.phoneLayout() ? uiX : 2 * uiX;
+                const float lx = (right ? rightX : uiX) + 2 * x, ly = 2 * y;
+                float ax, ay, bx, by;
+                r.toLogical(0, 0, ax, ay), r.toLogical(1000, 1000, bx, by);
+                px = (lx - ax) * 1000 / (bx - ax), py = (ly - ay) * 1000 / (by - ay);
+            };
+            // a touch along `path` (battleClick's units), a battle frame a point, lifted at the last
+            auto touch = [&](std::vector<std::pair<float, float>> path, bool right = true) {
+                app.pointerLast = true;
+                float px, py;
+                toFrame(path[0].first, path[0].second, right, px, py);
+                app.press = App::Press{true, kPressBattle, px, py};
+                battlePressDown(app, px, py);
+                for (size_t i = 1; i < path.size(); ++i) {
+                    toFrame(path[i].first, path[i].second, right, app.press.px, app.press.py);
+                    stepBattle(app);
+                }
+                px = app.press.px, py = app.press.py;
+                app.press = App::Press();
+                battleClick(app, px, py);
+            };
+            const float lx = btlui::kListDx, ly = btlui::kListDy; // (the list's tex2d units into battleClick's)
+            int selfGene = 0, wideId = 0;
+            for (int g = cr::kFirstAbility; g <= cr::kLastAbility && !selfGene; ++g)
+                if (const cr::BattleActionDef* d = app.battleActions.get(cr::geneAction(g)); d && d->scope == 1) selfGene = g;
+            for (int id = 1; id < app.battleActions.count() && !wideId; ++id)
+                if (const cr::BattleActionDef* d = app.battleActions.get(id); d && d->scope == 7) wideId = id;
+            const std::vector<int> genes = {108, 110, 111, 94, 103, 82, 113};
+            if (b.active && !(b.rules.f[1].alive() && !b.rules.allyAuto)) bad.push_back("no-second-member");
+            else if (b.active) {
+                b.rules.f[0].mp = b.rules.f[1].mp = 999;
+                // 1: the gene list - a drag up two rows, the focus two on; a tap on the line chooses
+                ready();
+                battleChooseTop(app, 0), ready();
+                battleChooseCommand(app, 1);
+                b.picks = genes;
+                ready();
+                check(b.menu == App::Battle::Genes, "genes-open");
+                touch({{lx + 300, ly + 200}, {lx + 300, ly + 170}, {lx + 300, ly + 140}, {lx + 300, ly + 100}});
+                check(b.pick == 2, "drag-two-rows");
+                for (int f = 0; f < 12; ++f) stepBattle(app);
+                check(b.view.listScroll == 96, "rows-eased");
+                touch({{lx + 300, ly + 150 + 48 + 10}}); // (the row under the line: brought to it)
+                check(b.pick == 3 && b.menu == App::Battle::Genes, "tap-row-focus");
+                b.listScroll = 3 * 48 - 8; // (the rows still moving: no choice - MuScrList_Proc waits for them)
+                touch({{lx + 300, ly + 150 + 20}});
+                check(b.menu == App::Battle::Genes && b.pick == 3, "moving-no-choice");
+                for (int f = 0; f < 12; ++f) stepBattle(app);
+                touch({{lx + 300, ly + 150 + 10}}); // (the line: chosen - Möwe, single enemy)
+                check(b.menu == App::Battle::Targets && b.lastGene == 94, "tap-line-chooses");
+                ready();
+                battleBack(app), ready(); // (Back: the commands; the list again on the gene chosen last)
+                battleChooseCommand(app, 1);
+                b.picks = genes;
+                { const auto at = std::find(b.picks.begin(), b.picks.end(), b.lastGene); b.pick = at == b.picks.end() ? 0 : int(at - b.picks.begin()); }
+                check(b.lastGene == 94 && b.pick == 3, "list-remembers");
+                ready();
+                b.pick = 0, b.listScroll = 0;
+                touch({{lx + 300, ly + 150 - 20}}); // (over the first row: the down pill's box - to the end)
+                check(b.pick == int(genes.size()) - 1, "pill-jump");
+                // 4: a gene the MP won't pay - SE 4, no banner, the list stays
+                b.rules.f[0].mp = 0;
+                app.menuSoundLog.clear();
+                battleKey(app, SDLK_RETURN);
+                check(b.menu == App::Battle::Genes && b.banner.empty() && !app.menuSoundLog.empty() && app.menuSoundLog.back() == se::kBuzzer,
+                      "too-costly");
+                b.rules.f[0].mp = 999;
+                // 2: a self gene's targets page: the member alone (solo), Back to the commands
+                if (selfGene) {
+                    b.picks = {selfGene}, b.pick = 0;
+                    battleKey(app, SDLK_RETURN);
+                    check(b.menu == App::Battle::Targets && b.picks.size() == 1 && b.picks[0] == 0 && b.cam == 0x1c, "self-targets");
+                    ready();
+                    // 5: a tap at x 92..256 (off the plates) confirms the cursor's; the lists forget their entries
+                    touch({{0x5c + 16 + 40, 200}}, false);
+                    check(b.cmds[0].kind == cr::kCmdGene && b.cmds[0].target == 0 && b.lastGene == -1 && b.lastItem == -1, "tap-confirms");
+                } else bad.push_back("no-self-gene");
+                ready();
+                battleBack(app), ready(); // (member 1 -> member 0)
+                battleBack(app), ready(); // (-> the first page)
+                check(b.menu == App::Battle::Top, "back-to-top");
+                // pair mode: a single ally is the pair, one group under camera 0x1e; all enemies one group
+                battleChooseTop(app, 1), ready();
+                if (b.rules.pair) {
+                    battleChooseCommand(app, 1);
+                    b.picks = genes, b.pick = 0; // (Healing: single ally)
+                    ready();
+                    battleKey(app, SDLK_RETURN);
+                    check(b.menu == App::Battle::Targets && b.picks.size() == 2 && b.pickGroup.size() == 2 && b.pickGroup[0] == b.pickGroup[1] &&
+                          b.cam == 0x1e, "pair-one-group");
+                    ready();
+                    battleBack(app), ready();
+                }
+                battleBack(app), ready();
+                battleChooseTop(app, 0), ready();
+                // the targets page by touch: a swipe left steps to the next group, the camera with it
+                battleChooseCommand(app, 0), ready();
+                if (b.picks.size() >= 2) {
+                    touch({{150, 200}, {120, 200}, {90, 200}}, false);
+                    check(b.pick == 1 && b.menu == App::Battle::Targets, "swipe-steps");
+                    float px, py; // a finger held on the first plate: the cursor there before the lift
+                    toFrame(btlui::kPlateX + 100, btlui::kPlateBottom - 48.0f * float(b.picks.size()) + 20, true, px, py);
+                    app.press = App::Press{true, kPressBattle, px, py};
+                    battlePressDown(app, px, py);
+                    stepBattle(app);
+                    check(b.pick == 0 && b.camHeld && b.menu == App::Battle::Targets, "held-plate-cursor");
+                    app.press = App::Press(), b.touch = App::Battle::Touch();
+                }
+                // scope 7: everyone one group under the field's camera
+                if (wideId) {
+                    battleOpenTargets(app, wideId);
+                    bool one = !b.pickGroup.empty();
+                    for (int gr : b.pickGroup) one = one && gr == b.pickGroup[0];
+                    check(one && b.cam == b.formation + 0xc, "everyone-one-group");
+                }
+                ready();
+                battleBack(app), ready();
+                // Items: open with SE 2 even with none in the bag
+                for (int n = 21; n <= 46; ++n) app.game.items.erase(n);
+                app.menuSoundLog.clear();
+                battleChooseCommand(app, 2);
+                check(b.menu == App::Battle::Items && b.picks.empty() && !app.menuSoundLog.empty() && app.menuSoundLog.back() == se::kChoose,
+                      "empty-items-open");
+                ready();
+                battleBack(app), ready(); // (the commands)
+                battleBack(app), ready(); // (the first page)
+                endBattle(app, false);
+                app.runner.stop();
+            } else bad.push_back("no-battle");
+            app.game.items = keepItems;
+            app.pointerLast = keepPointer;
+            for (int r = 0; r < 4; ++r) app.game.setFlag(4077 + r, keepAway[r]);
+            std::string list;
+            for (const std::string& w : bad) list += " " + w;
+            std::printf("battle menus (2.2.0's lists, targets, refusals): %zu problems%s\n", bad.size(), list.c_str());
+            problems += int(bad.size());
+        }
+
         // The bosses' staged actions (btlact_430..436): each plays its own slot (the boss models'
         // 14th / 15th, read past the usual 13), steps through its cameras, flashes and shakes
         // where it has them, hits at its frame and ends after its wait; hits shake the screen;
@@ -7999,7 +8157,32 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         const int reflectAt = reflect && v.find('@') != std::string::npos ? SDL_atoi(v.c_str() + v.find('@') + 1) : 60;
         if (reflect)
             for (int i = 2; i < 5; ++i) b.rules.f[size_t(i)].status[cr::kStatusBarrier] = 5;
-        if (v == "genes" || v == "genehit" || reflect) battleChooseTop(app, 0), battleChooseCommand(app, 1);
+        // genes[@n]: the gene list, its row n on the focus line; genetarget<id>: gene <id> chosen, its targets page
+        const bool geneList = v == "genes" || v.rfind("genes@", 0) == 0, geneTargets = v.rfind("genetarget", 0) == 0;
+        if (geneList || geneTargets || v == "genehit" || reflect) battleChooseTop(app, 0), battleChooseCommand(app, 1);
+        if (const char* gl = SDL_getenv("CR_CAPTURE_GENES"); gl && (geneList || geneTargets)) { // (captures: the list's entries, ability ids)
+            b.picks.clear();
+            for (const char* q = gl; *q;) {
+                char* end = nullptr;
+                const long id = std::strtol(q, &end, 10);
+                if (end == q) break;
+                b.picks.push_back(int(id));
+                q = *end == ',' ? end + 1 : end;
+            }
+            for (int id : b.picks) std::printf("gene %d: %s, MP %d\n", id, itemName(app, id).c_str(), geneMpCost(app, id));
+        }
+        if (geneList && v.size() > 6) b.pick = std::clamp(SDL_atoi(v.c_str() + 6), 0, std::max(0, int(b.picks.size()) - 1));
+        if (geneTargets) {
+            for (size_t i = 0; i < b.picks.size(); ++i)
+                if (b.picks[i] == SDL_atoi(v.c_str() + 10)) b.pick = int(i);
+            if (!b.picks.empty()) battleChooseGene(app, b.picks[size_t(b.pick)]);
+        }
+        // (a page chosen above: in place, as a player sees it before the next tap - __menub_mainPrc's slides)
+        if (v == "commands" || v == "targets" || v == "items" || v == "escape" || geneList || geneTargets)
+            for (int f = 0; f < 16 && b.active && b.phase == App::Battle::Command && !battleMenuReady(app); ++f) stepBattle(app);
+        if (geneList || geneTargets)
+            std::printf("battle view %s: page %d, %zu picks, focus %d, action %d scope %d\n", v.c_str(), int(b.menu), b.picks.size(), b.pick,
+                        b.targetAction, app.battleActions.get(b.targetAction) ? app.battleActions.get(b.targetAction)->scope : -1);
         if (reflect) {
             for (size_t i = 0; i < b.picks.size(); ++i)
                 if (b.picks[i] == 94) b.pick = int(i);

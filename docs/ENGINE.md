@@ -595,6 +595,25 @@ c101/c102/c104/m207a, 2026-10-12).
       effects (`FrmPlayEff` / `FrmPlayEff2` on an NPC, the leader or a record's point and angle,
       `FrmStopEff` / `FrmStopEff2`) and the scripts' call 2023 (`Uty_eff3d_set_fld`); `crtool
       effects <dataHD>` lists `eff.bin`
+- [x] The battle's pages as 2.2.0's `__menub_mainPrc` / `__menub_mainPut`: **Genes** and **Items** are
+      MuScrLists (`MuScrList_Init(0, 4)`: mode 0, as the Camp's and the shop's) - rows at tex2d (192,
+      150 + 48k - offset) cut to 76..280, the focus row on the line lit, a drag moving the rows, a tap
+      on the line choosing (with the rows at rest), another tapped coming to it, the jump pills (0x8c /
+      0x8d at x 280), `ComUty_GuageBarDraw`'s gauge with its arrows at (456, 72), the HELP board and
+      Back, all sliding with the page; keys step the focus and stop at the ends. The entry chosen last
+      from each list is its focus when it opens again (`FUN_00055ce4` / `FUN_00055d30`), forgotten as
+      a target is confirmed (`_MuScrList_BattleClrItem`). Every pick - an attack, a gene, an item, a
+      self or whole-side one too - goes to the targets page (state 900, `_btlord_make_select`): the
+      scope's fighters (the fallen and the fled left out but for the revivals 0x6c / 0xe6), each with
+      its camera and group - a whole side one group, everyone (scope 7) one group under formation +
+      0xc, the pair in pair mode one group under 0x1e; every plate of the cursor's group lit;
+      "Target: ..." (57066 + scope) in the banner. By touch (0x385) a finger on a plate moves the
+      cursor and the camera (eased, held) before the lift confirms it; a touch from off the plates
+      pans the 3D (`FUN_00017668`, 48 at most) and, swiped over 48 sideways, steps a group; a tap at x
+      92..256 confirms the cursor's. Refusals: a gene the MP won't pay SE 4 alone (`GetChoiceListNo`
+      -4); Genes refused only while sealed (+0x8f; the plate dimmed for it alone), an empty list
+      opens, Items always opens with SE 2. `--battle-view genes[@n]` / `genetarget<id>` (with
+      `CR_CAPTURE_GENES=id,id,...` the list's entries) capture them.
 - [x] Story battles' line-ups (`btl_prty_init`): a member alone, a guest beside the leader
       (Olgar / Ayuta, level + 5, acting by itself in the original's rotation) or the partner away
       while the story keeps them apart; monsters that act twice a round; Asura Lotus's 2-5

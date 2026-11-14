@@ -1235,7 +1235,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const int screen = pressScreen(app);
             if (app.campOpen) campPointerDown(app, px, py);
             else if (screen == kPressBattle && !battleMenuPress(app)) battleClick(app, px, py);
-            else if (screen) app.press = App::Press{true, screen, px, py};
+            else if (screen) {
+                app.press = App::Press{true, screen, px, py};
+                if (screen == kPressBattle) battlePressDown(app, px, py); // (where it went down: drags, swipes)
+            }
             break;
         }
         if (app.staffRoll.open) { // _pad_chk_updw_box(-16, -32, 512, 384): the end card's tap
