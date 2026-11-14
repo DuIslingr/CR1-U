@@ -199,12 +199,14 @@ const char* mctFormatName(int format) {
 }
 
 bool decodeMct(const std::vector<uint8_t>& file, Image& out, MctInfo* info, std::string* error) {
-    if (file.size() >= 12 && std::memcmp(file.data(), "MCT_", 4) == 0 && std::memcmp(file.data() + 9, "GXT", 3) == 0) {
-        // the Vita's form of the same texture ("MCT_", id, a byte, then a GXT; gxt.hpp)
+    if ((file.size() >= 12 && std::memcmp(file.data(), "MCT_", 4) == 0 && std::memcmp(file.data() + 9, "GXT", 3) == 0) ||
+        (file.size() >= 4 && std::memcmp(file.data(), "GXT", 4) == 0)) {
+        // the Vita's form of the same texture ("MCT_", id, a byte, then a GXT; gxt.hpp) - or a bare GXT
+        // (a fan translation's own, id 0)
         if (!decodeGxt(file, out, error)) return false;
         if (info) {
             *info = MctInfo();
-            info->texId = rd16(file.data() + 4);
+            info->texId = file[0] == 'M' ? rd16(file.data() + 4) : 0;
             info->width = out.width, info->height = out.height;
         }
         return true;
