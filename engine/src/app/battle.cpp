@@ -346,6 +346,7 @@ constexpr short kNode[100] = {0,    0,    0,    0,    0,    0,    0,    0,    0,
 constexpr int kHit = 0x18, kCritical = 0x19, kFall = 0x1a, kFixed = 0x1c, kSacrifice = 0x22, kGene = 0x23,
               kStatus = 0x24, kDrain = 0x25, kHeal = 0x2f, kRevive = 0x31, kCast = 0x15, kBuff = 0x35, kAnalyze = 0x36;
 } // namespace effects
+int effectNode(int id) { return id >= 0 && id < 100 ? effects::kNode[id] : 0; }
 
 LoadedModel* effectModel(App& app, int id) {
     if (id < 0 || id >= 100) return nullptr;
@@ -1092,7 +1093,14 @@ std::vector<int> battleGeneList(const App& app) {
     if (b.rules.pair)
         for (int g : cr::usableAbilities(app.game, b.rules.f[1].character))
             if (std::find(out.begin(), out.end(), g) == out.end()) out.push_back(g);
-    std::sort(out.begin(), out.end());
+    // (FUN_0001c0e4 13779-13800: in the order of the table at 0xc6db0, not by id)
+    static const int kOrder[] = {108, 112, 110, 111, 102, 109, 92, 93, 94, 95, 96, 97, 89, 90, 91, 81, 83,
+                                 87, 98, 99, 100, 101, 103, 86, 104, 85, 105, 106, 107, 82, 84, 88, 113};
+    auto rank = [](int g) {
+        const int* at = std::find(std::begin(kOrder), std::end(kOrder), g);
+        return at == std::end(kOrder) ? 1000 + g : int(at - std::begin(kOrder));
+    };
+    std::stable_sort(out.begin(), out.end(), [&](int x, int y) { return rank(x) < rank(y); });
     return out;
 }
 int battleGeneMp(const App& app) { // __GetBtlGeneMp: the lower of the pair's
@@ -1324,9 +1332,9 @@ void stepQuake(App::Battle::Quake& q) {
         o = v;
     }
     q.now = q.from + (q.to - q.from) * float(q.frame) / float(q.frames);
-    if (++q.frame >= q.frames) {
-        q.frame = q.frames;
-        if (q.mode == 1 || std::fabs(q.now) < 1e-4f) q.mode = 0;
+    if (++q.frame >= q.frames) { // (Quake::update 53566-53580: a held one ends once its target is near zero; the
+        q.frame = q.frames;         // offsets cleared in the same call)
+        if (q.mode == 1 || std::fabs(q.to) < 1e-4f) q.mode = 0, q.off[0] = q.off[1] = 0;
     }
 }
 
@@ -2519,7 +2527,7 @@ void stepMenuView(App& app) {
         b.slide = std::max(0, b.slide - dist / 4);
         if (b.slide == 0) {
             b.viewState = 2;
-            if (v.menu == App::Battle::Top) app.sound.play(0x22); // (__menub_mainPrc 1 -> 2: the top menu in place)
+            if (v.menu == App::Battle::Top) app.sound.play(0x46); // (__menub_mainPrc 1 -> 2, 11914: __effgo(0x46) - the top menu in place)
         }
         return;
     case 2: live(); return;
