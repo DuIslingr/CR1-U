@@ -471,6 +471,7 @@ static void logTee(void* data, int category, SDL_LogPriority priority, const cha
     (void)data;
 }
 static void startLogFile(int argc, char** argv) {
+    if (gLogFile) return; // (a start run again - after the setup, Look again -: the same log)
     for (int i = 1; i < argc; ++i)
         for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
             if (SDL_strcmp(argv[i], f) == 0) return;
@@ -524,24 +525,27 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     // (beside the program, the .app or the AppImage; on Android its folder on the shared storage) -
     // the iOS data the game, the others its add-ons (each switched off in Options), else the Vita
     // copy alone, else the Android release alone
-    // (an .ipa copied into ios/ by hand, an Android release's .xapk / .apks / .zip into android/: unpacked there
-    // first, under a progress window, once - as CR3-U does; the Vita's encrypted dump below. Not when a copy is given)
+    // A release copied in by hand as it comes - an .ipa into ios/, an .xapk / .apks into android/ -:
+    // unpacked there first, with a progress window, so this start finds it as it would the files
+    // themselves (platform/setup.hpp) - no first-start setup, no other start (the Vita's encrypted dump
+    // below, the same way). Not for a copy given (--data / CR_DATA; --android / CR_ANDROID); a capture's,
+    // a test's: logged, no messages
     {
-        bool given = SDL_getenv("CR_DATA") != nullptr, quiet = false;
+        bool quiet = false, dataGiven = SDL_getenv("CR_DATA") != nullptr, androidGiven = SDL_getenv("CR_ANDROID") != nullptr;
         for (int i = 1; i < argc; ++i) {
-            for (const char* f : {"--data", "--vita", "--android"})
-                if (SDL_strcmp(argv[i], f) == 0) given = true;
             for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
                 if (SDL_strcmp(argv[i], f) == 0) quiet = true;
+            if (SDL_strcmp(argv[i], "--data") == 0) dataGiven = true;
+            if (SDL_strcmp(argv[i], "--android") == 0) androidGiven = true;
         }
-        if (!given) {
 #if !defined(SDL_PLATFORM_IOS)
+        if (!dataGiven)
             for (const std::string& place : cr::gameFolders())
                 if (cr::installDroppedIpa(crSetupGame(), place, quiet)) break;
 #endif
+        if (!androidGiven)
             for (const std::string& place : cr::gameFolders())
                 if (cr::installDroppedAndroid(crSetupGame(), place, quiet)) break;
-        }
     }
     app->dataDir = cr::findDataDir(argc, argv);
     const std::string beside = [] {
@@ -700,16 +704,32 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             return SDL_AppInit(state, argc, argv); // (found now, as on any start)
         }
 #endif
-        std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here:\n" +
+        bool plainStart = true; // (a test's, a tool's: the message alone, nothing waited for)
+        for (int i = 1; i < argc; ++i)
+            for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
+                if (SDL_strcmp(argv[i], f) == 0) plainStart = false;
+        std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here, then Look again:\n" +
                           (g.empty() ? std::string("(no folder)") : g.front()) +
-                          "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app), or the .ipa (unpacked on the next start)"
-                          "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK, or its .xapk"
-                          "\n            (unpacked on the next start)"
+                          "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app), or its .ipa (unpacked there)"
+                          "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK,"
+                          "\n            or its .xapk / .apks (unpacked there)"
                           "\n  vita/     the Vita's PCSG00497 folder, or a NoNpDrm dump's folder (the Prequel Trilogy's with its"
-                          "\n            addcont/ beside its app/: decrypted here on the next start)\n\nAlso looked in:";
+                          "\n            addcont/ beside its app/: decrypted there)\n\nAlso looked in:";
         for (size_t k = 1; k < g.size(); ++k) msg += "\n" + g[k];
         msg += "\n\nThe README's \"Your copy\" has the details.";
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings", msg.c_str(), nullptr);
+        SDL_Log("data: no copy of the game found");
+        static const SDL_MessageBoxButtonData kButtons[] = {
+            {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Look again"},
+            {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Quit"},
+        };
+        const SDL_MessageBoxData box{SDL_MESSAGEBOX_ERROR, nullptr, "Chaos Rings", msg.c_str(), 2, kButtons, nullptr};
+        int pressed = 0;
+        if (plainStart && SDL_ShowMessageBox(&box, &pressed) && pressed == 1) { // (what was put in meanwhile: found - unpacked, decrypted - as on any start)
+            delete app;
+            *state = nullptr;
+            return SDL_AppInit(state, argc, argv);
+        }
+        if (!plainStart) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Chaos Rings", msg.c_str(), nullptr);
         return SDL_APP_FAILURE;
     }
 

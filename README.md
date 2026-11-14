@@ -69,16 +69,16 @@ folder above). The release downloads already have these folders, each with a `RE
 
 ```
 <game folder>/
-├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), Payload/... as unpacked - or the .ipa itself, unpacked on the next start
-├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex) - or an .xapk / .apks / .zip holding them, unpacked on the next start
-├── vita/       PCSG00497/ as installed - or a NoNpDrm dump's app/ (and addcont/), decrypted on the next start
+├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), Payload/... as unpacked - or the .ipa itself, unpacked there when the game starts
+├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex) - or its .xapk / .apks, unpacked there when the game starts
+├── vita/       PCSG00497/ as installed - or a NoNpDrm dump's app/ (and addcont/), decrypted there when the game starts
 ├── fsr4/       optional: AMD FSR 4's files (see Settings)
 ├── textures/   optional: export/ and hd/ for HD textures
 └── models/     optional: export/ and hd/ for HD models
 ```
 
-A hand-placed `.ipa` or Android bundle is unpacked once, under a progress window, on the first start that finds it (listed in
-that folder's `.unpacked`, so it isn't unpacked again); it can be deleted afterwards. Each release may sit one or two folders down (as it was unpacked or installed), and the folder
+A hand-placed `.ipa` or Android `.xapk` / `.apks` is unpacked once, under a progress window, by the start that finds it -
+which then goes on with it (listed in that folder's `.unpacked`, so it isn't unpacked again); it can be deleted afterwards. Each release may sit one or two folders down (as it was unpacked or installed), and the folder
 names below `ios/`, `android/` and `vita/` don't matter. Older places still work too: `dataHD/`,
 `data/`, `ChaosRingsHD.app/` or `Payload/` straight in the game folder.
 
@@ -192,7 +192,7 @@ share. The rules (sizes, names, the Vita's `.cralias` links, what the model load
 
 - **"No copy found" / the setup opens every time:** check the folder layout above; the program
   lists where it looked. A release can be one or two folders down, not deeper.
-- **A Vita dump isn't picked up:** a dump in `vita/` is decrypted on the next start and needs room
+- **A Vita dump isn't picked up:** a dump in `vita/` is decrypted when the game starts and needs room
   for the decrypted copy. An archive (`.zip`, `.rar`, `.7z`, `.vpk`) has to go through the setup.
 - **Vulkan doesn't start:** the game falls back to OpenGL by itself; `--renderer gl` forces it.
 - **FSR 4 isn't offered:** Options, Graphics says why next to the Upscaler, and the game's log

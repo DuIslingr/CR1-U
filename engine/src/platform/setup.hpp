@@ -5,7 +5,7 @@
 // the files the port needs are copied into the game folder, the same layout in every port:
 //
 //   ios/<name>.app/      the .ipa's app, unpacked
-//   android/             the APK and its OBB (or the .apks)
+//   android/             the APK and its OBB (an .xapk's or .apks' unpacked there: read as they are)
 //   vita/<title id>/     the Vita game's folder as Vita3K installs it (ux0/app/<id>: eboot.bin, sce_sys/,
 //                        the game's own folder); the Prequel Trilogy's PCSG00457/ with this game's folder in
 //                        it, its add-on's data (ux0/addcont/PCSG00457/<addon>/<game>/) merged into that
@@ -71,16 +71,12 @@ bool installDroppedVita(const SetupGame& game, const std::string& folder, SetupR
 // done. Nothing to do (no .ipa there, one unpacked already, or an unpacked .app there): false at once
 bool installDroppedIpa(const SetupGame& game, const std::string& folder, bool quiet = false);
 
-// An Android release's bundle - an .xapk (the APK with its Android/obb/<package>/main.*.obb), an .apks
-// or a .zip holding them - copied by hand into the game folder's android/: its APKs and main.*.obb
-// unpacked beside it, with a progress window, once - android/.unpacked lists those done. Nothing to
-// do (no bundle there, one unpacked already, or android/ whole already): false at once
+// The Android release as a bundle copied by hand into the game folder's android/ - an .xapk (its APKs
+// and Android/obb/<package>/main.*.obb), an .apks (its APKs; the OBB beside it), a .zip holding the
+// OBB -: its OBB and APKs unpacked there (as the setup's Android button does), with a progress
+// window, once - android/.unpacked lists those done. Nothing to do (no bundle there, one unpacked
+// already, or the release read there as it is): false at once. True: the release is there now
 bool installDroppedAndroid(const SetupGame& game, const std::string& folder, bool quiet = false);
-
-// A bundle's (.xapk / .apks / .zip) APKs and main.*.obb unpacked into `dir` by their own names; true
-// with at least one of them. `progress` (0 .. 1) as it goes
-bool unpackAndroidBundle(const std::string& bundle, const std::string& dir, std::string* error,
-                         const std::function<void(double)>& progress = {});
 
 // (CR3-U) The fan translation's archive - the .rar or .zip it comes in - copied by hand into the
 // game folder's translation/: unpacked into translation/<id>/, with a progress window. Nothing to do
@@ -89,6 +85,11 @@ bool installDroppedPatch(const SetupGame& game, const std::string& folder, bool 
 
 // whether CRU_SETUP_ANSWERS answers it (a test's run: no windows)
 bool setupScripted();
+
+// A progress window for a long step outside the setup: called with the item in course and 0 .. 1 of
+// the whole, it opens at the first call (SDL's video started if it isn't) and closes when the last
+// copy of the function goes. Under CRU_SETUP_ANSWERS: logged alone
+std::function<void(const std::string&, double)> progressWindow(const SetupGame& game, const std::string& what);
 
 // An .ipa's Payload/<name>.app unpacked into `folder` (<folder>/<name>.app/); its path in `app`.
 // `progress` (0 .. 1) as it goes
