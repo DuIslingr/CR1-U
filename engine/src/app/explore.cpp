@@ -3923,7 +3923,7 @@ int runSelfTest(App& app) {
         const int effects = app.mix.effects;
         optionsKey(app, SDLK_LEFT);
         problems += app.mix.effects != std::max(0, (effects + 5) / 10 * 10 - 10);
-        problems += expectSounds("options gauges", {4, 4, 40}); // the BGM's is silent
+        problems += expectSounds("options gauges", {1, 1, 40}); // the BGM's is silent (the pad's moves SE 1, the Vita's)
         { // the < Back > bar's parts: the arrows turn the page, Back alone closes (ComUty_CmdBack 2)
             const bool parts = optionsBackPart(200, kOptBackY + 12) == -1 && optionsBackPart(300, kOptBackY + 12) == 0 &&
                                optionsBackPart(400, kOptBackY + 12) == 1 && optionsBackPart(300, kOptBackY - 40) == 2;
@@ -3939,7 +3939,7 @@ int runSelfTest(App& app) {
         problems += app.optionsPage != kOptionPages - 1;
         optionsKey(app, SDLK_UP);    // from row 0 to Back
         problems += app.optionsRow != kOptionsBackRow;
-        problems += expectSounds("options buttons, page", {2, 2, 3, 4});
+        problems += expectSounds("options buttons, page", {2, 2, 3, 1});
         // Graphics: Anti-aliasing steps through MSAA to FSR Native AA and DLAA (the upscaler at
         // native size), the Upscaler row on to its other modes
         if (app.renderer.scalable()) { // (OpenGL: the row is off)
@@ -4231,7 +4231,7 @@ int runSelfTest(App& app) {
         const size_t noticePages = app.dialogue.size();
         rbad += app.resumeNotice != 1 || app.resumePrompt || !app.game.flag(0x44) || !app.game.flag(3) || noticePages < 1 ||
                 !app.interruptShown || !app.titleOpen;
-        problems += expectSounds("title tap, Start", {0, 2});
+        problems += expectSounds("title tap, Start", {0, 2, 6}); // (the Progress Tracker notice: MsgUty_WinOpen's SE 6)
         for (int f = 0; f < 3; ++f) { app.lastTicks = 0; drawFrame(app, false); ++frames; }
         for (int f = 0; f < 800 && app.resumeNotice == 1; ++f) {
             stepEvents(app);
@@ -4756,7 +4756,7 @@ int runSelfTest(App& app) {
         shopKey(app, SDLK_RETURN);
         shopKey(app, SDLK_RETURN); // one, for half the price
         problems += app.game.oz != 875 || app.game.items[201] != 1 || app.shop.phase != App::Shop::List;
-        problems += expectSounds("shop: Back, Back, Back, Sell, Weapons, Escher, the sword, Yes", {3, 3, 3, 4, 2, 4, 2, 2, 2, 22});
+        problems += expectSounds("shop: Back, Back, Back, Sell, Weapons, Escher, the sword, Yes", {3, 3, 3, 1, 2, 1, 2, 2, 2, 22});
         app.lastTicks = 0;
         drawFrame(app, false);
         ++frames;
@@ -4869,7 +4869,7 @@ int runSelfTest(App& app) {
         problems += !app.campOpen;
         steps(5);
         problems += app.campOpen + errs;
-        problems += expectSounds("camp", {2, 2, 2, 2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 4, 2, 5, 3, 3, 9});
+        problems += expectSounds("camp", {6, 7, 2, 6, 7, 2, 2, 2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 1, 2, 5, 3, 3, 9}); // (the two notices' 6 / 7)
         app.mapNumber = campMap;
         std::printf("camp: 56010 / 56016 first, 3 seeds +%d attack, Plum to MP %d, Bastard Sword worn, status page and list; %d "
                     "frames, %d render API errors; %d problems\n", atk1 - atk0, app.game.party[0].mp, frames, errs, problems);

@@ -209,6 +209,7 @@ struct BattleTurn {
     bool gone = false;           // calc 11: the enemy fled
     int escapeChance = 0;
     std::vector<BattleNotice> notices; // the calcs' queued messages (the scene shows them in turn)
+    int chimes = 0;              // abilities / skills (81..186) into the bag: SE 0x12 each (FUN_0002ae14 / FUN_0002aa8c)
 };
 
 class BattleRules {
@@ -277,6 +278,10 @@ public:
     bool nextTurn(const BattleActionTable& actions, BattleTurn& out);
     // Statuses count down, defending ends, the untouched holder gains (btlord_chk)
     void endRound();
+    // The round's end as endRound left it for the scene: poison's ticks (SE 0x5a each - btlcalc_status_prc
+    // 24690-24693), who fell to it (btlcalc_chk_dead 24748: the burst, fade and fall), the chimes of their rewards
+    std::vector<int> roundPoisoned, roundFell;
+    int roundChimes = 0;
     // 0 still going, 1 escaped, 2 won, 3 lost
     int outcome() const;
     // Applies the battle to the save: MP, and when they won the experience, Oz, drops and genes
@@ -335,6 +340,7 @@ private:
     std::vector<Entry> queue_;
     size_t next_ = 0;
     std::vector<BattleNotice> notices_; // this action's, handed to BattleTurn::notices
+    int chimes_ = 0;                    // this action's SE 0x12s
     int note_ = 0;                      // a message the calcs show at once (an immunity), 0 none
     int noteValue_ = 0;                 // ... the item it names (a gene learned)
     bool cancelTried_ = false;          // G+0xaa: Trompe-L'oeil's cancel came up (once a battle)

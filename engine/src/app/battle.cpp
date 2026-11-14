@@ -2217,6 +2217,7 @@ void showHits(App& app) {
             !pages.empty() && !pages[0].empty())
             setBanner(app, pages[0][0], btlui::kMessageFrames);
     }
+    for (int k = 0; k < b.turn.chimes; ++k) app.sound.play(0x12); // (FUN_0002ae14: an ability or skill into the bag - video 02 485.4 s)
     if (b.turn.kind == cr::kCmdGene && b.turn.action == 0xe9) startAnalyze(app); // btlact_gene 2000: 0xe9 -> 0xc1c
     for (const cr::BattleNotice& n : b.turn.notices) // btl_add_msgque: one waiting per fighter
         if (std::none_of(b.notices.begin(), b.notices.end(), [&](const cr::BattleNotice& q) { return q.fighter == n.fighter; }) &&
@@ -2266,11 +2267,11 @@ void showHits(App& app) {
         } else if (h.amount > 0 && a->slot != btlui::kSlotGuard)
             playSlot(app, *a, btlui::kSlotHit, btlui::kSlotIdle, true);
     }
-    // The calcs' sounds (__effgo in btlcalc_*, a target at a time; each heard once an action)
+    // The calcs' sounds (__effgo in btlcalc_*, a target at a time; each call its own)
+    // (_btlcalc_prc 21989-22000 calls the calc once a target and each call plays its own __effgo: an area action
+    // starts as many copies as it has targets, stacking - the engine overlaps a repeated sound, 16 slots)
     std::vector<uint32_t> sounds;
-    auto sound = [&](uint32_t id) {
-        if (std::find(sounds.begin(), sounds.end(), id) == sounds.end()) sounds.push_back(id);
-    };
+    auto sound = [&](uint32_t id) { sounds.push_back(id); };
     auto healSound = [&](int healed) { sound(healed < 2000 ? 0x57 : healed < 5000 ? 0x58 : 0x59); }; // (by the HP healed)
     bool areaSounded = false;
     auto calcSound = [&](int calc, const cr::BattleHit& h, int user, int ue, bool area, int element) {
@@ -2576,6 +2577,19 @@ void endRound(App& app) {
     const bool wonBefore = b.rules.outcome() == 2; // (btlord_chk's win at 799, before the round's end)
     battletalk::rules(app); // (status_prc's boss rules as the round ends)
     b.rules.endRound();
+    for (int i : b.rules.roundPoisoned) { (void)i; app.sound.play(0x5a); } // (btlcalc_status_prc 24690-24693: each poisoned one)
+    for (int t : b.rules.roundFell) // (btlcalc_chk_dead 24541-24548 at 24748: a fall to poison as one to a blow)
+        if (App::Battle::Actor* a = battleActor(app, t)) {
+            const cr::Fighter& f = b.rules.f[size_t(t)];
+            const cr::MonsterDef* def = a->enemy ? f.def : nullptr;
+            if (def && def->strongGrowth) playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle, true);
+            else {
+                if (a->enemy) a->fading = true, a->alpha = std::max(0.0f, a->alpha - 1.0f / 20.0f);
+                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown, true);
+            }
+            if (t >= 2 && def && !def->strongGrowth) spawnEffect(app, effects::kFall, t), app.sound.play(0x5e);
+        }
+    for (int k = 0; k < b.rules.roundChimes; ++k) app.sound.play(0x12);
     for (int k = 0; k < 2; ++k) // the guard pose ends with the round: played to its end, then the idle (nextanm 0)
         if (App::Battle::Actor* a = battleActor(app, k); a && a->slot == btlui::kSlotGuard) endIntoIdle(*a);
     for (int i = 0; i < 5; ++i) b.shownHp[i] = b.rules.f[size_t(i)].hp, b.shownMp[i] = b.rules.f[size_t(i)].mp;

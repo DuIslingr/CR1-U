@@ -1684,6 +1684,7 @@ void openCamp(App& app) {
 // over the Camp, its windows and the mask down until the message is read
 void campNotice(App& app, int id) {
     app.camp.notice = id;
+    menuSound(app, se::kWinOpen); // (_MsgUty_WinOpen 76973: SE 6; its close 7, 77165)
     showMessages(app, {id});
 }
 
@@ -2069,6 +2070,7 @@ void stepCamp(App& app) {
     if (c.notice && app.dialogue.empty()) { // the message closed: on to what was asked (CampMain 2)
         const int id = c.notice;
         c.notice = 0;
+        menuSound(app, se::kWinClose); // (_MsgUty_WinClose 77165)
         c.anim = 0;
         if (id == 56016) campOpenPage(app, 0, false);
     }
@@ -3673,6 +3675,7 @@ void offerResume(App& app) {
         app.interruptShown = true;
         app.game.setFlag(3, true); // 0x10: SetFlag(3), MsgUty_WinOpen(0x24)
         app.dialogue.clear();
+        menuSound(app, se::kWinOpen); // (_MsgUty_WinOpen 76973)
         showMessages(app, {kManualFirstPage + 0x24});
         app.resumeNotice = 1;
         return;
@@ -3711,6 +3714,7 @@ void resumeClick(App& app, float px, float py) {
 // windows' slide (4 frames), the board's mark, the answer's countdown
 void stepResume(App& app) {
     if (app.resumeNotice == 1 && app.dialogue.empty()) {
+        menuSound(app, se::kWinClose); // (_MsgUty_WinClose 77165)
         app.game.setFlag(3, false);
         app.resumeNotice = 0;
         openResumePrompt(app);

@@ -757,6 +757,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         if (e.actors[0] < 2) soloMember_ = e.actors[0];
         out = BattleTurn();
         notices_.clear();
+        chimes_ = 0;
         note_ = 0, noteValue_ = 0;
         out.kind = e.kind;
         out.action = e.action;
@@ -1127,6 +1128,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                     if (item <= 0) continue;
                     x.robbed = true;
                     stolen.push_back(item);
+                    if (item >= 81 && item <= 186) ++chimes_; // (FUN_0002aa8c 24052-24059: SE 0x12)
                     out.message = 0; // the catch is queued instead, one message an item
                     notice(-item, 5);
                 }
@@ -1201,6 +1203,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         catchUpBreak();
         firstTarget_ = -1;
         out.notices = notices_;
+        out.chimes = chimes_;
         if (!out.message) out.message = note_, out.messageValue = noteValue_;
         return true;
     }
@@ -1222,11 +1225,14 @@ void BattleRules::endRound() {
     // back to full) - with its Invincible (a pair's either member), Endure and chk_karaok rules;
     // falling to it is btlcalc_chk_dead's fall (no Break event: +0xafa)
     const int party[2] = {0, f[1].present ? 1 : -1};
+    roundPoisoned.clear(), roundFell.clear();
+    chimes_ = 0;
     for (int i = 0; i < 5; ++i) {
         Fighter& x = f[size_t(i)];
         if (!x.alive()) continue;
         x.counterStance = false;
         const bool poisoned = x.status[kStatusPoison] > 0;
+        if (poisoned) roundPoisoned.push_back(i);
         for (int k = 0; k < kStatusCount; ++k)
             if (k != kStatusEndure && x.status[k] > 0) --x.status[k];
         if (has(i, 138)) x.mp = std::min(x.mpMax, x.mp + x.mpMax / 20);
@@ -1237,8 +1243,9 @@ void BattleRules::endRound() {
         if (keepAlive && i >= 2 && d > 0 && x.hp - d < 1) d = std::max(0, x.hp - 1);
         x.hp = std::clamp(x.hp - d, 0, x.hpMax);
         if (x.hp == 0 && x.status[kStatusEndure]) x.status[kStatusEndure] = 0, x.hp = 1;
-        if (x.hp == 0) fall(i, party, true);
+        if (x.hp == 0) fall(i, party, true), roundFell.push_back(i);
     }
+    roundChimes = chimes_;
     for (Fighter& x : f) x.guarding = false;
 }
 
@@ -1296,6 +1303,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
             if (lv >= 40 && random(3) == 1) item = row(0xc4);
             else item = lv >= 20 && random(2) ? row(0xc2) : row(0xc0);
             if (item >= 81 && item <= 186) { // FUN_0002ae14: an ability or skill into the bag at once, no result line
+                ++chimes_; // (24221: __effgo(0x12))
                 if (std::find(learned.begin(), learned.end(), item) == learned.end()) learned.push_back(item);
             } else if (item > 0 && drops.size() < 16) drops.push_back(item); // (+0xa58: 16 slots - one past them is lost)
         }
@@ -1312,7 +1320,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
                 const int g = row(0xb4 + 2 * k);
                 if (lv >= kFrom[k] && g > 0 && !knows(g) &&
                     std::find(learned.begin(), learned.end(), g) == learned.end()) {
-                    learned.push_back(g), learnedNew = true;
+                    learned.push_back(g), learnedNew = true, ++chimes_; // (FUN_0002ae14, 24346: SE 0x12)
                     note_ = isSkill(g) ? 57050 : 57049, noteValue_ = g; // (btlcalc_0506's line, at once)
                     break;
                 }

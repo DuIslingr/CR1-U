@@ -1152,8 +1152,9 @@ constexpr uint32_t kSaved = 11;  // SaveLoadPrc, after SaveData_Save
 constexpr uint32_t kLoaded = 12; // SaveLoadPrc: Yes to Load / New
 constexpr uint32_t kPaid = 22;   // ShopPrc
 constexpr uint32_t kVolume = 40; // MuOptionSetInfo: the SE gauge let go (the BGM gauge is silent)
-// The original is touch-only, so it has no cursor sound; keyboard cursor moves are the port's own
-constexpr uint32_t kCursor = 4;
+// iOS is touch-only; a pad's cursor move is the Vita's: __effgo(1) (FUN_810085d8, Vita decomp 5678-5730 - the
+// field bar, OptionPrc, StartPrc, the battle's top page, the Yes / No) - not 4, the refusal
+constexpr uint32_t kCursor = 1;
 // MuScrList_Draw (2.2.0 0x57b28): __effgo(1) whenever another row comes to a list's focus line -
 // every MuScrList list (the Camp's, the shop's, the World Select's, the manual's, the battle's)
 constexpr uint32_t kListFocus = 1;
