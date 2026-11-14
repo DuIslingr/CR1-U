@@ -7580,7 +7580,11 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         }
         if (!SDL_getenv("CR_CAPTURE_TUTORIALS")) // the battles' tutorials seen (else the first one holds the view)
             for (int f : {0xff1, 0xff2, 0xff3, 0xff4, 0xff5, 0xfa8, 0xfa9}) app.game.setFlag(f, true);
-        // (CR_BATTLE_STRIKE: 1 the party strikes first, 2 an ambush)
+        // (CR_BATTLE_STRIKE: 1 the party strikes first, 2 an ambush; CR_CAPTURE_LEADER=c: character c's pair)
+        if (const char* ld = SDL_getenv("CR_CAPTURE_LEADER")) {
+            app.playerChar = std::clamp(SDL_atoi(ld), 0, 7);
+            cr::changeRoute(app.game, &app.itemTable, app.playerChar / 2);
+        }
         startBattle(app, {app.captureBattle[0], app.captureBattle[1], -1, SDL_getenv("CR_BATTLE_STRIKE") ? SDL_atoi(SDL_getenv("CR_BATTLE_STRIKE")) : 0}, 0);
         // --battle-view top|commands|targets|items|escape|hit|results: a screen of it; intro@n: the
         // opening n battle frames in (btl_main 200 at kIntroWhite)
