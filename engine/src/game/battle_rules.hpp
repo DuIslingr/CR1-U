@@ -182,6 +182,7 @@ struct BattleCommand {
     int action = 0;       // gene action (kCmdGene)
     int item = 0;         // item number (kCmdItem)
     int target = -1;      // fighter index for single-target actions
+    int cost = -1;        // a gene's MP as the menu worked it out (+0x3dc; -1: work it out at its turn)
 };
 
 // btl_add_msgque: a status message waiting for the banner - fighter (< 0: -item, its name in
@@ -336,6 +337,7 @@ private:
         int target2 = -1;         // a counter's second target (btlque_add_counter: all the blow's actors)
         int speed = 0;
         int actionSpeed = 0;      // the action's +6, added to the actors' average (btlord_calc_spd)
+        int cost = -1;            // a gene's MP fixed at the menu (+0x3dc, _MuScrList_GetUsedMp 12325)
         int order = 0;            // the record's place (fighter order): the first of equals goes first
     };
     size_t pickNext();            // btlque_make_que: counters, then the escape, then the fastest (speeds read afresh)

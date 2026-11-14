@@ -408,7 +408,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                         r.beginRound(c, app.battleActions);
                         cr::BattleTurn t;
                         while (r.nextTurn(app.battleActions, t))
-                            if (t.actors[0] == 1) guestRefused += t.cancelled, guestGenes += t.kind == cr::kCmdGene;
+                            if (t.actors[0] == 1) guestRefused += t.cancelled, guestGenes += t.action >= 201 && t.action <= 233; // (207 goes as an attack: class 9)
                         r.endRound();
                     }
                     guestMp = r.f[1].mp - mp;

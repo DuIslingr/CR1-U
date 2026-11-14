@@ -1319,6 +1319,7 @@ void battleChooseTarget(App& app, int fighter) {
     } else if (b.pendingGene) {
         c.kind = cr::kCmdGene;
         c.action = cr::geneAction(b.pendingGene);
+        c.cost = geneMpCost(app, b.pendingGene); // (+0x3dc: the menu's figure - a later break doesn't change it)
         b.pendingGene = 0;
     } else
         c.kind = cr::kCmdAttack;
@@ -2073,7 +2074,8 @@ void startTurn(App& app) {
     const int target = !t.barriers.empty() ? t.barriers[0] : firstTarget(t); // (reflected: at the barrier)
     // (a monster over size 3 swings where it stands, unturned: _btlact_attack_init's 0x76c branch)
     const bool inPlace = t.kind == cr::kCmdAttack && t.actors[0] >= 2 && monsterSize(app, t.actors[0]) > 3;
-    const bool melee = a && a->motion == 1 && target >= 0 && (target < 2) != (t.actors[0] < 2) && !inPlace;
+    // (only _btlact_attack_init moves anyone - btlmove_setpos: gene_init / item_init cast where they stand, Steal Item too)
+    const bool melee = t.kind == cr::kCmdAttack && a && a->motion == 1 && target >= 0 && (target < 2) != (t.actors[0] < 2) && !inPlace;
     for (int k = 0; k < 2; ++k) {
         App::Battle::Actor* u = t.actors[k] >= 0 ? battleActor(app, t.actors[k]) : nullptr;
         if (!u) continue;

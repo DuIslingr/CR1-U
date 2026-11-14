@@ -589,7 +589,7 @@ void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable
             e.target = c.target;
             switch (c.kind) {
             case kCmdAttack: e.action = attackAction(k); break;
-            case kCmdGene: e.action = c.action; break;
+            case kCmdGene: e.action = c.action, e.cost = c.cost; break;
             case kCmdItem: e.item = c.item; e.action = c.item - kFirstBattleItem + kItemAction; break;
             case kCmdDefend:
                 for (int a : e.actors)
@@ -813,7 +813,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // btlque_make_que: a gene silenced since it was chosen (+0x8f) - "can't use genes" (57065)
         // in place of the action; the pair's without the MP any more - 57081
         const unsigned ac = unsigned(e.action);
-        if ((e.kind == kCmdGene || e.kind == kCmdIdle) && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u &&
+        // (by the id alone, whatever the kind: a monster's class-9 201 / 203 / 207 / 219 - attacks - too)
+        if (e.actors[0] >= 0 && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u &&
             ac - 1u > 124u && ac - 413u > 16u)
             return cancel(57065);
         if (e.kind == kCmdIdle) return true; // btlact_none_init / btlact_none: sixty frames, no calc
@@ -830,7 +831,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // the gene's MP (que +0xaa, the record's +0x1c - the first go's only): each member pays it in pair mode; the
         // guest's own entries carry none (31108 / 31279-31300 read 0: its genes are free)
         if (e.kind == kCmdGene && e.actors[0] < 2 && !e.paid && !e.noCost) {
-            const int cost = geneCost(*a, e.actors[0]);
+            const int cost = e.cost >= 0 ? e.cost : geneCost(*a, e.actors[0]);
             bool enough = true;
             for (int k : e.actors)
                 if (k >= 0) enough &= f[size_t(k)].mp >= cost;
@@ -838,6 +839,10 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             for (int k : e.actors)
                 if (k >= 0) f[size_t(k)].mp -= cost;
         }
+        // (make_que 31152-31158: a class-9 record - 201 / 203 / 207 / 219 - goes as kind 1, btlact_attack_init's
+        // spot, swing, voice and camera; no barrier sends it back, that being btlact_gene's)
+        const int kind = e.kind == kCmdGene && a->cls == 9 ? int(kCmdAttack) : e.kind;
+        out.kind = kind;
         int counterBy = -1;
         std::vector<int> hitList = resolveTargets(*a, e);
         firstTarget_ = hitList.empty() ? -1 : hitList.front(); // btlcalc_critical reads G+0x7a
@@ -855,7 +860,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // barrier's side, and what it fells leaves no item or gene (+0xaf)
         int breakBy = e.actors[0];
         bool reflected = false;
-        if (a->hostile && (e.kind == kCmdGene || e.kind == kCmdItem) && e.actors[0] >= 0) {
+        if (a->hostile && (kind == kCmdGene || kind == kCmdItem) && e.actors[0] >= 0) {
             for (int t : hitList)
                 if (f[size_t(t)].status[kStatusBarrier]) f[size_t(t)].status[kStatusBarrier] = 0, reflected = true;
             if (reflected) {
