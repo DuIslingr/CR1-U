@@ -92,7 +92,7 @@ void BattleRules::setupParty(const GameState& gs, const ItemTable& items, int ro
         x.hpMax = memberStat(gs, x.character, kHp, items);
         x.mpMax = memberStat(gs, x.character, kMp, items);
         x.hp = x.hpMax; // btlpcparam_prty_init: every battle starts with full HP
-        x.mp = m.mp < 0 ? x.mpMax : std::min(m.mp, x.mpMax);
+        x.mp = m.mp < 0 ? x.mpMax : m.mp; // (btlpcparam_prty_init 29837-29890: the stored MP as it is, unclamped; -1 an old save's "full")
         x.atk = memberStat(gs, x.character, kAttack, items);
         x.grd = memberStat(gs, x.character, kDefense, items);
         x.spd = memberStat(gs, x.character, kSpeed, items);
@@ -115,7 +115,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
         x.hpMax = memberStat(gs, c, kHp, items);
         x.mpMax = memberStat(gs, c, kMp, items);
         x.hp = x.hpMax;
-        x.mp = m.mp < 0 ? x.mpMax : std::min(m.mp, x.mpMax);
+        x.mp = m.mp < 0 ? x.mpMax : m.mp; // (btlpcparam_prty_init 29837-29890: the stored MP as it is, unclamped; -1 an old save's "full")
         x.atk = memberStat(gs, c, kAttack, items);
         x.grd = memberStat(gs, c, kDefense, items);
         x.spd = memberStat(gs, c, kSpeed, items);
@@ -643,8 +643,8 @@ size_t BattleRules::pickNext() {
     for (size_t i = next_; i < queue_.size(); ++i) {
         Entry& e = queue_[i];
         int sum = 0, n = 0;
-        for (int a : e.actors)
-            if (a >= 0 && f[size_t(a)].alive()) sum += spdOf(a) + (invincible(a) ? 19998 : 0), ++n;
+        for (int a : e.actors) // (btlord_calc_spd 30762-30801: every listed actor, a fallen one too)
+            if (a >= 0) sum += spdOf(a) + (invincible(a) ? 19998 : 0), ++n;
         e.speed = (n ? sum / n : 0) + e.actionSpeed;
         const long long key = e.counter ? (1ll << 40) : e.kind == kCmdEscape ? (1ll << 39) : e.speed;
         if (best == queue_.size() || key > bestKey || (key == bestKey && e.order < queue_[best].order)) best = i, bestKey = key;
@@ -747,12 +747,20 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             // btlact_escape_init: certain while the pair holds the Break, else by levels
             int chance = 100;
             if (breakGauge < 1 && !has(0, 160) && !has(1, 160)) { // 160: Beast Wavelength
-                int pl = 0, pn = 0, el = 0, en = 0;
-                for (int i = 0; i < 2; ++i)
-                    if (f[size_t(i)].alive()) pl += f[size_t(i)].level, ++pn;
-                for (int i = 2; i < 5; ++i)
-                    if (f[size_t(i)].alive()) el += f[size_t(i)].level, ++en;
-                const int d = (pn ? pl / pn : 0) - (en ? el / en : 0);
+                // (44927-44985 over the que record's five actors and five targets: IsDead(-1) is false,
+                // so an empty slot counts with the level byte at btl - 0x20 - gac+0x35950, the visited-map
+                // table's entry 99, never reached: 0. The menu fills slot 0 with member 0 alone, no
+                // targets (scope 255), and slot 1 with member 1 and targets 2, 3, 4 - make_que runs slot 0,
+                // or slot 1 once member 0 is down: L0 / 5 - 0, else L1 / 5 - the standing enemies' levels
+                // over them + 2)
+                int d;
+                if (f[0].alive()) d = f[0].level / 5;
+                else {
+                    int el = 0, en = 0;
+                    for (int i = 2; i < 5; ++i)
+                        if (f[size_t(i)].alive()) el += f[size_t(i)].level, ++en;
+                    d = (f[1].alive() ? f[1].level : 0) / 5 - el / (en + 2);
+                }
                 chance = d < -49 ? 40 : d < 0 ? 50 : d < 50 ? 60 : 70;
             }
             out.escapeChance = chance;
@@ -893,9 +901,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 out.hits.push_back(h);
                 continue;
             }
-            case 14: // 0419: everything back
+            case 14: // 0419: everything back - its figure the most HP << skill 155 (FUN_00028ca8 22908), the HP itself stopping at the most
                 tx.mp = tx.mpMax;
-                h.amount = -tx.hpMax;
+                h.amount = -recovery(tx.hpMax);
                 break;
             case 15: h.amount = -recovery(tx.hpMax * a->power / 100); break; // 0420: power% of the most HP
             case 16: { // 0421: power% of the most MP
@@ -1025,12 +1033,15 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 fall(t, e.actors, !reflected);
                 breakEvent(breakBy, 0x10, t);
             }
+            // 153 (btlord_chk_autoguard 30414-30466, from chk_dead on any hit - no side test): at a quarter of
+            // the HP or less the target may start guarding; the pair, or the enemy pair (2 and 3), together
+            if (h.amount > 0 && tf.hp > 0 && tf.hp <= tf.hpMax / 4 && !tf.guarding && has(t, 153) &&
+                random(100) < (holdsBreak(t) ? 20 : 10)) {
+                tf.guarding = true;
+                if (t < 2 && pair) f[size_t(1 - t)].guarding = true;
+                if ((t == 2 || t == 3) && enemyPair) f[2].guarding = f[3].guarding = true;
+            }
             if (h.amount > 0 && tf.hp > 0 && (t < 2) != (e.actors[0] < 2)) {
-                // 153: at a quarter of the HP or less the target may start guarding
-                if (tf.hp <= tf.hpMax / 4 && !tf.guarding && has(t, 153) && random(100) < (holdsBreak(t) ? 20 : 10)) {
-                    tf.guarding = true;
-                    if (t < 2 && pair) f[size_t(1 - t)].guarding = true;
-                }
                 // 154 (or calc 34's stance): a physical hit may be answered with the target's attack
                 if (calc == 0 && counterBy < 0 && !e.counter &&
                     (tf.counterStance || (has(t, 154) && random(100) < (holdsBreak(t) ? 20 : 10))))
@@ -1084,11 +1095,21 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         if (a->calc == 7) // 0412: the users give up their HP to 1
             for (int k : e.actors)
                 if (k >= 0 && f[size_t(k)].alive()) {
+                    // (_btlcalc_0412 22493-22510: through dmg_hp2 - Break event 2 - then chk_dead with the user's
+                    // index: at 1 HP, a quarter or less, skill 153 may start the guard)
+                    Fighter& u = f[size_t(k)];
                     BattleHit self;
                     self.target = k;
-                    self.amount = f[size_t(k)].hp - 1;
-                    f[size_t(k)].hp = 1;
+                    self.amount = u.hp - 1;
+                    if (self.amount > 0) breakEvent(e.actors[0], 2, hitList.empty() ? -1 : hitList.front());
+                    u.hp = 1;
                     out.hits.push_back(self);
+                    if (self.amount > 0 && u.hp <= u.hpMax / 4 && !u.guarding && has(k, 153) &&
+                        random(100) < (holdsBreak(k) ? 20 : 10)) {
+                        u.guarding = true;
+                        if (k < 2 && pair) f[size_t(1 - k)].guarding = true;
+                        if ((k == 2 || k == 3) && enemyPair) f[2].guarding = f[3].guarding = true;
+                    }
                 }
         // 0413 (22570-22597): at the last target what was drained (x2 with skill 155) heals each user by
         // its share - divided by the users (que +0xc2), not the targets
@@ -1289,7 +1310,7 @@ std::vector<int> BattleRules::applyRewards(GameState& gs) const {
         const Fighter& x = f[size_t(k)];
         if (!x.present || x.guest) continue;
         PartyMember& m = gs.party[size_t(x.character)];
-        m.mp = x.skills[163 - 131] && outcome() != 3 ? -1 : x.mp; // 163: MP back to full
+        m.mp = x.skills[163 - 131] && outcome() != 3 ? x.mpMax : x.mp; // 163: MP back to full - as a number (5926-5944)
         if (won) {
             const int gained = expGained * (doubleExp ? 2 : 1);
             m.exp += x.hp > 0 ? gained : gained / 2; // MbResultSet: a fallen member gets half

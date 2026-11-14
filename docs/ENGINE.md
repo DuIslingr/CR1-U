@@ -324,7 +324,9 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] Saves, as the original keeps them (`game/save.cpp`, a small text file in the save folder):
       one file for the four pairs, as 2.2.0's data.dat (`SaveData_Save`: the shared Oz, flags and
       shared bag, each pair's records, own bag, saved place and "saved" mark; the earlier releases'
-      save1.dat .. save4.dat are folded into it once on the first read and left as they are), saved from the **Camp
+      save1.dat .. save4.dat are folded into it once on the first read and left as they are; var 9
+      written 0, a puzzle room's save at the room's load point, the resume point removed; a load sets
+      flag 0xff7, so the area's entry script aborts its arrival - `_SaveData_Load_init`), saved from the **Camp
       menu** (K on the field, laid out as `__menuu_CampMainPut` draws it: the pair's face
       boards, the clock and the purse, Items / Equip / Genes / Status / Options, and Save) or a script's Util 5/6 - "Save data?" Yes / No, "Save complete.". The
       title's **Start** runs as the boot script has it (j001_t99: Util 0 -> Util 4 -> Util 5):

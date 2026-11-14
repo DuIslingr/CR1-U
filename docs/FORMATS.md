@@ -911,10 +911,11 @@ the end and pops; `Break` jumps and pops too. There is no backward `Goto`.
 - 17: result
 - 18: rand(n)
 - 19: var(e). Negative indexes reach other globals, e.g. the start position; below −198, +317.
-- 20: flag(e). −1 / −2 name the running NPC's show / hide flag.
+- 20: flag(e), 0..0xfff unsigned (0x1f1cc): anything else - −1 / −2 too - reads 0. Only the
+  setter maps −1 / −2 to the running NPC's show / hide flag.
 - 21: label (u32)
 - 22: arg (u8, relative to the frame base)
-- 33 gold, 34 name, 42 gds; 38: item(e)
+- 33 gold, 34 name, 42 gds; 38: item(e). CR1's 33 (gold) and its setter are stubs (0).
 
 **Assignment** (`SetEval`) evaluates the value first, then a target from table 0xd3ad0: result,
 var, flag, arg, gold, name, item or gds. `EvtStart` sets var 62 = area and var 63 = map. Flags
@@ -1308,7 +1309,11 @@ immune).
   is even again. The badge shows the gauge (a ring piece per point, from 0xd1fd0) and Player /
   Enemy / Even.
 - **Escape** (`btlact_escape_init`): certain while the pair holds the Break; else 40 / 50 / 60 /
-  70% for the pair's average level less the enemies' < −49 / < 0 / < 50 / more (57000 / 57001).
+  70% for d < −49 / < 0 / < 50 / more (57000 / 57001). d averages the que record's five actors less
+  its five targets, empty slots (−1) counted at level 0 (`IsDead(-1)` is false; the byte read lies
+  at gac+0x35950, the visited-map table's never-reached entry 99). The menu leaves slot 0 with
+  member 0 and no targets, so d = L0 / 5 - 60% - unless member 0 is down: slot 1, L1 / 5 less the
+  standing enemies' levels over their number + 2.
 - **Winning** (`btlcalc_chk_dead`, state 0x44b): each enemy's experience and Oz when it falls;
   the results (`MbResultPut`): "Results" (19) at (8, 4), the pair's boards 88 apart, EXP Gained
   (68) at (288, 76) and OZ Earned (69) at (288, 132), the totals at (358, 98 / 154). Each member

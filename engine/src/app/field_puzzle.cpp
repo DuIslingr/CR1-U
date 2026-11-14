@@ -393,6 +393,7 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
     // (__EvtWarp to the map in play writes the position alone - gac+0xd6c..0xd74 - the facing kept;
     // a load turns the leader as FieldPCCtrl::reset does: DegToRad)
     if (reload) app.walker.heading = w.angleDegrees * 3.14159265f / 180.0f;
+    if (reload) app.loadPoint[0] = p.x, app.loadPoint[1] = p.y, app.loadPoint[2] = p.z, app.loadPoint[3] = w.angleDegrees;
     app.walker.gait = cr::Gait::Stand;
     // (lastKick as it was - the warping box's id: a box of another id where he lands kicks once the
     // scripts end)
@@ -1047,7 +1048,10 @@ void ViewerHost::playSound(uint32_t id) {
 void ViewerHost::playMusic(uint32_t v) { playBgm(app, v); app.soundLog.push_back(0x40000000u | v); }
 void ViewerHost::recoverPair() { // pcparam_hpmp_recovery: the current pair's two
     const int p = std::clamp(currentPair(app) - 1, 0, 3);
-    for (int c : {2 * p, 2 * p + 1}) app.game.party[size_t(c)].hp = app.game.party[size_t(c)].mp = -1;
+    for (int c : {2 * p, 2 * p + 1}) { // (MP as a number: _pcparam_max_mp stored, 29934-29972)
+        app.game.party[size_t(c)].hp = -1;
+        app.game.party[size_t(c)].mp = cr::memberStat(app.game, c, cr::kMp, app.itemTable);
+    }
 }
 int ViewerHost::bgmNo() { return app.bgmNo; }
 void ViewerHost::endMenu(int kind) { // 2: the shop - SetShopBgmNoRecovery, __mc_SetMenuStat(7, 4)

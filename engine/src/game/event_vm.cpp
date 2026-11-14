@@ -96,8 +96,9 @@ struct EventRunner::Vm {
             if (gVarTrace) gVarTrace(n, var(n));
             return var(n);
         }
-        case 20: {
-            const int n = flagIndex(sub());
+        case 20: { // (0x1f1cc: a flag read takes 0..0xfff unsigned - -1 / -2 read 0; only the setter maps them)
+            const int n = sub();
+            if (unsigned(n) >= 0x1000u) return 0;
             if (gFlagTrace) gFlagTrace(n, gs.flag(n));
             return gs.flag(n);
         }

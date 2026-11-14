@@ -200,6 +200,7 @@ struct App {
                                            // 0 once the leader stands in none (RectWrapper::checkEventKick, 2.2.0 0x3dcfc)
     std::map<int, int> examineLinger;      // FollowWindow / FlagWindow: an NPC's window, frames left after leaving reach (10)
     std::string lastWarp;                  // shown in the status line
+    float loadPoint[4] = {};               // prty +0x10..0x1c: where the field last loaded the leader (x, y, z, degrees)
     std::string lastEvent;                 // last examined object / items, for the status line
     cr::Hud dialogueHud, promptHud, itemHud;
     std::array<cr::Hud, 16> lineHud;       // the message window's lines one by one (some centred; _PutMsg's 16 slots)

@@ -94,9 +94,15 @@ std::vector<int> sellableItems(const GameState& gs, const ItemTable& items, int 
     std::vector<int> out;
     if (category < 0 || category >= kShopCategories) return out;
     const int bit = 1 << std::clamp(character, 0, 7);
+    const int route = std::clamp(character, 0, 7) / 2;
     for (int n = kSellRange[category][0]; n <= kSellRange[category][1]; ++n) {
         const ItemParam* p = items.item(n);
-        if (!p || p->price == 0 || owned(gs, n) == 0 || !(p->owners & bit)) continue;
+        // (_MuCom_ShopMakeSellItemData 50546: GetItmCnt != 0 - 2.2.0's bag counts worn gear, so the pair's
+        // worn pieces are listed too; their sale is refused, FUN_000564b8's count less what is worn being 0)
+        int have = owned(gs, n);
+        for (int c : {2 * route, 2 * route + 1})
+            have += int(std::count(std::begin(gs.party[size_t(c)].equip), std::end(gs.party[size_t(c)].equip), n));
+        if (!p || p->price == 0 || have == 0 || !(p->owners & bit)) continue;
         if (category == 1 && p->kind != kKindWeapon) continue;
         if (category == 2 && p->kind != kKindArmor) continue;
         out.push_back(n);

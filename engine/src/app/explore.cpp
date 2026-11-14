@@ -2825,7 +2825,8 @@ int menusAuditSelfTest(App& app) {
     app.game.party[0].hp = 5, app.game.party[1].mp = 3, app.game.party[2].hp = 7;
     app.mapNumber = 97;
     openCamp(app);
-    const bool healed = app.game.party[0].hp < 0 && app.game.party[1].mp < 0 && app.game.party[2].hp == 7;
+    const bool healed = app.game.party[0].hp < 0 && app.game.party[1].mp == cr::memberStat(app.game, 1, cr::kMp, app.itemTable) &&
+                        app.game.party[2].hp == 7; // (MP as a number: _pcparam_max_mp)
     app.campOpen = false;
     app.game.party[0].hp = 5;
     app.mapNumber = 42;
@@ -5372,7 +5373,8 @@ int runSelfTest(App& app) {
         app.playerChar = 2; // the second pair
         for (auto& m : app.game.party) m.hp = 1, m.mp = 1;
         host.recoverPair();
-        const bool healed = app.game.party[2].hp < 0 && app.game.party[3].mp < 0 && app.game.party[0].hp == 1;
+        const bool healed = app.game.party[2].hp < 0 && app.game.party[3].mp == cr::memberStat(app.game, 3, cr::kMp, app.itemTable) &&
+                            app.game.party[0].hp == 1;
         const bool pair = host.pairNo() == 1;
         host.playMusic(7);
         const bool bgm = host.bgmNo() == 7;

@@ -16,6 +16,10 @@ cr::SaveData captureSave(const App& app) {
     s.pos[1] = app.walker.pos.y;
     s.pos[2] = app.walker.pos.z;
     s.yaw = app.walker.heading;
+    if (app.area == 1) { // (_SaveData_Save 71813-71825: in the puzzle rooms the field's load point, not where he stands)
+        s.pos[0] = app.loadPoint[0], s.pos[1] = app.loadPoint[1], s.pos[2] = app.loadPoint[2];
+        s.yaw = app.loadPoint[3] * 3.14159265f / 180.0f;
+    }
     s.leader = app.playerChar;
     s.playSeconds = app.playSeconds;
     s.savedAt = int64_t(std::time(nullptr));
@@ -39,6 +43,9 @@ bool applySave(App& app, const cr::SaveData& s) {
     // (ContData_memcpy / Load_SaveData: once "About Progress Tracker" was shown this launch, the state
     // taken up keeps flag 0x44)
     if (app.interruptShown) app.game.setFlag(0x44, true);
+    // (_SaveData_Load_init 71981: SetFlag(0xff7) on every load - each area's entry 0 then clears it and
+    // 4076 (the encounter switch's hold) and aborts its arrival, e.g. j001_d01 0x4063)
+    app.game.setFlag(4087, true);
     app.treasureBoxes.clear();
     app.entryArea = -1;
     app.playSeconds = s.playSeconds;
@@ -175,7 +182,10 @@ bool saveGame(App& app) {
     cr::SaveData old;
     if (readData(app, old)) s.places = old.places;
     s.places[size_t(s.route())] = s.placeInPlay();
-    return cr::writeSave(dataPath(app), s);
+    s.game.vars[9] = 0; // (71848: the saved copy's var 9, +0x30b28, written 0)
+    if (!cr::writeSave(dataPath(app), s)) return false;
+    SDL_RemovePath(savePath(app, "resume.dat").c_str()); // (_removeContData: a save ends the resume point)
+    return true;
 }
 
 int currentPair(const App& app) { return app.playerChar / 2 + 1; }
@@ -1052,7 +1062,11 @@ void drawShop(App& app) {
                 const cr::PartyMember& pm = app.game.party[size_t(shopCharacter(app))];
                 if (std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip)) style = 3;
                 if (shopUnitPrice(app, it) > app.game.oz || heldCount(app, it) > 98) style = 2;
-            }
+            } else // (ShopPut 9, 55706-55738: selling, yellow for what either member wears; no grey)
+                for (int g = 0; g < campMembers(app); ++g) {
+                    const cr::PartyMember& pm = app.game.party[size_t(campCharacter(app, g))];
+                    if (std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip)) style = 3;
+                }
             const float ra = a;
             m.picture(index == s.listCursor ? 9 : 8, x, y, ra);
             if (const cr::ItemParam* p = app.itemTable.item(it); p && p->icon >= 0)
@@ -1346,7 +1360,7 @@ void memberHpMp(const App& app, int c, int& hp, int& hpMax, int& mp, int& mpMax,
     hpMax = cr::memberStat(g, c, cr::kHp, app.itemTable);
     mpMax = cr::memberStat(g, c, cr::kMp, app.itemTable);
     hp = hpMax;
-    mp = pm.mp < 0 ? mpMax : std::min(pm.mp, mpMax);
+    mp = pm.mp < 0 ? mpMax : pm.mp; // (the stored number, above the most until it next changes)
 }
 
 // MuComMakeItemHaveData (0x51f1c): what the bag holds of a category - weapons / armor (kinds 6 / 7)
@@ -1732,8 +1746,9 @@ bool campUseItem(App& app, int character, int item, int count) {
         points += count;
     } else if (item >= 24 && item <= 27) {
         const int most = cr::memberStat(app.game, character, cr::kMp, app.itemTable);
-        const int mp = pm.mp < 0 ? most : std::min(pm.mp, most);
-        if (mp >= most) return false;
+        // (FUN_0005eddc 59852-59886: refused only at exactly the most; above it, added and then clamped)
+        const int mp = pm.mp < 0 ? most : pm.mp;
+        if (mp == most) return false;
         static const int kGain[3] = {100, 250, 500};
         pm.mp = item == 27 ? most : std::min(most, mp + kGain[item - 24]);
         count = 1;
@@ -2485,7 +2500,10 @@ void openLastBattle(App& app) {
     cr::Image img;
     static const char* const kGuardian[4] = {"hi.mct", "mizu.mct", "kaze.mct", "mu.mct"};
     if (loadImage(app, kGuardian[std::clamp(lb.count, 0, 3)], img)) lb.tex = app.renderer.upload(img);
-    for (auto& m : app.game.party) m.hp = m.mp = -1; // pcparam_hpmp_all_recovery
+    for (size_t c = 0; c < app.game.party.size(); ++c) { // pcparam_hpmp_all_recovery (29898-29932): MP as a number
+        app.game.party[c].hp = -1;
+        app.game.party[c].mp = cr::memberStat(app.game, int(c), cr::kMp, app.itemTable);
+    }
 }
 
 void lastBattleList(App& app, bool windows) { // __LastBt_CharChoiceInit
@@ -3638,6 +3656,7 @@ void newPairParty(App& app, int pair, bool clearData) {
     if (!haveData) g.walkExp = {}, g.noEncounters = {};
     if (app.interruptShown) g.setFlag(0x44, true); // (TitleClr's Load_SaveData: the Progress Tracker's message seen)
     cr::giveDataItems(g); // (_Load_SaveData: no data -> prty_init_all)
+    for (int c : {2 * p, 2 * p + 1}) g.party[size_t(c)].mp = cr::memberStat(g, c, cr::kMp, app.itemTable); // (prty_init_new: MP full, as a number)
     app.game = std::move(g);
     app.playerChar = 2 * p;
 }
