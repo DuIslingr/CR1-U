@@ -556,13 +556,20 @@ c101/c102/c104/m207a, 2026-10-12).
       the cameras are the original's per menu, target, attack and gene / item hit (with their
       roll). Attackers run up to the formation table's spot before their target and back (a
       monster over size 3 swings slot 9 where it stands; the swing slots as `_btlact_attack_init`'s:
-      8, j008 and m-models 0x28..0x2a / 0x57 / 0x58 10, the j007 + j008 / m008 pairs' joint 0xd); the
-      fallen fade out. `--capture … --battle <group> <stage> --battle-view
+      8, j008 and m-models 0x28..0x2a / 0x57 / 0x58 10, the j007 + j008 / m008 pairs' joint 0xd); an
+      attack lasts by `_btlact_attack`'s counts, not its clips: the blow's max frame
+      (`_btlanm_get_max_frm`, frames - 1; the pair's second's when it is j002 / m002, the joint's
+      its slot-0xd hit), the way back over slot 3's max frame (the joint 5 more), then 10; slot 9
+      where it stands max frame + 10 + 10; slot 10 fires a shot from home (effect 0x16 / m210's
+      0x17 flying over the 2 / 5 frames before the hit, SE 0x51 at 13 and 0x52) and lasts its max
+      frame + 1 + 10. The fallen fade out. `--capture … --battle <group> <stage> --battle-view
       top|commands|targets|items|escape|hit<n>|results[@frames][:taps]` renders a screen of it
       (the results that many frames in, after that many taps); `intro@<n>` the opening n battle
       frames in (btl_main 200 at frame 4, the commands at 36), `top@<n>` n frames after the first
       page starts sliding in (its offset printed), `break@<n>` the Break effect's n-th frame;
-      `CR_BATTLE_CAMLOG=1` prints the shown camera every battle frame. `CR_BATTLE_STRIKE=1|2` starts the
+      `CR_BATTLE_CAMLOG=1` prints the shown camera every battle frame, `CR_BATTLE_TURNLOG=1` each
+      action's start and end (battle frame, slots, hit, the attack's counts), `CR_BATTLE_SOLO=1`
+      has `hit<n>` attack with each member alone instead of the pair. `CR_BATTLE_STRIKE=1|2` starts the
       captured battle as a first strike / an ambush; `CR_CAPTURE_LEADER=c` fights it as character c's
       pair; `CR_BATTLE_BANNERLOG=1` prints the top
       banner's text and the phase each time they change, by battle frame.

@@ -1195,6 +1195,80 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                             spots.c_str(), hold, want, cp, why.c_str());
                 problems += cp;
             }
+            { // An attack's length by _btlact_attack's counts (2.2.0 11098-11520), for Escher + Musiea and Ayuta + Mana:
+              // each alone (state 1000: the slot's max frame, slot 3's on the way back, ten; Mana's slot 10 shot 0x6a4
+              // -> 0x6ae: its max frame, one, ten) and as the pair (j002 second: her slot 8 max frame; the j007 + j008
+              // joint: Mana's slot-0xd hit frame and five more on the way back). The Vita videos cut to cut (the length
+              // + 3): Escher 51, Musiea 58, Ayuta 58, Mana 76, the joint 65.7 - the port 47 / 55 / 55 / 73 / 62 (+ 3)
+                int lp = 0;
+                std::string why, seen;
+                auto check = [&](bool ok, const std::string& what) { if (!ok) ++lp, why += " " + what; };
+                const int keepChar = app.playerChar;
+                App::Battle& b = app.battle;
+                for (const int route : {0, 3}) {
+                    app.game = saved;
+                    app.playerChar = route * 2;
+                    cr::changeRoute(app.game, &app.itemTable, route);
+                    app.game.setFlag(4077 + route, false); // (the partner with the leader: btl_prty_init's flag 4077 + route)
+                    app.rng.seed(7);
+                    startBattle(app, {1, 0, -1, 0}, 0);
+                    for (int f = 0; f < kIntroWhite + 60 && b.active && b.phase == App::Battle::Intro; ++f) stepBattle(app);
+                    if (!b.active || !battleActor(app, 0) || !battleActor(app, 1) || !battleActor(app, 2)) {
+                        check(false, "no-party-" + std::to_string(route));
+                        continue;
+                    }
+                    // (user, second, pair): the turn's frames to its end, the first frame the user was on its way back
+                    auto run = [&](int user, int second, bool pair, int& backAt) {
+                        b.rules.pair = pair, b.rules.enemyPair = false;
+                        b.turn = cr::BattleTurn();
+                        b.turn.kind = cr::kCmdAttack, b.turn.action = b.rules.attackAction(user), b.turn.actors[0] = user, b.turn.actors[1] = second;
+                        b.turn.hits.resize(1);
+                        b.turn.hits[0].target = 2, b.turn.hits[0].amount = 1;
+                        b.phase = App::Battle::Acting, b.turnOn = true;
+                        startTurn(app);
+                        const App::Battle::Actor* u = battleActor(app, user);
+                        backAt = -1;
+                        for (int f = 0; f < 600 && b.turnOn; ++f) {
+                            stepBattle(app);
+                            if (backAt < 0 && u->slot == realSlot(b.models[u->model], btlui::kSlotReturn)) backAt = b.turnFrame;
+                        }
+                        const int len = b.turnOn ? -1 : b.turnFrame;
+                        b.phase = App::Battle::Command, b.turnOn = false, b.rules.pair = false;
+                        for (int k : {user, second})
+                            if (const App::Battle::Actor* w = k >= 0 ? battleActor(app, k) : nullptr; w && (w->pos.x != w->home.x || w->pos.z != w->home.z))
+                                return -2; // (not home)
+                        return len;
+                    };
+                    for (int user = 0; user < 2; ++user) {
+                        const App::Battle::Actor* u = battleActor(app, user);
+                        int backAt = -1;
+                        const int len = run(user, -1, false, backAt);
+                        const int m = u->modelId, ret = battleMaxFrame(app, user, btlui::kSlotReturn);
+                        const int slot = m == 7 ? 10 : 8;
+                        const int hit = app.battleData.anim(m, slot).hit, max = battleMaxFrame(app, user, slot);
+                        const int want = slot == 10 ? std::max({max, hit - 1, hit}) + 1 + 10 : std::max(max, hit) + ret + 10;
+                        static const int kVideo[8] = {47, 55, -1, -1, -1, -1, 55, 73};
+                        check(len == want && (slot == 10 ? backAt < 0 : backAt == std::max(max, hit)) && (m > 7 || kVideo[m] < 0 || kVideo[m] == len),
+                              u->model + "-alone");
+                        seen += u->model + " " + std::to_string(len) + ", ";
+                    }
+                    int backAt = -1;
+                    const App::Battle::Actor *u = battleActor(app, 0), *v = battleActor(app, 1);
+                    const int len = run(0, 1, true, backAt);
+                    const bool joint = v->modelId == 7;
+                    const int hit = joint ? app.battleData.anim(7, 0xd).hit : app.battleData.anim(1, 8).hit;
+                    const int back = joint ? hit : v->modelId == 1 ? battleMaxFrame(app, 1, 8) : battleMaxFrame(app, 0, u->modelId == 6 ? 0xd : 8);
+                    const int want = std::max(back, hit) + battleMaxFrame(app, 0, btlui::kSlotReturn) + (joint ? 5 : 0) + 10;
+                    check(len == want && backAt == std::max(back, hit) && len == (joint ? 62 : 55), u->model + "-pair");
+                    seen += "pair " + std::to_string(len) + (route == 0 ? "; " : "");
+                    endBattle(app, false);
+                    app.runner.stop();
+                }
+                app.playerChar = keepChar;
+                app.game = saved;
+                std::printf("attack lengths by _btlact_attack's counts: %s; %d problems%s\n", seen.c_str(), lp, why.c_str());
+                problems += lp;
+            }
             // a plain hit (btlcalc_0404) shakes the screen for 5 frames
             app.game = saved;
             startBattle(app, {1, 0, -1, 0}, 0);
@@ -7947,10 +8021,12 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             if (const size_t c = v.find(':'); c != std::string::npos) resultTaps = SDL_atoi(v.c_str() + c + 1);
         }
         if (hitWanted || results) {
-            // pair attacks on the first enemy standing until the first hit lands (or the battle's won)
+            // pair attacks on the first enemy standing until the first hit lands (or the battle's won; CR_BATTLE_SOLO:
+            // each member's own attack)
+            const bool solo = SDL_getenv("CR_BATTLE_SOLO") != nullptr;
             for (int f = 0; f < 6000 && b.active; ++f) {
                 if (b.phase == App::Battle::Command && b.menu == App::Battle::Top) {
-                    battleChooseTop(app, b.rules.f[0].alive() && b.rules.f[1].alive() ? 1 : 0);
+                    battleChooseTop(app, b.rules.f[0].alive() && b.rules.f[1].alive() && !solo ? 1 : 0);
                     battleChooseCommand(app, 0);
                     if (b.menu == App::Battle::Targets) battleChooseTarget(app, b.picks[0]);
                     if (b.menu == App::Battle::Commands) { battleChooseCommand(app, 0); battleChooseTarget(app, b.picks[0]); }

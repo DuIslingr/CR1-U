@@ -759,6 +759,12 @@ struct App {
         float camRoll = 0;                 // +0xf8: degrees about the view (btl_prc's gluLookAt under flag 0x100)
         int attackVariant = -1;            // que +0xc: _btlact_attack_init's random(3) (the camera's variant)
         int attackCam2At = -1;             // que +0x10: the approach's move end (a variant-2 member blow's second camera)
+        // _btlact_attack's counts (que +4 / +8): state 1000's end - the blow's max frame, then 0x406 the way back
+        // (attackBackAt) - and 1999's ten done (attackEndAt: the next action's hand-over); the joint attack's que +0x14;
+        // slot 10's shot (0x6a4 / 0x708): its frame, its frames to the target, its effect's id and handle
+        int attackBackAt = -1, attackEndAt = -1;
+        bool attackJoint = false;
+        int shotAt = -1, shotFrames = 0, shotId = 0, shotFx = 0;
         cr::Vec3 camEye{488, 12, 555}, camTarget{500, 4, 498}, camWantEye{488, 12, 555}, camWantTarget{500, 4, 498};
         std::vector<Effect> effects;       // eff3d: playing effects (32 at most)
         // The voiced releases' battle lines (2.2.0's _btlvoice_*): each fighter's next variant of
@@ -1731,6 +1737,7 @@ int partyLevel(const App& app);
 std::string sysText(const App& app, int id, const std::string& name = std::string());
 int realSlot(const LoadedModel& lm, int slot);
 int battleAction(const LoadedModel& lm, int slot);
+int battleMaxFrame(App& app, int fighter, int slot);
 App::Battle::Actor* battleActor(App& app, int fighter);
 float actorDuration(App& app, const App::Battle::Actor& a);
 void setBattleCamera(App& app, int id, int actor = 0, bool held = false);
