@@ -4,7 +4,11 @@
 // clash with whatever prototypes the platform's GL headers declare.
 
 #ifdef CR_GLES
+#ifdef __APPLE__
+#include <OpenGLES/ES3/gl.h> // (iOS)
+#else
 #include <GLES3/gl3.h>
+#endif
 #else
 #include <SDL3/SDL_opengl.h>
 #endif

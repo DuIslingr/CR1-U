@@ -210,6 +210,20 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
     screenW_ = kLogicalH * aspect;
     const float sx = float(frameW_) / screenW_, sy = float(frameH_) / kLogicalH;
     scale_ = sx < sy ? sx : sy;
+    // The display's safe area (a camera's notch or punch hole, a foldable's cover screen's): the layout's own
+    // centred screen - the iPad's 1024, the iPhone's 3:2 (the Android phone's) - kept clear of the side and
+    // top insets, at a smaller scale if need be; in widescreen the screen then widens again to the frame, so
+    // the scene and the backgrounds still reach its edges. (The bottom's home indicator is no camera: the
+    // layout may run under it, as the original's did)
+    const float px = float(frameW_) / float(windowW_); // (the insets are the window's pixels)
+    const float side = std::max(safeL_, safeR_) * px, top = safeT_ * px;
+    if (side > 0 || top > 0) {
+        const float uiW = phone_ ? kLogicalH * fixed : kLogicalW;
+        const float halfW = float(frameW_) * 0.5f - side;
+        if (halfW > 0) scale_ = std::min(scale_, halfW / (uiW * 0.5f));
+        if (top > 0 && float(frameH_) > 2 * top) scale_ = std::min(scale_, (float(frameH_) - 2 * top) / kLogicalH); // (centred: as deep below)
+        if (widescreen_) screenW_ = std::max(screenW_, std::min(float(frameW_) / scale_, kLogicalH * 21.0f / 9.0f));
+    }
     // ... and a smaller scene (upscaling) is exactly the frame scaled down per axis, so its pixels
     // land where the upscaler puts them
     const float kx = float(drawableW) / float(frameW_), ky = float(drawableH) / float(frameH_);

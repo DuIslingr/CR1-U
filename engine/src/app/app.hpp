@@ -316,9 +316,13 @@ struct App {
         int renderScale = 100;             // % of the window's pixels (Vulkan)
         int msaa = 1;                      // 1, 2, 4, 8 (Vulkan)
         bool vsync = true;
+#ifdef SDL_PLATFORM_IOS
+        int frameLimit = 0;                // (an iPhone's ProMotion: 120 - Info.plist's CADisableMinimumFrameDurationOnPhone)
+#else
         int frameLimit = 60;               // frames drawn a second at most (0: as many as the display takes); the
                                            // game itself runs at 20 (core/timing.hpp), the frames between show
                                            // it moving
+#endif
         int upscaler = 0;                  // 0 off, 1 FSR 3.1, 2 DLSS (Vulkan; MSAA is off meanwhile)
         int upscaleMode = 0;               // kUpscaleModes: 0 native AA (DLAA) .. 4 ultra performance
         int sharpness = 25;                // % (FSR's RCAS pass; 0 = none)
@@ -1598,6 +1602,7 @@ void drawSceneEffects(App& app, bool battle = false);
 bool paintedField(const App& app);
 bool scrollingField(const App& app);
 bool vitaLayout(const App& app);
+bool autoPhoneLayout(const App& app); // (Layout Auto's iPhone screens: 2.2.0's data, or a small iOS screen)
 float fieldViewW(const App& app);
 float fieldViewScale(const App& app);
 float fieldViewH(const App& app);

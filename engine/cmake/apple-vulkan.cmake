@@ -1,21 +1,30 @@
-# macOS: Vulkan through MoltenVK (the LunarG SDK's: universal) and MetalFX's upscaler beside FSR.
+# macOS (and iOS): Vulkan through MoltenVK (the LunarG SDK's: universal) and MetalFX's upscaler beside FSR.
 # cr_apple_vulkan(target): the Metal frameworks (MetalFX weakly: macOS 13+, asked at run time),
 # and a .app carrying the Vulkan loader and MoltenVK (Contents/Frameworks) with MoltenVK's ICD
 # manifest in Contents/Resources/vulkan/icd.d, where the loader looks inside a bundle - so the
 # .app needs no Vulkan SDK where it runs.
 function(cr_apple_vulkan target)
     target_link_libraries(${target} PRIVATE "-framework Metal" "-framework Foundation" "-weak_framework MetalFX")
+    if(IOS) # (MoltenVK linked in - CR_MOLTENVK -: nothing to carry; MetalFX from iOS 16)
+        message(STATUS "Upscalers (iOS): MetalFX (iOS 16+), FSR 3.1; MoltenVK linked in")
+        return()
+    endif()
     get_target_property(bundle ${target} MACOSX_BUNDLE)
     if(NOT bundle)
         return()
     endif()
     file(REAL_PATH "${Vulkan_LIBRARY}" loader)
     get_filename_component(libdir "${Vulkan_LIBRARY}" DIRECTORY)
-    if(NOT EXISTS "${libdir}/libMoltenVK.dylib")
+    # (MoltenVK: a MoltenVK release's - CR_MOLTENVK, its MoltenVK folder: CI takes the latest - else the SDK's)
+    set(moltenvk_src "${libdir}/libMoltenVK.dylib")
+    if(CR_MOLTENVK AND EXISTS "${CR_MOLTENVK}/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib")
+        set(moltenvk_src "${CR_MOLTENVK}/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib")
+    endif()
+    if(NOT EXISTS "${moltenvk_src}")
         message(WARNING "MoltenVK not beside ${Vulkan_LIBRARY}: the .app will need a Vulkan SDK installed")
         return()
     endif()
-    file(REAL_PATH "${libdir}/libMoltenVK.dylib" moltenvk)
+    file(REAL_PATH "${moltenvk_src}" moltenvk)
     set_target_properties(${target} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "@executable_path/../Frameworks")
     set(icd "${CMAKE_CURRENT_BINARY_DIR}/MoltenVK_icd.json")
     file(WRITE ${icd} "{\n    \"file_format_version\": \"1.0.0\",\n    \"ICD\": {\n"
@@ -28,5 +37,5 @@ function(cr_apple_vulkan target)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${moltenvk} ${contents}/Frameworks/libMoltenVK.dylib
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${icd} ${contents}/Resources/vulkan/icd.d/MoltenVK_icd.json
         COMMENT "MoltenVK into the .app")
-    message(STATUS "Upscalers (macOS): MetalFX (macOS 13+); MoltenVK bundled from ${libdir}")
+    message(STATUS "Upscalers (macOS): MetalFX (macOS 13+); MoltenVK bundled: ${moltenvk}")
 endfunction()

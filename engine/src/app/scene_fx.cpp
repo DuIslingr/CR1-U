@@ -515,12 +515,27 @@ void applyOrientation(App& app, bool captureDirection) {
 #endif
 }
 
+// Auto's layout on an iPhone or iPad: the screen in use - its short side under 540 points (an iPhone's
+// 375..440, the iPhone Duo's cover screen 466) the iPhone layout, else (an iPad's 744 on, the Duo
+// unfolded 626) the iPad's - the original's two releases' screens; a foldable changes it as it folds
+// (SDL_AppEvent: the window resized)
+bool smallScreen(const App& app) {
+#ifdef SDL_PLATFORM_IOS
+    int w = 0, h = 0;
+    return app.window && SDL_GetWindowSize(app.window, &w, &h) && w > 0 && h > 0 && std::min(w, h) < 540;
+#else
+    (void)app;
+    return false;
+#endif
+}
+bool autoPhoneLayout(const App& app) { return app.phoneData || smallScreen(app); }
+
 // Window size / fullscreen mode and the renderer's options from app.video
 void applyVideo(App& app) {
     App::Video& v = app.video;
     cr::Renderer& r = app.renderer;
     r.setWidescreen(v.widescreen);
-    r.setPhoneLayout(v.layout >= 2 || (v.layout == 0 && app.phoneData)); // 2.2.0's screens (3:2)
+    r.setPhoneLayout(v.layout >= 2 || (v.layout == 0 && autoPhoneLayout(app))); // 2.2.0's screens (3:2)
     r.setAndroidScreen(v.layout == 3); // (the Android release's: docs/ANDROID.md)
     r.setRenderScale(v.renderScale / 100.0f);
     r.setSamples(v.msaa);

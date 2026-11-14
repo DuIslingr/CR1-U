@@ -57,6 +57,13 @@ release is.
 - **Windows:** if SmartScreen warns about an unsigned program, choose *More info*, *Run anyway*.
 - **macOS:** right-click `chaosrings.app` and choose *Open* (it isn't signed).
 - **Linux:** `chmod +x` the AppImage, then run it.
+- **iPhone / iPad (iOS 15+):** the download's `.ipa` is unsigned: sideload it with AltStore, Sideloadly or
+  the like (they sign it with your Apple ID). Put your copy into the app's folder in the Files app (*On My
+  iPhone / iPad > Chaos Rings*, or Finder's Files tab with the device connected): `ios/` (the `.app`, or
+  the `.ipa` itself - unpacked when the game starts), `android/` or `vita/`, then *Look again*. It runs at
+  the display's rate (120 Hz on ProMotion screens), keeps the menus clear of the camera's notch or punch
+  hole, and with Layout on *Auto* takes the iPhone layout on a small screen and the iPad layout on a large
+  one - on a foldable it changes as you fold or open it. So far built by CI only, not yet tried on a device.
 - **Android:** install the APK. The first start's setup works on the phone too (it picks files;
   folders are copied in over USB). Or copy your files over USB into
   `Android/data/local.preservation.chaosrings/files/`, in an `ios/`, `android/` or `vita/` folder.
@@ -239,7 +246,7 @@ the default renderer (OpenGL 3.3 / ES 3.0 with `--renderer gl`, or when Vulkan c
 your copy in `engine/build/` (or wherever you start it from) as described above.
 
 Every push is built by CI (`.github/workflows/build.yml`) for Linux (AppImage), Windows, macOS
-(universal `.app`) and Android (APK). The Windows, macOS and Android builds, DLSS, FSR 4,
+(universal `.app`), Android (APK) and iOS (unsigned `.ipa`). The Windows, macOS, Android and iOS builds, DLSS, FSR 4,
 `-DCR_GLES=ON`, the tools, the self-test (`--selftest`), the self-playing `--explore` and
 `--capture` are covered in [docs/ENGINE.md](docs/ENGINE.md#building).
 

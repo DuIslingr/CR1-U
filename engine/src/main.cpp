@@ -551,11 +551,9 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             if (SDL_strcmp(argv[i], "--data") == 0) dataGiven = true;
             if (SDL_strcmp(argv[i], "--android") == 0) androidGiven = true;
         }
-#if !defined(SDL_PLATFORM_IOS)
-        if (!dataGiven)
+        if (!dataGiven) // (an iPhone's too: the .ipa copied into the Files app's ios/)
             for (const std::string& place : cr::gameFolders())
                 if (cr::installDroppedIpa(crSetupGame(), place, quiet)) break;
-#endif
         if (!androidGiven)
             for (const std::string& place : cr::gameFolders())
                 if (cr::installDroppedAndroid(crSetupGame(), place, quiet)) break;
@@ -721,8 +719,13 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         for (int i = 1; i < argc; ++i)
             for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
                 if (SDL_strcmp(argv[i], f) == 0) plainStart = false;
-        std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here, then Look again:\n" +
-                          (g.empty() ? std::string("(no folder)") : g.front()) +
+#ifdef SDL_PLATFORM_IOS
+        const std::string here = "the app's folder in the Files app (On My iPhone / iPad > Chaos Rings), or in Finder with "
+                                 "the device connected (Files)"; // (its Documents: UIFileSharingEnabled)
+#else
+        const std::string here = g.empty() ? std::string("(no folder)") : g.front();
+#endif
+        std::string msg = "Could not find your copy of the game.\n\nPut any one of these in the folder here, then Look again:\n" + here +
                           "\n\n  ios/      the iPad's ChaosRingsHD.app (or the iPhone's ChaosRings.app), or its .ipa (unpacked there)"
                           "\n  android/  the Android release's main.100.com.square_enix.chaosrings.googleplay.obb and its APK,"
                           "\n            or its .xapk / .apks (unpacked there)"
@@ -1087,6 +1090,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     if (app.inputCancel.note(*event)) return SDL_APP_CONTINUE;
     consumeInputCancel(app);
     switch (event->type) {
+    case SDL_EVENT_WINDOW_RESIZED: // (a foldable folded or opened: Auto's layout for the screen now in use)
+        if (app.video.layout == 0 && autoPhoneLayout(app) != app.renderer.phoneLayout()) applyVideo(app);
+        break;
     case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;
     case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)

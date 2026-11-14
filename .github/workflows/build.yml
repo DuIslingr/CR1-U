@@ -1,4 +1,4 @@
-# Builds the port on Linux, Windows and macOS (no game data: the build, the packaging). The
+# Builds the port on Linux, Windows, macOS, Android and iOS (no game data: the build, the packaging). The
 # binaries are the run's artifacts; nothing of the game is in them.
 name: build
 on:
@@ -7,6 +7,9 @@ on:
     tags: ['v*'] # (a version: the release job publishes the builds)
   pull_request:
   workflow_dispatch:
+
+env:
+  MOLTENVK: v1.4.2 # (Khronos's MoltenVK release: macOS bundles it, iOS links it in)
 
 jobs:
   desktop:
@@ -48,7 +51,7 @@ jobs:
         # (glslc and the headers everywhere - Ubuntu 22.04 has no glslc package; macOS: MoltenVK, universal - bundled into the .app)
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
-          vulkan_version: 1.4.309.0
+          vulkan_version: 1.4.363.1
           cache: true
       - name: DLSS SDK
         if: matrix.dlss
@@ -68,9 +71,14 @@ jobs:
       - name: Configure
         if: runner.os != 'macOS'
         run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ env.CR_DLSS_ARG }} ${{ matrix.dlss && '-DCR_DLSS_REQUIRED=ON' || '' }}
+      - name: MoltenVK (macOS; Khronos's latest release, over the SDK's)
+        if: runner.os == 'macOS'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/mvk.tar" https://github.com/KhronosGroup/MoltenVK/releases/download/${{ env.MOLTENVK }}/MoltenVK-macos.tar
+          tar -xf "$RUNNER_TEMP/mvk.tar" -C "$RUNNER_TEMP"
       - name: Configure (macOS, universal)
         if: runner.os == 'macOS'
-        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON
+        run: cmake -S engine -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON "-DCR_MOLTENVK=$RUNNER_TEMP/MoltenVK"
       - name: Build
         run: cmake --build build --parallel
       - name: Native Vita importer tests
@@ -192,11 +200,51 @@ jobs:
           name: ${{ github.event.repository.name }}-android
           path: upload
 
+  # iOS (iPhone, iPad): Vulkan through MoltenVK linked in (MetalFX from iOS 16), OpenGL ES 3 the fallback. Built
+  # unsigned: the .ipa is signed by whoever sideloads it (AltStore, Sideloadly, ...)
+  ios:
+    runs-on: macos-15
+    name: ios
+    steps:
+      - uses: actions/checkout@v5
+      - name: Vulkan SDK (glslc, to compile the shaders)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.363.1
+          cache: true
+      - name: MoltenVK (iOS; static)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/mvk.tar" https://github.com/KhronosGroup/MoltenVK/releases/download/${{ env.MOLTENVK }}/MoltenVK-ios.tar
+          tar -xf "$RUNNER_TEMP/mvk.tar" -C "$RUNNER_TEMP"
+      - name: Configure
+        run: |
+          ver=0.5.0
+          case "$GITHUB_REF_NAME" in v[0-9]*) ver="${GITHUB_REF_NAME#v}" ;; esac
+          cmake -S engine -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON "-DCR_MOLTENVK=$RUNNER_TEMP/MoltenVK" "-DCR_VERSION=$ver"
+      - name: Build
+        run: cmake --build build --config Release --target chaosrings -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      - name: Package (an unsigned .ipa)
+        run: |
+          app=$(find build -path '*Release-iphoneos/chaosrings.app' -maxdepth 4 | head -1)
+          test -n "$app"
+          plutil -p "$app/Info.plist" | grep -E 'CFBundleIdentifier|UIFileSharingEnabled|CADisableMinimumFrameDurationOnPhone'
+          lipo -info "$app/chaosrings"
+          otool -L "$app/chaosrings" | grep -E 'Metal|OpenGLES'
+          mkdir -p upload Payload
+          cp -R "$app" Payload/
+          zip -qry "upload/${{ github.event.repository.name }}-ios-unsigned.ipa" Payload
+          ls -la upload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-ios
+          path: upload
+
   # A version tag (v*): every platform's build - none with DLSS - on a GitHub release, its notes
   # packaging/release-notes.md
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, android]
+    needs: [desktop, android, ios]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

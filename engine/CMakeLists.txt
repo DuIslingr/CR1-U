@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(ChaosRings LANGUAGES C CXX)
+# (the iOS bundle's version - numbers alone, as Apple asks: CI passes the tag's)
+set(CR_VERSION "0.5.0" CACHE STRING "The app's version (x.y.z)")
 if(WIN32)
     enable_language(RC) # (the .exe's icon: cmake/app-icon.cmake)
 endif()
@@ -212,13 +214,34 @@ set_source_files_properties(${THIRD_PARTY_DIR}/gltf_libs.c PROPERTIES COMPILE_OP
 
 # Vulkan back end: the loader + headers and glslc (shaders are compiled to SPIR-V at build time
 # and embedded). Without them the game builds with OpenGL only.
-find_package(Vulkan QUIET)
+# iOS: MoltenVK linked into the app (a MoltenVK release's static xcframework - CR_MOLTENVK, the folder
+# holding its MoltenVK/static and MoltenVK/include), no loader: SDL finds vkGetInstanceProcAddr in the
+# program itself (SDL_uikitvulkan.m); glslc the build machine's
+set(CR_MOLTENVK "" CACHE PATH "iOS: a MoltenVK release's MoltenVK folder (MoltenVK/static, MoltenVK/include)")
+if(IOS AND CR_MOLTENVK)
+    set(mvk_lib ${CR_MOLTENVK}/MoltenVK/static/MoltenVK.xcframework/ios-arm64/libMoltenVK.a)
+    if(EXISTS ${mvk_lib})
+        add_library(Vulkan::Vulkan STATIC IMPORTED)
+        set_target_properties(Vulkan::Vulkan PROPERTIES IMPORTED_LOCATION ${mvk_lib}
+            INTERFACE_INCLUDE_DIRECTORIES ${CR_MOLTENVK}/MoltenVK/include
+            INTERFACE_LINK_LIBRARIES "-framework Metal;-framework IOSurface;-framework QuartzCore;-framework UIKit;-framework Foundation;-framework CoreGraphics;c++")
+        set(Vulkan_FOUND TRUE)
+        set(Vulkan_INCLUDE_DIRS ${CR_MOLTENVK}/MoltenVK/include)
+        set(Vulkan_VERSION "MoltenVK (static, iOS)")
+        find_program(GLSLC glslc HINTS $ENV{VULKAN_SDK}/bin NO_CMAKE_FIND_ROOT_PATH)
+    else()
+        message(WARNING "CR_MOLTENVK: no ${mvk_lib} - OpenGL ES alone")
+    endif()
+endif()
+if(NOT IOS)
+    find_package(Vulkan QUIET)
+endif()
 if(NOT Vulkan_FOUND AND MINGW AND CMAKE_CROSSCOMPILING)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/mingw-vulkan.cmake) # (llvm-mingw: no Vulkan SDK)
 endif()
 find_program(GLSLC glslc HINTS ${Vulkan_GLSLC_EXECUTABLE})
 set(CR_VULKAN OFF)
-if(Vulkan_FOUND AND GLSLC AND NOT ANDROID) # (Android: GLES 3)
+if(Vulkan_FOUND AND GLSLC AND NOT ANDROID) # (Android: GLES 3; iOS: MoltenVK, GLES 3 the fallback)
     set(CR_VULKAN ON)
     set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/shaders)
     set(SHADER_OUT ${CMAKE_CURRENT_BINARY_DIR}/shaders)
@@ -336,13 +359,27 @@ else()
     set_target_properties(chaosrings PROPERTIES
         MACOSX_BUNDLE_BUNDLE_NAME "Chaos Rings"
         MACOSX_BUNDLE_GUI_IDENTIFIER "local.preservation.chaosrings")
+    if(IOS) # iPhone and iPad: OpenGL ES 3.0 as Android's, the app's Documents its game folder (Files, Finder) -
+        # packaging/ios/Info.plist.in; built unsigned (the .ipa is signed by whoever sideloads it)
+        target_link_libraries(chaosrings PRIVATE "-framework OpenGLES" "-framework QuartzCore")
+        target_compile_definitions(chaosrings PRIVATE CR_GLES=1 CR_RELEASE=1)
+        set_target_properties(chaosrings PROPERTIES
+            MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/ios/Info.plist.in
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${CR_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${CR_VERSION}"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "local.preservation.chaosrings"
+            XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO")
+    endif()
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/app-icon.cmake)
     cr_app_icon(chaosrings chaosrings)
 
     # Headless asset tool (decode/verify), desktop only
-    add_executable(crtool tools/crtool.cpp)
-    target_link_libraries(crtool PRIVATE crcore)
-    target_include_directories(crtool SYSTEM PRIVATE ${THIRD_PARTY_DIR})
+    if(NOT IOS)
+        add_executable(crtool tools/crtool.cpp)
+        target_link_libraries(crtool PRIVATE crcore)
+        target_include_directories(crtool SYSTEM PRIVATE ${THIRD_PARTY_DIR})
+    endif()
 endif()
 # The setup (platform/setup.cpp) - the first start's, a phone's too, a dump copied into vita/ on any start:
 # a Vita NoNpDrm dump's files decrypted (third_party/psvpfsparser - Vita3K's, GPL-2.0) and a dump's

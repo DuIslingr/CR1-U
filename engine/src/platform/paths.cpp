@@ -66,6 +66,11 @@ std::vector<std::string> gameFolders() {
 #ifdef SDL_PLATFORM_MACOS
     if (const size_t app = base.rfind(".app/"); app != std::string::npos) add(base.substr(0, base.rfind('/', app) + 1));
 #endif
+#ifdef SDL_PLATFORM_IOS
+    // (an iPhone's or iPad's: the app's Documents - Info.plist's UIFileSharingEnabled shows it in the Files app,
+    // "On My iPhone > Chaos Rings", and in Finder -, not the .app, which can't be written)
+    if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) add(docs);
+#endif
     add(base);
     if (char* cwd = SDL_GetCurrentDirectory()) add(cwd), SDL_free(cwd);
     add(saveDir()); // (the profile folder: where the first start's setup copies the game when the game folder can't be written)
