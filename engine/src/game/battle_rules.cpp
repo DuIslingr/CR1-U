@@ -22,7 +22,17 @@ constexpr int kDefendAction = 26;
 
 int monsterField(const Fighter& f, int offset) { return f.def ? s16(&f.def->raw[size_t(offset)]) : 0; }
 
+
 } // namespace
+
+// Analyze's lists (2.2.0 FUN_0003f138 / FUN_0003f2b4): the elements whose resistance entry (+0x10 + 2k) is
+// 3 - weak - or 1 / 2 - resisted - in element order (Omega's weak list also takes 4; CR1's doesn't)
+std::vector<int> analyzeElements(const Fighter& f, bool weak) {
+    std::vector<int> out;
+    for (int k = 0; k < 5; ++k)
+        if (const int v = monsterField(f, 0x10 + 2 * k); weak ? v == 3 : v == 1 || v == 2) out.push_back(k);
+    return out;
+}
 
 bool BattleActionTable::load(const std::string& dataDir) {
     actions_.clear();
@@ -926,11 +936,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 h.type = kHitQuiet;
                 out.hits.push_back(h);
                 continue;
-            case 24: { // Analyze (0428 itself does nothing): the target's weak spot, from its resistances
-                out.message = 57045;
-                if (tx.def)
-                    for (int k = 0; k < 5; ++k)
-                        if (monsterField(tx, 0x10 + 2 * k) == 3) { out.message = 57032; out.messageValue = 57040 + k; break; }
+            case 24: { // Analyze (0428 itself does nothing): its lines come after the hit (btlact_gene 0xc1c..: analyzeElements)
                 h.type = kHitQuiet;
                 out.hits.push_back(h);
                 continue;

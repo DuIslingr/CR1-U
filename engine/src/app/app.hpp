@@ -720,6 +720,12 @@ struct App {
         bool roundFirst = false;           // btl_main 500 / 600: the round's first action doesn't wait for the banner
         int handover = 0;                  // frames before the next action's turn (btl_main 700's frame and 799's)
         int nodeFx = -1;                   // m103's blow: its effect 0x3f (b.effects' index), kept on node 1204
+        struct Analyze {                   // btlact_gene 0xc1c..0xc9e: Analyze's lines, each held until a tap
+            std::vector<std::string> pages;
+            size_t at = 0;
+            bool on = false;
+            int endAt = -1;                // the turn's frame it ends at (state 2000: 40 frames after the last tap)
+        } analyze;
         // the pair flags the action's calculation left (a member's fall ends pair mode, a monster's the enemy
         // pair round), held back until its hit: the original calculates there (_btlcalc_prc at the hit frame,
         // after _btlact_*_init chose the cameras, spots and slots from +0xae8 / +0xaec)

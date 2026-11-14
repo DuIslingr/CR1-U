@@ -187,6 +187,8 @@ struct BattleNotice {
 };
 
 // One resolved action, as the scene plays it
+std::vector<int> analyzeElements(const Fighter& f, bool weak);
+
 struct BattleTurn {
     int kind = kCmdNone;
     int action = 0;

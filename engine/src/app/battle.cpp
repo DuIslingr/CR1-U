@@ -1926,6 +1926,57 @@ void startTurn(App& app) {
 }
 
 // The hits land: the numbers, the targets' reactions, the HP the HUD shows
+// Analyze (action 0xe9; 2.2.0 _btlact_gene 38466-38650: after the calc, 0xc1c..0xc9e): for each target
+// (+0x8e, then +0x90) its name, its HP (57031, var 0 = +0x58), the elements it is weak to (57032 with
+// each name, 57040 + k) and those it resists (57033) - "No results" (57045) for an empty list - each
+// held on the banner until a tap (_pad_chk_trg_up); 40 frames after the last the action ends (2000)
+void startAnalyze(App& app) {
+    App::Battle& b = app.battle;
+    auto line = [&](int id, int value, const std::string& text) {
+        std::vector<std::vector<std::string>> pages;
+        if (!app.systemText.message(id, app.language, [&](int) { return value; }, pages, nullptr,
+                                    [&](int) { return text; }) || pages.empty() || pages[0].empty())
+            return std::string();
+        std::string s = pages[0][0];
+        for (size_t i = 1; i < pages[0].size(); ++i) s += " " + pages[0][i];
+        return s;
+    };
+    App::Battle::Analyze& an = b.analyze;
+    an = {};
+    std::vector<int> targets;
+    for (const cr::BattleHit& h : b.turn.hits)
+        if (h.target >= 0 && targets.size() < 2 && std::find(targets.begin(), targets.end(), h.target) == targets.end())
+            targets.push_back(h.target);
+    for (int t : targets) {
+        const cr::Fighter& f = b.rules.f[size_t(t)];
+        const App::Battle::Actor* u = battleActor(app, t);
+        an.pages.push_back(u ? u->name : std::string());
+        an.pages.push_back(line(57031, f.hp, std::string()));
+        for (const bool weak : {true, false}) {
+            const std::vector<int> list = cr::analyzeElements(f, weak);
+            if (list.empty()) an.pages.push_back(line(weak ? 57032 : 57033, 0, sysText(app, 57045)));
+            for (int k : list) an.pages.push_back(line(weak ? 57032 : 57033, 0, sysText(app, 57040 + k)));
+        }
+    }
+    if (an.pages.empty()) return;
+    an.on = true;
+    setBanner(app, an.pages[0], 1 << 20);
+}
+
+// A tap on Analyze's line: the next, or (after the last) the line stays its 40 frames and so does the action
+void analyzeTap(App& app) {
+    App::Battle& b = app.battle;
+    App::Battle::Analyze& an = b.analyze;
+    if (!an.on) return;
+    if (++an.at < an.pages.size()) {
+        setBanner(app, an.pages[an.at], 1 << 20);
+        return;
+    }
+    an.on = false;
+    an.endAt = b.turnFrame + 40;
+    b.bannerFrames = std::min(b.bannerFrames, 40);
+}
+
 void releasePair(App::Battle& b) { // the calc's pair flags, as its hit comes (see pairHeld)
     if (b.pairHeld) b.rules.pair = b.pairAfterHit, b.rules.enemyPair = b.enemyPairAfterHit;
     b.pairHeld = false;
@@ -1949,6 +2000,7 @@ void showHits(App& app) {
             !pages.empty() && !pages[0].empty())
             setBanner(app, pages[0][0], btlui::kMessageFrames);
     }
+    if (b.turn.kind == cr::kCmdGene && b.turn.action == 0xe9) startAnalyze(app); // btlact_gene 2000: 0xe9 -> 0xc1c
     for (const cr::BattleNotice& n : b.turn.notices) // btl_add_msgque: one waiting per fighter
         if (std::none_of(b.notices.begin(), b.notices.end(), [&](const cr::BattleNotice& q) { return q.fighter == n.fighter; }) &&
             b.notices.size() < 5)
@@ -2644,12 +2696,15 @@ void stepBattle(App& app) {
             // count 10), a gene's or item's forty after its hit (btlact_gene / item 2000, count 0x28), a
             // cancelled command's sixty on its user's camera (btlact_none_init: count 0x3c))
             if (!busy && b.turnFrame >= b.hitFrame && b.idleSince < 0) b.idleSince = b.turnFrame;
-            const bool over = b.turn.kind == cr::kCmdEscape ? b.turnFrame >= (b.turn.escaped ? 30 + 40 : 40)
+            const bool over = b.analyze.on ? false // (Analyze's lines: 40 frames after the last one's tap)
+                              : b.analyze.endAt >= 0 ? b.turnFrame >= b.analyze.endAt
+                              : b.turn.kind == cr::kCmdEscape ? b.turnFrame >= (b.turn.escaped ? 30 + 40 : 40)
                               : b.stageAction ? b.turnFrame >= b.hitFrame + b.stageWait // the staged ones' wait
                               : b.turn.cancelled ? b.turnFrame >= 60
                               : b.turn.kind == cr::kCmdAttack ? (b.idleSince >= 0 && b.turnFrame >= b.idleSince + 10) || b.turnFrame > 400
                                                               : (!busy && b.turnFrame >= b.hitFrame + 40) || b.turnFrame > 400;
             if (over) {
+                b.analyze = {};
                 if (b.stageAction == 433) // 9999: mdl_set_act_motion(0), it stands
                     if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) playSlot(app, *u, btlui::kSlotIdle);
                 b.stageAction = 0;
@@ -3438,6 +3493,10 @@ void battleKey(App& app, SDL_Keycode key) {
         if (enter || back) b.lostTap = true;
         return;
     }
+    if (b.analyze.on) { // Analyze's lines: the next
+        if (enter) analyzeTap(app);
+        return;
+    }
     if (b.phase != App::Battle::Command || !battleMenuReady(app)) return;
     switch (b.menu) {
     case App::Battle::Top:
@@ -3496,6 +3555,10 @@ void battleClick(App& app, float px, float py) {
     }
     if (b.phase == App::Battle::Lost) { // (anywhere: the defeat goes on with a tap)
         b.lostTap = true;
+        return;
+    }
+    if (b.analyze.on) { // _pad_chk_trg_up: anywhere turns Analyze's line
+        analyzeTap(app);
         return;
     }
     if (b.phase == App::Battle::Won) { // (anywhere ends the victory's hold)

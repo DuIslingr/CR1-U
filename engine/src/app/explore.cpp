@@ -1050,6 +1050,26 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                         for (int f = 0; f < 600 && b.turnOn; ++f) stepBattle(app);
                         b.phase = App::Battle::Command, b.turnOn = false;
                     }
+                    // Analyze (0xe9; _btlact_gene 0xc1c..0xc9e): the target's name, its HP, its weak and its resisted
+                    // elements - "No results" for an empty list - a line a tap, the action 40 frames after the last
+                    {
+                        void startAnalyze(App & app);
+                        void analyzeTap(App & app);
+                        b.turn = cr::BattleTurn();
+                        b.turn.kind = cr::kCmdGene, b.turn.action = 0xe9, b.turn.actors[0] = 0;
+                        b.turn.hits.resize(1);
+                        b.turn.hits[0].target = 2;
+                        b.turnFrame = 50;
+                        startAnalyze(app);
+                        const cr::Fighter& tf = b.rules.f[2];
+                        const size_t want = 2 + std::max<size_t>(1, cr::analyzeElements(tf, true).size()) +
+                                            std::max<size_t>(1, cr::analyzeElements(tf, false).size());
+                        size_t taps = 0;
+                        const bool started = b.analyze.on && b.analyze.pages.size() == want;
+                        while (b.analyze.on && taps < 20) analyzeTap(app), ++taps;
+                        check(started && taps == want && b.analyze.endAt == 90, "analyze-lines");
+                        b.analyze = {};
+                    }
                     // B2 / B3: a gene lands at its cast slot's loop start + 30, cutting to its target
                     int gene = -1;
                     for (int id = 1; id < app.battleActions.count() && gene < 0; ++id)
