@@ -712,7 +712,13 @@ c101/c102/c104/m207a, 2026-10-12).
 - [x] A battle's rounds as 2.2.0's `btl_main` 700-899: `btlord_chk` at 799 ends the battle
       as soon as a side is down - before the round's end (`btlcalc_status_prc`, 899), so no
       poison, regen or countdown follows a win or a loss, and before it looks at the Break: a
-      last blow that also turns the Break gives no "BREAK!!"
+      last blow that also turns the Break gives no "BREAK!!". `btlque_make_que` keeps its state
+      per action: Trompe-L'œil's cancel roll and its Break point are once an action (que +0xbe /
+      +0xbd), not once a battle; a refused command ("Not enough MP", silenced, no item left, the
+      broken pair's gene) ends its record - Asura Lotus's further strikes, a twice-acting
+      monster's second go - and no counter follows an action in which anyone fell (que +0xc4);
+      the guest's own genes (groups 370 / 372 / 373) cost nothing, as only the menu writes a
+      command's MP
 - [x] The battle's status messages (`btl_add_msgque`): "<name> was poisoned!", the stat ups,
       the barrier, endure, invincible, silence, an element given, a command cancelled and each
       stolen item queue up (one per fighter) and take the banner one at a time for 60 frames,

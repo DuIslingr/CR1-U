@@ -610,6 +610,7 @@ void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable
         if (allyScript == 1) e.action = c == 0 ? 212 : 14;
         else e.action = c == 0 ? 214 : c == 1 ? 14 : 207;
         e.kind = e.action == 14 ? kCmdAttack : kCmdGene;
+        e.noCost = true; // (30496-30545 write no MP, +0x1c - btlord_init_all zeroed it, 6434: make_que's check and pay read 0)
         e.target = random(3) + 2;
         queue_.push_back(e);
     }
@@ -726,11 +727,12 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             Entry fresh = e;
             fresh.rechoose = false;
             fresh.paid = false; // (btlai_prc clears the entry's announced flag, +0x3e0: named again)
-            enemyChoice(e.actors[0], e.actors[1] >= 0, fresh, actions, e.action);
+            enemyChoice(e.actors[0], enemyPair, fresh, actions, e.action); // (btlai_prc reads +0xaec as it is now)
             fresh.repeats = 1;
             if (fresh.kind == kCmdNone) continue;
             e = fresh;
         }
+        bool againQueued = false;
         if (e.repeats > 1 && outcome() == 0) { // btlque_make_que: the record stays for another go
             Entry again = e;
             --again.repeats;
@@ -739,7 +741,15 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             // action ruled out; not Asura Lotus)
             if (e.actors[0] >= 2 && e.action != 207 && f[size_t(e.actors[0])].def && f[size_t(e.actors[0])].def->raw[0x3e] == 2) again.rechoose = true;
             queue_.insert(queue_.begin() + std::ptrdiff_t(next_), again);
+            againQueued = true;
         }
+        // btlque_make_que's cancels (57065 / 57003 / 57080 / 57081, LAB_00034768 31079-31083 and 31112-31117): the
+        // record's count to 0 and done - its further goes (Asura Lotus's strikes, a twice-acting monster's second) go too
+        auto cancel = [&](int message) {
+            if (againQueued) queue_.erase(queue_.begin() + std::ptrdiff_t(next_));
+            out.cancelled = true, out.message = message;
+            return true;
+        };
         for (int& a : e.actors) // the fallen don't act
             if (a >= 0 && !f[size_t(a)].alive()) a = -1;
         if (e.actors[0] < 0) std::swap(e.actors[0], e.actors[1]);
@@ -767,6 +777,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         out.counter = e.counter;
         out.repeat = e.paid;
         breakFlags &= ~0x3200u; // btl_main 600: per action
+        queFell_ = false;       // (make_que's memset of the que, base + 0x494, 200 bytes: +0xc4, +0xbd, +0xbe)
+        bool cancelTried = false, cancelBreak = false; // que +0xbe / +0xbd: Trompe-L'oeil's cancel roll won, its Break point
         if (e.kind == kCmdEscape) {
             // btlact_escape_init: certain while the pair holds the Break, else by levels
             int chance = 100;
@@ -798,34 +810,26 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // btlque_make_que: a gene silenced since it was chosen (+0x8f) - "can't use genes" (57065)
         // in place of the action; the pair's without the MP any more - 57081
         const unsigned ac = unsigned(e.action);
-        if (e.kind == kCmdGene && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u && ac - 1u > 124u && ac - 413u > 16u) {
-            out.cancelled = true, out.message = 57065;
-            return true;
-        }
+        if (e.kind == kCmdGene && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u && ac - 1u > 124u && ac - 413u > 16u)
+            return cancel(57065);
         // (btlque_make_que 31096-31125: the pair broke this round - a member whose own plates lack the
         // gene can't cast it, 57003 with the first actor's name; before the MP's check)
         if (e.kind == kCmdGene && e.actors[0] < 2 && pairBroken_)
             for (int k : e.actors)
-                if (k >= 0 && k < 2 && std::find(f[size_t(k)].abilities.begin(), f[size_t(k)].abilities.end(), int(e.action) - 120) == f[size_t(k)].abilities.end()) {
-                    out.cancelled = true, out.message = 57003;
-                    return true;
-                }
+                if (k >= 0 && k < 2 && std::find(f[size_t(k)].abilities.begin(), f[size_t(k)].abilities.end(), int(e.action) - 120) == f[size_t(k)].abilities.end())
+                    return cancel(57003);
         if (e.kind == kCmdItem && e.actors[0] < 2 && e.item >= 21 && e.item <= 46 && !bag_.empty()) { // none left: 57080
-            if (bag_[size_t(e.item)] <= 0) {
-                out.cancelled = true, out.message = 57080;
-                return true;
-            }
+            if (bag_[size_t(e.item)] <= 0) return cancel(57080);
             --bag_[size_t(e.item)];
         }
-        if (e.kind == kCmdGene && e.actors[0] < 2 && !e.paid) { // the gene's MP: each member pays it in pair mode
+        // the gene's MP (que +0xaa, the record's +0x1c - the first go's only): each member pays it in pair mode; the
+        // guest's own entries carry none (31108 / 31279-31300 read 0: its genes are free)
+        if (e.kind == kCmdGene && e.actors[0] < 2 && !e.paid && !e.noCost) {
             const int cost = geneCost(*a, e.actors[0]);
             bool enough = true;
             for (int k : e.actors)
                 if (k >= 0) enough &= f[size_t(k)].mp >= cost;
-            if (!enough) {
-                out.cancelled = true, out.message = 57081;
-                return true;
-            }
+            if (!enough) return cancel(57081);
             for (int k : e.actors)
                 if (k >= 0) f[size_t(k)].mp -= cost;
         }
@@ -1093,8 +1097,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             }
             if (calc == 0 && a->id == 201 && h.amount >= 1) { // btlcalc_0404: Trompe-L'oeil
                 const bool held = holdsBreak(e.actors[0]);
-                if (random(8) == 0 && held && !cancelTried_) {
-                    cancelTried_ = true;
+                if (random(8) == 0 && held && !cancelTried) { // (_btlcalc_0404 22066-22090: once an action)
+                    cancelTried = true;
                     if (!monsterField(tx, 0x32)) // the targets' commands this round are cancelled
                         for (int c : hitList) {
                             for (size_t q = next_; q < queue_.size(); ++q)
@@ -1102,7 +1106,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                             notice(c, 3);
                         }
                 }
-                if (!held && !cancelBreak_) cancelBreak_ = true, breakEvent(e.actors[0], 0x20, t);
+                if (!held && !cancelBreak) cancelBreak = true, breakEvent(e.actors[0], 0x20, t);
             }
             out.hits.push_back(h);
         }
@@ -1176,7 +1180,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // btlque_add_counter: only once the striker's record is done (a repeating one on its last
         // go); one answer, played next, by the blow's targets (que +0x8e, here up to two: the pair
         // both) on its actors (+0x84), with the attack of the fighter whose roll it was
-        if (counterBy >= 0 && e.actors[0] >= 0 && e.repeats <= 1) {
+        // ... and none when someone fell in the action: chk_dead's que +0xc4 has btl_main 700 wipe the counter list
+        // (6232-6235)
+        if (counterBy >= 0 && e.actors[0] >= 0 && e.repeats <= 1 && !queFell_) {
             Entry c;
             c.counter = true;
             c.kind = kCmdAttack;
@@ -1270,6 +1276,7 @@ bool BattleRules::invincible(int t) const {
 
 void BattleRules::fall(int t, const int actors[2], bool itemsAndGenes) {
     Fighter& tf = f[size_t(t)];
+    queFell_ = true;
     for (int& s : tf.status) s = 0;
     if (t < 2) tf.element = 0; // (chk_dead: a member's element goes with it)
     tf.guarding = false;

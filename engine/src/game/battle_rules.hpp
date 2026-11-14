@@ -325,6 +325,7 @@ private:
         int repeats = 1;          // +0xb: monsters with row +0x3e 2 act twice; Asura Lotus 2..5 times
         bool paid = false;        // a repeat: the MP went with the first
         bool rechoose = false;    // a twice-acting monster's second go: chosen as it comes up (btlque_make_que)
+        bool noCost = false;      // record +0x1c left 0: btlord_enemy_rand's guest entries (only the menu writes the MP)
         bool done = false;        // +0x399: acted, or cancelled (Trompe-L'oeil)
         int kind = kCmdNone;
         int action = 0, item = 0;
@@ -347,9 +348,8 @@ private:
     void sayLine(int by, int a, int b, int c) { lineBy_ = by, line_[0] = a, line_[1] = b, line_[2] = c; }
     int note_ = 0;                      // a message the calcs show at once (an immunity), 0 none
     int noteValue_ = 0;                 // ... the item it names (a gene learned)
-    bool cancelTried_ = false;          // G+0xaa: Trompe-L'oeil's cancel came up (once a battle)
     bool pairBroken_ = false;          // actor +0xd1: pair mode broke by a fall this round (chk_dead 24537-24541; state 500 clears it)
-    bool cancelBreak_ = false;          // G+0xa9: its Break event, the once it isn't held
+    bool queFell_ = false;              // que +0xc4: someone fell in this action (chk_dead 24522 / 24562) - btl_main 700 drops the counters
     int firstTarget_ = -1;              // G+0x7a: the action's first target (btlcalc_critical)
     int soloMember_ = 0;                // btl +0xaea: the party member whose action came up last (btlque_make_que)
     void notice(int fighter, int entry);

@@ -279,7 +279,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 bad += gbad;
             }
             { // btlcalc_0404's Human Genes: Risk Breaker (203) and Trompe-L'oeil (201)
-                int rbBad = 0, cancels = 0, rbLanded = 0, rbPaid = 0;
+                int rbBad = 0, cancels = 0, rbLanded = 0, rbPaid = 0, again = 0;
                 bool once = true;
                 for (uint32_t seed = 1; seed <= 200; ++seed) {
                     cr::GameState fresh;
@@ -316,20 +316,129 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                         }
                         if (pass == 1 && cancelled) {
                             ++cancels;
-                            once &= !enemyActed;
-                            for (int r = 0; r < 20; ++r) { // never again this battle
+                            once &= !enemyActed; // (the cancelled monster's command this round is gone)
+                            // que +0xbe (2.2.0 _btlcalc_0404 22066-22090) is the action's - make_que clears the que each
+                            // action -, not the battle's: later casts may cancel again
+                            bool later = false;
+                            for (int r = 0; r < 20; ++r) {
                                 k.f[2].hp = k.f[2].hpMax;
+                                k.f[0].mp = 999;
                                 k.beginRound(cmd, app.battleActions);
                                 while (k.nextTurn(app.battleActions, tt))
-                                    for (const cr::BattleNotice& n : tt.notices) once &= n.entry != 3;
+                                    for (const cr::BattleNotice& n : tt.notices) later |= n.entry == 3 && n.fighter == 2;
                             }
+                            again += later;
                         }
                     }
                 }
-                rbBad += rbLanded == 0 || rbPaid != rbLanded || cancels == 0 || cancels > 60 || !once;
+                rbBad += rbLanded == 0 || rbPaid != rbLanded || cancels == 0 || cancels > 60 || !once || again * 2 < cancels;
                 std::printf("human genes: Risk Breaker cost a quarter of the HP %d/%d times, Trompe-L'oeil cancelled %d/200 "
-                            "(once a battle %s)\n", rbPaid, rbLanded, cancels, once ? "yes" : "NO");
+                            "(the command gone %s; again in 20 more rounds %d times)\n", rbPaid, rbLanded, cancels, once ? "yes" : "NO", again);
                 bad += rbBad;
+            }
+            { // btlque_make_que's per-action state (2.2.0): Trompe-L'oeil's Break point each cast (que +0xbd), a cancel
+              // ends the record's further goes, the guest's genes free, no counter in an action someone fell in
+                int qbad = 0;
+                cr::GameState fresh;
+                cr::giveStartingItems(fresh);
+                for (auto& m : fresh.party) m.level = 30;
+                auto setup = [&](cr::BattleRules& r, uint32_t seed) {
+                    r.seed(seed);
+                    r.setupParty(fresh, app.itemTable, 0);
+                    r.setupEnemies(app.battleData, app.battleData.group(1), 2);
+                };
+                int points[3] = {0, 0, 0};
+                { // the enemies hold the Break: each Trompe-L'oeil that lands is worth its 0x20 point (+1) beside the damage's
+                    cr::BattleRules r;
+                    setup(r, 7);
+                    r.breakStarted = true;
+                    for (int i = 2; i < 5; ++i)
+                        if (r.f[size_t(i)].present) r.f[size_t(i)].hp = r.f[size_t(i)].hpMax = 99999, r.f[size_t(i)].grd = 0, r.f[size_t(i)].lck = -1000;
+                    for (int round = 0; round < 3; ++round) {
+                        r.breakGauge = r.breakTarget = -8;
+                        r.f[0].mp = 999, r.f[0].hp = r.f[0].hpMax, r.f[1].hp = r.f[1].hpMax;
+                        cr::BattleCommand c[2];
+                        c[0].kind = cr::kCmdGene, c[0].action = 201, c[0].target = 2, c[1].kind = cr::kCmdDefend;
+                        r.forceAction = 413;
+                        r.beginRound(c, app.battleActions);
+                        cr::BattleTurn t;
+                        while (true) {
+                            const int was = r.breakTarget;
+                            if (!r.nextTurn(app.battleActions, t)) break;
+                            if (t.action == 201 && !t.hits.empty() && t.hits[0].amount > 0) points[round] = r.breakTarget - was;
+                        }
+                        r.endRound();
+                    }
+                    qbad += points[0] != 2 || points[1] != 2 || points[2] != 2;
+                }
+                int strikesAfter = -1;
+                { // Asura Lotus (207) without its MP: "Not enough MP" (57081) and no strikes after it
+                    cr::BattleRules r;
+                    setup(r, 4);
+                    for (int i = 2; i < 5; ++i)
+                        if (r.f[size_t(i)].present) r.f[size_t(i)].hp = r.f[size_t(i)].hpMax = 99999;
+                    r.f[0].mp = 10;
+                    cr::BattleCommand c[2];
+                    c[0].kind = cr::kCmdGene, c[0].action = 207, c[0].target = 2, c[1].kind = cr::kCmdDefend;
+                    r.forceAction = 413;
+                    r.beginRound(c, app.battleActions);
+                    cr::BattleTurn t;
+                    bool refused = false;
+                    while (r.nextTurn(app.battleActions, t))
+                        if (t.actors[0] == 0) {
+                            if (t.cancelled && t.message == 57081) refused = true, strikesAfter = 0;
+                            else if (refused) ++strikesAfter;
+                        }
+                    qbad += strikesAfter != 0;
+                }
+                int guestMp = -1, guestRefused = 0, guestGenes = 0;
+                { // the guest (group 372, route 1): Möwe and Asura Lotus at no MP
+                    cr::BattleRules r;
+                    r.seed(11);
+                    r.setupParty(fresh, app.itemTable, 1);
+                    r.setupSpecial(fresh, app.itemTable, 372, 1);
+                    r.setupEnemies(app.battleData, app.battleData.group(372), 5);
+                    for (int i = 2; i < 5; ++i)
+                        if (r.f[size_t(i)].present) r.f[size_t(i)].hp = r.f[size_t(i)].hpMax = 999999, r.f[size_t(i)].atk = 0;
+                    const int mp = r.f[1].mp;
+                    for (int round = 0; round < 6; ++round) {
+                        cr::BattleCommand c[2];
+                        c[0].kind = cr::kCmdDefend;
+                        r.forceAction = 413;
+                        r.beginRound(c, app.battleActions);
+                        cr::BattleTurn t;
+                        while (r.nextTurn(app.battleActions, t))
+                            if (t.actors[0] == 1) guestRefused += t.cancelled, guestGenes += t.kind == cr::kCmdGene;
+                        r.endRound();
+                    }
+                    guestMp = r.f[1].mp - mp;
+                    qbad += !r.allyAuto || guestMp != 0 || guestRefused != 0 || guestGenes < 4;
+                }
+                int falls = 0, countersAfterFall = 0;
+                for (uint32_t seed = 1; seed <= 20; ++seed) { // pair mode: member 0 falls to a blow that also hits member 1 (its stance)
+                    cr::BattleRules r;
+                    setup(r, seed);
+                    r.pair = true;
+                    r.f[0].hp = 1, r.f[1].counterStance = true;
+                    r.f[0].grd = r.f[1].grd = 0, r.f[0].lck = r.f[1].lck = -1000;
+                    cr::BattleCommand c[2];
+                    c[0].kind = cr::kCmdDefend;
+                    r.forceAction = 10;
+                    r.beginRound(c, app.battleActions);
+                    cr::BattleTurn t;
+                    bool fellLast = false;
+                    while (r.nextTurn(app.battleActions, t)) {
+                        countersAfterFall += t.counter && fellLast;
+                        fellLast = false;
+                        for (const cr::BattleHit& h : t.hits) fellLast |= h.fell;
+                        falls += fellLast;
+                    }
+                }
+                qbad += falls == 0 || countersAfterFall != 0;
+                std::printf("battle rounds (make_que per action): Trompe-L'oeil's Break point %d %d %d, Asura Lotus refused and "
+                            "%d strikes after, the guest's MP %+d (%d genes, %d refused), %d counters after %d falls: %d problems\n",
+                            points[0], points[1], points[2], strikesAfter, guestMp, guestGenes, guestRefused, countersAfterFall, falls, qbad);
+                bad += qbad;
             }
             // skills: the damage scaling, criticals, MP, healing, regen, the Gates, level-up boosts
             {
