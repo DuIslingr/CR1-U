@@ -33,7 +33,7 @@ struct WalkBody {
     bool wall = false;        // kind bit 2 set, bit 4 clear: its four sides are walls
     bool floor = false;       // kind bit 4: its top is a floor (getFloorHeight)
     bool shown = true;        // _ChkNpcDisp (+0x8c bit 0 clear)
-    bool scriptModel = false; // +0x98: its model read by a script (__EvtNpcMdlRead) - the standing push skips it
+    bool scriptModel = false; // +0x98: its model read by a script (__EvtNpcMdlRead) - CR1's pushes don't read it
 };
 
 // Height of the floor under (x, z) that the walker at height `y` stands on: the highest floor

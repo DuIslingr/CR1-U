@@ -1314,7 +1314,7 @@ void ViewerHost::loadNpc(int id) {
         buildNpcDraws(app);
         return;
     }
-    if (cr::FieldNpc* had = findNpc(app, id)) { // (+0x98: the standing push leaves it out)
+    if (cr::FieldNpc* had = findNpc(app, id)) { // (+0x98: marked - CR1's pushes don't read it)
         if (had->model >= 0) had->mdlRead = true;
         had->shownSet = false; // (19179: the model's drawn yaw = its yaw)
         return;

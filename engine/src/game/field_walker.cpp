@@ -250,7 +250,9 @@ bool bodyPush(const std::vector<WalkBody>& bodies, Vec3 c, float r, Vec3 vel, bo
     float ax = 0, az = 0;
     bool face = false, edge = false;
     for (const WalkBody& b : bodies) {
-        if (!b.wall || !b.shown || (standing && b.scriptModel)) continue;
+        // (kind bit 2, shown, bit 4 clear - 0x3c8e8 / 0x3cf40 read no +0x98: a script-read model pushes too, an
+        // Omega rule CR1's 2.2.0 hasn't; scriptModel is kept for the record only)
+        if (!b.wall || !b.shown) continue;
         for (int i = 0; i < 4; ++i) {
             Vec3 v[4], n;
             bodySide(b, i, v, n);
