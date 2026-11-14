@@ -2162,6 +2162,8 @@ void showHits(App& app) {
                 if (!area) sound(0x64 + 2 * uint32_t(element));
                 else if (!areaSounded) sound(0x65 + 2 * uint32_t(element)), areaSounded = true;
             }
+            if (b.turn.action == 0x7a || b.turn.action == 0xe0) sound(0x6f); // (22200-22202: the poison's, every target)
+            if (element > 0) sound(0x71 + uint32_t(element)); // (FUN_00029ce8, 22211: the users' weapons take the element)
             break;
         case 2: case 3: case 4: case 5: case 6: sound(0x60); break; // 0407 .. 0411
         case 7: if (t != user) sound(0x6d); break;                   // 0412
@@ -2169,12 +2171,17 @@ void showHits(App& app) {
             if ((t < 2) != (user < 2)) sound(0x6f);
             else if (h.amount < 0) healSound(-h.amount);
             break;
-        case 12: case 15: case 17: if (h.amount < 0) healSound(-h.amount); break; // 0417, 0420, 0422
+        case 12: // 0417 (22803-22822): action 0xe8's one area burst sounds 0x70 once, the rest as healed
+            if (b.turn.action == 0xe8) sound(0x70);
+            else if (h.amount < 0) healSound(-h.amount);
+            break;
+        case 15: case 17: if (h.amount < 0) healSound(-h.amount); break; // 0420, 0422
         case 13: case 16: case 18: case 22: sound(0x6c); break;      // 0418, 0421, 0423, 042700
         case 14: sound(0x59); break;                                 // 0419
         case 19: sound(0x71); break;                                 // 0424
-        case 23: sound(b.turn.action == 0xe8 ? 0x70 : 0x6c); break;  // 042701
+        case 23: sound(0x6c); break;                                 // 042701
         case 24: sound(0x79); break;                                 // 0428
+        case 25: if (element > 0) sound(0x71 + uint32_t(element)); break; // zokusei_chr1 (23536-23538)
         case 26: sound(0x78); break;                                 // 030205
         case 27: case 28: case 29: case 30: case 32: case 33: case 34: case 35: case 36: sound(0x6e); break; // 030206 .. 0602
         case 31: sound(0x6f); break;                                 // 030210
@@ -2204,6 +2211,7 @@ void showHits(App& app) {
                 // target; the jolt, the effect and the sound whenever the damage is 0 or more (0x1b2 / 0x1b3 the jolt only)
                 if (h.amount < 0) break;
                 startQuake(app, 3, 100, 0, 5, false);
+                if (b.turn.action == 0x7a || b.turn.action == 0xe0) spawnEffect(app, kDrain, t); // (22200: the poison's 0x25)
                 if (act->element <= 0 || b.turn.action == 0x1b2 || b.turn.action == 0x1b3) break;
                 if (act->scope == 5) {
                     if (!area) spawnEffectAt(app, 0x24 + 3 * act->element, {500, 0, t < 2 ? 523.0f : 472.0f});
@@ -2211,10 +2219,19 @@ void showHits(App& app) {
                 } else
                     id = kGene + 3 * act->element;
                 break;
-            case 2: case 3: case 4: case 5: case 6: case 9: case 10: id = kFixed; break;
+            case 2: case 3: case 4: case 5: case 6: id = kFixed; break;
+            case 9: break;          // 0414 (22605-22626): no effect, no sound
+            case 10: id = 0x18; break; // 0415 (22628-22681): 0x18 on each target, by its size
             case 7: id = t == user ? -1 : kSacrifice; break;
             case 8: id = (t < 2) == (user < 2) ? kHeal : kDrain; break;
-            case 12: case 13: case 14: case 15: case 16: case 17: case 18: case 22: case 23: case 35: case 36: id = kHeal; break;
+            case 12: // 0417: action 0xe8 one burst 0x30 at the field's middle, on the user's side (once), else each healed
+                if (b.turn.action == 0xe8) {
+                    if (!area) spawnEffectAt(app, 0x30, {500, 0, user < 2 ? 523.0f : 472.0f});
+                    area = true;
+                } else
+                    id = kHeal;
+                break;
+            case 13: case 14: case 15: case 16: case 17: case 18: case 22: case 23: case 35: case 36: id = kHeal; break;
             case 19: id = kRevive; break;
             case 24: id = kAnalyze; break;
             case 25: id = act->element > 0 ? 0x31 + act->element : -1; break;
@@ -2390,9 +2407,9 @@ void stepBossDown(App& app) {
     App::Battle& b = app.battle;
     const int f = b.phaseFrames, m = b.bossModel;
     App::Battle::Actor* boss = battleActor(app, 2);
-    if (m < 9 || m > 12) { // 0x3de, then 999's 40 frames and 1000's 10
+    if (m < 9 || m > 12) { // 0x3de, then 999's 39 frames and 1000's 10
         if (b.bossWait > 0 && --b.bossWait < 2) {
-            b.bossWait = -40; // (999's +0xae0 40; 1000's 10 frames are the Won phase's own)
+            b.bossWait = -39; // (999 (6643-6648) counts +0xae0 40 down to 1: 39 frames; 1000's 10 are the Won phase's own)
             if (boss) boss->fading = true, spawnEffect(app, 0x1b, 2);
             app.sound.play(0x5f);
         } else if (b.bossWait < 0 && ++b.bossWait == 0) battleWon(app);
