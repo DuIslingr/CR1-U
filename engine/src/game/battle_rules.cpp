@@ -114,6 +114,7 @@ void BattleRules::setupParty(const GameState& gs, const ItemTable& items, int ro
         x.spd = memberStat(gs, x.character, kSpeed, items);
         x.lck = memberStat(gs, x.character, kLuck, items);
         for (int s = 131; s <= 186; ++s) x.skills[size_t(s - 131)] = hasSkill(gs, x.character, s);
+        x.abilities = usableAbilities(gs, x.character); // (chk_gene_btl's: a broken pair's survivor casts from its own plates)
     }
 }
 

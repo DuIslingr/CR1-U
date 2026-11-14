@@ -366,6 +366,7 @@ struct App {
     struct Portrait {                      // Tex2d slots (+0xbd10 + slot * 0x70 in the original)
         cr::Texture tex;
         int image = -1;
+        bool hd = true;                    // read from its _hd file (drawn at half its pixels); else drawn whole
         float x = 0, y = 0, alpha = 0;     // 1024x768 screen pixels
         float home = 0;                    // resting x (left / right / centre)
         int side = 0;                      // -1 left, 1 right: the side it slides from

@@ -1944,8 +1944,10 @@ void drawMessageMark(App& app, int style, int rectY, float right, float bottom) 
 
 // _PutMsg's skip button: tex2d (444, 0) on the iPhone - 36 in from the safe area's right, at its
 // top (Android: + ox, - oy) - drawn while a scene plays
-void drawMessageSkip(App& app, float right, float top) {
-    if (!app.runner.running()) return;
+// PutMsg (2.2.0 25027-25110): only with the window up (state 3); in the band style (0x20) only once a line
+// has characters or a message is being typed (0x337cc) - not with the bare band
+void drawMessageSkip(App& app, float right, float top, bool shown) {
+    if (!app.runner.running() || !shown) return;
     drawWinPiece(app, kWinSkip, right - 72 + 2 * androidEdgeX(app), top - 2 * androidEdgeY(app), 64, 64);
 }
 
@@ -2045,7 +2047,9 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         if (textOn) drawMessageLines(app, page, tx, ty, s, centreAll, flipX);
         (void)pageNo; // (PutMsg draws no page count)
         if (next && textOn) drawMessageMark(app, style, rect[0], right, H);
-        drawMessageSkip(app, right, top);
+        bool lines = false;
+        for (const std::string& l : page) lines = lines || !l.empty();
+        drawMessageSkip(app, right, top, textOn && (!(style & 0x20) || lines));
         return;
     }
     (void)portraits;
@@ -2117,7 +2121,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
     }
     if (textOn) drawMessageLines(app, page, textX, textY, msgScale(app, kMsgPoints), false, textX); // text and name from the screen's left
     if (next && textOn) drawMessageMark(app, style, 0, right, H); // (steady: PutMsg doesn't blink it)
-    drawMessageSkip(app, right, top); // a scene is playing
+    drawMessageSkip(app, right, top, textOn); // a scene is playing
 }
 
 void drawWinPiece(App& app, const float* piece, float x, float y, float w, float h, float alpha) {
@@ -2630,11 +2634,13 @@ void drawFrame(App& app, bool present) {
                     app.order2d.portrait = ++app.order2d.seq;
                     continue;
                 }
-                const float w = float(p.tex.width) * p.scale, h = float(p.tex.height) * p.scale; // zooms about its centre
+                // (an _hd picture at half its pixels in tex2d units - the screen's pixels here -, any other whole)
+                const float bw = float(p.tex.width) * (p.hd ? 1.0f : 2.0f), bh = float(p.tex.height) * (p.hd ? 1.0f : 2.0f);
+                const float w = bw * p.scale, h = bh * p.scale; // zooms about its centre
                 // Widescreen: side portraits keep to the screen's edges (as the later widescreen
                 // release does), centre images to the middle
                 const float edge = p.side < 0 ? wideLeft(app) - r.uiX() : p.side > 0 ? wideRight(app) - r.uiX() : 0.0f; // (inside the safe area)
-                const float x = edge + p.x - (w - float(p.tex.width)) / 2, y = p.y - (h - float(p.tex.height)) / 2;
+                const float x = edge + p.x - (w - bw) / 2, y = p.y - (h - bh) / 2;
                 r.drawQuadUV(p.tex, x, y, w, h, p.side == 1 ? float(p.tex.width) : 0, 0,
                              p.side == 1 ? -float(p.tex.width) : float(p.tex.width), float(p.tex.height), p.shade,
                              p.shade, p.shade, p.alpha); // right-hand portraits are mirrored (slot +0xe)

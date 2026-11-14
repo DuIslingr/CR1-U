@@ -1217,7 +1217,14 @@ void ViewerHost::tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3
         static const char* const kTitleLang[6] = {"fr", "de", "es", "cs", "ct", "kr"};
         const bool own = image == 11 && app.language >= 2 && app.language <= 7 &&
                          loadImage(app, std::string("MAPtitle_") + kTitleLang[app.language - 2] + "_hd.mct", img);
-        if (own || loadImage(app, cr::kTex2dImage[image], img)) p.tex = app.renderer.upload(img);
+        // (FUN_00006588 2161: <name>_hd.mct when it exists - slot +0x2bcca set, _tex2d_img_prc (7528) halving it -
+        // else <name>.mct drawn whole: c001..c004_C00's rings, the d0xxx slides at their own size)
+        std::string base = cr::kTex2dImage[image];
+        if (base.size() > 4) base.resize(base.size() - 4);
+        if (base.size() > 3 && base.compare(base.size() - 3, 3, "_hd") == 0) base.resize(base.size() - 3);
+        p.hd = true;
+        if (own || loadImage(app, base + "_hd.mct", img)) p.tex = app.renderer.upload(img);
+        else if (loadImage(app, base + ".mct", img)) p.tex = app.renderer.upload(img), p.hd = false;
         p.image = image;
         // (0x8000 only sizes it - a full-screen card; a load alone shows nothing: tex2d_img_prc
         // draws a slot once 0x200 / 0x400 has turned it on - Uty_TexDisp draws loaded ones itself)
@@ -1335,6 +1342,10 @@ void ViewerHost::loadNpc(int id) {
     n.treasure = row.box;
     n.puzzle = row.puzzle;
     n.scale = row.scale;
+    n.native = row.native;
+    // (19143 keeps the row: _npc_shodow (35278) reads its +0x12 bit 15 and +0x1e..+0x24 - a read NPC casts its shadow)
+    std::memcpy(n.link, row.link, sizeof n.link);
+    std::memcpy(n.shadow, row.shadow, sizeof n.shadow);
     n.mdlRead = n.model >= 0;
     app.npcShown[id] = npcCreateFlags(app, n) && app.events.npcListId(app.mapNumber, int(app.npcs.size())) <= 399;
     app.npcs.push_back(n);
@@ -1374,8 +1385,11 @@ void ViewerHost::panCamera(const float* d, int frames) {
             // (GetScroll as it is now - mid-slide too: FUN_00055234 writes it each frame (53283-53320), PanCam
             // reads it, asm 0x22b84-0x22c1c. 1.0.1's two hand nudges - route 3's 300 on map 86, route 2's 265
             // on map 23 - are gone in 2.2.0)
-            const float x = fs.scripted ? fs.curX : fs.offX;
-            const float y = fs.scripted ? fs.curY : fs.offY;
+            // (curX / offX are the scaled view's pixels; scriptFieldScroll scales what it's given - so the base goes
+            // back to the record's units first: only the delta is doubled, __EvtFrmPanCam 18646, 0x22b84)
+            const float k = std::max(1e-4f, fieldViewScale(app));
+            const float x = (fs.scripted ? fs.curX : fs.offX) / k;
+            const float y = (fs.scripted ? fs.curY : fs.offY) / k;
             const float dx = d[0], dy = d[1];
             // (GetScroll's x is the painting's offset, as this scroll's is, but its y the camera's - + y
             // up -, this one's the other way: d01's 0, 400 then 0, -400 over 200 frames starts high and
@@ -1550,8 +1564,12 @@ void ViewerHost::frameEffect(int actor, int effect, int scale, const float* v, b
     float pitch = 0, roll = 0;
     // (an actor's at its model's node for this effect - 1101 the body, 1102 the head, 1003 the root - as
     // eff3d_set puts it; its feet without the node)
-    if (actorPos(app, actor, p)) fieldActorPoint(app, actor, effectNode(effect), p);
-    else { // not an NPC: where the scene's record has it
+    // (__EvtFrmPlayEff 18936 / FrmPlayEff2 19618: the NPC only when its control slot holds a model - a model-less
+    // one in the room's list (600 / 627 / 658 ...) takes the record's spot, not its parked one)
+    const cr::FieldNpc* fn = actor > 0 ? findNpc(app, actor) : nullptr;
+    const bool modelled = actor == 0 || (fn && fn->model >= 0);
+    if (modelled && actorPos(app, actor, p)) fieldActorPoint(app, actor, effectNode(effect), p);
+    else { // not an NPC with a model: where the scene's record has it
         if (!v) return;
         p = {v[0], v[1], v[2]};
         // FrmPlayEff2 (eff3d_set_with_pos_and_ang) takes its angles too: X and Z stand; the Y
