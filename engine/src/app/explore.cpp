@@ -5449,9 +5449,17 @@ int runSelfTest(App& app) {
         int slideBad = 0;
         problems += c.notice != 56010 || !app.game.flag(0x38);
         const bool noMask10 = menuMaskWanted(app, atOnce) < 0; // (CampMainSet: no mask before 56010 is read)
+        // (NextProc 0: flag 3 and gene_01's picture, its first page from the first page turn)
+        stepTutoTex(app);
+        app.game.setFlag(4075, true);
+        stepTutoTex(app);
+        const bool picture10 = app.game.flag(3) && app.tutoTex.on && app.tutoTex.page == 0;
         app.dialogue.clear();
         steps(1);
-        problems += c.notice != 0;
+        stepTutoTex(app);
+        if (c.notice != 0 || !picture10 || app.game.flag(3) || app.tutoTex.on)
+            std::printf("  camp 56010: notice %d, picture %d, flag 3 %d, picture on %d\n", c.notice, int(picture10), int(app.game.flag(3)),
+                        int(app.tutoTex.on)), ++problems;
         const bool mask10 = menuMaskWanted(app, atOnce) == 1;
         const int atk0 = cr::maxStat(app.game.party[0], 0, cr::kAttack, app.itemTable);
         c.cursor = 0, key(SDLK_RETURN);                       // Items, the first time: 56016 first (flag 0x39)

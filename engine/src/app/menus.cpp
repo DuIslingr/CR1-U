@@ -1943,6 +1943,22 @@ void campNotice(App& app, int id) {
     app.camp.notice = id;
     menuSound(app, se::kWinOpen); // (_MsgUty_WinOpen 76973: SE 6; its close 7, 77165)
     showMessages(app, {id});
+    // (__MuCamp_NextProc 0, 63182-63186: SetFlag(3), then FUN_0007b304 - table 0xbe100: 10 (56010 "Gene Plates") has
+    // picture 11, gene_01, 3 pages, MsgUty_TexDispInit - drawn while flag 3 holds, a page a page turn; state 1 clears
+    // flag 3 as the message ends. 0x10 (56016) has none)
+    if (id == 56010) {
+        App::TutoTex& t = app.tutoTex;
+        app.renderer.destroy(t.tex);
+        t = App::TutoTex();
+        cr::Image img;
+        if (loadImage(app, "gene_01_hd.mct", img) || loadImage(app, "gene_01.mct", img)) t.tex = app.renderer.upload(img);
+        t.on = true, t.state = 1, t.pages = 3;
+        const int rows[4] = {0, 1, 2, -1}, frames[4] = {1, 2, 1, -1}; // (the manual's topic 10: manualpic)
+        for (int k = 0; k < 4; ++k) t.row[k] = rows[k], t.frames[k] = frames[k];
+        t.x = 144, t.y = 160;
+        app.game.setFlag(4075, false);
+        app.game.setFlag(3, true);
+    }
 }
 
 // The Status details' lists (CampMainPrc 3's state 2): the seven the member wears
@@ -2455,6 +2471,7 @@ void stepCamp(App& app) {
     if (c.notice && app.dialogue.empty()) { // the message closed: on to what was asked (CampMain 2)
         const int id = c.notice;
         c.notice = 0;
+        if (id == 56010) app.game.setFlag(3, false); // (NextProc 1: ClrFlag(3) - the picture goes)
         menuSound(app, se::kWinClose); // (_MsgUty_WinClose 77165)
         c.anim = 0;
         if (id == 56016) campOpenPage(app, 0, false);

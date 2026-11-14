@@ -2468,7 +2468,7 @@ int menuMaskWanted(const App& app, bool& atOnce) {
         atOnce = true;
         return app.saveScreen.load ? 0 : -1;
     }
-    if (app.tutoTex.on) return 0;
+    if (app.tutoTex.on && !app.campOpen) return 0; // (the Camp's 56010 picture keeps CampMainSet's no mask)
     // (the Camp's: none under a once-only message - CampMainSet masks only once 56010 is read (63017-63033, 63192),
     // the first Items tap clears it for 56016 (63266-63274) - nor from CampMain 0xd on, the frame after Back:
     // MuCom_MenuClrMask, the Camp closing seven frames later)
