@@ -1123,6 +1123,23 @@ void battleOpenTargets(App& app, int action) {
     menuSound(app, se::kChoose);
 }
 
+// _btlact_autoguard (10429-10483): a guarding fighter's slot-4 loop - a member's own guard, either member's in pair
+// mode; a monster's only at size 1, or with the enemy pair formed either of fighters 2 / 3 (skill 153's, set at the
+// round's start by btlord_enemy_rand 30668-30742) - true when it took the pose
+bool autoguardPose(App& app, int k) {
+    App::Battle& b = app.battle;
+    const auto& f = b.rules.f;
+    if (k < 0 || k > 4 || !f[size_t(k)].alive()) return false;
+    bool on;
+    if (k < 2) on = f[size_t(k)].guarding || (b.rules.pair && f[size_t(1 - k)].guarding);
+    else if (b.rules.enemyPair && (k == 2 || k == 3)) on = f[2].guarding || f[3].guarding;
+    else on = f[size_t(k)].guarding && monsterSize(app, k) == 1;
+    App::Battle::Actor* a = on ? battleActor(app, k) : nullptr;
+    if (!a) return false;
+    if (a->slot != btlui::kSlotGuard) playSlot(app, *a, btlui::kSlotGuard);
+    return true;
+}
+
 void battleStartRound(App& app) {
     App::Battle& b = app.battle;
     b.rules.beginRound(b.cmds, app.battleActions);
@@ -1130,6 +1147,7 @@ void battleStartRound(App& app) {
     for (int k = 0; k < 2; ++k) // defending holds the guard pose through the round (one chosen just now: as its page has gone)
         if (b.rules.f[size_t(k)].guarding && !(b.guardDue & (1 << k)))
             if (App::Battle::Actor* a = battleActor(app, k)) playSlot(app, *a, btlui::kSlotGuard);
+    for (int k = 2; k < 5; ++k) autoguardPose(app, k); // (skill 153 on a monster: btlord_enemy_rand's slot-4 loop)
     b.phase = App::Battle::Acting;
     b.phaseFrames = 0;
     b.turnOn = false;
@@ -2117,7 +2135,9 @@ void startTurn(App& app) {
             const cr::BattleAnim ca = app.battleData.anim(u->modelId, u->slot);
             if (ca.loopEnd > ca.loopStart) u->loopFrom = ca.loopStart, u->loopTo = ca.loopEnd;
         } else
-            playSlot(app, *u, slot, moves ? btlui::kSlotReturn : btlui::kSlotIdle);
+            // (_btlact_attack_init 10725: m210a..c's slot-10 shot is _mdl_set_act_nextanm2(model, 10, 0) - a cut)
+            playSlot(app, *u, slot, moves ? btlui::kSlotReturn : btlui::kSlotIdle,
+                     t.kind == cr::kCmdAttack && slot == 10 && u->modelId >= 0x28 && u->modelId <= 0x2a);
         const cr::BattleAnim an = app.battleData.anim(u->modelId, slot);
         // (_btlact_gene_init / _btlact_item_init: the hit at the cast slot's loop start + 30 - the item's
         // slot 12, the gene's its class)
@@ -3164,7 +3184,8 @@ void stepBattle(App& app) {
                 App::Battle::Actor* u = who >= 0 ? battleActor(app, who) : nullptr;
                 if (!u || u->then >= 0 || u->slot == btlui::kSlotIdle) continue; // (a mover's own way)
                 const cr::Fighter& fw = b.rules.f[size_t(std::clamp(who, 0, 4))];
-                if (fw.guarding || (b.turn.kind == cr::kCmdGene && !fw.alive())) continue; // (the gene's _IsDead; the item's none)
+                if (b.turn.kind == cr::kCmdGene && !fw.alive()) continue; // (the gene's _IsDead; the item's none)
+                if (autoguardPose(app, who)) continue; // (_btlact_autoguard: a guarding user back in its guard, 38489)
                 u->then = btlui::kSlotIdle, u->castRest = true;
                 u->loopFrom = u->loopTo = -1;
             }
@@ -3177,6 +3198,9 @@ void stepBattle(App& app) {
             // count 10), a gene's or item's forty after its hit (btlact_gene / item 2000, count 0x28), a
             // cancelled command's sixty on its user's camera (btlact_none_init: count 0x3c))
             if (!busy && b.turnFrame >= b.hitFrame && b.idleSince < 0) b.idleSince = b.turnFrame;
+            // (_btlact_attack 1999's start, 11160-11168: each user's _btlact_autoguard - back in its guard after the attack)
+            if (b.turn.kind == cr::kCmdAttack && b.attackEndAt >= 0 && b.turnFrame == b.attackEndAt - 10)
+                for (int k : b.turn.actors) autoguardPose(app, k);
             const bool over = b.analyze.on ? false // (Analyze's lines: 40 frames after the last one's tap)
                               : b.analyze.endAt >= 0 ? b.turnFrame >= b.analyze.endAt
                               : b.turn.kind == cr::kCmdEscape ? b.turnFrame >= (b.turn.escaped ? 30 + 40 : 40)
