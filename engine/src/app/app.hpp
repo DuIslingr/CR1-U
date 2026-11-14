@@ -755,6 +755,7 @@ struct App {
         bool turnOn = false;               // an action is playing
         cr::BattleTurn turn;
         int turnFrame = 0, hitFrame = 0;
+        int strikes[2] = {-1, -1};         // _btlact_attack's que +0xb2 / +0xb4: earlier strikes - spark, sound, flinch, no number
         int bounceAt = -1;                 // a reflected gene's turn: when it comes back (-1 not yet met)
         bool hitsShown = false;
         struct Popup { cr::Vec3 at; int amount = 0, type = 0, timer = 0; bool mp = false, on = false; float y = 0; };

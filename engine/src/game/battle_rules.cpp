@@ -758,6 +758,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         out = BattleTurn();
         notices_.clear();
         chimes_ = 0;
+        lineBy_ = -1;
         note_ = 0, noteValue_ = 0;
         out.kind = e.kind;
         out.action = e.action;
@@ -909,6 +910,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 ozStolen += take;
                 f[size_t(e.actors[0])].stolen += take;
                 out.message = take > 0 ? 57039 : 57038;
+                if (take > 0) sayLine(t, 0x16, 0x17, 0x18); else sayLine(t, 0x22, 0x23, 0x24); // (0415 22671: the robbed side)
                 out.messageValue = take;
                 h.type = kHitQuiet;
                 out.hits.push_back(h);
@@ -1134,6 +1136,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 }
             } else
                 out.message = 57038; // failed
+            // (0504 24186-24208: a catch 0x96, a failure 0x97 - the thief's side; "nothing left" none)
+            if (out.message == 0) sayLine(e.actors[0], 0x96, 0x96, 0x96);
+            else if (out.message == 57038) sayLine(e.actors[0], 0x97, 0x97, 0x97);
         }
         if (a->calc == 7) // 0412: the users give up their HP to 1
             for (int k : e.actors)
@@ -1204,6 +1209,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         firstTarget_ = -1;
         out.notices = notices_;
         out.chimes = chimes_;
+        out.lineBy = lineBy_;
+        for (int k = 0; k < 3; ++k) out.line[k] = line_[k];
         if (!out.message) out.message = note_, out.messageValue = noteValue_;
         return true;
     }
@@ -1321,6 +1328,7 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
                 if (lv >= kFrom[k] && g > 0 && !knows(g) &&
                     std::find(learned.begin(), learned.end(), g) == learned.end()) {
                     learned.push_back(g), learnedNew = true, ++chimes_; // (FUN_0002ae14, 24346: SE 0x12)
+                    sayLine(actors[0], 0xa9, 0xaa, 0xab); // (0506 24357)
                     note_ = isSkill(g) ? 57050 : 57049, noteValue_ = g; // (btlcalc_0506's line, at once)
                     break;
                 }

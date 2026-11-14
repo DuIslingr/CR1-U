@@ -2140,6 +2140,43 @@ void startTurn(App& app) {
             if (const int h = app.battleData.anim(m, slot2).hit; second && h > 0) b.hitFrame = h;
         }
     if (t.kind == cr::kCmdAttack) attackCounts(app, t, a ? a->cls : -1);
+    // (_btlact_attack_init 10755-10972: +0xb2 the slot's second hit frame (hit2); a joint (slot 0xd) +0xb2 / +0xb4
+    // the first's 0xd hit / hit2; a pair whose second is model 1 (an enemy pair's 0x4b / 0x4c) +0xb2 the first's
+    // hit; any other pair +0xb4 the second's slot-8 hit - state 1000 (11338-11360) shows each that isn't +0xb0)
+    b.strikes[0] = b.strikes[1] = -1;
+    if (t.kind == cr::kCmdAttack && !b.stageAction)
+        if (const App::Battle::Actor* u0 = battleActor(app, t.actors[0])) {
+            const int s0 = attackSlot(app, t, 0, u0->modelId, a ? a->cls : -1);
+            const cr::BattleAnim a0 = app.battleData.anim(u0->modelId, s0);
+            int b2 = a0.hit2, b4 = -1;
+            if (const App::Battle::Actor* u1 = t.actors[1] >= 0 ? battleActor(app, t.actors[1]) : nullptr) {
+                const int m = u1->modelId, s1 = attackSlot(app, t, 1, m, a ? a->cls : -1);
+                if (s1 == 0xd) b2 = app.battleData.anim(u0->modelId, 0xd).hit, b4 = app.battleData.anim(u0->modelId, 0xd).hit2;
+                else if (t.actors[0] < 2 ? m == 1 : m == 0x4b || m == 0x4c) b2 = a0.hit;
+                else b4 = app.battleData.anim(m, 8).hit;
+            }
+            for (int k = 0; k < 2; ++k) {
+                const int f = k ? b4 : b2;
+                if (f > 0 && f != b.hitFrame) b.strikes[k] = f;
+            }
+        }
+}
+
+// ___btlcalc_0404_effect (23613-23650): an earlier strike on every target of the stored result - the flinch
+// (slot 5) when it takes damage and isn't guarding; unless fended off (type 6): a critical's 0x19 + SE 0x56,
+// the first actor's element's 0x25 + 3e + SE 0x74 + e, else 0x18 + SE 0x53..0x55 - no number, no quake
+void showStrike(App& app) {
+    App::Battle& b = app.battle;
+    const int ue = b.turn.actors[0] >= 0 ? b.rules.f[size_t(b.turn.actors[0])].element : 0;
+    for (const cr::BattleHit& h : b.turn.hits) {
+        if (h.own || h.target < 0) continue;
+        if (App::Battle::Actor* a = battleActor(app, h.target); a && h.amount > 0 && a->slot != btlui::kSlotGuard)
+            playSlot(app, *a, btlui::kSlotHit, btlui::kSlotIdle, true);
+        if (h.type == cr::kHitGuard) continue;
+        if (h.type == cr::kHitCritical) spawnEffect(app, effects::kCritical, h.target), app.sound.play(0x56);
+        else if (ue > 0) spawnEffect(app, 0x25 + 3 * ue, h.target), app.sound.play(0x74 + uint32_t(ue));
+        else spawnEffect(app, effects::kHit, h.target), app.sound.play(0x53 + uint32_t(b.rules.random(3)));
+    }
 }
 
 // The hits land: the numbers, the targets' reactions, the HP the HUD shows
@@ -2217,7 +2254,8 @@ void showHits(App& app) {
             !pages.empty() && !pages[0].empty())
             setBanner(app, pages[0][0], btlui::kMessageFrames);
     }
-    for (int k = 0; k < b.turn.chimes; ++k) app.sound.play(0x12); // (FUN_0002ae14: an ability or skill into the bag - video 02 485.4 s)
+    for (int k = 0; k < b.turn.chimes; ++k) app.sound.play(0x12);
+    if (b.turn.lineBy >= 0) btlvoice::playSide(app, b.turn.lineBy, b.turn.line[0], b.turn.line[1], b.turn.line[2]); // (the calcs' lines) // (FUN_0002ae14: an ability or skill into the bag - video 02 485.4 s)
     if (b.turn.kind == cr::kCmdGene && b.turn.action == 0xe9) startAnalyze(app); // btlact_gene 2000: 0xe9 -> 0xc1c
     for (const cr::BattleNotice& n : b.turn.notices) // btl_add_msgque: one waiting per fighter
         if (std::none_of(b.notices.begin(), b.notices.end(), [&](const cr::BattleNotice& q) { return q.fighter == n.fighter; }) &&
@@ -2994,9 +3032,9 @@ void stepBattle(App& app) {
                 startTurn(app);
                 if (SDL_getenv("CR_BATTLE_TURNLOG")) { // debugging: each action's start and end, by battle frame
                     const App::Battle::Actor *u0 = battleActor(app, b.turn.actors[0]), *u1 = b.turn.actors[1] >= 0 ? battleActor(app, b.turn.actors[1]) : nullptr;
-                    std::printf("turn start: battle frame %d, kind %d action %d, actors %d (%s slot %d) %d (%s slot %d), hit %d, pair %d/%d, motion %d\n", b.frames,
+                    std::printf("turn start: battle frame %d, kind %d action %d, actors %d (%s slot %d) %d (%s slot %d), hit %d (strikes %d %d), pair %d/%d, motion %d\n", b.frames,
                                 b.turn.kind, b.turn.action, b.turn.actors[0], u0 ? u0->model.c_str() : "-", u0 ? u0->slot : -1, b.turn.actors[1],
-                                u1 ? u1->model.c_str() : "-", u1 ? u1->slot : -1, b.hitFrame, int(b.rules.pair), int(b.rules.enemyPair),
+                                u1 ? u1->model.c_str() : "-", u1 ? u1->slot : -1, b.hitFrame, b.strikes[0], b.strikes[1], int(b.rules.pair), int(b.rules.enemyPair),
                                 app.battleActions.get(b.turn.action) ? app.battleActions.get(b.turn.action)->motion : -1);
                 }
             } else if (std::none_of(std::begin(b.popups), std::end(b.popups), [](const App::Battle::Popup& p) { return p.on; }))
@@ -3033,12 +3071,16 @@ void stepBattle(App& app) {
             const int slot = enemyCameraSlot(app, firstTarget(b.turn));
             setBattleCamera(app, slot * 4 + (b.rules.pair ? 0x14b : b.turn.actors[0] == 0 ? 0x7b : 0xe3), 0);
         }
+        if (!b.hitsShown)
+            for (int k = 0; k < 2; ++k)
+                if (b.strikes[k] > 0 && b.turnFrame == b.strikes[k]) showStrike(app);
         if (!b.hitsShown && b.turnFrame >= b.hitFrame) {
             if (!b.turn.barriers.empty() && b.bounceAt < 0) {
                 // btlact_gene / btlact_item 0x1004: the barriers light up, the users stop; 40 frames
                 // on (0x100e) the barrier's side sends it back, and it lands on them
                 for (int k : b.turn.barriers) spawnEffect(app, effects::kBuff, k);
                 app.sound.play(0x78);
+                if (b.turn.kind == cr::kCmdGene) btlvoice::playSide(app, b.turn.barriers[0], 0xa5, 0xa5, 0xa5); // (_btlact_gene 38455: the barrier's side; items none)
                 for (int k : b.turn.actors) // (_mdl_set_act(user, 0), 38459 / 39182: a cut to the idle)
                     if (App::Battle::Actor* u = k >= 0 ? battleActor(app, k) : nullptr) playSlot(app, *u, btlui::kSlotIdle, btlui::kSlotIdle, true);
                 b.bounceAt = b.turnFrame + 40;

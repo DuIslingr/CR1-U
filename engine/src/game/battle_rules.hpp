@@ -210,6 +210,8 @@ struct BattleTurn {
     int escapeChance = 0;
     std::vector<BattleNotice> notices; // the calcs' queued messages (the scene shows them in turn)
     int chimes = 0;              // abilities / skills (81..186) into the bag: SE 0x12 each (FUN_0002ae14 / FUN_0002aa8c)
+    int lineBy = -1;             // a calc's _btlvoice_play_side: the fighter whose side speaks, and its three clips
+    int line[3] = {0, 0, 0};
 };
 
 class BattleRules {
@@ -341,6 +343,8 @@ private:
     size_t next_ = 0;
     std::vector<BattleNotice> notices_; // this action's, handed to BattleTurn::notices
     int chimes_ = 0;                    // this action's SE 0x12s
+    int lineBy_ = -1, line_[3] = {0, 0, 0}; // this action's calc voice line (handed to BattleTurn)
+    void sayLine(int by, int a, int b, int c) { lineBy_ = by, line_[0] = a, line_[1] = b, line_[2] = c; }
     int note_ = 0;                      // a message the calcs show at once (an immunity), 0 none
     int noteValue_ = 0;                 // ... the item it names (a gene learned)
     bool cancelTried_ = false;          // G+0xaa: Trompe-L'oeil's cancel came up (once a battle)
