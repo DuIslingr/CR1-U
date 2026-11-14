@@ -283,7 +283,9 @@ c101/c102/c104/m207a, 2026-10-12).
       cleared by the tenth) kept below the chart's end and unmarked until 39, the later pairs'
       strips silhouetted until a first story is finished, and
       Achievements % (each chapter's points). It reads every pair's saves together, as the
-      original's system data; Up/Down, the wheel or a drag scroll it. Options opens the screen
+      original's system data; Up/Down, the wheel or a drag (from the chart's box, tex2d (0, 62)-(480,
+      285)) scroll it, the arrows bobbing while there is more (`ComUty_PictMoveDraw`); it fades in over
+      4 frames, and Back (SE 3) closes it 7 frames on (`HistoryPrc` 2 / 3). Options opens the screen
       below in title mode. `--viewer` (or `--map`,
       `--model`, …) opens the asset viewer instead; `--new-game` skips the title
 - [x] The Options screen (**V**, or Options on the title), rebuilt from the original's pieces
@@ -296,12 +298,21 @@ c101/c102/c104/m207a, 2026-10-12).
       HD Textures, Smooth Models
       (a line under the rows explains the row under the cursor, and why an option can't run on
       this machine). The original's own settings keep their labels in
-      the game's language. Keys: Up/Down, Left/Right, Enter, Q/E or PgUp/PgDn for pages, Esc; the
-      mouse clicks buttons, gauges, the page number and Back. Saved to settings.ini. From the title
+      the game's language. Keys: Up/Down, Left/Right, Enter, Q/E or PgUp/PgDn for pages, Esc; by
+      touch, as 2.2.0's `_pad_chk_updw_box`, the buttons, a picker's arrows, the page number and Back
+      run as the touch lifts on them and light while held, On / Off take the press, a gauge follows
+      the finger in steps of 10 and is set (and sounded) as it is let go, its fill sliding to the
+      knob over 10 frames. The windows move on OptionPrc's frames (4-frame `WinDispOn / Off`): a page
+      turned slides its halves out and the next page's in 5 frames on, Reset Data / Return to Title
+      put the page out before Yes / No and the board come, Back closes 8 frames after the tap (input
+      waits meanwhile). Saved to settings.ini. From the title
       it is in title mode, as in the original: Reset Data instead of Return to Title. Return to
-      Title works. The **Instruction Manual** (`__menuu_OptionPrc` 0xf..0x16): the manual items held
-      (439..478, then 501 / 502; new data holds 19 of them - `prty_init_all`'s 0xc4fd0) in label bars;
-      a topic opens its page (system message 56000 + item - 439, 501 / 502 item - 0x1d2) in the
+      Title works (the fade a frame after Yes, the title 16 frames after it). The **Instruction
+      Manual** (`__menuu_OptionPrc` 0xf..0x16): the manual items held (439..478, then 501 / 502; new
+      data holds 19 of them - `prty_init_all`'s 0xc4fd0) in a layout-0 `MuScrList` as the Camp's
+      Items list - the rows under the focus line, the HELP board with the focused topic's text, the
+      gauge, the one-part Back; a tap on the line's row (as it lifts) opens it, on another brings it
+      there, a drag scrolls - in from the right as Options' windows go; a topic opens its page (system message 56000 + item - 439, 501 / 502 item - 0x1d2) in the
       standard message window (style 8, at `_mwin[4]` with a picture, else `_mwin[5]`), paged by tap,
       five of them with their tutorial picture (MsgUty_SetMsg's table at 0xbe100), and closes back to
       the list at that topic. The first Options of a game (flag 0x43) open on 56035 "Option" in that
@@ -360,7 +371,10 @@ c101/c102/c104/m207a, 2026-10-12).
       Saved: flags, variables, items, opened boxes, area / map / position / facing, the leader,
       play time, the date. Loading arrives as a warp would (the room's entry scripts run).
       `CR_SAVE_DIR` puts the files elsewhere; `--camp`, `--save-screen save|load`, `--char-select`,
-      `--scenarios` (`--at y` scrolls), `--manual` (`--at n p` opens topic n's page p) capture them, `--title-new p` goes through the title as a player would (pair 1 / 2, New)
+      `--scenarios` (`--at y` scrolls), `--manual` (`--at n p` opens topic n's page p, `--at n nan` the list
+      at topic n; `CR_CAPTURE_MANUAL_FRAMES` steps the list's coming), `--volume-menu`
+      (`CR_CAPTURE_OPTIONS_FRAMES` steps the page's coming, `CR_CAPTURE_OPTIONS_KEYS` "next step ask ...")
+      capture them, `--title-new p` goes through the title as a player would (pair 1 / 2, New)
 - [x] **Shops** (Util 2, `__menuu_Shop*`; the Ark's shopkeeper, script 251 of areas 7/13/19/25):
       Talk / Buy / Sell, then Items / Weapons / Armor / Jewel, the list, how many with Yes / No,
       and "Equip it?" after buying gear (any, one worn already too; Yes refills the pair's HP and
@@ -752,7 +766,9 @@ c101/c102/c104/m207a, 2026-10-12).
       on (J; refused while the story holds it). Skill 174 worn banks 1 EXP every 10 units
       walked, paid into the next win. Both are kept in the save. `--capture … --field-menu
       closed|open|known|off|map[step]` shows it. Map opens the gate's map (`__menuu_Map*`): the
-      pair's blinking marker on its field and the story's two markers for where to go next.
+      pair's blinking marker on its field and the story's two markers for where to go next; it fades
+      in from the frame after it opens, takes a tap from the fifth frame and closes as the touch
+      lifts (`MapPrc`: `pad_chk_updw_box(0, 0, 480, 320)` trg), held whole a frame, then out.
 - [x] Script natives: the pair's healing (2018), the music by var (2024 / 2026), the shop ended by
       its script (2025) and its own music (track 19, then the one before), the pair number
       (2027), the loading spinner (2028), the dungeons' area-name banners (`TexDisp`, 2016), the
@@ -812,8 +828,8 @@ c101/c102/c104/m207a, 2026-10-12).
         and the right-hand one (plates, lists, Yes / No, the clock and Oz) to its right, as the
         later widescreen release does - the title, Camp, both save screens, shop, battle and its
         results, World Select, Final Battle, the field's corner buttons and a puzzle room's
-        counter, taps and clicks following them; the list screens (Options, the manual,
-        Scenarios), Back, the message boards and dialogue stay centred. The iPhone layout keeps
+        counter, taps and clicks following them (the manual's list with the Camp's); the list
+        screens (Options, Scenarios), Back, the message boards and dialogue stay centred. The iPhone layout keeps
         its one centred screen
       - Painted rooms: Original (2×, a screen-sized window following the player and the scripts,
         as the game) or Fill (the port's: the same window zoomed until the room's painting covers

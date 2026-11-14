@@ -2071,14 +2071,31 @@ interrupt data (0xf..0x14; Yes: `__bgmgo(0x8000000)`, `SetFade` black 500 ms, 10
 `SaveData_Load_set`); picture 155's box (320, 16, 57 × 57) opens the store with SE 2, 124's (380,
 16, 80 × 72) the publisher's page (1.0.1: both the store).
 
-**Options** (`__menuu_Option*`): the "Options" plate (picture 102) at (8, 4); rows at (20, 56 + 48k);
-controls at x 224 / 344 (gauges at (224, 108) and (224, 156)); "1 / 2" from the 14-unit digits
-(digit d at (14d, 0), "/" picture 66) at (20, 298); Back at (192, 288). Windows 1 / 3 (rows) slide in
-from x −240, 2 / 4 (controls) from +240. Page 1: Instruction Manual (58081, Check), BGM (58085)
-and Sound Effects (58086) gauges, Language (58082: Japanese / English), Environment Effects
-(58108: On / Off); page 2: Lock Screen Orientation (58109: On / Off), Return to Title (58123) or,
-from the title screen, Reset Data (58122). `__MuOptionSetInfo` writes them back: language, the
-volumes to AppCtl +0x31dd1 / +0x31dd2, the two flags to +0x31dd4 and bit 0 of +0x31dd3.
+**Options** (`__menuu_Option*`; 2.2.0's - 1.0.1's had Japanese / English buttons and no Voice): the "Options"
+plate (picture 102) at (8, 4) with "1 / 2" from the 14-unit digits (digit d at (14d, 0), "/" picture 66) at
+(20, 298) in window 0; the labels (`_ComUty_OptCategoryDraw`) at (20, 56 + 48k), window 1 / 3; the controls
+window 2 / 4; Back (`ComUty_CmdBack` mode 2, its < > turning the page) window 5. Page 1 (labels 0xbd300 {81,
+85, 86, 124, 82}): Instruction Manual - a button (word 23) at (344, 48) (0xbd2c0); BGM, Sound Effects and
+Voice - gauges (`ComUty_SideGuageInit(.., 0xe0, y, -2, 0xc4, v)`: 0xcc × 0x1e) at (224, 108 / 156 / 204);
+Language - its name (`window_char`, slot 0x32, 88 × 24 at u = language × 88) on a button (word 37) at
+(300, 240) between < > boxes (32 × 24) at (263, 248) / (417, 248) (0xbd2d8). Page 2 (labels 0x6c, 0x6d,
+0x7a / 0x7b at (20, 56 / 104 / 152), 0xbd260): Environment Effects and Lock Screen Orientation - On / Off
+(words 33 / 34) at (224 / 344, 48) and (224 / 344, 96) (0xbd290); Reset Data (from the title,
+`ModeOptionMenu(1)`) or Return to Title - a button (word 23) at (344, 144). The buttons run as a touch
+lifts on them and light while held (`_pad_chk_updw_box`); page 2's On / Off take the press
+(`pad_chk_trg_down_box`); a gauge follows a held touch in steps of 10 (`FUN_000493b4`: x kept to
+235..438, trunc(trunc(x − 214) × 0.4951 − 10)) and is written and sounded as it is let go or leaves its
+box, its fill sliding to the knob over 10 frames (`ComUty_SideGuageDraw`). The windows move with
+`ComUty_WinDispOn / Off` (4 frames, linear): opened, 0 and 5 at once and 1 / 2 from −240 / +240 a frame
+later; a page turned, its halves out and the other's in 5 frames on; Reset / Return's question (window 9
+Yes / No from +140, 10 the board up from 160, 5 off) 6 frames after the page's halves went; Back, every
+window off a frame on and Options gone 8 frames after the tap; Return to Title's Yes fades to black a
+frame on (500 ms) and reaches the title 16 frames after the tap. `__MuOptionSetInfo` writes them back:
+language, the volumes to AppCtl +0x31dd1 / +0x31dd2 (Voice +0x32165), the two flags to +0x31dd4 and bit 0
+of +0x31dd3. The Instruction Manual is a layout-0 `MuScrList` (0xf: `MuScrList_Init(7, 8)`,
+`SetIdInfo(10, 6, 0, 0, 1, 1)`): the manual items as the Camp's Items rows, the focused topic's item text
+on the HELP board, the one-part Back bar; Options' windows go off as it comes. The port lays its own
+pages out denser (`kOptRowPitch` 36, the controls at 85%) with these controls and moves.
 
 Text is drawn with the system font (`font_getfont_utf16`). `font.mct` is only a 256×64 strip.
 2.2.0's `FUN_000375bc` asks UIKit for HiraKakuProN-W6 in Japanese and ArialMT in every other
