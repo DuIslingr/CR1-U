@@ -4210,6 +4210,71 @@ int runSelfTest(App& app) {
             if (!parts) std::printf("  options: the Back bar's arrows don't turn the page\n");
             problems += !parts;
         }
+        { // 2.2.0's Options buttons run as the touch lifts on them and light while held (_pad_chk_updw_box: OptionPrc 5's
+          // Manual, __ComUty_BackButtonProc type 2); page 2's On / Off take the press (pad_chk_trg_down_box, 70625)
+            cr::Renderer& r = app.renderer;
+            auto toFrame = [&](float mx, float my, float& px, float& py) { // Options' units (menuPointFit) -> the frame's pixels
+                if (r.phoneLayout()) mx = mx * kPhoneFitK + kPhoneFitX, my = my * kPhoneFitK + kPhoneFitY;
+                const float lx = r.uiX() + 2 * mx, ly = 2 * my;
+                float ax, ay, bx, by;
+                r.toLogical(0, 0, ax, ay), r.toLogical(1000, 1000, bx, by);
+                px = (lx - ax) * 1000 / (bx - ax), py = (ly - ay) * 1000 / (by - ay);
+            };
+            auto press = [&](float mx, float my) { // down: what the press takes, else held (main.cpp's)
+                float px, py;
+                toFrame(mx, my, px, py);
+                app.press = App::Press();
+                if (optionsPointerDown(app, px, py)) app.press = App::Press{true, kPressOptions, px, py};
+            };
+            auto lift = [&](float mx, float my) {
+                float px, py;
+                toFrame(mx, my, px, py);
+                const bool held = app.press.down;
+                app.press = App::Press();
+                if (held) optionsClick(app, px, py);
+            };
+            const bool keepEffects = app.environmentEffects;
+            const bool keepPointer = app.pointerLast;
+            app.pointerLast = true;
+            app.menuSoundLog.clear();
+            app.manualOpen = false, app.manualIntro = 0; // (OptionSet's "Option" page, up from the first open above: read)
+            openOptions(app, 0);
+            const std::vector<OptRow> game = optionRows(app, 0);
+            int manualRow = -1, effectsRow = -1;
+            for (int i = 0; i < int(game.size()); ++i) {
+                if (game[size_t(i)].label == sysLabel(app, 58081, "Instruction Manual")) manualRow = i;
+                if (game[size_t(i)].label == sysLabel(app, 58108, "Environment Effects")) effectsRow = i;
+            }
+            int touch = manualRow >= 0 && effectsRow >= 0;
+            if (touch) {
+                app.optionsRow = manualRow;
+                optionsScrollFix(app, int(game.size()), true);
+                float y = optRowY(manualRow - app.optionsScroll) + 12;
+                press(optCtrlX(400), y); // the Manual's button: lit, nothing yet
+                touch += !app.manualOpen && optionsHeld(app, optCtrlX(344), y - 16, optCtrlX(456), y + 16);
+                lift(40, y);             // slid off to its label: not run (the cursor's row)
+                touch += !app.manualOpen;
+                press(optCtrlX(400), y);
+                lift(optCtrlX(400), y);  // lifted on it: the manual
+                touch += app.manualOpen;
+                app.manualOpen = false;
+                app.optionsRow = effectsRow;
+                optionsScrollFix(app, int(game.size()), true);
+                y = optRowY(effectsRow - app.optionsScroll) + 12;
+                app.environmentEffects = true;
+                press(optCtrlX(400), y); // Off: at once
+                touch += !app.environmentEffects && !app.press.down;
+                app.environmentEffects = keepEffects;
+                press(300, kOptBackY + 12); // Back: lit while held, closing as it lifts
+                touch += optionsBackHeld(app) == 1 && app.optionsOpen;
+                lift(300, kOptBackY + 12);
+                touch += !app.optionsOpen;
+            }
+            app.pointerLast = keepPointer;
+            if (touch != 7) std::printf("  options: touch NOT as _pad_chk_updw_box's (%d/7)\n", touch);
+            problems += (touch != 7) + expectSounds("options touch", {1, 2, 2, 3});
+            app.optionsOpen = false;
+        }
         openOptions(app, 0);         // Game: Language
         optionsKey(app, SDLK_LEFT);  // Japanese
         problems += app.language != 0;
@@ -9081,7 +9146,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         float fx = 0, fy = 0;
         if (std::sscanf(pr, "%f,%f", &fx, &fy) == 2) {
             app.pointerLast = true;
-            const int screen = app.mode == Mode::Maps && app.choiceFlag >= 0 && !pressScreen(app) ? int(kPressChoice)
+            const int screen = app.optionsOpen && !app.manualOpen ? int(kPressOptions)
+                               : app.mode == Mode::Maps && app.choiceFlag >= 0 && !pressScreen(app) ? int(kPressChoice)
                                : app.scenariosOpen ? int(kPressHistory) : pressScreen(app);
             int ww = 0, wh = 0; // (the frame drawn: the window's pixels - no frame may have been drawn yet)
             SDL_GetWindowSizeInPixels(app.window, &ww, &wh);

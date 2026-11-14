@@ -121,6 +121,8 @@ void pressRelease(App& app, int screen, float px, float py) {
     case kPressHistory: // its Back: __menuu_HistoryPrc's ComUty_BackButtonProc(1) trg
         if (historyBackAt(app, px, py)) { menuSound(app, se::kBack); closeScenarios(app); }
         break;
+    case kPressOptions: optionsClick(app, px, py); break;
+    case kPressMap: closeMapScreen(app); break; // (__menuu_MapPrc 1: the whole screen's box)
     default: break;
     }
 }
@@ -1234,7 +1236,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             SDL_GetWindowSize(app.window, &ww, &wh);
             const float kx = ww > 0 ? float(app.renderer.frameWidth()) / float(ww) : 1.0f;
             const float ky = wh > 0 ? float(app.renderer.frameHeight()) / float(wh) : 1.0f;
-            optionsClick(app, event->button.x * kx, event->button.y * ky);
+            // (2.2.0's buttons act as the touch lifts on them, lit while held - _pad_chk_updw_box; page 2's On / Off and a
+            // gauge take the press: optionsPointerDown)
+            const float px = event->button.x * kx, py = event->button.y * ky;
+            if (optionsPointerDown(app, px, py)) app.press = App::Press{true, kPressOptions, px, py};
             break;
         }
         if (app.saveScreen.open || app.campOpen || app.resumePrompt || app.charSelectOpen || app.worldChoiceOpen ||
@@ -1261,8 +1266,11 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             staffRollTap(app);
             break;
         }
-        if (app.mapScreen.open) { // _pad_chk_updw_box(0, 0, 480, 320): a tap closes it
-            closeMapScreen(app);
+        if (app.mapScreen.open) { // _pad_chk_updw_box(0, 0, 480, 320) trg: a touch lifting anywhere closes it (pressRelease)
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            app.press = App::Press{true, kPressMap, event->button.x * (ww > 0 ? float(app.renderer.frameWidth()) / ww : 1.0f),
+                                   event->button.y * (wh > 0 ? float(app.renderer.frameHeight()) / wh : 1.0f)};
             break;
         }
         if (app.mode == Mode::Maps) { // the field menu's corner button and bar
@@ -1325,7 +1333,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             const App::Press pr = app.press;
             app.press = App::Press();
             const bool same = pr.screen == kPressChoice ? app.mode == Mode::Maps && app.choiceFlag >= 0
-                              : pr.screen == kPressHistory ? app.scenariosOpen : pressScreen(app) == pr.screen;
+                              : pr.screen == kPressHistory ? app.scenariosOpen
+                              : pr.screen == kPressOptions ? app.optionsOpen && !app.manualOpen
+                              : pr.screen == kPressMap ? app.mapScreen.open : pressScreen(app) == pr.screen;
             if (same) pressRelease(app, pr.screen, px, py);
             break;
         }

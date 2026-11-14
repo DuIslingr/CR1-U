@@ -1188,6 +1188,25 @@ void optionsWindows(const App& app, OptionsWins& w) {
     }
 }
 
+// A touch held on Options (App::press, kPressOptions), in its menu units (menuPointFit), now inside the box: the control
+// lights (OptionPrc 5 / 7's _pad_chk_updw_box held - d3228, d322b, d322a; __ComUty_BackButtonProc's d31fc; Yes / No's d3204)
+bool optionsHeld(const App& app, float x0, float y0, float x1, float y1) {
+    if (!app.press.down || app.press.screen != kPressOptions) return false;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+    menuPointFit(app, lx, ly, mx, my);
+    return mx >= x0 && mx < x1 && my >= y0 && my < y1;
+}
+// The Back bar's part held: 1 Back, 2 the right arrow, 3 the left (ComUty_CmdBack mode 2's pressed), 0 none
+int optionsBackHeld(const App& app) {
+    if (!app.press.down || app.press.screen != kPressOptions) return 0;
+    float lx, ly, mx, my;
+    app.renderer.toLogical(app.press.px, app.press.py, lx, ly);
+    menuPointFit(app, lx, ly, mx, my);
+    const int part = optionsBackPart(mx, my);
+    return part == 0 ? 1 : part == 1 ? 2 : part == -1 ? 3 : 0;
+}
+
 void drawOptions(App& app, float, float) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
@@ -1224,19 +1243,24 @@ void drawOptions(App& app, float, float) {
         // scaled about (kOptCtrlX, the bar's middle)
         m.setScale(kOptCtrlX + ctrlX, mid, kOptCtrlScale);
         const float cx = kOptCtrlX + ctrlX;
+        // (held: the finger on the control now - its box as optionsClick's, in menu units)
+        auto held = [&](float x0, float x1) { return row.enabled && optionsHeld(app, optCtrlX(x0), y - 4, optCtrlX(x1), y + 28); };
         switch (row.kind) {
-        case OptControl::Check: m.button(cx + 120, y - 8, 23, "", false, dim, cursor && row.enabled); break;
+        case OptControl::Check: m.button(cx + 120, y - 8, 23, "", false, dim, (cursor && row.enabled) || held(344, 456)); break;
         case OptControl::Gauge: m.gauge(cx, y + 4, row.value, ac, cursor); break;
         case OptControl::Pair:
             for (int k = 0; k < 2; ++k)
                 m.button(cx + 120 * k, y - 8, row.words[k], row.texts[k], row.selected == k, ac, false);
             break;
         case OptControl::Value: // our picker: the value on a button with the Back arrows either side
-            m.button(cx + 60, y - 8, -1, row.valueTex ? std::string() : row.valueText, false, dim, cursor && row.enabled);
+            m.button(cx + 60, y - 8, -1, row.valueTex ? std::string() : row.valueText, false, dim, (cursor && row.enabled) || held(284, 396));
             if (row.valueTex) // (where the button's word goes)
                 m.imagePiece(*row.valueTex, cx + 70, y, row.valueUv[0], row.valueUv[1], row.valueUv[2], row.valueUv[3], dim);
-            m.piece(cx + 36, y + 4, 336, 880, 16, 16, dim);
-            m.piece(cx + 180, y + 4, 352, 880, 16, 16, dim);
+            { // (OptionPut: an arrow's box tints 0xEBFF4B while held - d322b)
+                const bool hl = held(260, 276), hr = held(404, 420);
+                m.piece(cx + 36, y + 4, 336, 880, 16, 16, dim, hl ? 0x4B / 255.0f : 1, 1, hl ? 0xEB / 255.0f : 1);
+                m.piece(cx + 180, y + 4, 352, 880, 16, 16, dim, hr ? 0x4B / 255.0f : 1, 1, hr ? 0xEB / 255.0f : 1);
+            }
             break;
         }
         m.setScale(0, 0, 1);
@@ -1255,7 +1279,10 @@ void drawOptions(App& app, float, float) {
     m.digit(app.optionsPage + 1, 20, kOptPageY, ah);
     m.digit(-1, 34, kOptPageY, ah);
     m.digit(kOptionPages, 48, kOptPageY, ah);
-    m.backButton(192, kOptBackY, app.optionsRow == kOptionsBackRow, app.optionsBob, ab);
+    { // (lit: the part a finger holds - __ComUty_BackButtonProc type 2's d31fc -, else the keys' cursor on Back)
+        const int part = optionsBackHeld(app);
+        m.backButton(192, kOptBackY, part ? part : app.optionsRow == kOptionsBackRow ? 1 : 0, app.optionsBob, ab);
+    }
     if (app.optionsRow >= 0 && app.optionsRow < n && !rows[size_t(app.optionsRow)].hint.empty()) { // (under the rows shown, clear of Back)
         const std::vector<std::string> lines = wrapText(m, rows[size_t(app.optionsRow)].hint, 470, 11, 2);
         for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 20, optRowY(shown) + 2 + 13 * float(l), false, a, 11);
@@ -1288,8 +1315,10 @@ void drawOptions(App& app, float, float) {
         m.picture(12, 0, 220, 1);
         if (!pages.empty())
             for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, 235 + 16.0f * float(l), false, 1, 14);
-        m.plate(336, 104, 0, 0, app.resetConfirm == 0, 1, false);
-        m.plate(336, 160, 1, 1, app.resetConfirm == 1, 1, false);
+        // (a held plate takes the cursor: __ComUty_YesNoChoiceProc's held, d3204)
+        const bool hy = optionsHeld(app, 336, 104, 472, 144), hn = optionsHeld(app, 336, 160, 472, 200);
+        m.plate(336, 104, 0, 0, hy || (!hn && app.resetConfirm == 0), 1, false);
+        m.plate(336, 160, 1, 1, hn || (!hy && app.resetConfirm == 1), 1, false);
     }
     r.setOrigin(r.uiX());
 }
@@ -1407,7 +1436,58 @@ int optionsBackPart(float mx, float my) {
     return mx >= 0xf8 && mx < 0xf8 + 0x78 ? 0 : 3;
 }
 
-// A click at frame pixel (px, py): menu units, then the control there
+// A touch going down at frame pixel (px, py): what 2.2.0 takes on the press - page 2's On / Off
+// (pad_chk_trg_down_box, OptionPrc 7 70625) and the port's own pairs with them, a gauge (FUN_000493b4, held) and the
+// port's scroll bar; anything else is held and runs as it lifts there (optionsClick). False: taken here
+bool optionsPointerDown(App& app, float px, float py) {
+    float lx, ly;
+    app.renderer.toLogical(px, py, lx, ly);
+    float mx, my;
+    menuPointFit(app, lx, ly, mx, my);
+    if (app.saveImport.active() || app.resetAsk) return true;
+    if (optionsBackPart(mx, my) != 2) return true;
+    std::vector<OptRow> rows = optionRows(app, app.optionsPage);
+    if (int(rows.size()) > kOptVisible && mx >= kOptBarX - 8 && mx < kOptBarX + kOptBarW + 8) { // the scroll bar: there, and held
+        float top, height, ty, th;
+        optionsBar(int(rows.size()), app.optionsScroll, top, height, ty, th);
+        if (my >= top - 4 && my < top + height + 4) {
+            optionsBarTo(app, my);
+            app.optionsBarDrag = true;
+            return false;
+        }
+    }
+    for (int i = app.optionsScroll; i < int(rows.size()) && i < app.optionsScroll + kOptVisible; ++i) {
+        OptRow& r = rows[size_t(i)];
+        const float y = optRowY(i - app.optionsScroll);
+        if (my < y - 4 || my >= y + 28) continue;
+        auto inX = [&](float x0, float x1) { return mx >= optCtrlX(x0) && mx < optCtrlX(x1); };
+        if (r.kind == OptControl::Pair && (inX(224, 336) || inX(344, 456))) {
+            app.optionsRow = i;
+            if (!r.enabled || !r.act) return false;
+            r.act(inX(224, 336) ? 0 : 1);
+            if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
+            return false;
+        }
+        if (r.kind == OptControl::Gauge && inX(224, 444)) {
+            app.optionsRow = i;
+            if (!r.enabled || !r.gauge) return false;
+            const float design = kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale; // back to design units
+            // (FUN_000493b4 45333-45345: trunc(((x - 214) x 0.4956 - 10) / 10) x 10 - truncated, steps of 10)
+            *r.gauge = std::clamp(int(((design - 214) * 0.4956f - 10) / 10) * 10, 0, 100);
+            applyMix(app);
+            saveMix(app);
+            if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
+            // (__MuOptionSetInfo 71108-71113: the voice gauge speaks on every release, changed or not)
+            if (r.gauge == &app.mix.voice && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
+            return false;
+        }
+        return true;
+    }
+    return true;
+}
+
+// A touch lifting at frame pixel (px, py) where it went down on Options (_pad_chk_updw_box's trg: OptionPrc 5 / 7's
+// buttons, __ComUty_BackButtonProc type 2, ComUty_YesNoChoiceProc): menu units, then the control there
 void optionsClick(App& app, float px, float py) {
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
@@ -1441,41 +1521,20 @@ void optionsClick(App& app, float px, float py) {
         return;
     }
     std::vector<OptRow> rows = optionRows(app, app.optionsPage);
-    if (int(rows.size()) > kOptVisible && mx >= kOptBarX - 8 && mx < kOptBarX + kOptBarW + 8) { // the scroll bar: there, and held
-        float top, height, ty, th;
-        optionsBar(int(rows.size()), app.optionsScroll, top, height, ty, th);
-        if (my >= top - 4 && my < top + height + 4) {
-            optionsBarTo(app, my);
-            app.optionsBarDrag = true;
-            return;
-        }
-    }
+    if (int(rows.size()) > kOptVisible && mx >= kOptBarX - 8 && mx < kOptBarX + kOptBarW + 8) return; // (the scroll bar: on the press)
     for (int i = app.optionsScroll; i < int(rows.size()) && i < app.optionsScroll + kOptVisible; ++i) {
         OptRow& r = rows[size_t(i)];
         const float y = optRowY(i - app.optionsScroll);
         if (my < y - 4 || my >= y + 28) continue;
+        auto inX = [&](float x0, float x1) { return mx >= optCtrlX(x0) && mx < optCtrlX(x1); };
+        // (the pairs and gauges took the press: optionsPointerDown)
+        if ((r.kind == OptControl::Pair && (inX(224, 336) || inX(344, 456))) || (r.kind == OptControl::Gauge && inX(224, 444))) return;
         app.optionsRow = i;
         if (!r.enabled || !r.act) return;
-        auto inX = [&](float x0, float x1) { return mx >= optCtrlX(x0) && mx < optCtrlX(x1); };
         int dir = 2; // the control hit: -1 / 0 / +1, or 2 for the row's label (just moves the cursor)
         switch (r.kind) {
         case OptControl::Check: if (inX(344, 456)) dir = 0; break;
-        case OptControl::Pair:
-            if (inX(224, 336)) dir = 0;
-            else if (inX(344, 456)) dir = 1;
-            break;
-        case OptControl::Gauge: { // set the value where the track was hit (knob at x + 11 + v x 2.03)
-            if (!inX(224, 444) || !r.gauge) return;
-            const float design = kOptCtrlX + (mx - kOptCtrlX) / kOptCtrlScale; // back to design units
-            // (FUN_000493b4 45333-45345: trunc(((x - 214) x 0.4956 - 10) / 10) x 10 - truncated, steps of 10)
-            *r.gauge = std::clamp(int(((design - 214) * 0.4956f - 10) / 10) * 10, 0, 100);
-            applyMix(app);
-            saveMix(app);
-            if (r.sound >= 0) menuSound(app, uint32_t(r.sound));
-            // (__MuOptionSetInfo 71108-71113: the voice gauge speaks on every release, changed or not)
-            if (r.gauge == &app.mix.voice && app.sound.hasVoices()) app.sound.playBattleLine(0x75, 0);
-            return;
-        }
+        case OptControl::Pair: case OptControl::Gauge: break;
         case OptControl::Value:
             if (inX(260, 276)) dir = -1;
             else if (inX(404, 420)) dir = 1;

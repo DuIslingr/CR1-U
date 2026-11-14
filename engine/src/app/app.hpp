@@ -1524,7 +1524,7 @@ void menuPoint(const App& app, float lx, float ly, float& mx, float& my);
 // A menu's held touch (App::press): its screen, and whether it is now inside a control's box - in menu
 // units of the group drawn from `origin` (uiX, wideLeft, wideRight)
 enum PressScreen { kPressNone = 0, kPressSave, kPressCharSelect, kPressCamp, kPressLastBattle, kPressWorld, kPressShop,
-                   kPressBattle, kPressResume, kPressTitle, kPressChoice, kPressHistory };
+                   kPressBattle, kPressResume, kPressTitle, kPressChoice, kPressHistory, kPressOptions, kPressMap };
 bool pressIn(const App& app, int screen, float origin, float x, float y, float w, float h);
 // The keys' and pad's cursor plate: lit without a touch (2.2.0 lights only the plate a finger holds); the
 // Vita copy as the game keeps its cursor
@@ -1533,6 +1533,11 @@ void stepOptions(App& app);
 void resetAnswer(App& app, bool yes, bool cancelled = false);
 void optionsKey(App& app, SDL_Keycode key);
 int optionsBackPart(float mx, float my);
+bool optionsPointerDown(App& app, float px, float py);
+float optRowY(int i);
+float optCtrlX(float x);
+bool optionsHeld(const App& app, float x0, float y0, float x1, float y1);
+int optionsBackHeld(const App& app);
 void optionsClick(App& app, float px, float py);
 void stepTexDisp(App& app);
 void stepVitaLogo(App& app);
