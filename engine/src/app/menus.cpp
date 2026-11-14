@@ -637,6 +637,21 @@ int pairHeldCount(const App& app, int item) {
     return heldCount(app, item) - (heldBack && item >= 425 && item <= 438 && app.game.party[size_t(2 * route + 1)].equip[cr::kJewel] == item);
 }
 
+// The Camp's jewel rules (the pair's members by camp.member): FUN_00055e90 (54057-54076) - a jewel held fewer
+// than twice that the partner wears is refused (and drawn grey, 55553-55560); FUN_00055768 (53612-53640) - the
+// jewel slot is refused with no jewel at all, or just one and the partner wearing a jewel
+bool campJewelRefused(const App& app, int item) {
+    if (item < 425 || item > 438 || heldCount(app, item) >= 2) return false;
+    const int route = std::clamp(app.playerChar / 2, 0, 3);
+    return app.game.party[size_t(2 * route + (app.camp.member == 0 ? 1 : 0))].equip[cr::kJewel] == item;
+}
+bool campJewelSlotRefused(const App& app) {
+    int n = 0;
+    for (int j = 425; j <= 438; ++j) n += heldCount(app, j);
+    const int route = std::clamp(app.playerChar / 2, 0, 3);
+    return n < 1 || (n == 1 && app.game.party[size_t(2 * route + (app.camp.member == 0 ? 1 : 0))].equip[cr::kJewel] != 0);
+}
+
 // The price of one in the current list (half when selling)
 int shopUnitPrice(const App& app, int item) {
     const cr::ItemParam* p = app.itemTable.item(item);
@@ -934,7 +949,7 @@ void drawShopBar(cr::MenuPainter& m, float x, float y, float value, float most, 
 }
 
 // ComUty_StateBoardDraw at (bx, by) for character c; `item` (if > 0) shows what wearing it changes
-void drawShopBoard(App& app, float bx, float by, int c, int item, float a, bool face = true) {
+void drawShopBoard(App& app, float bx, float by, int c, int item, float a, bool face = true, int count = 0) {
     using namespace shopui;
     cr::MenuPainter& m = app.menu;
     const cr::PartyMember& pm = app.game.party[size_t(c)];
@@ -977,9 +992,15 @@ void drawShopBoard(App& app, float bx, float by, int c, int item, float a, bool 
     }
     if (item <= 0) return;
     const cr::ItemParam* p = app.itemTable.item(item);
-    if (!p || cr::equipSlot(p->kind) < 0) return;
+    // (StateBoardDraw(.., item, count): a seed's count is its stat's change (47783-47800) - "+N" and the up arrow
+    // on the result board; Remove (200) is a kind-8 item of no stats against the worn jewel (47744-47760))
+    const bool seed = item >= 3 && item <= 6 && count > 0, remove = item == campui::kRemove;
+    const cr::ItemParam* jewel = remove ? app.itemTable.item(app.game.party[size_t(c)].equip[cr::kJewel]) : nullptr;
+    if (!seed && !jewel && (!p || cr::equipSlot(p->kind) < 0)) return;
     for (int st = 0; st < 6; ++st) { // the change: ▲ / ▼ at x + 158, sign and amount from x + 128 for the stats
-        const int d = cr::memberStat(app.game, c, cr::Stat(st), app.itemTable, item) - cr::memberStat(app.game, c, cr::Stat(st), app.itemTable);
+        const int d = seed ? (st == cr::kAttack + (item - 3) ? count : 0)
+                    : jewel ? -jewel->stat[st]
+                            : cr::memberStat(app.game, c, cr::Stat(st), app.itemTable, item) - cr::memberStat(app.game, c, cr::Stat(st), app.itemTable);
         if (d == 0) continue;
         const float y = by + kStatRowY[st];
         m.picture(d > 0 ? 93 : 94, bx + 158, y, a);
@@ -1701,6 +1722,16 @@ void campNextCategory(App& app, int dir) {
     campRefreshList(app);
 }
 
+// CampMainPrc 8's state 1 (63391-63400): __MuCampScrListItemInit(0) - the list made again from the top, its
+// category kept (the next one holding anything when it's empty); a use, a No and a Back all come here
+void campItemsAgain(App& app) {
+    App::Camp& c = app.camp;
+    c.phase = App::Camp::List;
+    c.listCursor = c.listTop = 0;
+    campRefreshList(app);
+    if (c.list.empty()) campNextCategory(app, 0);
+}
+
 void campOpenEntries(App& app, int plate) {
     App::Camp& c = app.camp;
     c.plate = plate;
@@ -1767,7 +1798,7 @@ void campBack(App& app) {
         c.leaving = 1, menuSound(app, se::kCampClose);
         return;
     case App::Camp::Items:
-        if (c.phase == App::Camp::Member) c.phase = App::Camp::List; // (CampMainPrc 4's -1: the list again)
+        if (c.phase == App::Camp::Member) campItemsAgain(app); // (CampMainPrc 4's -1: the list again, from the top)
         else c.pageOut = 1;
         return;
     case App::Camp::Equip:
@@ -1859,7 +1890,7 @@ void campChoose(App& app) {
         } else if (c.phase == App::Camp::Ask) {
             if (c.confirm != 0) { // No: back to the list (CampMainPrc 7 -> 1), SE 2
                 menuSound(app, se::kChoose);
-                c.phase = App::Camp::List;
+                campItemsAgain(app);
                 return;
             }
             if (item == 1) { // Yes to the Emergency Exit: DAT_000d2f18 / d2e32, del_item, SE 2, state 7 -> 0xf
@@ -1878,18 +1909,22 @@ void campChoose(App& app) {
             c.phase = App::Camp::Result;
         } else if (c.phase == App::Camp::Result) { // the tap (SE 2): the list again (10 -> 1)
             menuSound(app, se::kChoose);
-            c.phase = App::Camp::List;
-            campRefreshList(app);
-            if (c.list.empty()) campNextCategory(app, 0);
+            campItemsAgain(app); // (video 08 1479.8 s: back on Emergency Exit after a seed at row 2)
         }
         return;
     case App::Camp::Equip: {
         cr::PartyMember& pm = app.game.party[size_t(campCharacter(app, c.member))];
         if (c.phase == App::Camp::Member) { menuSound(app, se::kChoose); c.phase = App::Camp::Slot; c.slot = 0, c.slotTop = 0; }
         else if (c.phase == App::Camp::Slot) {
+            if (c.slot == cr::kJewel && campJewelSlotRefused(app)) { menuSound(app, se::kBuzzer); return; } // (kind 4: -4)
             c.listCursor = c.listTop = 0;
             campRefreshList(app);
             if (c.list.empty()) { menuSound(app, se::kBuzzer); return; } // nothing to wear
+            // (__MuCampScrListComInit 64925-64958: MuScrList_SetListPosFromItemNo(the worn one) - on it, not the top)
+            const int worn = c.slot >= 3 ? pm.genes[size_t(c.slot - 3)] : pm.equip[c.slot];
+            if (worn > 0)
+                if (auto at = std::find(c.list.begin(), c.list.end(), worn); at != c.list.end())
+                    c.listCursor = c.listTop = int(at - c.list.begin());
             menuSound(app, se::kChoose);
             c.phase = App::Camp::List;
         } else if (c.phase == App::Camp::List && !c.list.empty() && c.slot >= 3) { // a gene plate
@@ -1914,6 +1949,7 @@ void campChoose(App& app) {
         } else if (c.phase == App::Camp::List && !c.list.empty()) {
             // (kind 5: what the member wears already is refused, MuScrList_IsNowEquip -4)
             if (item != campui::kRemove && pm.equip[c.slot] == item) { menuSound(app, se::kBuzzer); return; }
+            if (campJewelRefused(app, item)) { menuSound(app, se::kBuzzer); return; } // (the partner's only one)
             int& worn = pm.equip[c.slot];
             const int wear = item == campui::kRemove ? 0 : item;
             if (worn > 0) app.game.items[worn] = std::min(cr::kMaxItemCount, ownedCount(app, worn) + 1); // (the port's bag
@@ -3246,7 +3282,7 @@ void drawCamp(App& app) {
                 left();
             } else if (ph == App::Camp::Member) memberPlates(current, e); // (the face boards above; no state board)
             else if (ph == App::Camp::Result) // window 0x12: StateBoardDraw(12, 92, .., item), in from -140
-                drawShopBoard(app, 12 - 140 * (1 - e), 92, ch, c.resultItem, e);
+                drawShopBoard(app, 12 - 140 * (1 - e), 92, ch, c.resultItem, e, true, c.resultCount);
             else if (ph == App::Camp::Ask) { // (the Yes / No alone: windows 10 and 0xb, the count on 10)
                 const bool seed = item >= 3 && item <= 6;
                 right();
@@ -3317,7 +3353,7 @@ void drawCamp(App& app) {
             scrollList(kRowX, int(c.list.size()), [&](int k, float x, float y, bool lit) {
                 const int it = c.list[size_t(k)];
                 const bool worn = it > 0 && std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip);
-                drawCampRow(app, m, x, y, it, 0, lit, ease, worn ? 3 : 0);
+                drawCampRow(app, m, x, y, it, 0, lit, ease, campJewelRefused(app, it) ? 2 : worn ? 3 : 0);
             });
             helpBoard(item, ease);
         }

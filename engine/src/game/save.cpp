@@ -264,11 +264,11 @@ bool readSave(const std::string& path, SaveData& s, std::string* error) {
     // (every line ends in a newline, and a save of any version has these six and all the party, in
     // this file's order or the Vita import's: boxes and what follows it aren't in the import's)
     if (out.area < 0 || out.area >= kNumAreas || out.map < 0 || out.map >= kNumMaps || !lastLineWhole || parts < 6 || partyLines < kCharacters) return fail("incomplete save");
-    ensureStartingGenes(out.game); // saves from before genes were kept
     out.leader = std::clamp(out.leader, 0, 7);
     out.game.oz = std::clamp(out.game.oz, 0, 9999999);
     out.game.bagRoute = out.game.route = out.route();
     out.game.routeBags[size_t(out.route())].clear();
+    ensureStartingGenes(out.game); // saves from before genes were kept (the pair's own two, once its bag is known)
     if (!placeLines) out.places[size_t(out.route())] = out.placeInPlay(); // (an older file, a resume point, an import)
     s = std::move(out);
     return true;

@@ -110,9 +110,23 @@ void ensureStartingGenes(GameState& gs) {
     for (int c = 0; c < 8; ++c) {
         PartyMember& m = gs.party[size_t(c)];
         if (!isPlate(m.genes[0])) m.genes[0] = humanPlate(c);
-        if (owned(gs, 81 + c) <= 0) gs.items[81 + c] = 1;
-        if (owned(gs, 131 + c) <= 0) gs.items[131 + c] = 1;
     }
+    // (_GetItmCnt 59990-60033: 81..88 and 131..138 are flags per pair - 0xf59 / 0xf2f + item + 16 route -, and
+    // _prty_init_new (table 0xbd138) gives a pair only its own two: Human Warrior / Mage show 2 known. The
+    // other characters' ones an earlier build put in every bag go)
+    auto own = [&](std::unordered_map<int, int>& bag, int route) {
+        for (int c = 0; c < 8; ++c) {
+            const bool mine = c / 2 == route;
+            for (int item : {81 + c, 131 + c})
+                if (mine) { if (bag[item] <= 0) bag[item] = 1; }
+                else bag.erase(item);
+        }
+    };
+    own(gs.items, std::clamp(gs.bagRoute, 0, 3));
+    for (int r = 0; r < 4; ++r)
+        if (r != gs.bagRoute)
+            for (int c = 0; c < 8; ++c)
+                if (c / 2 != r) gs.routeBags[size_t(r)].erase(81 + c), gs.routeBags[size_t(r)].erase(131 + c);
     for (int p = kFirstPlate; p < kFirstPlate + 2; ++p)
         if (owned(gs, p) <= 0) gs.items[p] = 1;
 }
