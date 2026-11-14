@@ -768,7 +768,7 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     b.view = {};
     b.page = 0, b.viewState = 0, b.slide = battleSlideDistance(app), b.slideHold = 0, b.menuGone = 100, b.roundWait = false;
     b.turnOn = false, b.pairHeld = false;
-    b.handover = 0, b.breakDue = false;
+    b.handover = 0, b.breakDue = false, b.tutorialDue = 0;
     for (App::Battle::Popup& p : b.popups) p = App::Battle::Popup();
     b.hudSlide = 0;
     b.banner.clear();
@@ -2701,6 +2701,10 @@ void stepBattle(App& app) {
             // the next (btlord_chk) and 600 starts the next action on the third (2.2.0 decomp 6190-6240) -
             // two frames more between one action and the next
             if (b.handover > 0) {
+                // (btl_main 700, 6189-6230: btlact_main returns 1 the call after the action's 9999 - the
+                // tutorial opens on the hand-over's first frame, not the action's last)
+                if (b.handover == 2 && b.tutorialDue) battletalk::tutorial(app, b.tutorialDue);
+                if (b.handover == 2) b.tutorialDue = 0;
                 --b.handover;
                 break;
             }
@@ -2848,10 +2852,9 @@ void stepBattle(App& app) {
                 b.handover = b.turn.kind == cr::kCmdEscape && b.turn.escaped ? 0 : 2; // (an escape's 99 goes to 9000 from 700)
                 // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc), from 799
                 b.breakDue = b.rules.breakChanging();
-                // btl_main 700: the action's tutorials - an element taken, a status, a gene learned
-                if (b.rules.elementTaken) battletalk::tutorial(app, 0xff3);
-                else if (b.rules.statusTaken) battletalk::tutorial(app, 0xff4);
-                else if (b.rules.learnedNew) battletalk::tutorial(app, 0xff5);
+                // btl_main 700 (the next frame, as it sees btlact's 1): the action's tutorials - an element
+                // taken, a status, a gene learned - from the hand-over above (an escape's 99 has none)
+                b.tutorialDue = b.handover == 0 ? 0 : b.rules.elementTaken ? 0xff3 : b.rules.statusTaken ? 0xff4 : b.rules.learnedNew ? 0xff5 : 0;
                 // (_btlact_attack's end, 2.2.0 _btlact_attack 0x164a8: each attacker's wanted yaw home, turned over 3
                 // frames - a size-3 monster's 7; the other actions don't turn their actors)
                 for (int k = 0; k < 2; ++k)
