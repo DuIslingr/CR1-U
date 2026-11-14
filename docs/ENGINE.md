@@ -546,11 +546,28 @@ c101/c102/c104/m207a, 2026-10-12).
       opens its known entries (the plate's picture). As 2.2.0's `__MuCamp_NextProc` runs it: the
       lists on MuScrList's focus line (the row on the line is chosen, another tapped comes to it;
       swipes, the gauge and the mouse wheel move it), the windows' four-frame moves, a page's after
-      the main page's, Back the other way, the once-only messages 56010 / 56016, the used item's
-      board, the Emergency Exit home, a face board's tap to its member's equipment, a plate's
-      entries with Back | OK. Seed points and worn plates are saved. `--capture … --camp --camp-view
-      items|use|equip|slots|wear|status|genes|plate|entries|human` renders a page (`human`: the Human
-      Genes slot's list), `open@n` / `back@n` n frames after Items is chosen / after Back from it.
+      the main page's, Back the other way. Every state change slides as 2.2.0's states put each
+      window off and on (`campSlide`: the view left drawn going, the new one's windows coming at
+      their state's frame, input waiting for the state that takes it): Equip's member choice (the
+      boards and plates out, five frames of 3's count, then the title, state board and slot list in),
+      a slot (the slot list out left, its list in from the right a frame on; a plate slot's gene
+      board after the state board goes), wearing / Back / OK (the other way round, OK after 0x1e's
+      count), the other member (End, then CategoryChoiceInit from the other side, on the slot last
+      chosen - d2fac); Status's member (portrait from the left, the board from the right a frame
+      later each), its views (out toward the arrow, in from the other side), its Back; Genes' plate
+      entries; Items' categories (the list and its line swapped at once). Items' member choice has
+      the Back bar (CampMainPrc 0's 3). The Items list, the slots with two members and the Status
+      lists follow a sideways drag (MuScrList's swipe: past 30 they turn as the arrows - the Vita's
+      L / R too), the Status board the finger (GetSwipeX). Back on the main page: the windows and
+      the mask off the frame after, closed at the eighth; Options: the windows off, Options a frame
+      later, all of them back on its return. No mask under 56010 / 56016 (56016 over "Camp" with
+      the main page's windows going). The once-only messages 56010 / 56016, the used item's
+      board, the Emergency Exit home, a face board's tap to its member's equipment (its plate lit
+      while held), a plate's entries with Back | OK. Seed points and worn plates are saved.
+      `--capture … --camp --camp-view items|use|equip|slots|wear|status|genes|plate|entries|human`
+      renders a page (`human`: the Human Genes slot's list), `open@n` / `back@n` n frames after Items
+      is chosen / after Back from it, and any `view@n` n frames after its last key (the views
+      `member`, `category`, `switch`, `turn`, `statusback`, `slotsback`, `options` for the changes).
 - [x] Genes (`game/genes.cpp`): abilities (items 81-130, battle actions +120), skills (131-186)
       and the 22 gene plates; each member wears the Human Genes and up to three plates (Equip).
       In battle **Genes** lists what the worn plates hold that's known, with its MP (pair mode:
