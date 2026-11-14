@@ -1974,7 +1974,9 @@ The iPhone release 2.2.0 (`ChaosRings.app/data`, unencrypted, stripped) and the 
   - Its boot opcodes: 0x40 / 0x44 read the system and save data, 0x41 sets the save data up, 0x45
     writes it, 0x46 then checks the trophies; 0x47 / 0x49 load a logo (a table from "sqex.gxt"),
     0x48 / 0x4a show it (fade in, hold, out). Native 2038 (var 9 into G+0x412d2) is new and unused;
-    2036 / 2037 are empty.
+    2036 / 2037 are empty. (In iOS 2.2.0 2036 is empty too, but 2037 - `FUN_00026d00` in the native
+    table at 0xc61d0 - opens the Chaos Rings II App Store page: `FUN_0007d658(-4)`, the Japanese or the
+    US link by the language. No shipped script calls it; the port leaves the store out.)
   - Text: 103 English system texts differ - the controls (buttons, the touchscreen), the manual,
     the credits, and a few corrections (a monster name, an obstacle's description).
 - **The Vita's controls** (its manual 56000 / 56025; SceCtrl read each frame, the left stick a
