@@ -517,7 +517,9 @@ void saveScreenKey(App& app, SDL_Keycode key) {
         if (key == SDLK_LEFT || key == SDLK_A || key == SDLK_RIGHT || key == SDLK_D) { ss.confirm ^= 1; menuSound(app, se::kCursor); }
         else if (enter && ss.confirm == 0) saveScreenYes(app);
         else if (enter || back) { // No
-            menuSound(app, se::kChoose);
+            // (SaveLoadPrc 4 / 8 play 2 themselves - ComUty_YesNoChoiceProc(.., 0); 0xc's "without saving?"
+            // (.., 1): the Vita's × 3)
+            menuSound(app, back && ss.toTitle && ss.askLeave ? se::kBack : se::kChoose);
             if (ss.toTitle) saveScreenNoToTitle(app);
             else if (ss.load && ss.kind == 3) { // then a plain new game? (57089..57091)
                 ss.kind = 2;
@@ -1174,7 +1176,12 @@ void shopKey(App& app, SDL_Keycode key) {
     const bool back = key == SDLK_ESCAPE || key == SDLK_BACKSPACE || key == SDLK_AC_BACK;
     const bool enter = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E;
     const bool up = key == SDLK_UP || key == SDLK_W, down = key == SDLK_DOWN || key == SDLK_S;
-    const bool left = key == SDLK_LEFT || key == SDLK_A, right = key == SDLK_RIGHT || key == SDLK_D;
+    // (the Vita: L / R - PgUp / PgDn - switch the list's member (the list's Back bar in mode 2:
+    // __Common_ListReady's SetIdInfo(8 / 9, .., 2), MuScrList_Proc's -3 / -2) and change the count
+    // (_ComUty_NumCountProc, FUN_8105199e); left / right too)
+    const bool lr = s.phase == App::Shop::List || s.phase == App::Shop::Count;
+    const bool left = key == SDLK_LEFT || key == SDLK_A || (lr && key == SDLK_PAGEUP),
+               right = key == SDLK_RIGHT || key == SDLK_D || (lr && key == SDLK_PAGEDOWN);
     switch (s.phase) {
     case App::Shop::Main:
         if (up || down) { s.cursor = (s.cursor + (up ? 2 : 1)) % 3; menuSound(app, se::kCursor); }
@@ -1748,13 +1755,15 @@ bool campBusy(const App& app) { return app.camp.notice != 0 || app.camp.phase ==
 void campBack(App& app) {
     App::Camp& c = app.camp;
     if (campBusy(app) || c.leaving) return;
-    if (c.page == App::Camp::Items && c.phase == App::Camp::Ask) return; // (no Back during the Yes / No: window 4 is off, CampMainPrc 4 -> 5)
+    // (no Back bar during the Yes / No - window 4 is off, CampMainPrc 4 -> 5 -, but the Vita's × answers No
+    // there: __ComUty_YesNoChoiceProc's 1, then CampMainPrc 6's No - SE 2 and the list again)
+    if (c.page == App::Camp::Items && c.phase == App::Camp::Ask) { c.confirm = 1; campChoose(app); return; }
     if (c.page == App::Camp::Items && c.phase == App::Camp::Result) { campChoose(app); return; } // (any tap: CampMainPrc 9)
-    menuSound(app, se::kBack);
+    if (c.page != App::Camp::Main) menuSound(app, se::kBack); // (the main page's Back - its box or the Vita's × - 9 alone)
     c.message.clear();
     switch (c.page) {
     case App::Camp::Main: // (CampMain 5 -> 0xd: every window off, the Camp closed four frames on - 0xe, 0x10;
-        // the Back box's SE 9)
+        // the Back box's SE 9 - its only one, as for the Vita's ×)
         c.leaving = 1, menuSound(app, se::kCampClose);
         return;
     case App::Camp::Items:
@@ -2020,7 +2029,12 @@ void campKey(App& app, SDL_Keycode key) {
     const bool back = key == SDLK_ESCAPE || key == SDLK_BACKSPACE || key == SDLK_AC_BACK || (key == SDLK_K && c.page == App::Camp::Main);
     const bool enter = key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E;
     const bool up = key == SDLK_UP || key == SDLK_W, down = key == SDLK_DOWN || key == SDLK_S;
-    const bool left = key == SDLK_LEFT || key == SDLK_A, right = key == SDLK_RIGHT || key == SDLK_D;
+    // (the Vita's L / R - PgUp / PgDn - are the Back bar's arrows where it has them (ComUty_BackButtonProc
+    // mode 2: 0x100 -> -3, 0x200 -> -2): the Items categories, the Equip member, the Status views; and
+    // the seeds' count (_ComUty_NumCountProc, FUN_8105199e: L / R); left / right as well)
+    const bool lr = campArrows(app) || (c.page == App::Camp::Items && c.phase == App::Camp::Ask);
+    const bool left = key == SDLK_LEFT || key == SDLK_A || (lr && key == SDLK_PAGEUP),
+               right = key == SDLK_RIGHT || key == SDLK_D || (lr && key == SDLK_PAGEDOWN);
     if (c.notice) { if (enter || back) tapDialogue(app); return; } // (the message's page turned, as a tap)
     if (c.phase == App::Camp::Exit) return;
     if (c.phase == App::Camp::Result) { if (enter || back) campChoose(app); return; } // (pad_chk_updw_box: the whole screen)
@@ -2589,10 +2603,10 @@ void lastBattleChoose(App& app, int i) {
     lb.state = 4;
 }
 
-void lastBattleAnswer(App& app, bool yes) {
+void lastBattleAnswer(App& app, bool yes, bool cancelled) {
     App::LastBattle& lb = app.lastBattle;
     if (lb.state != 10) return;
-    menuSound(app, se::kChoose);
+    menuSound(app, cancelled ? se::kBack : se::kChoose); // (LastBtPrc's ComUty_YesNoChoiceProc(.., 1): the Vita's × 3)
     if (yes) lb.state = 11;
     else lbWin(app, 5, false), lbWin(app, 6, false), lb.state = 2;
 }
@@ -2710,7 +2724,7 @@ void lastBattleKey(App& app, SDL_Keycode key) {
     } else if (lb.state == 10) {
         if (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_W || key == SDLK_S) lb.confirm ^= 1, menuSound(app, se::kCursor);
         else if (key == SDLK_RETURN || key == SDLK_KP_ENTER || key == SDLK_SPACE || key == SDLK_E) lastBattleAnswer(app, lb.confirm == 0);
-        else if (key == SDLK_ESCAPE || key == SDLK_BACKSPACE) lastBattleAnswer(app, false);
+        else if (key == SDLK_ESCAPE || key == SDLK_BACKSPACE) lastBattleAnswer(app, false, true);
     }
 }
 
@@ -2884,11 +2898,11 @@ void worldSelectLevel(App& app, int n) { // state 6: a band, or Back (-1)
     ws.state = 7, ws.timer = 4;
 }
 
-void worldSelectAnswer(App& app, bool yes) { // states 4 (skip?) and 8 (okay?)
+void worldSelectAnswer(App& app, bool yes, bool cancelled) { // states 4 (skip?) and 8 (okay?)
     using namespace wldsel;
     App::WorldSelect& ws = app.worldSelect;
     if (ws.state != 4 && ws.state != 8) return;
-    menuSound(app, se::kChoose);
+    menuSound(app, cancelled ? se::kBack : se::kChoose); // (WldChoicePrc's ComUty_YesNoChoiceProc(.., 1): the Vita's × 3)
     if (ws.state == 4) { // ComUty_YesNoChoiceProc: 2 the first box (Yes)
         off(app, 8, -360, 0), off(app, 9, 0, 160), off(app, 10, 0, 160);
         on(app, 4), on(app, 5);
@@ -3060,7 +3074,7 @@ void worldSelectKey(App& app, SDL_Keycode key) {
     } else if (ws.state == 4 || ws.state == 8) {
         if (up || down || key == SDLK_LEFT || key == SDLK_RIGHT) ws.confirm ^= 1, menuSound(app, se::kCursor);
         else if (enter) worldSelectAnswer(app, ws.confirm == 0);
-        else if (back) worldSelectAnswer(app, false);
+        else if (back) worldSelectAnswer(app, false, true);
     }
 }
 
@@ -3599,12 +3613,12 @@ void offerResume(App& app) {
     openResumePrompt(app);
 }
 
-void answerResume(App& app, bool yes) {
+void answerResume(App& app, bool yes, bool cancelled) {
     if (app.resumePrompt != 1) return;
     app.resumePrompt = 2; // 0x15: the windows go
     app.resumeYes = yes;
     SDL_RemovePath(savePath(app, "resume.dat").c_str()); // used up either way, as the original's
-    menuSound(app, se::kChoose); // Yes and No alike (ComUty_YesNoChoicePosProc)
+    menuSound(app, cancelled ? se::kBack : se::kChoose); // Yes and No alike (ComUty_YesNoChoicePosProc(.., 1); the Vita's × 3)
     if (!yes) { app.resumeIn = 6; return; } // 0x16: 4, counted below zero (0x17), then Start
     // Yes (0x16): the music off, black over 500 ms (10 frames), ten counted below zero, then the load
     playBgm(app, 1u << 27);

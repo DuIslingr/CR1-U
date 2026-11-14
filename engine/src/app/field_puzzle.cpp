@@ -686,11 +686,13 @@ void tapDialogue(App& app) {
 }
 
 // Answers the open yes/no choice (Util 3): yes sets its flag, no clears it (_menuu_EventClr).
-void answerChoice(App& app, bool yes) {
+void answerChoice(App& app, bool yes, bool cancelled) {
     if (app.choiceFlag < 0) return;
     app.game.setFlag(app.choiceFlag, yes);
     app.choiceFlag = -1;
-    menuSound(app, se::kChoose); // Yes and No alike (EventPrc's ComUty_YesNoChoiceProc)
+    // Yes and No alike (EventPrc's ComUty_YesNoChoiceProc(.., 1)); the Vita's × for No: SE 3
+    // (__ComUty_YesNoChoiceProc, Vita 8104e070)
+    menuSound(app, cancelled ? se::kBack : se::kChoose);
 }
 
 // Closes the world choice (_menuu_WldChoiceClr): cancelling sets flag 0 (the script returns);
@@ -3561,17 +3563,26 @@ void updatePlayer(App& app, float dt, float camYaw) {
     float sx = talking ? 0.0f : float(keys[SDL_SCANCODE_D]) - float(keys[SDL_SCANCODE_A]);
     float sy = talking ? 0.0f : float(keys[SDL_SCANCODE_S]) - float(keys[SDL_SCANCODE_W]);
     bool run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
-    if (padLive(app) && !talking && sx == 0 && sy == 0) { // a controller: the left stick (pushed far: runs) or the D-pad
-        float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
-        float ly = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
-        const float mag = std::sqrt(lx * lx + ly * ly);
-        if (mag < 0.25f) lx = ly = 0; // (the dead zone)
-        else run = run || mag > 0.8f;
-        if (!(fieldBarPad(app) && app.fieldMenu.open)) { // (the Vita's bar takes the D-pad while it is open)
-            lx += float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT));
-            ly += float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_UP));
+    // A controller as the Vita's CrossKey::update (81034fcc): each stick axis zeroed below 0.2549 (the
+    // pad reader, FUN_8106bafc: +0xc 0x3e828284), then x 50 and held to +-50; with the stick at rest
+    // the D-pad sets its axes to +-50 - a full push. The length walks from 14.5 and runs from 29
+    // (squared 210.25 / 841): the stick walks past about 0.29 and runs past 0.58, the D-pad always
+    // runs. The field bar open (FUN_81036ed0, gac + 0x38600) the leader stands
+    if (padLive(app) && !talking && sx == 0 && sy == 0 && !(fieldBarPad(app) && app.fieldMenu.open)) {
+        auto axis = [&](SDL_GamepadAxis a) {
+            const float v = float(SDL_GetGamepadAxis(app.pad, a)) / 32767.0f;
+            return std::fabs(v) < 0.2549f ? 0.0f : std::clamp(v * 50.0f, -50.0f, 50.0f);
+        };
+        float lx = axis(SDL_GAMEPAD_AXIS_LEFTX), ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+        if (lx == 0 && ly == 0) {
+            lx = 50.0f * (float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)));
+            ly = 50.0f * (float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_UP)));
         }
-        sx = std::clamp(lx, -1.0f, 1.0f), sy = std::clamp(ly, -1.0f, 1.0f);
+        const float len2 = lx * lx + ly * ly;
+        if (len2 >= 210.25f) {
+            run = run || len2 >= 841.0f;
+            sx = std::clamp(lx / 50.0f, -1.0f, 1.0f), sy = std::clamp(ly / 50.0f, -1.0f, 1.0f);
+        }
     }
     if (!talking && sx == 0 && sy == 0) { // the touch pad (CrossKey): its offset steers, far out runs
         float tx, ty;

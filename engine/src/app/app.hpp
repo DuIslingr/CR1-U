@@ -177,6 +177,8 @@ struct App {
     bool showCollision = false;            // C: the collision and trigger meshes over the field (a debugging aid)
     bool showBackground = false;        // B: show the field's pre-rendered background
     bool hideHud = false;               // --capture renders without the text overlay
+    bool padKeyNow = false;             // a key sent for a controller button (padKey): its Esc never quits
+    bool viewer = false;                // launched as the viewer (--viewer / --map / --model ...): its map / model stepping keys
 #ifdef CR_RELEASE
     bool showHud = false;               // the status / key help at the top: off in a Release build (F3)
 #else
@@ -542,6 +544,8 @@ struct App {
     int fieldSpeed = 1, battleSpeed = 1;
     int padHeld = -1;                      // the direction held for the menus' repeat (0 up 1 down 2 left 3 right)
     float padHeldFor = 0;
+    int padCountDir = 0;                   // a count's L / R (or left / right) held: -1 / +1 (_ComUty_NumCountProc)
+    float padCountFor = 0;
     // A touch held on a menu (_pad_chk_updw_box, 2.2.0 0x1cdd4): the screen it went down on and where it is
     // now (the frame's pixels). The control under it is lit while held (its held flag); its action runs as
     // it lifts there (trg) - sliding off cancels
@@ -662,6 +666,10 @@ struct App {
         int idleSince = -1;      // the action's frame its actors came to rest (btlact_attack 1999: ten frames more, then the next)
         enum Menu { Top, Commands, Targets, Items, EscapeAsk, Genes } menu = Top;
         int cursor = 0;
+        // The Vita's pad cursors (__menub_mainPrc): the first page's kept for the battle (DAT_81120298,
+        // cleared by __menub_mainSet alone), the commands' one a member, cleared as the first page
+        // comes in (state 1: DAT_8112029c / DAT_811202a0)
+        int topCursor = 0, cmdCursor[2] = {0, 0};
         int member = 0;                    // solo: the member choosing
         cr::BattleCommand cmds[2];
         int pendingItem = 0;               // an item chosen, its target next
@@ -1410,7 +1418,7 @@ bool pressIn(const App& app, int screen, float origin, float x, float y, float w
 // Vita copy as the game keeps its cursor
 bool menuCursorLit(const App& app);
 void stepOptions(App& app);
-void resetAnswer(App& app, bool yes);
+void resetAnswer(App& app, bool yes, bool cancelled = false);
 void optionsKey(App& app, SDL_Keycode key);
 int optionsBackPart(float mx, float my);
 void optionsClick(App& app, float px, float py);
@@ -1486,6 +1494,7 @@ void memberHpMp(const App& app, int c, int& hp, int& hpMax, int& mp, int& mpMax,
 float campEase(const App& app);
 float campListX(const App& app);
 int campScrollCount(const App& app);
+bool campScrollable(const App& app);
 void campScrollBy(App& app, int rows);
 int shopUnitPrice(const App& app, int item);
 std::vector<int> campItems(const App& app, int category);
@@ -1501,6 +1510,7 @@ void campOpenPage(App& app, int i, bool sound = true);
 void campChoose(App& app);
 void stepCamp(App& app);
 void campKey(App& app, SDL_Keycode key);
+bool campArrows(const App& app);
 void campClick(App& app, float px, float py);
 void campPointerDown(App& app, float px, float py);
 void campPointerMove(App& app, float px, float py);
@@ -1518,7 +1528,7 @@ void drawStaffRoll(App& app);
 std::string lastBattlePlate(const App& app, int p);
 void openLastBattle(App& app);
 void lastBattleChoose(App& app, int i);
-void lastBattleAnswer(App& app, bool yes);
+void lastBattleAnswer(App& app, bool yes, bool cancelled = false);
 void stepLastBattle(App& app);
 void drawLastBattle(App& app);
 void lastBattleKey(App& app, SDL_Keycode key);
@@ -1527,7 +1537,7 @@ void openWorldSelect(App& app);
 void closeWorldSelect(App& app);
 void worldSelectChoose(App& app, int pos);
 void worldSelectLevel(App& app, int n);
-void worldSelectAnswer(App& app, bool yes);
+void worldSelectAnswer(App& app, bool yes, bool cancelled = false);
 void stepWorldSelect(App& app);
 void drawWorldSelect(App& app);
 void worldSelectKey(App& app, SDL_Keycode key);
@@ -1543,7 +1553,7 @@ std::string trophyName(const App& app, int n);
 char trophyGrade(const App& app, int n);
 void stepTrophies(App& app, float dt);
 void drawTrophyNotice(App& app);
-void answerResume(App& app, bool yes);
+void answerResume(App& app, bool yes, bool cancelled = false);
 void drawResumePrompt(App& app);
 void stepResume(App& app);
 void resumeClick(App& app, float px, float py);
@@ -1610,7 +1620,7 @@ bool pageTyped(const App& app);
 int pauseHold(int frames);
 void stepTyping(App& app);
 void tapDialogue(App& app);
-void answerChoice(App& app, bool yes);
+void answerChoice(App& app, bool yes, bool cancelled = false); // (cancelled: the Vita's × for No - __ComUty_YesNoChoiceProc's SE 3)
 void answerWorldChoice(App& app, int pos);
 void showMessages(App& app, const std::vector<int>& ids);
 bool checkTriggers(App& app, bool instant = false);
@@ -1754,12 +1764,13 @@ int battleInSound(int g);
 void startBattle(App& app, const cr::BattleStart& start, int flags);
 void endBattle(App& app, bool won);
 void setBanner(App& app, const std::string& text, int frames = btlui::kBannerFrames);
+void battleMenu(App& app, App::Battle::Menu menu);
 void battleChooseTop(App& app, int i);
 void battleChooseGene(App& app, int ability);
 void battleChooseCommand(App& app, int i);
 void battleChooseItem(App& app, int item);
 void battleChooseTarget(App& app, int fighter);
-void battleEscapeAnswer(App& app, bool yes);
+void battleEscapeAnswer(App& app, bool yes, bool cancelled = false);
 void faceFighter(App& app, App::Battle::Actor& a, int target);
 void turnActors(App& app);
 void turnOver(App::Battle::Actor& a, float want, float frames);
@@ -1811,6 +1822,7 @@ int runCapture(App& app, const char* mapName, const char* outPath);
 
 // main.cpp
 bool padField(const App& app);
+bool titleTapFront(const App& app);
 void padButton(App& app, int b);
 bool padLive(App& app);
 bool stickPointerWanted(const App& app);

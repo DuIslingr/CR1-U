@@ -153,7 +153,15 @@ void padKey(App& app, SDL_Keycode key) { // the button as its key, through the s
     e.type = SDL_EVENT_KEY_DOWN;
     e.key.key = key;
     e.key.down = true;
+    const bool keep = app.padKeyNow;
+    app.padKeyNow = true; // (its Esc never quits)
     SDL_AppEvent(&app, &e);
+    app.padKeyNow = keep;
+}
+// The title's "touch to start" in front, nothing over it
+bool titleTapFront(const App& app) {
+    return app.mode == Mode::Maps && app.titleOpen && app.titleStage == 0 && !app.resumePrompt && !app.resumeNotice &&
+           !app.optionsOpen && !app.manualOpen && !app.scenariosOpen && !app.saveScreen.open && !app.charSelectOpen;
 }
 void padButton(App& app, int b) {
     const bool east = b == SDL_GAMEPAD_BUTTON_EAST, south = b == SDL_GAMEPAD_BUTTON_SOUTH;
@@ -161,13 +169,26 @@ void padButton(App& app, int b) {
     const bool puzzle = app.puzzle.stage >= 0 && fieldMenuWanted(app) && !fieldSceneRunning(app);
     if (app.vitaLogo.phase) { if (confirm && app.vitaLogo.phase == 2) app.vitaLogo.skip = true; return; }
     if (fieldBarButton(app, b, confirm, cancel)) return;
+    const bool face = confirm || cancel || b == SDL_GAMEPAD_BUTTON_WEST || b == SDL_GAMEPAD_BUTTON_NORTH || b == SDL_GAMEPAD_BUTTON_START;
+    // a defeat (the Vita's _btl_main 0x513: FUN_8106c116 of □ × ○ △ START) ends on any of them
+    if (face && app.mode == Mode::Maps && app.battle.active && app.battle.phase == App::Battle::Lost) {
+        app.battle.lostTap = true;
+        return;
+    }
+    // the Vita's title (__menuu_TitlePrc 1: FUN_8100876a, 0xf008 - □ △ ○ × START) starts on any of them
+    if (face && titleTapFront(app)) {
+        padKey(app, SDLK_RETURN);
+        return;
+    }
     switch (b) {
     case SDL_GAMEPAD_BUTTON_DPAD_UP: if (padMenus(app)) padKey(app, SDLK_UP); return;
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN: if (padMenus(app)) padKey(app, SDLK_DOWN); return;
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: if (padMenus(app)) padKey(app, SDLK_LEFT); return;
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: if (padMenus(app)) padKey(app, SDLK_RIGHT); return;
     case SDL_GAMEPAD_BUTTON_NORTH: // △: the menu
-        if (app.campOpen) { app.campOpen = false; menuSound(app, se::kCampClose); }
+        if (app.campOpen) { // (the Vita's Camp reads no △ - __menuu_CampMainPrc 5: ○ and ×; × closes it there)
+            if (!fieldBarPad(app)) app.campOpen = false, menuSound(app, se::kCampClose);
+        }
         else if (padField(app) && fieldBarPad(app)) { // (the Vita's △, button 0x1000: the bar, as the corner button)
             if (fieldMenuWanted(app) && !fieldSceneRunning(app) && app.fieldMenu.fade > 0) toggleFieldMenu(app);
         } else if (padField(app)) padKey(app, SDLK_K);
@@ -176,8 +197,10 @@ void padButton(App& app, int b) {
         if (padField(app) && puzzle) padKey(app, SDLK_T);
         else if (app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipPad, true); // (up: SDL_EVENT_GAMEPAD_BUTTON_UP)
         return;
-    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: padKey(app, SDLK_PAGEUP); return;   // L: a page back
-    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: padKey(app, SDLK_PAGEDOWN); return; // R: a page on
+    // L / R: a page back / on (Options' arrows), the Camp's and the shop's arrows and counts (ComUty_BackButtonProc
+    // mode 2, _ComUty_NumCountProc: 0x100 / 0x200); the field leaves them be (the viewer's map stepping)
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: padKey(app, SDLK_PAGEUP); return;
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: padKey(app, SDLK_PAGEDOWN); return;
     case SDL_GAMEPAD_BUTTON_START: // START: a puzzle restarted; elsewhere the Options
         if (puzzle) padKey(app, SDLK_F5);
         else if (padField(app) || app.optionsOpen) padKey(app, SDLK_V);
@@ -200,8 +223,6 @@ bool padLive(App& app) {
         held = held || SDL_GetGamepadButton(app.pad, button);
     return app.padHeldOver.live(held);
 }
-// Each frame: the stick in the menus as the cursor keys, and either held repeating (after 0.35 s,
-// every 0.08 s)
 // ---- A puzzle room's touch from a controller ----
 // The puzzles are touch play (the Vita release's too: a PS TV puts a pointer on the screen for them).
 // Here the right stick moves a pointer in a puzzle room and R3 held is the finger on the glass: a
@@ -279,8 +300,73 @@ void drawStickPointer(App& app) {
     r.fillRect(lx - 2, ly - arm, 4, 2 * arm, 0.3f, 0.95f, 1.0f, a);
 }
 
+// The scroll list in focus (MuScrList: the only menus whose held direction repeats on the Vita -
+// FUN_81008500(6, 3) from its pad handler FUN_8105880a): its cursor and length; false for anything else
+bool padListFocus(const App& app, int& cur, int& n) {
+    const App::Battle& b = app.battle;
+    if (app.mode == Mode::Maps && b.active) {
+        if (b.menu != App::Battle::Genes && b.menu != App::Battle::Items) return false;
+        cur = b.pick, n = int(b.picks.size());
+        return true;
+    }
+    if (app.campOpen) { // (the Items list, the equipment slots and lists, the plates' entries, the Status lists)
+        if (app.camp.notice || !campScrollable(app)) return false;
+        cur = campFocus(app), n = campScrollCount(app);
+        return true;
+    }
+    if (app.shop.open && app.shop.phase == App::Shop::List) { cur = app.shop.listCursor, n = int(app.shop.list.size()); return true; }
+    if (app.lastBattle.open && app.lastBattle.state == 3) { cur = app.lastBattle.cursor, n = int(app.lastBattle.pairs.size()); return true; }
+    if (app.mode == Mode::Maps && app.worldChoiceOpen) {
+        const App::WorldSelect& ws = app.worldSelect;
+        if (ws.state == 1) { cur = ws.cursor, n = int(ws.worlds.size()); return true; }
+        if (ws.state == 6) { cur = ws.levelCursor, n = ws.levels; return true; }
+        return false;
+    }
+    if (app.manualOpen && app.manualMsg.state == 0) { cur = app.manualCursor, n = int(manualTopics(app).size()); return true; }
+    return false;
+}
+
 void padStep(App& app, float dt) {
-    if (!padLive(app) || !padMenus(app)) { app.padHeld = -1; return; }
+    // The Vita's field bar open (__menuf_mainPrc): the stick moves its cursor as the D-pad does, a step
+    // a push (the reader, FUN_8106bafc, turns an axis past 0.5 into a D-pad press - its trg bits, +0x30;
+    // the bar has no repeat)
+    if (app.pad && fieldBarPad(app) && app.fieldMenu.open && !padMenus(app)) {
+        const float bx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
+        const float by = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
+        int dir = -1;
+        if (std::max(std::fabs(bx), std::fabs(by)) > 0.5f)
+            dir = std::fabs(by) >= std::fabs(bx) ? (by < 0 ? 0 : 1) : (bx < 0 ? 2 : 3);
+        static const int kBarDir[4] = {SDL_GAMEPAD_BUTTON_DPAD_UP, SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
+                                       SDL_GAMEPAD_BUTTON_DPAD_RIGHT};
+        if (dir != app.padHeld) {
+            app.padHeld = dir, app.padHeldFor = 0;
+            if (dir >= 0) fieldBarButton(app, kBarDir[dir], false, false);
+        }
+        return;
+    }
+    if (!padLive(app) || !padMenus(app)) { app.padHeld = -1, app.padCountDir = 0; return; }
+    // A count (the shop's, the Camp's seeds - _ComUty_NumCountProc, FUN_8105199e): L / R held change it
+    // a step a press, then - its counter past 0x14 - one a frame (left / right the same here)
+    {
+        bool count = app.shop.open && app.shop.phase == App::Shop::Count;
+        if (app.campOpen && app.camp.page == App::Camp::Items && app.camp.phase == App::Camp::Ask && !app.camp.list.empty()) {
+            const int item = app.camp.list[size_t(std::clamp(app.camp.listCursor, 0, int(app.camp.list.size()) - 1))];
+            count = item >= 3 && item <= 6;
+        }
+        int cd = 0;
+        if (count) {
+            if (SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) || SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)) cd = -1;
+            else if (SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) || SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) cd = 1;
+        }
+        if (cd != app.padCountDir) app.padCountDir = cd, app.padCountFor = 0; // (the press itself came as its button)
+        else if (cd) {
+            constexpr float kFrame = 1.0f / kFramesPerSecond;
+            const float before = app.padCountFor;
+            app.padCountFor += dt;
+            if (app.padCountFor >= 20 * kFrame && std::floor((app.padCountFor - 20 * kFrame) / kFrame) != std::floor((before - 20 * kFrame) / kFrame))
+                padKey(app, cd < 0 ? SDLK_LEFT : SDLK_RIGHT);
+        }
+    }
     const float lx = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTX)) / 32767.0f;
     const float ly = float(SDL_GetGamepadAxis(app.pad, SDL_GAMEPAD_AXIS_LEFTY)) / 32767.0f;
     int dir = -1;
@@ -289,7 +375,7 @@ void padStep(App& app, float dt) {
     else if (SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)) dir = 2;
     else if (SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) dir = 3;
     const bool fromPad = dir >= 0;
-    if (!fromPad && std::max(std::fabs(lx), std::fabs(ly)) > 0.5f) // (the Vita's: past half, a direction)
+    if (!fromPad && std::max(std::fabs(lx), std::fabs(ly)) > 0.5f) // (the Vita's reader, FUN_8106bafc: past half, a direction)
         dir = std::fabs(ly) >= std::fabs(lx) ? (ly < 0 ? 0 : 1) : (lx < 0 ? 2 : 3);
     static const SDL_Keycode kDir[4] = {SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT};
     if (dir != app.padHeld) {
@@ -298,9 +384,14 @@ void padStep(App& app, float dt) {
         return;
     }
     if (dir < 0) return;
+    // Held: only a scroll list's up / down repeat (FUN_81008500(6, 3): after 6 frames, then every 3 -
+    // 0.30 / 0.15 s), and a repeat stops at the list's end (FUN_8105880a: only a fresh press wraps)
+    int cur = 0, n = 0;
+    if (dir > 1 || !padListFocus(app, cur, n)) return;
     const float before = app.padHeldFor;
     app.padHeldFor += dt;
-    if (app.padHeldFor >= 0.35f && std::floor((app.padHeldFor - 0.35f) / 0.08f) != std::floor((before - 0.35f) / 0.08f))
+    if (app.padHeldFor >= 0.30f && std::floor((app.padHeldFor - 0.30f) / 0.15f) != std::floor((before - 0.30f) / 0.15f) &&
+        (dir == 0 ? cur > 0 : cur < n - 1))
         padKey(app, kDir[dir]);
 }
 
@@ -842,6 +933,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         for (int i = 1; i < argc; ++i)
             for (const char* f : {"--viewer", "--map", "--model", "--models", "--maps"})
                 viewer = viewer || SDL_strcmp(argv[i], f) == 0;
+        app->viewer = viewer;
         if (!viewer) bootTitle(*app);
     }
 
@@ -942,7 +1034,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             case SDLK_UP: case SDLK_DOWN: case SDLK_W: case SDLK_S: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_A: case SDLK_D:
                 app.resumeCursor ^= 1; menuSound(app, se::kCursor); break;
             case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: answerResume(app, app.resumeCursor == 0); break;
-            case SDLK_ESCAPE: case SDLK_BACKSPACE: answerResume(app, false); break;
+            case SDLK_ESCAPE: case SDLK_BACKSPACE: answerResume(app, false, true); break;
             default: break;
             }
             break;
@@ -999,7 +1091,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             break;
         }
         if (app.mode == Mode::Maps && app.titleOpen) {
-            if (!titleKey(app, event->key.key)) return SDL_APP_SUCCESS;
+            if (!titleKey(app, event->key.key) && !app.padKeyNow) return SDL_APP_SUCCESS; // (Esc quits - the keyboard's, not the pad's ×)
             break;
         }
         if (app.mode == Mode::Maps && app.battle.active) {
@@ -1016,17 +1108,20 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 app.choiceCursor ^= 1;
                 menuSound(app, se::kCursor);
                 return SDL_APP_CONTINUE;
-            case SDLK_ESCAPE: case SDLK_BACKSPACE: answerChoice(app, false); return SDL_APP_CONTINUE;
+            case SDLK_ESCAPE: case SDLK_BACKSPACE: answerChoice(app, false, true); return SDL_APP_CONTINUE;
             default: break;
             }
         }
         switch (event->key.key) {
-        case SDLK_ESCAPE: case SDLK_AC_BACK: return SDL_APP_SUCCESS;
-        case SDLK_RIGHT: step(app, 1); break;
-        case SDLK_LEFT: step(app, -1); break;
-        case SDLK_PAGEDOWN: step(app, 10); break;
-        case SDLK_PAGEUP: step(app, -10); break;
+        case SDLK_ESCAPE: case SDLK_AC_BACK: if (app.padKeyNow) break; return SDL_APP_SUCCESS; // (the pad's × never quits)
+        // (the viewer's stepping: a game's field leaves them alone - the pad's L / R send PgUp / PgDn,
+        // and the arrow keys or L / R on the field changed the map, ten at a time)
+        case SDLK_RIGHT: if (app.viewer) step(app, 1); break;
+        case SDLK_LEFT: if (app.viewer) step(app, -1); break;
+        case SDLK_PAGEDOWN: if (app.viewer) step(app, 10); break;
+        case SDLK_PAGEUP: if (app.viewer) step(app, -10); break;
         case SDLK_TAB:
+            if (!app.viewer) break;
             setMode(app, app.mode == Mode::Textures ? Mode::Models
                          : app.mode == Mode::Models ? Mode::Maps : Mode::Textures);
             break;

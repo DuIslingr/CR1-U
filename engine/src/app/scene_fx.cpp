@@ -1281,11 +1281,11 @@ void stepOptions(App& app) {
 
 // OptionPrc 10, Yes to both questions: prty_init_all, removeSaveData, removeContData - every pair's
 // save and the resume point go; Yes to the first asks the second (sound 2), No leaves it (2)
-void resetAnswer(App& app, bool yes) {
+void resetAnswer(App& app, bool yes, bool cancelled) {
     if (app.resetAsk == 3) { // Return to Title (OptionPrc 0xd / 0x18 / 0x19): Yes - SetFade black over 500 ms and
         // MuCom_PreReturnTitle (the music off), 0xc + 1 frames, then MuCom_ReturnTitle (stepEvents); No - the page again
         app.resetAsk = 0;
-        menuSound(app, se::kChoose);
+        menuSound(app, cancelled ? se::kBack : se::kChoose); // (the Vita's OptionPrc 0x11: ComUty_YesNoChoiceProc(.., 1), × 3)
         if (!yes) return;
         playBgm(app, 1u << 27);
         app.fadeGrey = 0, app.fadeFrom = 0, app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
@@ -1298,7 +1298,8 @@ void resetAnswer(App& app, bool yes) {
         return;
     }
     app.resetAsk = 0;
-    if (!yes) { menuSound(app, se::kChoose); return; }
+    // (No: 2.2.0's 2; the Vita's OptionPrc 10 plays 3 for its No - the × is the pad's way there)
+    if (!yes) { menuSound(app, cancelled ? se::kBack : se::kChoose); return; }
     menuSound(app, 13); // (0x9e on Omega's numbering)
     for (int pair = 1; pair <= 4; ++pair) SDL_RemovePath(slotPath(app, pair).c_str());
     SDL_RemovePath(dataPath(app).c_str());
@@ -1327,7 +1328,7 @@ void optionsKey(App& app, SDL_Keycode key) {
             app.resetConfirm ^= 1, menuSound(app, se::kCursor);
             break;
         case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: resetAnswer(app, app.resetConfirm == 0); break;
-        case SDLK_ESCAPE: case SDLK_BACKSPACE: resetAnswer(app, false); break;
+        case SDLK_ESCAPE: case SDLK_BACKSPACE: resetAnswer(app, false, true); break;
         default: break;
         }
         return;
@@ -2709,7 +2710,8 @@ void drawFrame(App& app, bool present) {
             const float ey = app.staffRoll.edgeY; // (Android: the button at y -oy)
             corner = app.staffRoll.phone ? tx >= 444 && tx < 476 && ty >= -ey && ty < 32 - ey : tx >= 460 && tx < 492 && ty >= -32 && ty < 0;
         }
-        app.staffRoll.fast = keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_RETURN] || corner;
+        app.staffRoll.fast = keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_RETURN] || corner ||
+                             (app.pad && SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_WEST)); // (the Vita's □ held: __menuu_StaffRollPrc 2, 0x8000)
         for (app.staffRoll.clock += dt; app.staffRoll.clock >= 1.0f / kFramesPerSecond; app.staffRoll.clock -= 1.0f / kFramesPerSecond)
             stepStaffRoll(app);
         drawStaffRoll(app);

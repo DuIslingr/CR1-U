@@ -656,6 +656,58 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             glErrors += ferrs;
         }
 
+        // The Vita's battle by controller (__menub_mainPrc): the first page's cursor kept (Escape after
+        // its No - × playing SE 3), a member's command kept through a list and back, cleared as the first
+        // page comes in; Victory waits for ○ alone, a defeat ends on △ (_btl_main 1099 / 0x513)
+        {
+            int cbad = 0;
+            const auto keepItems = app.game.items;
+            app.game.items[21] = std::max(app.game.items[21], 1); // (a battle item: the Items list opens)
+            startBattle(app, {1, 0, -1, 0}, 0);
+            App::Battle& b = app.battle;
+            bool escapeKept = false, noSound = false, cmdKept = false, cleared = false, wonWaits = false, lostEnds = false;
+            auto key = [&](SDL_Keycode k) { // (the page as shown: battleMenuReady)
+                b.phase = App::Battle::Command, b.viewState = 2, b.view.page = b.page;
+                battleKey(app, k);
+            };
+            if (b.active) {
+                battleMenu(app, App::Battle::Top);
+                b.cursor = 2;
+                key(SDLK_RETURN); // Escape ...
+                app.menuSoundLog.clear();
+                key(SDLK_ESCAPE); // ... × : No
+                escapeKept = b.rules.escapeBlocked || (b.menu == App::Battle::Top && b.cursor == 2);
+                noSound = b.rules.escapeBlocked || (!app.menuSoundLog.empty() && app.menuSoundLog.back() == se::kBack);
+                b.cursor = 0;
+                key(SDLK_RETURN); // Solo
+                b.cursor = 2;
+                key(SDLK_RETURN); // Items: the list
+                const bool listed = b.menu == App::Battle::Items;
+                key(SDLK_ESCAPE); // back: Items again
+                cmdKept = listed && b.menu == App::Battle::Commands && b.cursor == 2;
+                key(SDLK_ESCAPE); // back to the first page: Solo kept, the commands cleared
+                cleared = b.menu == App::Battle::Top && b.cursor == 0 && b.cmdCursor[0] == 0 && b.cmdCursor[1] == 0;
+                b.phase = App::Battle::Won, b.wonTap = false;
+                battleKey(app, SDLK_ESCAPE);
+                wonWaits = !b.wonTap;
+                battleKey(app, SDLK_RETURN);
+                wonWaits = wonWaits && b.wonTap;
+                b.phase = App::Battle::Lost, b.lostTap = false;
+                padButton(app, SDL_GAMEPAD_BUTTON_NORTH);
+                lostEnds = b.lostTap;
+                b.phase = App::Battle::Command;
+                endBattle(app, false);
+                app.runner.stop();
+            }
+            app.game.items = keepItems;
+            cbad = !escapeKept + !noSound + !cmdKept + !cleared + !wonWaits + !lostEnds;
+            std::printf("battle cursors (the Vita's): Escape kept after No %s (× SE 3 %s), the command kept through the list %s, "
+                        "the first page kept and the commands cleared %s, Victory on ○ alone %s, a defeat ends on △ %s; %d problems\n",
+                        escapeKept ? "yes" : "NO", noSound ? "yes" : "NO", cmdKept ? "yes" : "NO", cleared ? "yes" : "NO",
+                        wonWaits ? "yes" : "NO", lostEnds ? "yes" : "NO", cbad);
+            problems += cbad;
+        }
+
         // The bosses' staged actions (btlact_430..436): each plays its own slot (the boss models'
         // 14th / 15th, read past the usual 13), steps through its cameras, flashes and shakes
         // where it has them, hits at its frame and ends after its wait; hits shake the screen;
@@ -4400,6 +4452,11 @@ int runSelfTest(App& app) {
         problems += c.page != App::Camp::Items || c.list.empty() || c.list[0] != 3;
         steps(8);
         key(SDLK_RETURN), key(SDLK_RETURN);                   // on Escher: how many?
+        problems += c.phase != App::Camp::Ask;
+        key(SDLK_ESCAPE);                                     // (no Back bar here; the Vita's × answers No, SE 2: the list)
+        problems += c.phase != App::Camp::List;
+        key(SDLK_RETURN), key(SDLK_RETURN);                   // Escher again: how many?
+        problems += c.phase != App::Camp::Ask;
         key(SDLK_RIGHT), key(SDLK_RIGHT), key(SDLK_RIGHT);    // 3 (the bag's all)
         problems += c.count != 3;
         key(SDLK_RETURN);                                     // Yes: the board (CampMainPrc 8, 9)
@@ -4442,11 +4499,11 @@ int runSelfTest(App& app) {
         const int errs = app.renderer.takeErrors();
         key(SDLK_ESCAPE), key(SDLK_ESCAPE);
         steps(8);
-        key(SDLK_ESCAPE);                                     // Back on the main page: the windows go, then it closes
+        key(SDLK_ESCAPE);                                     // Back on the main page: the windows go, then it closes (SE 9 alone)
         problems += !app.campOpen;
         steps(5);
         problems += app.campOpen + errs;
-        problems += expectSounds("camp", {2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 4, 2, 5, 3, 3, 3, 9});
+        problems += expectSounds("camp", {2, 2, 2, 2, 2, 2, 2, 2, 4, 20, 2, 2, 2, 20, 2, 4, 3, 2, 2, 2, 4, 1, 21, 3, 3, 2, 4, 2, 5, 3, 3, 9});
         app.mapNumber = campMap;
         std::printf("camp: 56010 / 56016 first, 3 seeds +%d attack, Plum to MP %d, Bastard Sword worn, status page and list; %d "
                     "frames, %d render API errors; %d problems\n", atk1 - atk0, app.game.party[0].mp, frames, errs, problems);
@@ -5826,10 +5883,12 @@ int runSelfTest(App& app) {
                 if (o.label.rfind("Swap", 0) == 0 && o.act) o.act(1); // Off: as on the Vita
             app.padConfirmEast = true;
             const auto held = [&](int button, bool down) { SDL_SetJoystickVirtualButton(js, button, down); SDL_UpdateJoysticks(); };
-            const auto repeats = [&] { // (half a second of a D-pad direction held in the Camp: the cursor's moves)
-                app.camp.cursor = 0;
+            // (half a second of a D-pad direction held in the Camp's Items list - a scroll list, the only
+            // menus that repeat on the Vita: the cursor's moves)
+            const auto repeats = [&] {
+                app.camp.listCursor = 0, app.camp.listTop = 0;
                 for (int f = 0; f < 30; ++f) padStep(app, 1.0f / 60.0f);
-                return app.camp.cursor != 0;
+                return app.camp.listCursor != 0;
             };
             const auto focusLost = [&] {
                 SDL_Event e{};
@@ -5839,6 +5898,16 @@ int runSelfTest(App& app) {
                 SDL_AppEvent(&app, &e);
             };
             app.camp.page = App::Camp::Main;
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true); // the main page's plates: no repeat (__ScrListSelectSePlay: trg only)
+            app.camp.cursor = 0;
+            for (int f = 0; f < 30; ++f) padStep(app, 1.0f / 60.0f);
+            const bool platesHeld = app.camp.cursor == 0;
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false);
+            padStep(app, 1.0f / 60.0f);
+            const std::vector<int> keepList = app.camp.list;
+            app.camp.page = App::Camp::Items, app.camp.phase = App::Camp::List; // (a list longer than it shows)
+            app.camp.list.clear();
+            for (int n = 21; n <= 40; ++n) app.camp.list.push_back(n);
             held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true);
             const bool repeated = repeats();
             focusLost();
@@ -5849,10 +5918,26 @@ int runSelfTest(App& app) {
             const bool repeatFresh = repeats();
             held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false);
             padStep(app, 1.0f / 60.0f);
+            const int last = int(app.camp.list.size()) - 1; // held at the list's end: it stays there (FUN_8105880a)
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, true);
+            padStep(app, 1.0f / 60.0f);
+            app.camp.listCursor = last;
+            for (int f = 0; f < 60; ++f) padStep(app, 1.0f / 60.0f);
+            const bool endHeld = last > 0 && app.camp.listCursor == last;
+            held(SDL_GAMEPAD_BUTTON_DPAD_DOWN, false);
+            padStep(app, 1.0f / 60.0f);
+            // L / R on the Items list: its categories (the Back bar's arrows, ComUty_BackButtonProc mode 2)
+            const int category = app.camp.category;
+            padButton(app, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+            const bool lrTurns = app.camp.category != category && app.campOpen;
+            app.camp.list = keepList, app.camp.listCursor = app.camp.listTop = 0, app.camp.category = 0;
+            app.camp.page = App::Camp::Main, app.camp.phase = App::Camp::List;
             app.camp.cursor = 0;
-            problems += !repeated || !repeatStopped || !repeatFresh;
-            std::printf("controller: a held direction repeats %s, stops with the focus %s, and repeats again once let go %s\n",
-                        repeated ? "yes" : "NO", repeatStopped ? "yes" : "NO", repeatFresh ? "yes" : "NO");
+            problems += !repeated || !repeatStopped || !repeatFresh || !platesHeld || !endHeld || !lrTurns;
+            std::printf("controller: a held direction repeats in a list %s (not over the plates %s), stops with the focus %s, "
+                        "repeats again once let go %s, stops at the list's end %s; R turns the Items category %s\n", repeated ? "yes" : "NO",
+                        platesHeld ? "yes" : "NO", repeatStopped ? "yes" : "NO", repeatFresh ? "yes" : "NO", endHeld ? "yes" : "NO",
+                        lrTurns ? "yes" : "NO");
             padButton(app, SDL_GAMEPAD_BUTTON_NORTH); // △ again: closed, from any page
             const bool closed = !app.campOpen;
             { // The Vita copy (its __menuf_mainPrc / Put): △ the bar, the cursor on its last entry (Camp),
@@ -5880,13 +5965,74 @@ int runSelfTest(App& app) {
                 settle();
                 padButton(app, SDL_GAMEPAD_BUTTON_EAST); // ○ on Camp
                 const bool camp = app.campOpen;
-                padButton(app, SDL_GAMEPAD_BUTTON_NORTH);
+                for (int f = 0; f < 20; ++f) stepCamp(app); // (its windows in)
+                padButton(app, SDL_GAMEPAD_BUTTON_NORTH); // △: the Vita's Camp reads none - still open
+                const bool triangleKept = app.campOpen;
+                app.menuSoundLog.clear();
+                padButton(app, SDL_GAMEPAD_BUTTON_SOUTH); // × on its main page closes it (over a few frames), SE 9 alone
+                for (int f = 0; f < 20 && app.campOpen; ++f) stepCamp(app);
+                const bool closeSound = app.menuSoundLog.size() == 1 && app.menuSoundLog[0] == se::kCampClose;
+                // the field bar open (still, from its Camp button - gac + 0x38600 kept): the stick steps its
+                // cursor a push at a time (the reader's D-pad presses)
+                if (!app.fieldMenu.open) app.fieldMenu.fade = 320, padButton(app, SDL_GAMEPAD_BUTTON_NORTH);
+                settle();
+                const bool barThere = app.fieldMenu.open;
+                const int barAt = app.fieldMenu.cursor;
+                SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, -32767);
+                SDL_UpdateJoysticks();
+                for (int f = 0; f < 30; ++f) padStep(app, 1.0f / 60.0f);
+                SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, 0);
+                SDL_UpdateJoysticks();
+                padStep(app, 1.0f / 60.0f);
+                const bool stickStep = barThere && (e.size() < 2 || app.fieldMenu.cursor == (barAt + int(e.size()) - 1) % int(e.size()));
                 app.fieldMenu = App::FieldMenu();
                 app.vitaOnly = keepVita, app.video.layout = keepLayout, app.padConfirmEast = keepEast;
-                const bool ok = barOpen && stepped && wrapped && shut && camp && !app.campOpen;
+                const bool ok = barOpen && stepped && wrapped && shut && camp && triangleKept && !app.campOpen && closeSound && stickStep;
                 problems += !ok;
-                std::printf("controller, the Vita's bar: △ opens it on Camp %s, the cursor steps %s and wraps %s, × shuts it %s, ○ opens Camp %s\n",
-                            barOpen ? "yes" : "NO", stepped ? "yes" : "NO", wrapped ? "yes" : "NO", shut ? "yes" : "NO", camp ? "yes" : "NO");
+                std::printf("controller, the Vita's bar: △ opens it on Camp %s, the cursor steps %s and wraps %s, × shuts it %s, ○ opens Camp %s, "
+                            "△ leaves the Camp %s and × closes it %s (SE 9 alone %s), the stick steps the bar once %s\n",
+                            barOpen ? "yes" : "NO", stepped ? "yes" : "NO", wrapped ? "yes" : "NO", shut ? "yes" : "NO", camp ? "yes" : "NO",
+                            triangleKept ? "open" : "SHUT", !app.campOpen ? "yes" : "NO", closeSound ? "yes" : "NO", stickStep ? "yes" : "NO");
+            }
+            { // The Vita's pad elsewhere: L / R on the field leave the map be (they reached the viewer's map
+              // stepping, ten at a time); the D-pad runs (CrossKey: a full push), the stick a little way walks;
+              // × on the title's "touch to start" starts, and never quits
+                app.campOpen = false;
+                const int mapBefore = app.mapIndex;
+                const bool keepViewer = app.viewer;
+                app.viewer = false;
+                padButton(app, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER), padButton(app, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+                const bool mapKept = app.mapIndex == mapBefore;
+                const cr::Vec3 at = app.walker.pos;
+                held(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, true);
+                updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+                const bool runs = app.walker.gait == cr::Gait::Run;
+                held(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, false);
+                updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+                SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, Sint16(0.45f * 32767)); // (past 0.29: walks, under 0.58)
+                SDL_UpdateJoysticks();
+                updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+                const bool walks = app.walker.gait == cr::Gait::Walk;
+                SDL_SetJoystickVirtualAxis(js, SDL_GAMEPAD_AXIS_LEFTX, 0);
+                SDL_UpdateJoysticks();
+                updatePlayer(app, 1.0f / kFramesPerSecond, 0);
+                app.walker.pos = at, app.walker.gait = cr::Gait::Stand;
+                app.runner.stop(), app.dialogue.clear(), app.pendingEntry = App::Entry::None;
+                const bool keepTitle = app.titleOpen;
+                const int keepStage = app.titleStage;
+                app.titleOpen = true, app.titleStage = 0;
+                const bool front = titleTapFront(app);
+                SDL_Event te{};
+                te.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN, te.gbutton.which = SDL_GetGamepadID(pad), te.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
+                const bool stays = SDL_AppEvent(&app, &te) != SDL_APP_SUCCESS;
+                const bool started = app.titleStage != 0 || !app.titleOpen;
+                app.titleOpen = keepTitle, app.titleStage = keepStage;
+                app.viewer = keepViewer;
+                const bool ok = mapKept && runs && walks && front && stays && started;
+                problems += !ok;
+                std::printf("controller, the Vita's pad: L / R keep the map %s, the D-pad runs %s, the stick part way walks %s, "
+                            "× on the title starts %s and stays %s\n", mapKept ? "yes" : "NO", runs ? "yes" : "NO", walks ? "yes" : "NO",
+                            started ? "yes" : "NO", stays ? "yes" : "NO");
             }
             { // A puzzle room's touch from the controller: R3 on a psychokinesis block lifts it, the right
               // stick slides the finger, R3 let go sends it; outside a puzzle room the pointer stays away

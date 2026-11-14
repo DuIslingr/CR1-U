@@ -101,12 +101,12 @@ Input).
 
 | Button | On the field | In menus and dialogue | In puzzle rooms |
 |---|---|---|---|
-| Left stick / D-pad | walk (the stick pushed far runs) | move the cursor (held, it repeats) | walk |
+| Left stick / D-pad | walk (the stick past half way runs; the D-pad runs, as on the Vita) | move the cursor (held, a list repeats) | walk |
 | ○ | examine / talk | confirm, turn the page | examine |
 | × | - | cancel, back | - |
-| △ | open the Camp (the Vita copy: the corner bar - D-pad picks, ○ presses, × shuts) | close the Camp | open the Camp |
-| □ | - | skip a scene's text (until a choice) | use the pair's ability |
-| L / R | - | previous / next page | - |
+| △ | open the Camp (the Vita copy: the corner bar - D-pad or stick picks, ○ presses, × shuts) | close the Camp (not in the Vita copy: × does) | open the Camp |
+| □ | - | skip a scene's text (until a choice); hold for a fast staff roll | use the pair's ability |
+| L / R | - | previous / next page; the Camp's categories, member and Status views, the shop's member, a count (held, it repeats) | - |
 | START | Options | close Options | restart the puzzle |
 | SELECT | the corner bar (Camp, Save, Map, encounters) | - | the puzzle's help |
 | Right stick / R3 | - | - | a touch pointer: the stick moves it, R3 held is the finger (lift and swipe blocks, tap anything) |
