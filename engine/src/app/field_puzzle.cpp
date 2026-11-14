@@ -325,6 +325,7 @@ void enterMap(App& app) {
     cr::applyTreasureFlags(app.events, app.npcs, boxes, app.game, true);
     npcSetup(app); // (npc_setup at each field load)
     app.npcDraws.clear(); // (npc_setup reads their models again: no fade carried over from the last room)
+    app.npcHeld.clear();
     puzzle::enter(app); // PuzzleScene::init in a puzzle room (stage -1 elsewhere)
     app.puzzleStartPending = app.puzzle.stage >= 0;
     buildNpcDraws(app);
@@ -908,10 +909,13 @@ void placePlayer(App& app) {
 }
 
 // The viewer's side of a running script (see cr::EventHost).
+// The NPC's models, shown or hidden: the event ops act on the model whatever its NPC's hidden bit
+// (__EvtAnim / __EvtAnim2 / __EvtNpcFade / __EvtUnloadAct take npc ctl +0, 18015-19060)
 std::vector<App::NpcDraw*> ViewerHost::npc(int id) {
     std::vector<App::NpcDraw*> out;
-    for (auto& d : app.npcDraws)
-        if (d.id == id) out.push_back(&d);
+    for (auto* v : {&app.npcDraws, &app.npcHeld})
+        for (auto& d : *v)
+            if (d.id == id) out.push_back(&d);
     return out;
 }
 void ViewerHost::showMessage(int id) {
@@ -1068,16 +1072,21 @@ void ViewerHost::fadeNpc(int id, float from, float to, int frames) {
         app.playerFadeFrames = frames, app.playerFadeLeft = frames - 1;
         return;
     }
+    bool lit = false;
     for (auto* d : npc(id)) {
         d->faded = true;
         if (frames <= 0) { d->fadeLeft = 0; continue; }
         d->alphaFrom = from; d->alphaTo = to; d->alpha = first;
         d->fadeFrames = frames, d->fadeLeft = frames - 1;
+        if (d >= app.npcHeld.data() && d < app.npcHeld.data() + app.npcHeld.size()) d->lit = lit = true; // (+0x55c 0 -> 1)
     }
+    if (lit) buildNpcDraws(app);
 }
 void ViewerHost::showNpc(int id, bool shown) {
     app.npcShown[id] = shown;
     if (id == 0) return; // the player: drawn while showPlayer and not hidden here
+    if (!shown) // (npc_kill: +0x55c = 0 - a fade that lit it stops drawing it too)
+        for (auto* d : npc(id)) d->lit = false;
     // Born explicitly activates the actor at its current position. Some scenes show the
     // hall loaded at the origin without a Setc (t01 event 202, the execution scene).
     if (shown) app.placedNpcs.insert(id);
@@ -1299,6 +1308,9 @@ void ViewerHost::loadNpc(int id) {
         n->shownSet = false;
         stopNpcAuto(-id);
         app.npcShown[-id] = false;
+        const int index = int(n - app.npcs.data()); // (_read_mdl: a fresh model - no action, alpha or fade kept)
+        for (auto* v : {&app.npcDraws, &app.npcHeld})
+            v->erase(std::remove_if(v->begin(), v->end(), [&](const App::NpcDraw& d) { return d.index == index; }), v->end());
         buildNpcDraws(app);
         return;
     }
@@ -1309,8 +1321,13 @@ void ViewerHost::loadNpc(int id) {
     }
     cr::NpcRow row;
     if (!app.events.npcRow(id, row)) return;
-    cr::FieldNpc n; // __EvtNpcMdlRead: at the origin, facing 0, and hidden (+0x8c bit 0) when its
-    n.id = id;      // create flags fail or it's a story actor (id 400 on) - until a Born
+    // __EvtNpcMdlRead (2.2.0 19212-19262): at the origin, facing 0, and hidden (+0x8c bit 0, +0x55c = 0)
+    // when its create flags fail, or when the map list's record at the count of NPCs loaded so far -
+    // not the new NPC's own; mostly the 0xFFFF terminator or what follows it - has an id over 399
+    // (19255): j007_t01's chequered floor (501, read fifth into map 113's list of two) stands shown
+    if (int(app.npcs.size()) > 0x5c) return; // (19220: no room for it)
+    cr::FieldNpc n;
+    n.id = id;
     n.flagShow = row.flagShow;
     n.flagHide = row.flagHide;
     n.model = row.model;
@@ -1319,9 +1336,10 @@ void ViewerHost::loadNpc(int id) {
     n.puzzle = row.puzzle;
     n.scale = row.scale;
     n.mdlRead = n.model >= 0;
-    if (id >= 400 || !npcActive(app, n)) app.npcShown[id] = false;
+    app.npcShown[id] = npcCreateFlags(app, n) && app.events.npcListId(app.mapNumber, int(app.npcs.size())) <= 399;
     app.npcs.push_back(n);
     app.npcWarps.push_back(false);
+    buildNpcDraws(app);
 }
 void ViewerHost::freeCamera(bool on) { // __EvtCameraPlayer: the mode and the auto flags only - the eye stays where the last shot put it
     app.cam.free = on;
@@ -3501,11 +3519,14 @@ void stepEvents(App& app) {
     }
     if (app.fadeT < app.fadeFrames) ++app.fadeT;
     if (app.backFade.t < app.backFade.frames) ++app.backFade.t;
+    bool unlit = false; // (only the drawn models' fades step: mdl_put's)
     for (auto& d : app.npcDraws)
         if (d.fadeLeft > 0) {
             --d.fadeLeft;
             d.alpha = d.alphaTo + (d.alphaFrom - d.alphaTo) * float(d.fadeLeft) / float(d.fadeFrames);
+            if (d.fadeLeft == 0 && d.lit && d.alpha <= 0) d.lit = false, unlit = true; // (+0x55c 0 again: 10189)
         }
+    if (unlit) buildNpcDraws(app);
     if (app.playerFadeLeft > 0) {
         --app.playerFadeLeft;
         app.playerAlpha = app.playerAlphaTo + (app.playerAlphaFrom - app.playerAlphaTo) * float(app.playerFadeLeft) /
@@ -3947,25 +3968,33 @@ void setActor(App& app, int id, cr::Vec3 p, const float* yaw, bool keepY) {
 void buildNpcDraws(App& app) {
     std::vector<App::NpcDraw> old;
     old.swap(app.npcDraws);
-    if (!app.showNpcs) return;
+    old.insert(old.end(), std::make_move_iterator(app.npcHeld.begin()), std::make_move_iterator(app.npcHeld.end()));
+    app.npcHeld.clear();
+    if (!app.showNpcs) { app.npcHeld = std::move(old); return; } // (kept for when they're shown again)
     for (size_t i = 0; i < app.npcs.size(); ++i) {
         const cr::FieldNpc& n = app.npcs[i];
-        if (n.model < 0 || n.model >= cr::kNumNpcModels || !npcDrawn(app, i)) continue;
-        // Cutscene actor slots wait parked at y 995..1000 or at the origin until a scene places
-        // them (FrmSetc2) or explicitly shows them (Born).
-        if ((n.pos[1] >= 900.0f || (n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) && !app.placedNpcs.count(n.id))
-            continue;
+        if (n.model < 0 || n.model >= cr::kNumNpcModels) continue;
         const std::string file = cr::kNpcModelFile[n.model];
+        // (the same NPC: its model as it was left - action, time, blend, alpha and fade - shown or hidden)
+        const App::NpcDraw* kept = nullptr;
+        for (const App::NpcDraw& o : old)
+            if (o.index == int(i) && o.model == file) { kept = &o; break; }
+        bool drawn = npcDrawn(app, i) || (kept && kept->lit);
+        // Cutscene actor slots wait parked at y 995..1000 or at the origin until a scene places
+        // them (FrmSetc2) or explicitly shows them (Born). Not a model a script read in (NpcMdlRead):
+        // that one stands at the origin as 2.2.0 reads it (19226-19253) - j007_t01's chequered hall floor
+        if ((n.pos[1] >= 900.0f || (!n.mdlRead && n.pos[0] == 0 && n.pos[1] == 0 && n.pos[2] == 0)) && !app.placedNpcs.count(n.id))
+            drawn = false;
+        // (a hidden one whose model npc_setup didn't read - its create flags failed - and no script read: none)
+        if (!drawn && !kept && !n.mdlRead && !npcCreateFlags(app, n)) continue;
         if (npcModel(app, file).meshes.empty()) continue;
-        const cr::Mat4 w = npcWorld(n);
         App::NpcDraw d;
-        for (const App::NpcDraw& o : old) // the same NPC: keep its animation and fade
-            if (o.index == int(i) && o.model == file) { d = o; break; }
+        if (kept) d = *kept;
         d.model = file;
-        d.world = w;
+        d.world = npcWorld(n);
         d.id = n.id;
         d.index = int(i);
-        app.npcDraws.push_back(d);
+        (drawn ? app.npcDraws : app.npcHeld).push_back(d);
     }
 }
 

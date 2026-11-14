@@ -914,8 +914,16 @@ struct App {
         int fadeFrames = 0, fadeLeft = 0;
         bool faded = false;  // mdl_set_alpha has run on it: its colour array off for good (fadedMaterial)
         cr::MotionBlend blend; // the 2-frame cross-fade into a new action
+        // mdl_set_alpha over frames on a hidden model (+0x55c 0 -> 1, 2.2.0 9683-9685): mdl_put draws it
+        // and steps the fade though the NPC is killed, until a Kill or a fade ending at 0 clears it
+        bool lit = false;
     };
     std::vector<NpcDraw> npcDraws;         // this map's visible NPCs
+    // The models of the map's hidden NPCs (Kill, npc_setup's story actors, a hidden NpcMdlRead: +0x55c = 0):
+    // mdl_put leaves them out - not drawn, their action, time and fade not stepped (_mdl_put 10150-10152) - but
+    // Anim / Anim2 / NpcFade / UnloadAct act on them all the same, and a Born (__EvtBorn 17816-17868: the
+    // hidden bit and the colour alone) shows them as they were left
+    std::vector<NpcDraw> npcHeld;
     // A puzzle room (PuzzleManager, game/puzzle.hpp): its objects - the room's NPCs that have
     // NPC table +20 bits - on a grid of 3 layers (0 the floor's switches, 1 blocks and gems, 2
     // the warp crystals), the touch ability's state and the ESP count

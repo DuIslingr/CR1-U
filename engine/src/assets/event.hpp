@@ -152,6 +152,9 @@ public:
     // degrees x100.
     uint32_t sceneOffset(int n) const;
     std::vector<FieldNpc> npcs(int mapNumber) const;    // the map's NPC / trigger list
+    // The id (s16) of the map list's record `index` read as it lies - past the list's 0xFFFF
+    // terminator too (__EvtNpcMdlRead reads it so); -1 when the file has no such bytes
+    int npcListId(int mapNumber, int index) const;
     bool npcRow(int id, NpcRow& out) const;             // NPC table row
     bool warpEntry(int key, WarpEntry& out) const;      // Warp 0xFFFD lookup (EvtWarp)
     std::vector<WarpEntry> warps() const;               // the whole warp table
@@ -162,6 +165,7 @@ public:
                  std::vector<std::vector<std::string>>& pages, MessageInfo* info = nullptr) const;
 
 private:
+    uint32_t npcList(int mapNumber) const;             // the map's list's file offset, 0 = none
     std::vector<uint8_t> data_;
     int area_ = -1;
     uint32_t sec_[7] = {};

@@ -2193,18 +2193,43 @@ int fieldPresentationSelfTest(App& app) {
         app.runner.stop();
         app.pendingEntry = App::Entry::None;
         ViewerHost host(app);
+        auto drawn = [&](int id) { // (drawn: a model mdl_put puts; a hidden NPC's stays held, out of npcDraws)
+            int k = 0;
+            for (const App::NpcDraw& d : app.npcDraws) k += d.id == id;
+            return k;
+        };
+        // __EvtNpcMdlRead: read with the room's own NPCs alone loaded, the list's record at that count is its
+        // 0xFFFF terminator - not over 399: shown at once (19255), at the origin
         host.loadNpc(b.npc);
+        const bool readShown = drawn(b.npc) == 1;
         host.showNpc(b.npc, false);
-        const bool hidden = host.npc(b.npc).empty();
+        const bool hidden = drawn(b.npc) == 0 && host.npc(b.npc).size() == 1;
+        // Killed, its model still takes Anim (__EvtAnim: npc ctl +0, the hidden bit not looked at) and holds it -
+        // mdl_put steps nothing of a model at colour 0 (10150-10152)
+        auto frame = [&] { stepEvents(app); animateNpcs(app, 1.0f / kFramesPerSecond); };
+        host.playAnim(b.npc, 1, 0, 0);
+        frame();
+        const auto one = [&] { const auto v = host.npc(b.npc); return v.size() == 1 ? v[0] : nullptr; };
+        bool held = drawn(b.npc) == 0 && one() && one()->action == 1 && one()->time == 0;
+        // NpcFade over frames on it: mdl_set_alpha's colour 0 -> 1 puts it back in mdl_put - drawn, fading (9683)
+        host.fadeNpc(b.npc, 0, 1, 40);
+        held = held && drawn(b.npc) == 1 && one() && one()->fadeLeft == 39;
+        host.showNpc(b.npc, false); // (a Kill mid-fade: colour 0 - not drawn, the fade where it was)
+        frame();
+        held = held && drawn(b.npc) == 0 && one() && one()->fadeLeft == 39 && one()->alpha < 0.05f;
         host.showNpc(b.npc, true);
         const auto draws = host.npc(b.npc);
-        const bool shown = draws.size() == 1 && draws[0]->model == b.model &&
-                           draws[0]->world.m[12] == 0 && draws[0]->world.m[13] == 0 && draws[0]->world.m[14] == 0;
+        const bool shown = drawn(b.npc) == 1 && draws.size() == 1 && draws[0]->model == b.model &&
+                           draws[0]->world.m[12] == 0 && draws[0]->world.m[13] == 0 && draws[0]->world.m[14] == 0 &&
+                           draws[0]->alpha < 0.05f && draws[0]->fadeLeft == 39 && draws[0]->action == 1;
+        for (auto* d : host.npc(b.npc)) d->alpha = 1, d->fadeLeft = 0;
         host.showNpc(b.npc, false);
-        const bool killed = host.npc(b.npc).empty();
-        const int sceneProblems = !hidden + !shown + !killed + app.renderer.takeErrors();
-        std::printf("cutscene backdrop %s area %d: hidden on Kill %s, shown at origin on Born %s, hidden again %s; %d problems\n",
-                    b.model, b.area, hidden ? "yes" : "NO", shown ? "yes" : "NO", killed ? "yes" : "NO", sceneProblems);
+        const bool killed = drawn(b.npc) == 0;
+        const int sceneProblems = !readShown + !hidden + !held + !shown + !killed + app.renderer.takeErrors();
+        std::printf("cutscene backdrop %s area %d: shown on NpcMdlRead %s, hidden on Kill %s, its Anim held while killed, "
+                    "a fade drawing it, a Kill holding it %s, shown at origin on Born as it was left %s, hidden again %s; %d problems\n",
+                    b.model, b.area, readShown ? "yes" : "NO", hidden ? "yes" : "NO", held ? "yes" : "NO",
+                    shown ? "yes" : "NO", killed ? "yes" : "NO", sceneProblems);
         problems += sceneProblems;
     }
     {

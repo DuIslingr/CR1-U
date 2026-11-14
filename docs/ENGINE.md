@@ -29,7 +29,8 @@ record's place and angles).
 
 `CR_SELFTEST_FIELD=1 chaosrings --selftest` runs the focused field checks: all eight party
 members' walk / run poses, Confirm after pausing the model viewer, and the Ark, fourth-gate and
-tower cutscene backdrops shown at the origin by `Born`. It also checks that both halves of the loaded release's
+tower cutscene backdrops shown on `NpcMdlRead` and at the origin by `Born`, an `Anim` held while
+killed, a fade drawing a killed one, and a `Born` showing it as it was left. It also checks that both halves of the loaded release's
 dialogue parchment render in Auto, iPad, iPhone, Android and widescreen layouts, including when
 the UI atlas comes from an add-on release.
 

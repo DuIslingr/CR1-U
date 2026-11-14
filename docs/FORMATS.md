@@ -795,7 +795,7 @@ for a scene and `Born 0` shows it again.
 | `LoadAct npc, a, slot` | load action file a (table of 205 `.mca` names at 0xd4a00, `kActionFile`) into the actor's slot (`read_act_set`); a negative npc picks the other loader. A model's own actions fill slots 0… (stand, walk, run); event actions go in 4 and up |
 | `UnloadAct npc, slot` | free the slot |
 | `Anim npc, slot, a, b` | `mdl_set_act_motion_loop`: play the slot's action, then loop frames a..b; a = −1 plays it once and holds the last frame (chest lids), a = b = 0 loops it whole; a new action blends in over 2 frames. The action already playing isn't restarted and keeps its loop. Npc 0 is the leader's model (gac + 0x83c). `Anim2 npc, slot, a, b, start, blend` (`mdl_set_act_motion_loop_frm`) has the same first four operands, then the frame it starts from and the cross-fade's frames (0: a cut) - and always starts the action over, the one playing too |
-| `NpcMdlRead npc` | load an NPC from the NPC table even if the room's list lacks it (e.g. 501 = `t0152bt.bin`, the 3D hall the opening is filmed in): `__EvtNpcMdlRead` puts it at the origin, facing 0, scale from row +0x26, hidden (+0x8c bit 0) when its create flags fail or its id is 400 or more - a `Born` shows it. A negative npc re-reads the model of one already there, at its list entry's place |
+| `NpcMdlRead npc` | load an NPC from the NPC table even if the room's list lacks it (e.g. 501 = `t0152bt.bin`, the 3D hall the opening is filmed in): `__EvtNpcMdlRead` (19212-19262) puts it at the origin, facing 0, scale from row +0x26, hidden (+0x8c bit 0, colour +0x55c = 0) when its create flags fail or when the map list's record at the count of NPCs loaded so far has an id over 399 - that record, not the new NPC's: mostly the list's 0xFFFF terminator or what follows it, so a read NPC usually stands shown at the origin (j007_t01's 0x9c11 scene: 501 read fifth into map 113's two-NPC list, the chequered floor under Ayuta and Mana); a `Born` shows a hidden one. Already loaded: nothing; 92 loaded: nothing. A negative npc re-reads the model of one already there, at its list entry's place, hidden |
 | `Setc npc, x, y, z, dir` | place at world coordinates (shorts); `dir` as for `FrmSetc` |
 | `CameraFree` / `CameraPlayer` | a script drives the camera / the stage camera again (`SetFreeCamera`, `SetPlayerCamera`) |
 | `FrmSetCam id` | camera cut: the eye is actor `id`'s position in the current record, the target the next actor's (ids 1001…) |
@@ -803,7 +803,15 @@ for a scene and `Born 0` shows it again.
 | `FrmPanCam dx, dy, dz, n` | shift the camera over n frames |
 
 `Born` explicitly shows an actor at its current position, including the origin; it does not
-require a preceding `Setc` / `FrmSetc`. The Ark's `t0152bt`, fourth gate's `d0451bt` and tower's
+require a preceding `Setc` / `FrmSetc`. `Born` / `Kill` (and `npc_born` / `npc_kill`) flip the
+hidden bit (+0x8c bit 0) and the model's colour (+0x55c: -1 / 0) alone: the model stays as it was.
+`mdl_put` skips a model at colour 0 - not drawn, its action and fade not stepped - but `Anim`,
+`Anim2`, `NpcFade` and `UnloadAct` act on the model whether its NPC is shown or not, so what they
+set carries over to the `Born` (`NpcFade 411, 0, 255, 40` then `Born 411`: j001_d05's Agent
+see-through as he appears, solid 40 frames later). `mdl_set_alpha` over frames on a model at
+colour 0 sets it to 1 (9683): drawn and fading though its NPC is killed, until a `Kill` or a fade
+that ends at 0. At colour -1 `mdl_put` leaves the materials' colour as the last fade set it, which
+is why the scripts fade 255 -> 255 over a frame before showing an NPC they faded out. The Ark's `t0152bt`, fourth gate's `d0451bt` and tower's
 `d0551bt` / `d0555bt` backdrops have scenes that rely on this. Treating the origin as an unused
 actor slot even after `Born` hides their scenery behind the characters.
 

@@ -165,9 +165,8 @@ uint32_t EventFile::sceneOffset(int n) const {
     return off + 8 <= data_.size() ? off : 0;
 }
 
-std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
-    std::vector<FieldNpc> out;
-    if (!loaded()) return out;
+uint32_t EventFile::npcList(int mapNumber) const {
+    if (!loaded()) return 0;
     // Section 2 holds one u32 per map of the area, followed by the lists themselves: indexes past
     // the first list are junk (j001_d05 map 90, j001_t91 maps beyond its rooms)
     const int index = mapNumber - kAreaFirstMap[area_];
@@ -177,8 +176,22 @@ std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
         rd(data_, p, v);
         if (v > sec_[2] && v < first) first = v;
     }
-    if (index < 0 || sec_[2] + 4 * size_t(index) >= first) return out;
-    if (!rd(data_, sec_[2] + 4 * size_t(index), list) || list == 0 || list >= data_.size()) return out;
+    if (index < 0 || sec_[2] + 4 * size_t(index) >= first) return 0;
+    if (!rd(data_, sec_[2] + 4 * size_t(index), list) || list == 0 || list >= data_.size()) return 0;
+    return list;
+}
+
+int EventFile::npcListId(int mapNumber, int index) const {
+    const uint32_t list = npcList(mapNumber);
+    int16_t id = -1;
+    if (!list || index < 0 || !rd(data_, list + kStageEntrySize * size_t(index), id)) return -1;
+    return id;
+}
+
+std::vector<FieldNpc> EventFile::npcs(int mapNumber) const {
+    std::vector<FieldNpc> out;
+    const uint32_t list = npcList(mapNumber);
+    if (!list) return out;
     for (size_t p = list; p + kStageEntrySize <= data_.size(); p += kStageEntrySize) {
         uint16_t id = 0;
         rd(data_, p, id);
