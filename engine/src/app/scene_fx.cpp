@@ -2345,11 +2345,13 @@ void drawWinPiece(App& app, const float* piece, float x, float y, float w, float
 void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, float rh) {
     app.promptX = app.promptY = -1;
     if (app.runner.running() || !app.dialogue.empty() || app.itemWindowOpen) return;
-    // FollowWindow::update / FlagWindow::update: the window's point is the box's top, pos + offset + (0, sizeY, 0)
+    // FlagWindow::setFollowWindow (78388-78434, asm 0x7cd24-0x7cd4c - it fixes the point every frame, after FollowWindow::
+    // update): ctl's pos + the record's offset y on all three axes (an original slip: only the town folk 401..408's
+    // (0, -5, 0) show it) + (0, sizeY, 0)
     auto project = [&](const cr::FieldNpc& n, float& sx, float& sy) {
         const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
-        const float p[3] = {n.pos[0] + k * n.offset[0] + n.offset[0], n.pos[1] + (k + 1) * n.offset[1] + n.box[1],
-                            n.pos[2] + k * n.offset[2] + n.offset[2]};
+        const float p[3] = {n.pos[0] + k * n.offset[0] + n.offset[1], n.pos[1] + (k + 1) * n.offset[1] + n.box[1],
+                            n.pos[2] + k * n.offset[2] + n.offset[1]};
         const float* m = vp.m;
         const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
         if (cw <= 0) return false;
