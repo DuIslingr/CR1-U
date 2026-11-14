@@ -2029,8 +2029,9 @@ bool touchPadDown(App& app, float px, float py) {
         float ex, ey;
         easyButtonCentre(app, ex, ey);
         const float dx = (lx - wideRight(app)) / 2 - 16 - ex, dy = ly / 2 - 32 - ey;
-        const float bx = (lx - app.promptX) / 2, by = (ly - app.promptY) / 2;
-        if (dx * dx + dy * dy <= 24 * 24 || (app.promptX >= 0 && bx * bx + by * by <= 30 * 30)) {
+        // (only the "!" button examines on the press: 1.0.1's 30-unit press on the bubble is gone from 2.2.0's
+        // FollowWindow::update (59338-59490) - a touch there is a CheckTap, examining as it lifts: touchPadUp)
+        if (dx * dx + dy * dy <= 24 * 24) {
             interact(app);
             return true;
         }

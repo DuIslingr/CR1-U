@@ -2356,14 +2356,15 @@ void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, floa
         for (const cr::FieldNpc& n : app.npcs) {
             const bool bubble = app.examineLinger.count(n.id) && npcExaminable(app, n);
             const bool marker = !bubble && (n.kind & 0x10) && n.link[0] > 0 && app.game.flag(n.link[0]) &&
-                                npcActive(app, n) && n.pos[1] < 900.0f && n.model >= 0;
+                                npcActive(app, n) && n.pos[1] < 900.0f; // (FlagWindow::init / update 78560-78725 ask no
+                                // model: the Arenas' doors - NPC 1 of each Ark hall, model -1 - wear it, video 06 3 s)
             if (!(bubble || marker) || !project(n, sx, sy)) continue;
             if (bubble) drawWinPiece(app, kWinBadge, sx - 44, sy - 48, 88, 96);
             else drawWinPiece(app, kWinFlag, sx - 32, sy - 32, 64, 64);
         }
     const cr::FieldNpc* n = interactTarget(app);
     if (!n || !project(*n, sx, sy)) return;
-    app.promptX = sx, app.promptY = sy; // (a tap within 30 of it examines: touchPadDown, as FollowWindow::update's 900)
+    app.promptX = sx, app.promptY = sy;
     if (!app.windowTex.id) app.promptHud.drawAt(app.renderer, {"[E]"}, sx - 24, sy - 16, 2.0f, 0, 0, 0.8f);
 }
 

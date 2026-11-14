@@ -62,7 +62,7 @@ class Evt:
         n1 = max(0, s2 - s1) // 4
         t1 = list(struct.unpack_from(f"<{n1}I", data, s1))
         first_code = min([x for x in self.entries + t1[:1] if x > s1] or [s2])
-        self.entries2 = t1[:max(0, first_code - s1) // 4]
+        self.entries2 = t1[:max(0, first_code - s1) // 4][:9]  # (the 9 EvrStart slots - event.cpp returnEntry; past them is code)
 
     def u8(self, p):
         if p >= len(self.d): raise Error(f"read past end at {p:#x}")
