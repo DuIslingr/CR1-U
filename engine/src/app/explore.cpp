@@ -3588,6 +3588,11 @@ int menusAuditSelfTest(App& app) {
     return problems;
 }
 
+// Options' windows settled (OptionPrc's counting states done: a page turned, a question, Back)
+void settleOptions(App& app) {
+    for (int f = 0; f < 12 && app.optionsOpen; ++f) stepOptions(app);
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
@@ -4245,30 +4250,31 @@ int runSelfTest(App& app) {
                 if (game[size_t(i)].label == sysLabel(app, 58081, "Instruction Manual")) manualRow = i;
                 if (game[size_t(i)].label == sysLabel(app, 58108, "Environment Effects")) effectsRow = i;
             }
-            int touch = manualRow >= 0 && effectsRow >= 0;
+            int touch = manualRow >= 0 && effectsRow >= 0, missed = 0;
             if (touch) {
                 app.optionsRow = manualRow;
                 optionsScrollFix(app, int(game.size()), true);
                 float y = optRowY(manualRow - app.optionsScroll) + 12;
                 press(optCtrlX(400), y); // the Manual's button: lit, nothing yet
-                touch += !app.manualOpen && optionsHeld(app, optCtrlX(344), y - 16, optCtrlX(456), y + 16);
+                if (!app.manualOpen && optionsHeld(app, optCtrlX(344), y - 16, optCtrlX(456), y + 16)) ++touch; else missed |= 1 << 1;
                 lift(40, y);             // slid off to its label: not run (the cursor's row)
-                touch += !app.manualOpen;
+                if (!app.manualOpen) ++touch; else missed |= 1 << 2;
                 press(optCtrlX(400), y);
                 lift(optCtrlX(400), y);  // lifted on it: the manual
-                touch += app.manualOpen;
+                if (app.manualOpen) ++touch; else missed |= 1 << 3;
                 app.manualOpen = false;
                 app.optionsRow = effectsRow;
                 optionsScrollFix(app, int(game.size()), true);
                 y = optRowY(effectsRow - app.optionsScroll) + 12;
                 app.environmentEffects = true;
                 press(optCtrlX(400), y); // Off: at once
-                touch += !app.environmentEffects && !app.press.down;
+                if (!app.environmentEffects && !app.press.down) ++touch; else missed |= 1 << 4;
                 app.environmentEffects = keepEffects;
                 press(300, kOptBackY + 12); // Back: lit while held, closing as it lifts
-                touch += optionsBackHeld(app) == 1 && app.optionsOpen;
+                if (optionsBackHeld(app) == 1 && app.optionsOpen) ++touch; else missed |= 1 << 5;
                 lift(300, kOptBackY + 12);
-                touch += !app.optionsOpen;
+                for (int f = 0; f < 8; ++f) stepOptions(app); // (0x17 -> 0x1a: gone 8 frames on)
+                if (!app.optionsOpen) ++touch; else missed |= 1 << 6;
             }
             if (touch == 7) { // a gauge (FUN_000493b4): held, the knob follows the finger in steps of 10 and nothing is
                 // set; let go (or slid out of its box) the volume is written and sounded (__MuOptionSetInfo: SE 0x28)
@@ -4277,18 +4283,18 @@ int runSelfTest(App& app) {
                 app.mix.effects = 80;
                 const float y = optRowY(2 - app.optionsScroll) + 16;
                 press(optCtrlX(299), y); // (design 299: trunc(85 x 0.4951 - 10) = 32 -> 30)
-                touch += app.mix.effects == 80 && app.optionsGauge.gauge == &app.mix.effects && app.optionsGauge.shown == 30;
+                if (app.mix.effects == 80 && app.optionsGauge.gauge == &app.mix.effects && app.optionsGauge.shown == 30) ++touch; else missed |= 1 << 7;
                 float px, py;
                 toFrame(optCtrlX(395), y, px, py); // (181 -> 79 -> 70)
                 app.press.px = px, app.press.py = py;
                 optionsPointerMove(app, px, py);
-                touch += app.mix.effects == 80 && app.optionsGauge.shown == 70;
+                if (app.mix.effects == 80 && app.optionsGauge.shown == 70) ++touch; else missed |= 1 << 8;
                 lift(optCtrlX(395), y);
-                touch += app.mix.effects == 70 && !app.optionsGauge.gauge;
+                if (app.mix.effects == 70 && !app.optionsGauge.gauge) ++touch; else missed |= 1 << 9;
                 press(optCtrlX(299), y);
                 toFrame(optCtrlX(299), y + 60, px, py); // (out of its box: let go there and then)
                 optionsPointerMove(app, px, py);
-                touch += app.mix.effects == 30 && !app.optionsGauge.gauge;
+                if (app.mix.effects == 30 && !app.optionsGauge.gauge) ++touch; else missed |= 1 << 10;
                 app.press = App::Press();
                 // the fill (ComUty_SideGuageDraw 45583-45592): the knob at once, the fill from the old knob over 10 frames
                 app.mix.effects = 100;
@@ -4300,13 +4306,13 @@ int runSelfTest(App& app) {
                 for (int f = 0; f < 5; ++f) stepOptions(app);
                 const int at5 = optionsFillAt(app, &app.mix.effects, 90); // (203 - trunc(21 / 10) x 5)
                 for (int f = 0; f < 5; ++f) stepOptions(app);
-                touch += at0 == 203 && at5 == 193 && optionsFillAt(app, &app.mix.effects, 90) == -1;
+                if (at0 == 203 && at5 == 193 && optionsFillAt(app, &app.mix.effects, 90) == -1) ++touch; else missed |= 1 << 11;
                 if (at0 != 203 || at5 != 193) std::printf("  options: the gauge's fill %d, %d (want 203, 193)\n", at0, at5);
                 app.mix.effects = keepFx;
                 applyMix(app);
             }
             app.pointerLast = keepPointer;
-            if (touch != 12) std::printf("  options: touch NOT as _pad_chk_updw_box's (%d/12)\n", touch);
+            if (touch != 12) std::printf("  options: touch NOT as _pad_chk_updw_box's (%d/12, missed %#x)\n", touch, missed);
             problems += (touch != 12) + expectSounds("options touch", {1, 2, 2, 3, 40, 40, 40});
             app.optionsOpen = false;
         }
@@ -4317,8 +4323,10 @@ int runSelfTest(App& app) {
         problems += app.language != 1;
         optionsKey(app, SDLK_Q);     // wraps to the last page (Graphics)
         problems += app.optionsPage != kOptionPages - 1;
+        settleOptions(app);          // (OptionPrc 6: the page's halves out, 5 frames, the new in)
         optionsKey(app, SDLK_UP);    // from row 0 to Back
         problems += app.optionsRow != kOptionsBackRow;
+        if (app.optionsRow != kOptionsBackRow) std::printf("  options: Up after the page turned: row %d\n", app.optionsRow);
         problems += expectSounds("options buttons, page", {2, 2, 3, 1});
         // Graphics: Anti-aliasing steps through MSAA to FSR Native AA and DLAA (the upscaler at
         // native size), the Upscaler row on to its other modes
@@ -4416,8 +4424,66 @@ int runSelfTest(App& app) {
         optionsKey(app, SDLK_RETURN);
         problems += app.video.widescreen || app.video.width != 1024 || app.video.upscaler != 0;
         optionsKey(app, SDLK_ESCAPE);
+        settleOptions(app);          // (0x17 -> 0x1a)
         problems += app.optionsOpen;
+        if (app.optionsOpen) std::printf("  options: still open 12 frames after Back\n");
         problems += expectSounds("options Enter, Back", {2, 3});
+        { // OptionPrc's windows and waits (ComUty_WinDispOn / Off, 4 frames linear): opened, "Options" and Back (0, 5) at
+          // once, the halves (1, 2) a frame later from -240 / +240; a page turned, the halves out, the other page's in 5
+          // frames on, input from 6; a question (7 -> 8 -> 9), the halves out, Yes / No from +140 and the board from 160
+          // below 6 frames on, input from 7; No, the board out a frame on, the halves back 6 on; Back, every window off a
+          // frame on, Options gone 8 on
+            int timing = 0;
+            OptionsWins w;
+            openOptions(app, 0);
+            app.manualOpen = false, app.manualIntro = 0;
+            optionsWindows(app, w);
+            timing += w.head.a == 0 && w.rows.a == 0;
+            stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.head.a == 0.25f && w.rows.a == 0 && w.rows.dx == -240;
+            stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.rows.a == 0.25f && w.rows.dx == -180 && w.ctrl.dx == 180;
+            settleOptions(app);
+            optionsKey(app, SDLK_E);
+            for (int f = 0; f < 3; ++f) stepOptions(app);
+            optionsWindows(app, w);
+            timing += app.optionsPage == 1 && w.page == 0 && w.rows.a == 0.5f && w.rows.dx == -180;
+            optionsKey(app, SDLK_DOWN); // (state 6: none)
+            timing += app.optionsRow == 0;
+            for (int f = 0; f < 3; ++f) stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.page == 1 && w.rows.a == 0.25f && w.rows.dx == -180;
+            optionsKey(app, SDLK_DOWN);
+            settleOptions(app);
+            optionsAsk(app, 1);
+            for (int f = 0; f < 6; ++f) stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.rows.a == 0 && w.yesNo.a == 0 && w.back.a == 1;
+            optionsKey(app, SDLK_RETURN); // (state 9: none yet)
+            timing += app.resetAsk == 1;
+            stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.yesNo.a == 0.25f && w.yesNo.dx == 105 && w.board.dx == 120 && w.back.a == 1;
+            settleOptions(app);
+            optionsKey(app, SDLK_RETURN); // No (under the cursor)
+            timing += app.resetAsk == 0;
+            for (int f = 0; f < 2; ++f) stepOptions(app);
+            optionsWindows(app, w);
+            timing += w.yesNo.a == 1 && w.yesNo.dx == 35 && w.back.a == 0.25f && w.rows.a == 0;
+            settleOptions(app);
+            optionsKey(app, SDLK_ESCAPE);
+            for (int f = 0; f < 2; ++f) stepOptions(app);
+            optionsWindows(app, w);
+            timing += app.optionsOpen && w.head.a == 1 && w.rows.dx == -60;
+            for (int f = 0; f < 5; ++f) stepOptions(app);
+            timing += app.optionsOpen;
+            stepOptions(app);
+            timing += !app.optionsOpen;
+            if (timing != 14) std::printf("  options: windows NOT as OptionPrc's (%d/14)\n", timing);
+            problems += (timing != 14) + expectSounds("options windows", {3, 1, 2, 3});
+        }
         // The title: the boot script reaches the title menu; its Options are title mode (Reset
         // Data); Start begins a new game; in a game, Return to Title boots again
         bootTitle(app);
@@ -4444,9 +4510,12 @@ int runSelfTest(App& app) {
             app.optionsRow = int(titlePage.size()) - 1;
             optionsKey(app, SDLK_RETURN);                 // "Erase all the data from your game?"
             int bad = app.resetAsk != 1 || app.resetConfirm != 1;
+            settleOptions(app);                           // (OptionPrc 8 -> 9: Yes / No coming)
             optionsKey(app, SDLK_RETURN);                 // No (under the cursor)
             bad += app.resetAsk != 0 || saves() != 3;
+            settleOptions(app);                           // (0xb -> 6: the page back)
             optionsKey(app, SDLK_RETURN);
+            settleOptions(app);
             optionsKey(app, SDLK_LEFT), optionsKey(app, SDLK_RETURN); // Yes: "Are you sure ...?"
             bad += app.resetAsk != 2 || saves() != 3;
             optionsKey(app, SDLK_LEFT), optionsKey(app, SDLK_RETURN); // Yes
@@ -4455,8 +4524,11 @@ int runSelfTest(App& app) {
             problems += bad;
             app.saveDirOverride = keepDir;
         }
+        settleOptions(app);
         optionsKey(app, SDLK_ESCAPE);
-        problems += !app.titleOpen; // back on the title menu
+        settleOptions(app);
+        problems += !app.titleOpen || app.optionsOpen; // back on the title menu
+        if (!app.titleOpen || app.optionsOpen) std::printf("  options: title %d, options %d after Back\n", int(app.titleOpen), int(app.optionsOpen));
         app.menuSoundLog.clear();
         int openingMap = -1;
         {
@@ -4486,9 +4558,19 @@ int runSelfTest(App& app) {
         problems += gamePage.size() != size_t(13 - languageSheet(app)) || gamePage.back().label != sysLabel(app, 58123, "Return to Title") || !gamePage.back().enabled;
         if (gamePage.size() == size_t(13 - languageSheet(app)) && gamePage.back().act) gamePage.back().act(0);
         problems += app.resetAsk != 3; // "return to the title?" (57060)
+        app.runner.stop(); // (no script's own fade over Options' in these frames)
+        app.pendingEntry = App::Entry::None;
+        app.fadeTo = 0;
         resetAnswer(app, true);
-        for (int f = 0; f < 16 && app.titleReturnIn > 0; ++f) stepEvents(app); // (the black's frames)
-        problems += !app.booting;
+        int titleBad = app.titleReturnIn != 16 || app.fadeTo != 0; // (OptionPrc 0x18, a frame on: the fade)
+        stepEvents(app);
+        titleBad += (app.fadeTo != 1 || !app.optionsOpen) << 1;
+        for (int f = 1; f < 15; ++f) stepEvents(app);
+        titleBad += app.booting << 2;                              // (0x19's count of 12 past 0, 0x1a: 16 frames)
+        stepEvents(app);
+        titleBad += !app.booting << 3;
+        if (titleBad) std::printf("  options: Return to Title NOT 16 frames, the fade a frame on (%#x)\n", titleBad);
+        problems += titleBad != 0;
         app.runner.stop();
         { // touch play's look: no battle plate lit after a click or touch - in or going -, the one a finger
           // holds lit instead (__menub_mainPut's pad_chk_box0); the cursor's for keys and pads
@@ -9146,6 +9228,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
     if (app.captureOptions) { // --volume-menu (page 1) / --video-menu (page 4)
         loadMix(app);
         const int page = app.optionsPage;
+        app.game.setFlag(0x43, true); // (OptionSet's "Option" message read: the page, not it)
         openOptions(app, page);
         app.optionsAnim = 100;
         if (const char* fr = SDL_getenv("CR_CAPTURE_OPTIONS_FRAMES")) { // (n frames into the page's coming in)
@@ -9167,6 +9250,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
                 else if (key == "back") optionsKey(app, SDLK_ESCAPE);
                 else if (key == "next") optionsKey(app, SDLK_E); // (the page after: E, PageDown)
                 else if (key == "step") stepOptions(app);        // (a frame on)
+                else if (key == "ask") // (the page's last row: Reset Data / Return to Title)
+                    app.optionsRow = int(optionRows(app, app.optionsPage).size()) - 1, optionsKey(app, SDLK_RETURN);
             }
             std::printf("import UI: state %d, succeeded %d, options %d, title %d\n", int(app.saveImport.state),
                         int(app.saveImport.succeeded), int(app.optionsOpen), int(app.titleOpen));

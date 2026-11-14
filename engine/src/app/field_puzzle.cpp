@@ -3526,7 +3526,13 @@ void stepEvents(App& app) {
         advanceDialogue(app);
     if (app.titleOpen) ++app.titleAnim; // the title menu fades in
     stepResume(app); // the title's Progress Tracker offer: its message, windows, and the load / Start after the answer
-    if (app.titleReturnIn > 0 && --app.titleReturnIn == 0) { app.optionsOpen = false; bootTitle(app); } // Options' Return to Title, after its black
+    if (app.titleReturnIn > 0) { // Options' Return to Title (resetAnswer), after its black
+        if (app.titleReturnIn == 16) { // (OptionPrc 0x18, the frame after Yes: SetFade(0, 0, 0xff, 500 ms), MuCom_PreReturnTitle)
+            playBgm(app, 1u << 27);
+            app.fadeGrey = 0, app.fadeFrom = 0, app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
+        }
+        if (--app.titleReturnIn == 0) { app.optionsOpen = false; bootTitle(app); }
+    }
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
     updateVoices(app);
     if (!app.battle.active) stepEffects(app, app.fieldEffects), stepQuake(app.fieldQuake); // eff3d_prc, UpdateQuake

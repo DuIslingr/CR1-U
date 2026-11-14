@@ -219,7 +219,12 @@ struct App {
     int optionsRow = 0;                    // the cursor: a row, or kOptionsBackRow
     int optionsScroll = 0;                 // the first row shown (a page of more than kOptVisible scrolls)
     bool optionsBarDrag = false;           // the scroll bar's thumb held
-    int optionsAnim = 0;                   // frames since the page appeared (windows slide in)
+    int optionsAnim = 0;                   // frames since OptionPrc 3 (windows 0 and 5 on; 4, a frame on, 1 and 2)
+    // A change of OptionPrc's windows (optionsWindows): kind 1 a page turned (5 -> 6 -> 7: the page's halves off, 5 frames,
+    // the new page's on), 2 a question asked (7 -> 8 -> 9 / 0xc), 3 its windows going on No or Reset's second Yes (0xb /
+    // 0xe -> 6), 4 going on Return to Title's Yes (0xd: FUN_00071610), 5 Back (0x17 -> 0x19 -> 0x1a: the windows off,
+    // Options gone 8 frames on); t frames since the tap, `page` the page left, `ask` the question shown
+    struct OptSlide { int kind = 0, t = 0, page = 0, ask = 0; } optionsSlide;
     int optionsBob = 0, optionsBobDir = 1; // ComUty_CmdBack's arrows
     // A gauge a touch holds (FUN_000493b4: ComUty_PadChkMove's 3 - the knob follows the finger in steps of 10; let go
     // or slid out of its box, 2 - __MuOptionSetInfo writes the volume and sounds it): its setting, row and the value shown
@@ -1541,6 +1546,10 @@ void resetAnswer(App& app, bool yes, bool cancelled = false);
 void optionsKey(App& app, SDL_Keycode key);
 int optionsBackPart(float mx, float my);
 bool optionsPointerDown(App& app, float px, float py);
+bool optionsBusy(const App& app);
+void optionsTurn(App& app, int dir);
+void optionsClose(App& app);
+void optionsAsk(App& app, int ask);
 void optionsPointerMove(App& app, float px, float py);
 int optionsGaugeAt(float design);
 int optionsFillAt(const App& app, const int* gauge, int value);
@@ -1656,7 +1665,7 @@ inline CampWin campWinOn(int t, int at, float dx) {
 inline CampWin campWinOff(int t, int at, float dx) {
     return {1 - std::clamp(float(t - at - 1) / 4.0f, 0.0f, 1.0f), dx * std::clamp(float(t - at) / 4.0f, 0.0f, 1.0f)};
 }
-struct OptionsWins { CampWin head, rows, ctrl, back; }; // Options' windows 0, 1, 2 and 5 (optionsWindows)
+struct OptionsWins { CampWin head, rows, ctrl, back, yesNo, board; int page = 0; }; // Options' windows 0, 1, 2, 5, 9, 10
 void optionsWindows(const App& app, OptionsWins& w);
 void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int count, bool lit, float a, int style = 0, const std::string& label = std::string());
 float menuFontSize(const App& app); // MuComFont*: 13 pt, 14 in Japanese / Chinese / Korean

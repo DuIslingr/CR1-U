@@ -894,11 +894,11 @@ std::vector<OptRow> optionRows(App& app, int page) {
         OptRow title;
         if (app.optionsFromTitle) { // ModeOptionMenu(1): erasing the save data, asked twice
             title.label = sysLabel(app, 58122, "Reset Data");
-            title.act = [&app](int) { app.resetAsk = 1, app.resetConfirm = 1; };
+            title.act = [&app](int) { optionsAsk(app, 1); };
         } else {
             title.label = sysLabel(app, 58123, "Return to Title");
             title.enabled = app.mode == Mode::Maps && !app.booting;
-            title.act = [&app](int) { app.resetAsk = 3, app.resetConfirm = 1; }; // OptionPrc 0xc: "return to the title?" (57060)
+            title.act = [&app](int) { optionsAsk(app, 3); }; // OptionPrc 0xc: "return to the title?" (57060)
         }
         rows.push_back(title);
         break;
@@ -1047,6 +1047,7 @@ void openOptions(App& app, int page) {
     app.optionsRow = 0;
     app.optionsScroll = 0;
     app.optionsAnim = 0;
+    app.optionsSlide = App::OptSlide();
     // __menuu_OptionSet (0x6fafc, 2.2.0 as 1.0.1): the first time - in any mode, the title's too - flag
     // 0x43 set and OptionPrc 0..2: SetFlag(3), MsgUty_WinOpen / SetMsg(0x23) - block 5's 35, 56035
     // "Option" in the manual's message window (no picture: _mwin[5]) - alone: no menu mask, the page
@@ -1175,17 +1176,65 @@ bool pressIn(const App& app, int screen, float origin, float x, float y, float w
 bool menuCursorLit(const App& app) { return !app.pointerLast || vitaLayout(app); }
 
 // Options' windows (__menuu_OptionPut's: 0 "Options" with the page's name and number, 1 the rows' labels, 2 their
-// controls, 5 Back): in as the page comes (the port's: 8 frames, eased) and off while the manual is up - the Manual
-// chosen (OptionPrc 5 -> FUN_00071444: 0, 1 to -240, 2 to +240 and 5 off that frame) until its Back puts them on again
+// controls, 5 Back, 9 Yes / No, 10 the question's board) - ComUty_WinDispOn / Off's moves (campWinOn / Off):
+// - opened (OptionPrc 3, then 4 a frame on): 0 and 5 on; 1 from -240 and 2 from +240 a frame later
+// - a page turned (5 -> 6, 70560-70575): 1 and 2 off that frame; 6's count of 4 down past 0, the new page's on - 5 on
+// - a question (7 -> 8 -> 9 / 0xc, 70646-70683): the page's halves off; 9 from +140 and 10 up from 160 below, 5 off, 6
+//   frames on; answered No (0xb / 0xe, a frame on): 9 and 10 off, 5 on, the page's halves 6 frames on (6's count); Yes
+//   to Return to Title (0xd: FUN_00071610 at once) the same but the page stays off
+// - Back (5 -> 0x17 -> 0x19, 70598): every window off a frame on (FUN_00071444), Options gone 8 frames on (0x1a)
+// - the Manual chosen (5: FUN_00071444 that frame), off until its Back (0x11 -> 3)
 void optionsWindows(const App& app, OptionsWins& w) {
-    const float t = std::clamp(app.optionsAnim / 8.0f, 0.0f, 1.0f), ease = 1 - (1 - t) * (1 - t);
-    w.head = w.back = CampWin{t, 0};
-    w.rows = CampWin{t, -240 * (1 - ease)}, w.ctrl = CampWin{t, 240 * (1 - ease)};
+    const int A = app.optionsAnim;
+    w.head = w.back = campWinOn(A, 0, 0);
+    w.rows = campWinOn(A, 1, -240), w.ctrl = campWinOn(A, 1, 240);
+    w.yesNo = w.board = CampWin{app.resetAsk ? 1.0f : 0.0f, 0};
+    w.page = app.optionsPage;
+    const App::OptSlide& sl = app.optionsSlide;
+    const int t = sl.t;
+    auto halves = [&](bool on, int at) {
+        w.rows = on ? campWinOn(t, at, -240) : campWinOff(t, at, -240);
+        w.ctrl = on ? campWinOn(t, at, 240) : campWinOff(t, at, 240);
+    };
+    switch (sl.kind) {
+    case 1:
+        if (t < 5) halves(false, 0), w.page = sl.page;
+        else halves(true, 5);
+        break;
+    case 2: halves(false, 0), w.back = campWinOff(t, 6, 0), w.yesNo = campWinOn(t, 6, 140), w.board = campWinOn(t, 6, 160); break;
+    case 3: halves(true, 6), w.back = campWinOn(t, 1, 0), w.yesNo = campWinOff(t, 1, 140), w.board = campWinOff(t, 1, 160); break;
+    case 4: w.rows.a = w.ctrl.a = 0, w.back = campWinOn(t, 0, 0), w.yesNo = campWinOff(t, 0, 140), w.board = campWinOff(t, 0, 160); break;
+    case 5: w.head = w.back = campWinOff(t, 1, 0), halves(false, 1), w.yesNo.a = w.board.a = 0; break;
+    default: break;
+    }
     if (app.manualOpen && !app.manualIntro && !app.manualOut) {
         const int f = app.manualFrames;
         w.head = w.back = campWinOff(f, 0, 0);
         w.rows = campWinOff(f, 0, -240), w.ctrl = campWinOff(f, 0, 240);
     }
+}
+// Input waits while the windows move as OptionPrc's counting states do (6, 8, 0xb / 0xe, 0x17 on)
+bool optionsBusy(const App& app) {
+    const App::OptSlide& sl = app.optionsSlide;
+    return app.titleReturnIn > 0 || (sl.kind == 1 && sl.t < 6) || ((sl.kind == 2 || sl.kind == 3) && sl.t < 7) || sl.kind >= 4;
+}
+// A page turned (Back's arrows, L / R, the keys): __effgo(3), the page's halves out, 5 frames, the other's in
+void optionsTurn(App& app, int dir) {
+    const int from = app.optionsPage;
+    app.optionsPage = (app.optionsPage + dir + kOptionPages) % kOptionPages;
+    app.optionsRow = 0, app.optionsScroll = 0;
+    app.optionsSlide = App::OptSlide{1, 0, from, 0};
+    menuSound(app, se::kBack);
+}
+// Back (OptionPrc 5's -1: __effgo(3), 0x17)
+void optionsClose(App& app) {
+    menuSound(app, se::kBack);
+    app.optionsSlide = App::OptSlide{5, 0, app.optionsPage, 0};
+}
+// Reset Data / Return to Title (OptionPrc 7: __effgo(2), 3 and 4 off; 8 counts; 9 / 0xc asks)
+void optionsAsk(App& app, int ask) {
+    app.resetAsk = ask, app.resetConfirm = 1;
+    app.optionsSlide = App::OptSlide{2, 0, app.optionsPage, ask};
 }
 
 // A touch held on Options (App::press, kPressOptions), in its menu units (menuPointFit), now inside the box: the control
@@ -1220,23 +1269,25 @@ void drawOptions(App& app, float, float) {
     if (w.head.a <= 0 && w.rows.a <= 0 && w.ctrl.a <= 0 && w.back.a <= 0 && !app.resetAsk && !app.saveImport.active()) return;
     const float rowsX = w.rows.dx, ctrlX = w.ctrl.dx, a = w.rows.a, ah = w.head.a, ac = w.ctrl.a, ab = w.back.a;
     m.picture(102, 8, 4, ah); // "Options"
-    const std::vector<OptRow> rows = optionRows(app, app.optionsPage);
+    const bool other = w.page != app.optionsPage; // (the page left, going: as it was)
+    const int page = w.page, scroll = other ? 0 : app.optionsScroll, cursorRow = other ? -1 : app.optionsRow;
+    const std::vector<OptRow> rows = optionRows(app, page);
     const int n = int(rows.size()), shown = std::min(n, kOptVisible);
-    optionsScrollFix(app, n, false);
+    if (!other) optionsScrollFix(app, n, false);
     { // (the port's: a darker panel under the page's name, the rows and the help line - readable
       // over any scene - and the help's lines)
         const float shadeH[4] = {0, 0, 0, 0.5f * ah}, shade[4] = {0, 0, 0, 0.5f * a};
         const float shadeC[4] = {0, 0, 0, 0.5f * ac}, fade[4] = {0, 0, 0, 0.2f * ac};
-        const float nameW = m.textWidth(kOptionPageName[app.optionsPage], 16);
+        const float nameW = m.textWidth(kOptionPageName[page], 16);
         m.quad(228, 10, nameW + 16, 24, shadeH, shadeH);
         m.quad(12 + rowsX, kOptRowTop - 8, 250, optRowY(shown) + 42 - kOptRowTop, shade, shade);
         m.quad(262 + ctrlX, kOptRowTop - 8, 238, optRowY(shown) + 42 - kOptRowTop, shadeC, fade);
     }
-    m.text(kOptionPageName[app.optionsPage], 236, 14, false, ah, 16);
-    for (int i = app.optionsScroll; i < n && i < app.optionsScroll + kOptVisible; ++i) {
+    m.text(kOptionPageName[page], 236, 14, false, ah, 16);
+    for (int i = scroll; i < n && i < scroll + kOptVisible; ++i) {
         const OptRow& row = rows[size_t(i)];
-        const float y = optRowY(i - app.optionsScroll), mid = y + 12;
-        const bool cursor = app.optionsRow == i;
+        const float y = optRowY(i - scroll), mid = y + 12;
+        const bool cursor = cursorRow == i;
         const float dim = row.enabled ? ac : ac * 0.45f;
         m.rowBar(20 + rowsX, y, row.label, row.enabled ? a : a * 0.45f, cursor);
         // The control in the original's design units (buttons 8 above the bar, gauges 4 below),
@@ -1272,7 +1323,7 @@ void drawOptions(App& app, float, float) {
     }
     if (n > kOptVisible) { // the scroll bar: a dark track, the thumb in the buttons' teal
         float top, height, ty, th;
-        optionsBar(n, app.optionsScroll, top, height, ty, th);
+        optionsBar(n, scroll, top, height, ty, th);
         const float track[4] = {0.05f, 0.07f, 0.09f, 0.75f * ac}, trackEdge[4] = {0.22f, 0.25f, 0.28f, 0.75f * ac};
         const float lit[4] = {0.55f, 0.92f, 0.92f, ac}, deep[4] = {0.16f, 0.5f, 0.55f, ac};
         m.quad(kOptBarX - 1 + ctrlX, top - 1, kOptBarW + 2, height + 2, trackEdge, trackEdge);
@@ -1280,15 +1331,15 @@ void drawOptions(App& app, float, float) {
         m.quad(kOptBarX + 1 + ctrlX, ty + 1, kOptBarW - 2, th - 2, lit, deep);
     }
     // "n / total" from the game's 14 x 14 digits (OptionPut: with "Options", window 0), and Back (window 5)
-    m.digit(app.optionsPage + 1, 20, kOptPageY, ah);
+    m.digit(page + 1, 20, kOptPageY, ah);
     m.digit(-1, 34, kOptPageY, ah);
     m.digit(kOptionPages, 48, kOptPageY, ah);
     { // (lit: the part a finger holds - __ComUty_BackButtonProc type 2's d31fc -, else the keys' cursor on Back)
         const int part = optionsBackHeld(app);
-        m.backButton(192, kOptBackY, part ? part : app.optionsRow == kOptionsBackRow ? 1 : 0, app.optionsBob, ab);
+        m.backButton(192, kOptBackY, part ? part : cursorRow == kOptionsBackRow ? 1 : 0, app.optionsBob, ab);
     }
-    if (app.optionsRow >= 0 && app.optionsRow < n && !rows[size_t(app.optionsRow)].hint.empty()) { // (under the rows shown, clear of Back)
-        const std::vector<std::string> lines = wrapText(m, rows[size_t(app.optionsRow)].hint, 470, 11, 2);
+    if (cursorRow >= 0 && cursorRow < n && !rows[size_t(cursorRow)].hint.empty()) { // (under the rows shown, clear of Back)
+        const std::vector<std::string> lines = wrapText(m, rows[size_t(cursorRow)].hint, 470, 11, 2);
         for (size_t l = 0; l < lines.size(); ++l) m.text(lines[l], 20, optRowY(shown) + 2 + 13 * float(l), false, a, 11);
     }
     if (app.showHud) // (our key hints: off in a Release build, F3)
@@ -1310,19 +1361,21 @@ void drawOptions(App& app, float, float) {
             m.plate(336, 104, -1, -1, true, 1, false, "OK");
         }
     }
-    if (app.resetAsk) { // OptionPrc 9 / 10: the message board (57078, then 57079), Yes / No at (336, 104 / 160)
+    const int ask = app.resetAsk ? app.resetAsk : app.optionsSlide.ask;
+    if (ask && (w.yesNo.a > 0 || w.board.a > 0)) {
+        // OptionPrc 9 / 0xc: the message board (window 10 - ComUty_MsgBoardDraw at y 220: 57078, then 57079; 57060) up
+        // from 160 below, Yes / No (9) at (336, 104 / 160) in from 140 to the right, over the menu mask
         std::vector<std::vector<std::string>> pages;
-        app.systemText.message(app.resetAsk == 1 ? 57078 : app.resetAsk == 2 ? 57079 : 57060, app.language, nullptr, pages, nullptr);
-        r.setOrigin(0); // (the rows' window goes while it asks: WinDispOff(5))
-        r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
-        r.setOrigin(r.uiX());
-        m.picture(12, 0, 220, 1);
+        app.systemText.message(ask == 1 ? 57078 : ask == 2 ? 57079 : 57060, app.language, nullptr, pages, nullptr);
+        const float by = 220 + w.board.dx;
+        m.picture(12, 0, by, w.board.a);
         if (!pages.empty())
-            for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, 235 + 16.0f * float(l), false, 1, 14);
+            for (size_t l = 0; l < pages[0].size(); ++l) m.text(pages[0][l], 24, by + 15 + 16.0f * float(l), false, w.board.a, 14);
         // (a held plate takes the cursor: __ComUty_YesNoChoiceProc's held, d3204)
-        const bool hy = optionsHeld(app, 336, 104, 472, 144), hn = optionsHeld(app, 336, 160, 472, 200);
-        m.plate(336, 104, 0, 0, hy || (!hn && app.resetConfirm == 0), 1, false);
-        m.plate(336, 160, 1, 1, hn || (!hy && app.resetConfirm == 1), 1, false);
+        const bool live = app.resetAsk != 0;
+        const bool hy = live && optionsHeld(app, 336, 104, 472, 144), hn = live && optionsHeld(app, 336, 160, 472, 200);
+        m.plate(336 + w.yesNo.dx, 104, 0, 0, hy || (!hn && live && app.resetConfirm == 0), w.yesNo.a, false);
+        m.plate(336 + w.yesNo.dx, 160, 1, 1, hn || (!hy && live && app.resetConfirm == 1), w.yesNo.a, false);
     }
     r.setOrigin(r.uiX());
 }
@@ -1335,6 +1388,15 @@ void stepOptions(App& app) {
     if (!app.optionsOpen) return;
     if (optionsAbout(app)) { app.optionsAnim = 0; return; } // (the page slides in once "Option" has shut)
     ++app.optionsAnim;
+    App::OptSlide& sl = app.optionsSlide;
+    if (sl.kind) {
+        ++sl.t;
+        if (sl.kind == 5 && sl.t >= 8) { // (0x19's count of 4 past 0, then 0x1a: OptionClr)
+            app.optionsOpen = false, sl = App::OptSlide();
+            return;
+        }
+        if ((sl.kind == 1 || sl.kind == 3) && sl.t >= 12) sl = App::OptSlide(); // (settled)
+    }
     // ComUty_SideGuageDraw (45583-45592): a gauge's value changed - the knob there at once, the fill from the old knob
     // over 10 frames (FUN_000493b4 sets +0x1c to 10 and +0x20 to the old knob; the draw counts it down)
     for (App::GaugeFill& f : app.optionsFills)
@@ -1353,21 +1415,22 @@ void stepOptions(App& app) {
 // OptionPrc 10, Yes to both questions: prty_init_all, removeSaveData, removeContData - every pair's
 // save and the resume point go; Yes to the first asks the second (sound 2), No leaves it (2)
 void resetAnswer(App& app, bool yes, bool cancelled) {
-    if (app.resetAsk == 3) { // Return to Title (OptionPrc 0xd / 0x18 / 0x19): Yes - SetFade black over 500 ms and
-        // MuCom_PreReturnTitle (the music off), 0xc + 1 frames, then MuCom_ReturnTitle (stepEvents); No - the page again
+    if (app.resetAsk == 3) { // Return to Title (OptionPrc 0xd / 0x18 / 0x19): Yes - FUN_00071610 (Yes / No and the board
+        // off, Back on), then a frame on (0x18) SetFade black over 500 ms and MuCom_PreReturnTitle (the music off), 0x19's
+        // count 12 past 0 and 0x1a - MuCom_ReturnTitle 16 frames after the tap (stepEvents); No (0xe) - the page again
         app.resetAsk = 0;
         menuSound(app, cancelled ? se::kBack : se::kChoose); // (the Vita's OptionPrc 0x11: ComUty_YesNoChoiceProc(.., 1), × 3)
-        if (!yes) return;
-        playBgm(app, 1u << 27);
-        app.fadeGrey = 0, app.fadeFrom = 0, app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
-        app.titleReturnIn = 13;
+        app.optionsSlide = App::OptSlide{yes ? 4 : 3, 0, app.optionsPage, 3};
+        if (yes) app.titleReturnIn = 16;
         return;
     }
     if (yes && app.resetAsk == 1) {
         app.resetAsk = 2, app.resetConfirm = 1;
+        app.optionsSlide.ask = 2;
         menuSound(app, se::kChoose);
         return;
     }
+    if (app.resetAsk) app.optionsSlide = App::OptSlide{3, 0, app.optionsPage, app.resetAsk}; // (0xb: the page again)
     app.resetAsk = 0;
     // (No: 2.2.0's 2; the Vita's OptionPrc 10 plays 3 for its No - the × is the pad's way there)
     if (!yes) { menuSound(app, cancelled ? se::kBack : se::kChoose); return; }
@@ -1393,6 +1456,7 @@ void optionsKey(App& app, SDL_Keycode key) {
         return;
     }
 
+    if (optionsBusy(app)) return; // (OptionPrc's counting states take no input)
     if (app.resetAsk) { // Reset Data's question: Yes / No
         switch (key) {
         case SDLK_UP: case SDLK_DOWN: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_W: case SDLK_S: case SDLK_A: case SDLK_D:
@@ -1409,14 +1473,14 @@ void optionsKey(App& app, SDL_Keycode key) {
     int& row = app.optionsRow;
     auto at = [&]() -> OptRow* { return row >= 0 && row < n ? &rows[size_t(row)] : nullptr; };
     switch (key) {
-    case SDLK_ESCAPE: case SDLK_BACKSPACE: app.optionsOpen = false; menuSound(app, se::kBack); return;
+    case SDLK_ESCAPE: case SDLK_BACKSPACE: optionsClose(app); return;
     case SDLK_UP: case SDLK_W: row = row == kOptionsBackRow ? n - 1 : row > 0 ? row - 1 : kOptionsBackRow; break;
     case SDLK_DOWN: case SDLK_S: row = row == kOptionsBackRow ? 0 : row + 1 < n ? row + 1 : kOptionsBackRow; break;
     case SDLK_HOME: row = 0; break;
     case SDLK_END: row = n - 1; break;
     // the original's page arrows sit on its Back bar, and OptionPrc plays the Back sound for them
-    case SDLK_Q: case SDLK_PAGEUP: openOptions(app, app.optionsPage - 1); menuSound(app, se::kBack); return;
-    case SDLK_E: case SDLK_PAGEDOWN: case SDLK_TAB: openOptions(app, app.optionsPage + 1); menuSound(app, se::kBack); return;
+    case SDLK_Q: case SDLK_PAGEUP: optionsTurn(app, -1); return;
+    case SDLK_E: case SDLK_PAGEDOWN: case SDLK_TAB: optionsTurn(app, 1); return;
     case SDLK_LEFT: case SDLK_RIGHT: case SDLK_A: case SDLK_D: {
         OptRow* r = at();
         if (!r || !r->enabled || !r->act || r->kind == OptControl::Check) return;
@@ -1427,7 +1491,7 @@ void optionsKey(App& app, SDL_Keycode key) {
         return;
     }
     case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: {
-        if (row == kOptionsBackRow) { app.optionsOpen = false; menuSound(app, se::kBack); return; }
+        if (row == kOptionsBackRow) { optionsClose(app); return; }
         OptRow* r = at();
         if (!r || !r->enabled || !r->act) return;
         if (r->kind == OptControl::Pair) r->act(r->selected == 0 ? 1 : 0);
@@ -1501,6 +1565,7 @@ void optionsPointerMove(App& app, float px, float py) {
 // (pad_chk_trg_down_box, OptionPrc 7 70625) and the port's own pairs with them, a gauge (FUN_000493b4, held) and the
 // port's scroll bar; anything else is held and runs as it lifts there (optionsClick). False: taken here
 bool optionsPointerDown(App& app, float px, float py) {
+    if (optionsBusy(app) && !app.saveImport.active()) return false;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
@@ -1548,6 +1613,7 @@ void optionsClick(App& app, float px, float py) {
         optionsGaugeLet(app);
         return;
     }
+    if (optionsBusy(app) && !app.saveImport.active()) return;
     float lx, ly;
     app.renderer.toLogical(px, py, lx, ly);
     float mx, my;
@@ -1570,13 +1636,12 @@ void optionsClick(App& app, float px, float py) {
     // ComUty_CmdBack 2's three parts: the left arrow the page before, Back closes, the right arrow the
     // page after (the whole bar used to close Options)
     if (const int part = optionsBackPart(mx, my); part != 2) {
-        if (part == -1 || part == 1) { openOptions(app, app.optionsPage + part); menuSound(app, se::kBack); }
-        else if (part == 0) { app.optionsOpen = false; menuSound(app, se::kBack); }
+        if (part == -1 || part == 1) optionsTurn(app, part);
+        else if (part == 0) optionsClose(app);
         return;
     }
     if (my >= kOptPageY - 4 && my < kOptPageY + 18 && mx >= 16 && mx < 66) { // "n / m": the next page
-        openOptions(app, app.optionsPage + 1);
-        menuSound(app, se::kBack);
+        optionsTurn(app, 1);
         return;
     }
     std::vector<OptRow> rows = optionRows(app, app.optionsPage);
