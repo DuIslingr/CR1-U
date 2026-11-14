@@ -35,6 +35,7 @@ cr::SaveData captureSave(const App& app) {
 bool applySave(App& app, const cr::SaveData& s) {
     if (s.map < 0 || s.map >= cr::kNumMaps) return false;
     bootTitle(app); // everything closed and torn down
+    app.trackerArmed = false; // (SaveData_Load_init 71984: a load or a resume starts it again)
     app.runner.stop();
     app.booting = false;
     app.titleOpen = false;
@@ -324,6 +325,7 @@ void saveScreenStart(App& app) {
                 cr::changeRoute(g, &app.itemTable, 0);
                 for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own flags
                 for (const auto& [k, v] : app.game.vars) g.vars[k] = v; // and the variables it has set
+                if (app.interruptShown) g.setFlag(0x44, true); // (TitleClr's _Load_SaveData 72137-72153, every path)
                 app.game = std::move(g);
             }
         }
@@ -4092,6 +4094,7 @@ void newPairParty(App& app, int pair, bool clearData) {
     const bool haveData = readData(app, data);
     const bool ng = haveData && clearData && data.game.flag(40 + p);
     cr::GameState g = haveData ? data.game : app.game;
+    if (!haveData) for (int f = 45; f <= 48; ++f) g.setFlag(f, false); // (prty_init_all: none of Uty_LoadData's cont.dat flags)
     if (haveData) {
         for (int f : {0, 4089}) g.setFlag(f, app.game.flag(f)); // the boot script's own
         // (and its variables: prty_init_new leaves the work alone - the vars the boot script has set

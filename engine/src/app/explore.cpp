@@ -8046,7 +8046,8 @@ double savedPlaySeconds(const App& app) {
 // picture and music, then the title menu. Also "Return to Title".
 void bootTitle(App& app) {
     endFieldTasks(app); // stop puzzle/reset/actor timers before releasing their NPCs
-    app.trackerArmed = false; // (SaveData_Load_init: a load or a new game starts it again)
+    // (the Progress Tracker's arming (+0x32155) is cleared only by SaveData_Load_init 71984 - a Load or a resume, in
+    // applySave - a new game or last battle in the same launch stays armed)
     cr::giveDataItems(app.game); // (_Load_SaveData: the data's items - 0xc4fd0's from its making - for the title's manual)
     app.playSeconds = savedPlaySeconds(app);
     endSceneEffects(app); // MuCom_PreReturnTitle: ScnEffectEnd

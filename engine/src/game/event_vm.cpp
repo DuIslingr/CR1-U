@@ -410,7 +410,8 @@ bool EventRunner::step(EventHost* host) {
             else if (id == 2029 && host) { if (vm.var(0) == 0) state.vars[0] = host->logoSeen() ? 1 : 0; else host->setLogoSeen(); } // Uty_ChkLogo_flg: var 0 = 0 reads, else sets
             else if (id == 2015 && host) host->fireWall(vm.var(0));                         // Uty_FireWall_Init: var 0 = the NPC
             else if (id == 2008 && host) { state.setFlag(0, true); host->padArt(); }     // Uty_DrawController_Init
-            else if (id == 2002 || id == 2021) {} // init_tex2d (texture setup) / LoadData (the port's boot reads the saves itself)
+            else if (id == 2002) {} // init_tex2d (texture setup)
+            else if (id == 2021 && host) host->loadData(); // Uty_LoadData: the flags the boot script tests (the title picture)
             else if (id == 2016 && host) { // Uty_TexDisp
                 int32_t g[11];
                 for (int k = 0; k < 11; ++k) g[k] = vm.arg(10 - k);

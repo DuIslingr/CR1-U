@@ -2809,8 +2809,8 @@ void drawFrame(App& app, bool present) {
     // A message window this frame (the calls of drawMessageBox below): the front fade waits for its
     // text - else it goes over the portraits at once
     const bool heldNow = app.heldPage && !(!app.runner.running() || !app.dialogue.empty() || app.lastPage.empty());
-    const bool messageNow = app.mode == Mode::Maps && (!app.dialogue.empty() || (app.choiceFlag >= 0 && !app.lastPage.empty()) ||
-                                                       (app.choiceFlag < 0 && (heldNow || (app.msgWin.state != 0 && app.msgWin.state != 6))));
+    const bool messageNow = app.mode == Mode::Maps && (!app.dialogue.empty() || ((app.choiceFlag >= 0 || app.choiceOut > 0) && !app.lastPage.empty()) ||
+                                                       (app.choiceFlag < 0 && app.choiceOut == 0 && (heldNow || (app.msgWin.state != 0 && app.msgWin.state != 6))));
     if (app.mode == Mode::Maps) {
         if (!app.dialogue.empty()) { // 0x1c: 1 = the left speaks, 2 = the right; the other side dims
             const size_t pi = std::min(app.dialoguePage, app.dialogue.size() - 1);
@@ -2893,11 +2893,15 @@ void drawFrame(App& app, bool present) {
         drawWorldSelect(app);
         r.setOrigin(r.uiX());
     }
-    if (app.mode == Mode::Maps && app.choiceFlag >= 0) { // Util 3: Yes / No beside the question
+    if (app.mode == Mode::Maps && (app.choiceFlag >= 0 || app.choiceOut > 0)) { // Util 3: Yes / No beside the question
         if (app.dialogue.empty() && !app.lastPage.empty()) drawMessageBox(app, app.lastPage, "", false, "");
         // __menuu_EventPut: ComUty_YesNoChoiceDraw - the plates at (336, 104) and (336, 160) of
-        // window 0, which slides in from 360 to the right
-        const float t = std::min(1.0f, float(app.choiceAnim) / 4.0f), dx = 360 * (1 - t) * (1 - t);
+        // window 0, which slides in from 360 to the right - linearly, fading in (ComUty_WinDispOn(.., 0x168, 0): PrcWin
+        // state 2 / SetWinXY2, 360 270 180 90 0 at alpha 0 63 127 191 255; YesNoChoicePosDraw with the window's alpha);
+        // answered, a frame whole and out to the right over 4 fading (WinDispOff, FUN_0001c260)
+        const int out = app.choiceOut > 1 ? app.choiceOut - 1 : 0;
+        const float t = app.choiceOut > 0 ? 1.0f - float(out) / 4.0f : std::min(1.0f, float(app.choiceAnim) / 4.0f);
+        const float dx = 360 * (1 - t), pa = std::floor(255 * t) / 255.0f;
         if (app.windowTex.id) {
             app.menu.begin(r, app.windowTex, &app.font);
             r.setOrigin(r.uiX());
@@ -2909,8 +2913,9 @@ void drawFrame(App& app, bool present) {
             // (a finger on one lights it - held, answered as it lifts there: pressRelease)
             const bool lit = menuCursorLit(app);
             const bool hy = pressIn(app, kPressChoice, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressChoice, r.uiX(), 336, 160, 136, 40);
-            app.menu.plate(336 + dx, 104, 0, 0, (lit && !hn && app.choiceCursor == 0) || hy, 1, false);
-            app.menu.plate(336 + dx, 160, 1, 1, (lit && !hy && app.choiceCursor == 1) || hn, 1, false);
+            const bool on = app.choiceFlag >= 0;
+            app.menu.plate(336 + dx, 104, 0, 0, on && ((lit && !hn && app.choiceCursor == 0) || hy), pa, false);
+            app.menu.plate(336 + dx, 160, 1, 1, on && ((lit && !hy && app.choiceCursor == 1) || hn), pa, false);
         } else {
             const float cx = W - 260, cy = H - 360;
             r.fillRect(cx, cy, 200, 110, 0.05f, 0.08f, 0.2f, 0.85f);
@@ -2920,7 +2925,7 @@ void drawFrame(App& app, bool present) {
         }
     }
     if (app.heldPage && (!app.runner.running() || !app.dialogue.empty() || app.lastPage.empty())) app.heldPage = false;
-    if (app.mode == Mode::Maps && app.dialogue.empty() && app.heldPage && app.choiceFlag < 0) { // (a page that ended itself)
+    if (app.mode == Mode::Maps && app.dialogue.empty() && app.heldPage && app.choiceFlag < 0 && app.choiceOut == 0) { // (a page that ended itself)
         std::string speaker;
         std::vector<std::vector<std::string>> name;
         if (app.lastPageInfo.nameId >= 0 && app.systemText.message(app.lastPageInfo.nameId, app.language, nullptr, name) &&
@@ -2941,7 +2946,7 @@ void drawFrame(App& app, bool present) {
         if (app.typeOn) app.textLimit = app.dialogueTyped;
         drawMessageBox(app, app.dialogue[pi], speaker, pageTyped(app) && !(info && info->closeAfter >= 0), std::string());
         app.textLimit = 1 << 30;
-    } else if (app.mode == Mode::Maps && !app.heldPage && app.choiceFlag < 0 && app.msgWin.state != 0 && app.msgWin.state != 6) {
+    } else if (app.mode == Mode::Maps && !app.heldPage && app.choiceFlag < 0 && app.choiceOut == 0 && app.msgWin.state != 0 && app.msgWin.state != 6) {
         // The window alone (PutWin draws it in every state but 6): fading in before its text, up
         // without any (the opening's black band stands 600 frames before its first line), or fading out
         drawMessageBox(app, {}, "", false, "");

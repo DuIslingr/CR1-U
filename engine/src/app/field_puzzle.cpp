@@ -736,6 +736,9 @@ void answerChoice(App& app, bool yes, bool cancelled) {
     if (app.choiceFlag < 0) return;
     app.game.setFlag(app.choiceFlag, yes);
     app.choiceFlag = -1;
+    // (__menuu_EventPrc: ComUty_WinDispOff(.., 0, 0x168) - a frame whole, then out to the right over 4 fading - and
+    // the script on once DAT_d36ec drops below 0, the 6th frame after the tap: SetMenuStat(10, 4), EventClr)
+    app.choiceOut = 1;
     // Yes and No alike (EventPrc's ComUty_YesNoChoiceProc(.., 1)); the Vita's × for No: SE 3
     // (__ComUty_YesNoChoiceProc, Vita 8104e070)
     menuSound(app, cancelled ? se::kBack : se::kChoose);
@@ -1488,6 +1491,14 @@ void ViewerHost::closeWindow() { // __EvtClose -> _ClrWin: fading out (at once f
 }
 bool ViewerHost::windowClosed() { return app.msgWin.state == 0 || app.msgWin.state == 6; }
 void ViewerHost::toggleFieldHidden() { app.fieldHidden = !app.fieldHidden; }
+// Uty_LoadData (21336-21355: cont.dat, else data.dat, into the working block): the boot script then shows title2_hd
+// once flags 45..48 - each pair's bonus fight won - are all set (0x2e2f). The port takes those four alone: the
+// title's menus read the saves themselves, and a new game builds on data.dat or a fresh state
+void ViewerHost::loadData() {
+    cr::SaveData d;
+    if (cr::readSave(savePath(app, "resume.dat"), d) || readData(app, d))
+        for (int f = 45; f <= 48; ++f) app.game.setFlag(f, d.game.flag(f));
+}
 bool ViewerHost::logoSeen() { return app.logoSeen; }       // Uty_ChkLogo_flg with var 0 = 0: read alone (gac + 0x1f85e6)
 void ViewerHost::setLogoSeen() { app.logoSeen = true; }    // ... with var 0 set: set alone
 // Uty_FireWall_Init (var 0 = the NPC): the first dungeon's fire walls 453 (side 1) / 454 (side 0) burn -
@@ -1658,7 +1669,7 @@ bool ViewerHost::menu(int n) {
 }
 void ViewerHost::askYesNo(int flag) { app.choiceFlag = flag; app.choiceCursor = 0; app.choiceAnim = 0; }
 bool ViewerHost::choiceOpen() {
-    return app.choiceFlag >= 0 || app.worldChoiceOpen || app.titleOpen || app.saveScreen.open || app.charSelectOpen || app.staffRoll.open || app.lastBattle.open ||
+    return app.choiceFlag >= 0 || app.choiceOut > 0 || app.worldChoiceOpen || app.titleOpen || app.saveScreen.open || app.charSelectOpen || app.staffRoll.open || app.lastBattle.open ||
            (app.shop.open && !app.shop.talkRunning); // (the shopkeeper's talk mustn't wait on the shop)
 }
 void ViewerHost::stopNpcAuto(int id) { // (the actor's npc_autoctl state cleared: a move or rescale under way stops)
@@ -3535,6 +3546,7 @@ void stepEvents(App& app) {
         if (--app.titleReturnIn == 0) { app.optionsOpen = false; bootTitle(app); }
     }
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
+    if (app.choiceOut > 0 && ++app.choiceOut >= 6) app.choiceOut = 0;
     updateVoices(app);
     if (!app.battle.active) stepEffects(app, app.fieldEffects), stepQuake(app.fieldQuake); // eff3d_prc, UpdateQuake
     if (app.nowLoading.on) app.nowLoading.frame = (app.nowLoading.frame + 1) & 15; // NowLoadProc

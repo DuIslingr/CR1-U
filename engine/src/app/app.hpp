@@ -648,6 +648,7 @@ struct App {
     bool heldPage = false;                 // ... or because it ended itself (0x14): up until Close (PrcMsg)
     cr::MessageInfo lastPageInfo;
     int choiceFlag = -1;                   // Util 3: the flag a yes/no choice answers (-1 = none open)
+    int choiceOut = 0;                     // frames since it was answered while the plates go (WinDispOff), 0 = none
     std::vector<std::string> unsupported;  // battles / menus scripts asked for (--explore reports them)
     cr::BattleData battleData;             // sys.evt: monsters, enemy groups, battle animations and cameras
     cr::BattleActionTable battleActions;   // sys.evt: the actions (attacks, genes, items)
@@ -1354,6 +1355,7 @@ struct ViewerHost : cr::EventHost {
     bool windowClosed() override;
     void toggleFieldHidden() override;
     bool logoSeen() override;
+    void loadData() override;
     void setLogoSeen() override;
     void fireWall(int npc) override;
     void padArt() override;
