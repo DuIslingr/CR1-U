@@ -21,6 +21,12 @@ constexpr int kFirstBattleItem = 21, kBattleItems = 26, kItemAction = 100; // it
 constexpr int kDefendAction = 26;
 
 int monsterField(const Fighter& f, int offset) { return f.def ? s16(&f.def->raw[size_t(offset)]) : 0; }
+// actor +0x24's row for anyone: a monster's, or a party member's character row (btlcalc_zoku_0204's
+// herbivore / carnivore reads, 23447-23460: every character row has +0x36 = +0x38 = 1)
+int rowField(const Fighter& f, int offset) {
+    const MonsterDef* d = f.def ? f.def : f.row;
+    return d ? s16(&d->raw[size_t(offset)]) : 0;
+}
 
 
 } // namespace
@@ -131,6 +137,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
         x.spd = memberStat(gs, c, kSpeed, items);
         x.lck = memberStat(gs, c, kLuck, items);
         for (int s = 131; s <= 186; ++s) x.skills[size_t(s - 131)] = hasSkill(gs, c, s);
+        x.abilities = usableAbilities(gs, c);
     };
     if (gs.flag(4077 + route)) f[1] = Fighter(); // the partner is away
     for (const Solo& s : kSolo)
@@ -148,6 +155,7 @@ void BattleRules::setupSpecial(const GameState& gs, const ItemTable& items, int 
             x.present = x.guest = true;
             x.character = g.character;
             x.level = std::min(kMaxLevel, f[0].level + 5);
+            x.saveLevel = gs.party[size_t(g.character)].level; // (btlcalc_0505 / 0506 read this, not the battle's)
             // btlpcparam_prty_init_special: base + level x 50 / x 5, nothing else - and (in both
             // releases) Speed and Luck from the base Defense too
             auto at = [&](Stat s, int per) { return baseStat(g.character, s) + x.level * per; };
@@ -170,6 +178,8 @@ int BattleRules::leaderLevel() const {
 }
 
 void BattleRules::setupEnemies(const BattleData& data, const std::array<int, 3>& ids, int band) {
+    for (int k = 0; k < 2; ++k) // (the pair's rows: btl_prty_init 5647 / 5666, a guest's too)
+        if (f[size_t(k)].present && f[size_t(k)].character >= 0) f[size_t(k)].row = data.monster(f[size_t(k)].character * 10 + 1);
     const int L = leaderLevel();
     const int hi = L > 98 ? 100 : L + 2, lo = L < 6 ? 1 : L - 5;
     band = std::clamp(band, -1, 9); // (-1: a Back out of World Select's band list before the last gate - top 0)
@@ -253,13 +263,13 @@ int BattleRules::zoku(int amount, const BattleActionDef& a, int user, int target
     if (a.affinity)
         for (int k = 1; k <= 3; ++k)
             if (e == k && has(target, 147 + k)) pct -= 25; // Blaze / Aqua / Gale Resistance
-    if (has(target, 151) && monsterField(f[size_t(user)], 0x38)) pct -= 25; // a herbivore's attack
-    if (has(target, 152) && monsterField(f[size_t(user)], 0x36)) pct -= 25; // a carnivore's
+    if (has(target, 151) && rowField(f[size_t(user)], 0x38)) pct -= 25; // a herbivore's attack
+    if (has(target, 152) && rowField(f[size_t(user)], 0x36)) pct -= 25; // a carnivore's
     if (a.affinity)
         for (int k = 1; k <= 3; ++k)
             if (e == k && has(user, 140 + k)) pct += 25; // Blaze / Aqua / Gale Attack
-    if (has(user, 144) && monsterField(f[size_t(target)], 0x38)) pct += 25;
-    if (has(user, 145) && monsterField(f[size_t(target)], 0x36)) pct += 25;
+    if (has(user, 144) && rowField(f[size_t(target)], 0x38)) pct += 25;
+    if (has(user, 145) && rowField(f[size_t(target)], 0x36)) pct += 25;
     return pct < 0 ? 0 : pct * amount / 100;
 }
 
@@ -550,6 +560,7 @@ int BattleRules::aiTarget(const BattleActionDef& a, int user) {
 
 void BattleRules::beginRound(const BattleCommand cmd[2], const BattleActionTable& actions) {
     ++round;
+    pairBroken_ = false; // (btl_main 500, 6243-6244)
     queue_.clear();
     next_ = 0;
     escaped_ = false;
@@ -789,6 +800,14 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             out.cancelled = true, out.message = 57065;
             return true;
         }
+        // (btlque_make_que 31096-31125: the pair broke this round - a member whose own plates lack the
+        // gene can't cast it, 57003 with the first actor's name; before the MP's check)
+        if (e.kind == kCmdGene && e.actors[0] < 2 && pairBroken_)
+            for (int k : e.actors)
+                if (k >= 0 && k < 2 && std::find(f[size_t(k)].abilities.begin(), f[size_t(k)].abilities.end(), int(e.action) - 120) == f[size_t(k)].abilities.end()) {
+                    out.cancelled = true, out.message = 57003;
+                    return true;
+                }
         if (e.kind == kCmdItem && e.actors[0] < 2 && e.item >= 21 && e.item <= 46 && !bag_.empty()) { // none left: 57080
             if (bag_[size_t(e.item)] <= 0) {
                 out.cancelled = true, out.message = 57080;
@@ -1232,6 +1251,7 @@ void BattleRules::fall(int t, const int actors[2], bool itemsAndGenes) {
         tf.stolen = 0;
         fallRewards(t, actors, itemsAndGenes);
     }
+    if (t < 2 && pair) pairBroken_ = true; // (+0xd1 on both members)
     if (t < 2) pair = false;         // a fallen member ends pair mode
     else enemyPair = false;          // (chk_dead: +0xaec cleared as a monster falls)
 }
@@ -1248,7 +1268,10 @@ void BattleRules::fallRewards(int enemy, const int actors[2], bool itemsAndGenes
     if (!x.def) return;
     int sum = 0, n = 0;
     for (int k = 0; k < 2; ++k)
-        if (actors[k] >= 0) sum += f[size_t(actors[k])].level, ++n;
+        if (actors[k] >= 0) { // (24272 / 24395: _pcparam_lv of the actor's character - the saved level, a guest's own)
+            const Fighter& a = f[size_t(actors[k])];
+            sum += a.saveLevel >= 0 ? a.saveLevel : a.level, ++n;
+        }
     const int avg = n ? sum / n : 1, lv = x.level;
     auto row = [&](int off) { return monsterField(x, off); };
     // (chk_dead: que +0xc3 - a reflected gene's kill - leaves out 0505 / 0506; the plate stays)
@@ -1316,11 +1339,19 @@ void BattleRules::defeatEnemies() {
 std::vector<int> BattleRules::applyRewards(GameState& gs) const {
     std::vector<int> levelled;
     const bool won = outcome() == 2;
+    // btlcalc_0504 / FUN_0002ae14: a Steal Item catch and an ability or skill taught (0506) or
+    // dropped (0505) went into the bag the moment they happened, whatever the outcome; only the
+    // other drops wait for the result screen (MbResultSet, a win). So a skill taught here counts in this
+    // battle's level-ups: __menuu_MbResultPrc 5 (58770) -> _pcparam_change_lv's chk_gene 0xa4..0xa9 (29668-29697)
+    for (int item : stolen) gs.items[item] = std::min(kMaxItemCount, gs.items[item] + 1);
+    for (int item : learned) gs.items[item] = std::max(1, gs.items[item]);
     for (int k = 0; k < 2; ++k) {
         const Fighter& x = f[size_t(k)];
         if (!x.present || x.guest) continue;
         PartyMember& m = gs.party[size_t(x.character)];
-        m.mp = x.skills[163 - 131] && outcome() != 3 ? x.mpMax : x.mp; // 163: MP back to full - as a number (5926-5944)
+        // 163: MP back to full - as a number (5926-5944); a defeat passes 0x238b too (0x513 -> 9000 -> 0x238b),
+        // only Options' Return to Title (MuCom_BitSet(0x10000), 70743) skips it - and nothing is kept then
+        m.mp = x.skills[163 - 131] ? x.mpMax : x.mp;
         if (won) {
             const int gained = expGained * (doubleExp ? 2 : 1);
             m.exp += x.hp > 0 ? gained : gained / 2; // MbResultSet: a fallen member gets half
@@ -1333,11 +1364,6 @@ std::vector<int> BattleRules::applyRewards(GameState& gs) const {
         }
     }
     if (ozStolen > 0) addOz(gs, -ozStolen);
-    // btlcalc_0504 / FUN_0002ae14: a Steal Item catch and an ability or skill taught (0506) or
-    // dropped (0505) went into the bag the moment they happened, whatever the outcome; only the
-    // other drops wait for the result screen (MbResultSet, a win)
-    for (int item : stolen) gs.items[item] = std::min(kMaxItemCount, gs.items[item] + 1);
-    for (int item : learned) gs.items[item] = std::max(1, gs.items[item]);
     if (won) {
         addOz(gs, ozGained * (doubleOz ? 2 : 1));
         for (int item : drops) gs.items[item] = std::min(kMaxItemCount, gs.items[item] + 1);

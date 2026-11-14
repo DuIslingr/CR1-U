@@ -2085,7 +2085,7 @@ void showHits(App& app) {
                            : b.turn.message == 57005 || b.turn.message == 57049 || b.turn.message == 57050
                                ? itemName(app, b.turn.messageValue)
                                : std::string();
-        if (b.turn.message == 57000 || b.turn.message == 57001)
+        if (b.turn.message == 57000 || b.turn.message == 57001 || b.turn.message == 57003)
             if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) name = u->name;
         std::vector<std::vector<std::string>> pages;
         const int value = b.turn.messageValue;
@@ -2448,6 +2448,7 @@ void endRound(App& app) {
         b.exit = 1;
         return;
     }
+    const bool wonBefore = b.rules.outcome() == 2; // (btlord_chk's win at 799, before the round's end)
     battletalk::rules(app); // (status_prc's boss rules as the round ends)
     b.rules.endRound();
     for (int k = 0; k < 2; ++k) // the guard pose ends with the round
@@ -2455,8 +2456,10 @@ void endRound(App& app) {
     for (int i = 0; i < 5; ++i) b.shownHp[i] = b.rules.f[size_t(i)].hp, b.shownMp[i] = b.rules.f[size_t(i)].mp;
     switch (b.rules.outcome()) {
     case 2: // won: the victory pose and tune, then the results (btl_main 0x44b) - a story boss's
-        // last word first (8000)
-        if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
+        // last word first (8000). Won only by the round's end - the poison took the last -: btlcalc_status_prc
+        // (24753-24760) sets 1000 at once, past chk_karaok_end's last word and the boss's fall (0x3de / 0x3e3)
+        if (!wonBefore) battleWon(app);
+        else if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
         else battleVictory(app);
         break;
     case 3: { // lost (0x4b0): the battle's music out over 10 frames, then (0x4b1) the defeat tune and "... lost the battle"
@@ -2852,6 +2855,7 @@ void stepBattle(App& app) {
                 b.handover = b.turn.kind == cr::kCmdEscape && b.turn.escaped ? 0 : 2; // (an escape's 99 goes to 9000 from 700)
                 // btlord_chk: a side lost the Break - its effect first (btl_main 0x5dc), from 799
                 b.breakDue = b.rules.breakChanging();
+                if (b.breakDue) b.rules.breakChangeSeen();
                 // btl_main 700 (the next frame, as it sees btlact's 1): the action's tutorials - an element
                 // taken, a status, a gene learned - from the hand-over above (an escape's 99 has none)
                 b.tutorialDue = b.handover == 0 ? 0 : b.rules.elementTaken ? 0xff3 : b.rules.statusTaken ? 0xff4 : b.rules.learnedNew ? 0xff5 : 0;
@@ -2874,6 +2878,13 @@ void stepBattle(App& app) {
             b.phaseFrames = 0;
             battleMenu(app, App::Battle::Top);
             battletalk::between(app); // btl_main 899 -> 400
+            // (btl_main 400, 6447-6456: a guest battle (+0xaef) with member 0 fallen goes straight to 500 - no
+            // menu; the guest acts alone, as Solo with only the guest standing does)
+            if (b.rules.allyAuto && !b.rules.f[0].alive() && !app.runner.running()) {
+                const int keep = b.topCursor;
+                battleChooseTop(app, 0);
+                b.topCursor = keep;
+            }
         }
         break;
     case App::Battle::Won: // 0x3e8's ten frames, then 0x3e9 (the poses, tune and banner) and 1099's 140 or a tap

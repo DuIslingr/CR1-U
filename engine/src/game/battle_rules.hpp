@@ -132,6 +132,8 @@ struct Fighter {
     int character = -1;          // the pair: 0..7
     int monster = 0;             // enemies: 1-based monster id
     const MonsterDef* def = nullptr;
+    std::vector<int> abilities;      // the pair: the genes its worn plates give (chk_gene_btl, FUN_0005f740)
+    const MonsterDef* row = nullptr; // the pair: its character's own monster row (btl_prty_init 5647/5666: id c x 10 + 1, actor +0x24)
     int level = 1;
     int hp = 0, hpMax = 0, mp = 0, mpMax = 0;
     int atk = 0, grd = 0, spd = 0, lck = 0;
@@ -141,6 +143,7 @@ struct Fighter {
     int exp = 0, oz = 0;         // what falling is worth
     bool rewarded = false;
     bool guest = false;            // prty_init_special: not in the save
+    int saveLevel = -1;            // a guest's own saved level (_pcparam_lv by its character id), -1 = `level`
     bool robbed = false;           // +0xa0: Steal Item took its item already
     std::array<bool, 56> skills{}; // 131..186
     bool firstAttack = true;       // skill 135's
@@ -289,6 +292,8 @@ public:
     // btlord_chk: a side lost the Break (+0x18 bit 10) - the effect plays, and half way through
     // (btlbreak_effect_prc) the other side takes it at 4 (bit 11: the pair)
     bool breakChanging() const { return breakFlags & 0x400; }
+    // btlord_chk's -1 (30398-30401): a Break change seen at 799 clears +0x18 bit 15 - that round gives no untouched point
+    void breakChangeSeen() { breakFlags &= ~0x8000u; }
     void takeBreak() {
         breakTarget = breakGauge = (breakFlags & 0x800) ? 4 : -4;
         breakFlags &= ~(0x400u | 0x800u);
@@ -333,6 +338,7 @@ private:
     int note_ = 0;                      // a message the calcs show at once (an immunity), 0 none
     int noteValue_ = 0;                 // ... the item it names (a gene learned)
     bool cancelTried_ = false;          // G+0xaa: Trompe-L'oeil's cancel came up (once a battle)
+    bool pairBroken_ = false;          // actor +0xd1: pair mode broke by a fall this round (chk_dead 24537-24541; state 500 clears it)
     bool cancelBreak_ = false;          // G+0xa9: its Break event, the once it isn't held
     int firstTarget_ = -1;              // G+0x7a: the action's first target (btlcalc_critical)
     int soloMember_ = 0;                // btl +0xaea: the party member whose action came up last (btlque_make_que)
