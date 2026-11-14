@@ -1039,9 +1039,9 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             }
             break;
         }
-        if (app.staffRoll.open) { // the end card waits for a tap
+        if (app.staffRoll.open) { // the end card waits for a tap - or ○ (the Vita's __menuu_StaffRollPrc: 0x2000 alone)
             switch (event->key.key) {
-            case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E:
+            case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E:
                 staffRollTap(app);
                 break;
             default: break;

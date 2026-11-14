@@ -4549,7 +4549,9 @@ bool titleKey(App& app, SDL_Keycode key) {
         return true;
     }
     if (app.resumePrompt) return true; // (its windows going: nothing to answer)
-    if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { titleTap(app); return true; }
+    // (the Vita's __menuu_TitlePrc 1: 0xf008 - □ △ ○ × START, no D-pad; the pad's D-pad comes as the arrows)
+    const bool padArrow = app.padKeyNow && (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT);
+    if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { if (!padArrow) titleTap(app); return true; }
     if (!titlePlatesLive(app) && key != SDLK_ESCAPE && key != SDLK_AC_BACK) return true;
     switch (key) {
     case SDLK_UP: case SDLK_W: app.titleCursor = (app.titleCursor + 2) % 3; menuSound(app, se::kCursor); break;
