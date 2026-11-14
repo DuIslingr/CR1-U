@@ -1081,8 +1081,8 @@ void battleOpenTargets(App& app, int action) {
 void battleStartRound(App& app) {
     App::Battle& b = app.battle;
     b.rules.beginRound(b.cmds, app.battleActions);
-    for (int k = 0; k < 2; ++k) // defending holds the guard pose through the round
-        if (b.rules.f[size_t(k)].guarding)
+    for (int k = 0; k < 2; ++k) // defending holds the guard pose through the round (one chosen just now: as its page has gone)
+        if (b.rules.f[size_t(k)].guarding && !(b.guardDue & (1 << k)))
             if (App::Battle::Actor* a = battleActor(app, k)) playSlot(app, *a, btlui::kSlotGuard);
     b.phase = App::Battle::Acting;
     b.phaseFrames = 0;
@@ -1117,6 +1117,22 @@ void placePair(App& app, bool pair) {
         }
 }
 
+// _mdl_set_act_motion(member, 0, 2): a standing member stands again (a Defend's guard undone)
+void battleStand(App& app, int k) {
+    if (app.battle.rules.f[size_t(k)].alive())
+        if (App::Battle::Actor* a = battleActor(app, k)) playSlot(app, *a, btlui::kSlotIdle);
+}
+
+// 0x66 case 4 (12256-12290): Defend's guard loop (_mdl_set_act_motion_loop(.., 4, 2, loop start, end)) on
+// the member (in pair mode both) once the commands page has slid out
+void battleGuardDue(App& app) {
+    App::Battle& b = app.battle;
+    for (int k = 0; k < 2; ++k)
+        if (b.guardDue & (1 << k))
+            if (App::Battle::Actor* a = battleActor(app, k)) playSlot(app, *a, btlui::kSlotGuard);
+    b.guardDue = 0;
+}
+
 void battleChooseTop(App& app, int i) {
     App::Battle& b = app.battle;
     b.topCursor = i; // (state 2: DAT_81120298 follows a tap or ○)
@@ -1145,9 +1161,10 @@ void battleChooseTop(App& app, int i) {
         battleMenu(app, App::Battle::EscapeAsk);
         b.confirm = 0;
         break;
-    default: // Options (_SetOptionMenu): the Options screen over the battle, back here when it closes
+    default: // Options: state 3 slides the page out, then SetOptionMenu (12643) - stepMenuView opens it; the
+        // karaok flag (+0x30) set as it is chosen sends the badge and the rows out until 0x3e9 sees it closed
         menuSound(app, se::kChoose);
-        openOptions(app, 0);
+        b.optionsDue = b.optionsOut = true;
         break;
     }
 }
@@ -1239,11 +1256,12 @@ void battleChooseCommand(App& app, int i) {
         menuSound(app, se::kChoose);
         battleOpenList(app, App::Battle::Items);
         break;
-    case 3: // Defend: the guard pose at once (__menub_mainPrc: the loop motion (slot 4) starts as it is chosen - both of a pair's)
+    case 3: // Defend: the guard loop (slot 4, both of a pair's) starts as the page has slid out (0x66 case 4:
+        // stepMenuView plays guardDue), then 20 frames (199, +0x48 0x14) before the next page or the round
         c.kind = cr::kCmdDefend;
-        for (int k = 0; k < 2; ++k)
-            if (App::Battle::Actor* a = (b.rules.pair || k == b.member) ? battleActor(app, k) : nullptr) playSlot(app, *a, btlui::kSlotGuard);
-        if (b.viewState == 1 || b.viewState == 2) b.slideHold = 20; // (the page goes, then 20 frames: 0x66 -> 199, +0x48 0x14)
+        b.guardDue = b.rules.pair ? 3 : 1 << std::clamp(b.member, 0, 1);
+        if (b.viewState == 1 || b.viewState == 2) b.slideHold = 20;
+        else battleGuardDue(app); // (no page up to go: at once)
         battletalk::tutorial(app, 0xfa9); // the first time: what it does
         battleCommandDone(app);
         break;
@@ -1290,14 +1308,18 @@ void battleChooseTarget(App& app, int fighter) {
 void battleBack(App& app) {
     App::Battle& b = app.battle;
     switch (b.menu) {
-    case App::Battle::Commands:
+    case App::Battle::Commands: // (0x66, 999: the member before, else the first page - 12124-12149)
+        b.guardDue = 0;
         if (!b.rules.pair && b.member == 1 && b.rules.f[0].alive()) {
             b.member = 0;
             b.cursor = b.cmdCursor[0]; // (0x66 -> 100: the first member's page again, its own cursor)
             ++b.page;
             setBattleCamera(app, 28);
-        } else
-            battleMenu(app, App::Battle::Top);
+            battleStand(app, 0); // (12148)
+        } else {
+            battleMenu(app, App::Battle::Top); // (state 1: _btlord_init_all, the field's camera, both standing - 12129-12141)
+            battleStand(app, 0), battleStand(app, 1);
+        }
         break;
     case App::Battle::Targets: // (__menub_mainPrc 0x386: Back - +0x92 999 - goes to 100, the member's Commands page,
         // whether the targets came from an attack, a gene or an item; the Vita's the same)
@@ -2581,14 +2603,16 @@ void stepMenuView(App& app) {
     App::Battle::MenuView& v = b.view;
     // (and as the results open: btl_main 0x44b's _menub_main_set_result, 2.2.0 decomp 13180-13195, sends the two
     // windows from x 0 to -480 over 4 frames)
-    const bool hudOut = battletalk::on(app) || b.phase == App::Battle::Results;
+    // (Options: 0x3e9 clears the karaok flag once IsActiveOptionMenu is false - the first page comes in again)
+    if (b.optionsOut && !b.optionsDue && !app.optionsOpen) b.optionsOut = false;
+    const bool hudOut = battletalk::on(app) || b.phase == App::Battle::Results || b.optionsOut;
     b.hudSlide = hudOut ? std::min(480, b.hudSlide + 120) : std::max(0, b.hudSlide - 120);
     // the lists' rows (MuScrList_Proc): 8 a frame toward 48 x the focus row, at once from further than a row
     const float to = 48.0f * float(b.pick);
     if (std::fabs(to - b.listScroll) > 48) b.listScroll = to;
     else b.listScroll = b.listScroll < to ? std::min(to, b.listScroll + 8) : std::max(to, b.listScroll - 8);
     const int dist = battleSlideDistance(app);
-    const int want = b.phase == App::Battle::Command && !battletalk::on(app) && !app.optionsOpen ? b.page : -1;
+    const int want = b.phase == App::Battle::Command && !battletalk::on(app) && !app.optionsOpen && !b.optionsDue ? b.page : -1;
     auto live = [&]() { // the page as the logic has it
         v.menu = b.menu, v.cursor = b.cursor, v.member = b.member, v.pick = b.pick, v.listScroll = b.listScroll;
         v.confirm = b.confirm, v.targetAction = b.targetAction, v.pair = b.rules.pair, v.picks = b.picks;
@@ -2608,6 +2632,7 @@ void stepMenuView(App& app) {
     case 3: // going out
         b.slide = std::min(dist, b.slide + dist / 4);
         if (b.slide < dist) return;
+        if (b.guardDue) battleGuardDue(app); // (0x66 case 4: Defend's guard as its page is out)
         b.viewState = b.slideHold > 0 ? 4 : 0;
         if (b.viewState == 4) return;
         break;
@@ -2616,6 +2641,12 @@ void stepMenuView(App& app) {
         b.viewState = 0;
         break;
     default:
+        if (b.optionsDue) { // (state 3 -> SetOptionMenu, 0x3e9: the page out, Options up)
+            b.optionsDue = false;
+            v.page = -1;
+            openOptions(app, 0);
+            return;
+        }
         if (v.page == want || want < 0) { // nothing new: out
             v.page = -1;
             ++b.menuGone;

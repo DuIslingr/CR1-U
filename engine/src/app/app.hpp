@@ -698,6 +698,9 @@ struct App {
             float sx = 0, sy = 0, cx = 0, lastY = 0, remainder = 0;
         } touch;
         float pan = 0;                     // +0xf0 less the screen's centre, in tex2d units (-48..48)
+        int guardDue = 0;                  // Defend's guard loop due as the page has slid out (0x66 case 4): a mask of members
+        bool optionsDue = false;           // Options chosen: the page slides out first (state 3), then SetOptionMenu
+        bool optionsOut = false;           // __menub_mainPrc 2's karaok flag (+0x30) while Options is up: the badge and rows out
         // The pages as drawn (__menub_mainPrc's slides, +0x38): each page comes in from the right (320 -> 0,
         // 80 a frame; 480, 120 in the Android layout: battleSlideDistance) and goes out again before the next
         // comes in; it takes taps only once in. The page the logic is on is `page`; the view follows it

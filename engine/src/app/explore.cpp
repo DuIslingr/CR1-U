@@ -805,6 +805,18 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     touch({{0x5c + 16 + 40, 200}}, false);
                     check(b.cmds[0].kind == cr::kCmdGene && b.cmds[0].target == 0 && b.lastGene == -1 && b.lastItem == -1, "tap-confirms");
                 } else bad.push_back("no-self-gene");
+                // 7: Back from the second member: the first stands again
+                ready();
+                check(b.menu == App::Battle::Commands && b.member == 1, "second-member");
+                if (App::Battle::Actor* a0 = battleActor(app, 0)) playSlot(app, *a0, btlui::kSlotGuard);
+                battleBack(app);
+                check(b.member == 0 && battleActor(app, 0) && battleActor(app, 0)->slot == btlui::kSlotIdle, "back-stands");
+                // Defend: the guard loop only once the page has slid out
+                ready();
+                battleChooseCommand(app, 3);
+                const bool notYet = battleActor(app, 0) && battleActor(app, 0)->slot != btlui::kSlotGuard;
+                for (int f = 0; f < 6; ++f) stepBattle(app);
+                check(notYet && battleActor(app, 0) && battleActor(app, 0)->slot == btlui::kSlotGuard, "defend-after-slide");
                 ready();
                 battleBack(app), ready(); // (member 1 -> member 0)
                 battleBack(app), ready(); // (-> the first page)
@@ -862,6 +874,15 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     check(b.menu == App::Battle::Top && b.banner.empty(), "escape-no-plate");
                     ready();
                 }
+                // 8: Options - the page out first, the badge and rows out while it is up
+                battleChooseTop(app, 3);
+                check(!app.optionsOpen && b.optionsDue, "options-waits");
+                for (int f = 0; f < 8 && !app.optionsOpen; ++f) stepBattle(app);
+                for (int f = 0; f < 4; ++f) stepBattle(app);
+                check(app.optionsOpen && b.hudSlide == 480, "options-after-slide");
+                app.optionsOpen = false; // (Options closed)
+                for (int f = 0; f < 8; ++f) stepBattle(app);
+                check(!b.optionsOut && b.hudSlide == 0 && b.view.page == b.page, "options-back");
                 endBattle(app, false);
                 app.runner.stop();
             } else bad.push_back("no-battle");
@@ -870,7 +891,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             for (int r = 0; r < 4; ++r) app.game.setFlag(4077 + r, keepAway[r]);
             std::string list;
             for (const std::string& w : bad) list += " " + w;
-            std::printf("battle menus (2.2.0's lists, targets, escape, refusals): %zu problems%s\n", bad.size(), list.c_str());
+            std::printf("battle menus (2.2.0's lists, targets, escape, refusals, motions, Options): %zu problems%s\n", bad.size(), list.c_str());
             problems += int(bad.size());
         }
 

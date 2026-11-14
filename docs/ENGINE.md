@@ -614,7 +614,10 @@ c101/c102/c104/m207a, 2026-10-12).
       -4); Genes refused only while sealed (+0x8f; the plate dimmed for it alone), an empty list
       opens, Items always opens with SE 2. Escape asks in the banner (57015, slot 11, kept while
       asked) with Yes / No plates at (336, 104) / (336, 160) (`_ComUty_YesNoChoiceDraw`), lit while
-      held (for keys the cursor's). `--battle-view genes[@n]` / `genetarget<id>` (with
+      held (for keys the cursor's). Back from the second member stands the first again, back to the
+      first page both (`_mdl_set_act_motion(.., 0, 2)`); Defend's guard loop starts once its page has
+      slid out (0x66 case 4). Options slides the page out first, then opens, the badge and rows out
+      while it is up (the karaok flag). `--battle-view genes[@n]` / `genetarget<id>` (with
       `CR_CAPTURE_GENES=id,id,...` the list's entries) capture them.
 - [x] Story battles' line-ups (`btl_prty_init`): a member alone, a guest beside the leader
       (Olgar / Ayuta, level + 5, acting by itself in the original's rotation) or the partner away
