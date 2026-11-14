@@ -1672,6 +1672,7 @@ void shopClick(App& app, float px, float py);
 bool shopPressIn(const App& app, bool right, float x, float y, float w, float h);
 bool keyHints(const App& app);
 int plateIcon(int word);
+int memberPlateWord(const App& app, int c); // a member plate's word (Shea under 0x996 / 0x997)
 int campCharacter(const App& app, int member);
 int campMembers(const App& app);
 void drawClockAndOz(App& app, cr::MenuPainter& m, float a);

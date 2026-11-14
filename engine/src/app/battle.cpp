@@ -1763,7 +1763,11 @@ int eitherOf(App& app, int x, int y) {
 // _btlvoice_choose_speaker: 99 either of the party; a side acting as a pair, either of it
 int chooseSpeaker(App& app, int k) {
     const cr::BattleRules& r = app.battle.rules;
-    if (k == 99) return r.f[1].present ? eitherOf(app, 0, 1) : 0;
+    // (99: member 1's slot there, either member by arc4random()&1 - no alive test, 79551-79557: a defeat's line comes
+    // from the fallen partner half the time; 98, the port's: side 0 with the pair flag set - btlact_escape_init 44998-
+    // 45002 - either of the living)
+    if (k == 99) return r.f[1].present && rnd(app, 2) ? 1 : 0;
+    if (k == 98) return r.f[1].present ? eitherOf(app, 0, 1) : 0;
     if (k >= 2 && r.enemyPair && (k == 2 || k == 3)) return eitherOf(app, 2, 3);
     if (k < 2 && r.pair) return eitherOf(app, 0, 1);
     return k;
@@ -2040,7 +2044,7 @@ void startTurn(App& app) {
         btlvoice::pickSpeakers(app);
     }
     // btlact_escape_init (44998-45002): the pair flag set for the call - either member says it
-    if (t.kind == cr::kCmdEscape && t.escaped) btlvoice::playSide(app, 99, 0x13, 0x14, 0x15);
+    if (t.kind == cr::kCmdEscape && t.escaped) btlvoice::playSide(app, 98, 0x13, 0x14, 0x15);
     else if (t.kind == cr::kCmdAttack) btlvoice::attack(app, t);                 // btlact_attack_init
     if (t.kind == cr::kCmdAttack) { // btlact_attack_init's __effgo: actions 302 / 303's own, each attacker's swing
         if (t.action == 0x12e) app.sound.play(0xbb);

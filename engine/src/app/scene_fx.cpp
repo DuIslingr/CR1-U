@@ -13,8 +13,8 @@ namespace crapp {
 // copies, each in the slot after its own, with no field scroll. Effects 6..8 / 12..20 are the
 // tower's Space backdrop (ScnEffProc_Space_Stop / Up / Down, variants 0..2): set 4's 512 x 1024
 // paintings drawn screen-fixed at the back (z -1998), scrolling up or down, the later variants
-// with their fog drifting both ways over the top 256 rows. Effect 1 (a blinking overlay from
-// slot 47, which nothing found loads) isn't drawn.
+// with their fog drifting both ways over the top 256 rows. Effect 1: the concentration lines
+// (syuutyuusen), every other frame.
 namespace scenefx {
 struct SetTexture { int set; const char* file; int slot; };
 constexpr SetTexture kSetTextures[] = {
@@ -214,15 +214,20 @@ void drawSceneEffects(App& app, bool battle) {
         case 1: { // syuutyuusen's concentration lines on alternate frames: four mirrored quarters
             // (_bkanTexUv: each tex2d (x - 16, y - 32) its own (u, v) and size, z -50)
             if (!(fx.timerA[1] & 1)) break;
+            static bool hd = true;
             if (!app.speedLinesTex.id) {
                 cr::Image img;
-                if (loadImage(app, "syuutyuusen_hd.mct", img)) app.speedLinesTex = app.renderer.upload(img);
+                hd = loadImage(app, "syuutyuusen_hd.mct", img); // (1.0.1's; 2.2.0's data has syuutyuusen.mct alone)
+                if (hd || loadImage(app, "syuutyuusen.mct", img)) app.speedLinesTex = app.renderer.upload(img);
             }
             if (!app.speedLinesTex.id) break;
-            static const int kUv[4][4] = {{0, 0, 256, 192}, {256, 0, -256, 192}, {256, 192, -256, -192}, {0, 192, 256, -192}};
+            // (1.0.1's quarters of the 512-wide _hd sheet; 2.2.0's 0xbcf40 (ScnEffectProc 62268-62278) of its 256 x 256
+            // sheet's 240 x 160 corner - the iPhone's screen quarter)
+            static const int kUvHd[4][4] = {{0, 0, 256, 192}, {256, 0, -256, 192}, {256, 192, -256, -192}, {0, 192, 256, -192}};
+            static const int kUv220[4][4] = {{0, 0, 240, 160}, {240, 0, -240, 160}, {240, 160, -240, -160}, {0, 160, 240, -160}};
             const float k = float(app.speedLinesTex.width) / 256.0f, extra = r.uiX(); // (widescreen: the outer halves stretched over the sides)
-            for (const auto& q : kUv) // (a negative size flips the uv only)
-                r.drawQuadUV(app.speedLinesTex, q[0] ? 512.0f : -extra, 2.0f * float(q[1]), 512 + extra, 384, q[0] * k, q[1] * k, q[2] * k,
+            for (const auto& q : hd ? kUvHd : kUv220) // (a negative size flips the uv only)
+                r.drawQuadUV(app.speedLinesTex, q[0] ? 512.0f : -extra, q[1] ? 384.0f : 0.0f, 512 + extra, 384, q[0] * k, q[1] * k, q[2] * k,
                              q[3] * k);
             break;
         }

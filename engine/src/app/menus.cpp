@@ -1166,7 +1166,7 @@ void drawShop(App& app) {
                     (s.category == i && menuCursorLit(app)) || shopPressIn(app, true, 328, 96 + 48.0f * float(i), 136, 40), a, false); // (FUN_0006af18: held)
     if (s.phase == App::Shop::Member) // FUN_0006a634: window 9, the pair's plates at (328, 176 + 56k) (FUN_0004f234)
         for (int k = 0; k < campMembers(app); ++k) {
-            const int word = 12 + campCharacter(app, k);
+            const int word = memberPlateWord(app, campCharacter(app, k));
             m.plate(328 + 240 * slide, 176 + 56.0f * float(k), plateIcon(word), word,
                     (s.member == k && menuCursorLit(app)) || shopPressIn(app, true, 328, 176 + 56.0f * float(k), 136, 40), a, false); // (FUN_0006a860: held)
         }
@@ -1404,6 +1404,12 @@ int campRoute(const App& app) { return std::clamp(app.playerChar / 2, 0, 3); }
 // MuCom_ChkPartyNum (0x51ee0): one while flag 0xfed + route holds the second back
 int campCharacter(const App& app, int member) { return campRoute(app) * 2 + std::clamp(member, 0, 1); }
 int campMembers(const App& app) { return app.game.flag(4077 + campRoute(app)) ? 1 : 2; }
+// _ComUty_GetPlateNameFromCharNo (46469): a member plate's word - 0xbb370's 12 + c, character 7 as Shea (0x24; 0x23
+// in Japanese) under MuCom_GetManaSheaCheck (flag 0x996 on the fourth pair, or 0x997): the Camp's and the shop's
+int memberPlateWord(const App& app, int c) {
+    if (c == 7 && ((app.game.flag(0x996) && campRoute(app) == 3) || app.game.flag(0x997))) return app.language == 0 ? 0x23 : 0x24;
+    return 12 + c;
+}
 
 // ComUty_BattryAndRealTimeAndOzDraw: the clock (TIME, 71, at (363, 8); the digits at +47 / +59 /
 // +83 / +95, the colon (75) blinking at +71; the line (74) under it) and the purse (OZ, 72, at
@@ -3765,7 +3771,7 @@ void drawCamp(App& app) {
             if (w.a <= 0) return;
             right();
             for (int k = 0; k < campMembers(app); ++k) {
-                const int word = 12 + campCharacter(app, k);
+                const int word = memberPlateWord(app, campCharacter(app, k));
                 // (window 8: WinDispOn(8, 0x168) - in from 360 to the right, as the main plates go out)
                 // (__MuCommon_CharChoiceProc: the plate - or the member's face board - held lights it)
                 const bool held = lit && (campPressIn(app, wideRight(app), kPlateX, kMemberY + kMemberStep * float(k), 136, 40) ||
@@ -4439,7 +4445,7 @@ constexpr short kHistoryPiece[38][4] = {
     {264, 240, 264, 80}, {528, 80, 264, 80}, {0, 320, 264, 152}, {264, 320, 264, 152}, {0, 472, 588, 148},
     {0, 624, 588, 148}, {832, 0, 18, 20}, {792, 0, 40, 48}, {528, 240, 136, 80}, {792, 320, 136, 152},
     {792, 128, 192, 152}, {720, 280, 304, 40}, {976, 464, 48, 56}};
-// 2.2.0's flow_hd.mct (its table at 0xbac00, in tex2d: these doubled) is the same sheet but for the
+// 2.2.0's flow_hd.mct (its table at 0xbbc00, in tex2d: these doubled) is the same sheet but for the
 // finale's "?" bar: wider caps 13 / 15 and a narrower body 16
 constexpr short kPhoneDataHistoryPiece[3][4] = {{0, 776, 144, 152}, {432, 776, 144, 152}, {144, 776, 72, 152}};
 constexpr short kHistoryEntry[41][4] = {
@@ -4795,7 +4801,7 @@ struct Row { int id; const char* sheet; int pages; int row[4], frames[4]; };
 constexpr Row kRows[5] = {
     {12, "battle_01_hd.mct", 4, {0, 1, 2, 3}, {1, 4, 4, 1}}, {13, "battle_02_hd.mct", 4, {0, 1, 2, 3}, {1, 1, 2, 1}},
     {18, "battle_03_hd.mct", 3, {0, 1, 2, -1}, {3, 1, 1, -1}}, {10, "gene_01_hd.mct", 3, {0, 1, 2, -1}, {1, 2, 1, -1}},
-    {19, "battle_04_hd.mct", 2, {0, 1, -1, -1}, {1, 1, -1, -1}}};
+    {19, "battle_04_hd.mct", 2, {0, 0, -1, -1}, {1, 1, -1, -1}}}; // (0xbe280 + 4 x 48: both pages row 0 - the sheet is one row)
 constexpr float kX = 144, kY = 160;
 const Row* find(int id) {
     for (const Row& r : kRows)
