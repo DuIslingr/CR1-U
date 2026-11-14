@@ -592,7 +592,7 @@ bool EventRunner::step(EventHost* host) {
         }
         case 16: case 58: { // Screen: u32 colour (R | G << 8 | B << 16), u8 from alpha, u8 to alpha, s8 frames
             // (__EvtScreen: frames < 0 (the "..., 255" form) is no fade - it toggles the field's drawing
-            // (gac + 0x39c3e: drawBack / mdl_put skip while set), the fade left as it is. Op 16 is the
+            // (1.0.1 gac + 0x39c3e, 2.2.0 G+0x3a08e (17331-17341): drawBack / mdl_put skip while set; 2.2.0 also sets the message window alpha G+0x326a0, 0xff0 hiding / 0 showing - unseen, style 0x10 text ignores it), the fade left as it is. Op 16 is the
             // front fade (_SetFade), op 58 the back mask (_SetFade_back, its shape G+0x3a0b0 = 0))
             vm.u16();
             const uint16_t colour = vm.u16();

@@ -2152,12 +2152,17 @@ int mobileInputSelfTest(App& app) {
         advanceDialogue(app);
         problems += app.sound.dialogueVoiceCount() != 0 || !app.dialogue.empty();
     } else ++problems;
-    if (app.sound.hasVoices()) {
-        app.sound.playLine(1);
+    if (app.sound.hasVoices()) { // (the closing tap cuts the page's line - updateVoices', as in play)
         app.dialogue = {{"Voiced page"}};
+        app.dialogueInfo.clear();
+        app.dialogueVoices = {{1}};
+        ++app.dialogueSerial;
         app.dialoguePage = 0;
+        updateVoices(app);
         advanceDialogue(app);
+        updateVoices(app);
         problems += app.sound.dialogueVoiceCount() != 0;
+        app.dialogueVoices.clear();
     }
     app.sound.stopAll();
     problems += app.renderer.takeErrors();
@@ -2483,7 +2488,7 @@ int sceneAudioSelfTest(App& app) {
             ++app.dialogueSerial;
             app.dialoguePage = 0;
             updateVoices(app);
-            app.dialoguePage = 1;
+            advanceDialogue(app, true); // (the reader's tap, as in play)
             updateVoices(app);
             check(app.sound.linePlaying() && !app.voiceKeep, "0x1e 0xffff keeps the clip over the page turn");
             app.dialogue.clear();
@@ -2499,7 +2504,7 @@ int sceneAudioSelfTest(App& app) {
                 ++app.dialogueSerial;
                 app.dialoguePage = 0;
                 updateVoices(app);
-                app.dialogue.clear();
+                advanceDialogue(app, false); // (the page closing by itself, as stepTyping does)
                 updateVoices(app);
                 check(app.sound.linePlaying() && !app.voiceCloseKeeps, "a 0x13 / 0x14 end leaves the clip at the close");
                 app.sound.stopLine();
@@ -6352,6 +6357,7 @@ int runSelfTest(App& app) {
         app.dialogueInfo[1].keep = 3, app.dialogueInfo[1].instant = true;
         for (int f = 0; f < 5; ++f) stepTyping(app);
         tapDialogue(app);
+        stepTyping(app); // (the tap's own frame: _PrcMsg's 0x12)
         stepTyping(app);
         check(app.dialoguePage == 1 && app.dialogueTyped == 6 && pageTyped(app), "a kept page going on along the line: out at once");
         auto typeOut = [&] { for (int f = 0; f < 400 && !app.dialogue.empty() && !pageTyped(app); ++f) stepTyping(app); };
@@ -6368,6 +6374,7 @@ int runSelfTest(App& app) {
                 tapDialogue(app);
                 keptLines = app.dialoguePage == 1 && app.dialogue[1].size() == first.size() + 1 &&
                             app.dialogueTyped == keep && typedPage(app.dialogue[1], app.dialogueTyped) == first;
+                stepTyping(app); // (the tap's own frame: _PrcMsg's 0x12)
                 stepTyping(app); // (the line break)
                 stepTyping(app);
                 keptTyping = !app.dialogueInstant && app.dialogueTyped == keep + 2;
@@ -7089,13 +7096,22 @@ int runSelfTest(App& app) {
 
 // A new game (route 1): the Ark's hall (j001_t01, map 97) with only the new-game flag set; its
 // script 0 plays the opening.
-// CR_CAPTURE_VARS="k:v,...": script variables a capture sets (before the map's entry, and before --event's script)
+// CR_CAPTURE_VARS="k:v,...": script variables a capture sets (before the map's entry, and before --event's script);
+// CR_CAPTURE_FLAGS="n,...": flags
 void captureVars(App& app) {
     if (const char* cv = SDL_getenv("CR_CAPTURE_VARS"))
         for (const char* p = cv; *p;) {
             int k = 0, v = 0, used = 0;
             if (std::sscanf(p, "%d:%d%n", &k, &v, &used) != 2) break;
             app.game.vars[k] = v;
+            p += used;
+            if (*p == ',') ++p;
+        }
+    if (const char* cf = SDL_getenv("CR_CAPTURE_FLAGS")) // "n,...": flags set the same way
+        for (const char* p = cf; *p;) {
+            int n = 0, used = 0;
+            if (std::sscanf(p, "%d%n", &n, &used) != 1) break;
+            app.game.setFlag(n, true);
             p += used;
             if (*p == ',') ++p;
         }
@@ -7134,6 +7150,7 @@ void bootTitle(App& app) {
     app.renderer.resetHistory(); // a cut: the upscaler starts over
     app.runner.stop();
     app.sound.stopDialogueVoices();
+    app.sound.stopAll(); // (_fldread_prc's title reload, 37662-37665: __bgmgo(0x20000000), __effstop_all - a looping effect goes too)
     app.voiceQueue.clear();
     app.fadeGrey = app.fadeFrom = app.fadeTo = 0;
     app.fadeT = app.fadeFrames = 0;
@@ -7875,7 +7892,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         if (SDL_getenv("CR_CAPTURE_NPCS")) // (debugging) the room's NPCs as the scripts left them
             for (size_t i = 0; i < app.npcs.size(); ++i) {
                 const cr::FieldNpc& n = app.npcs[i];
-                std::printf("npc %d kind %#x at (%.1f %.1f %.1f) active %d visible %d\n", n.id, n.kind, n.pos[0], n.pos[1], n.pos[2],
+                std::printf("npc %d kind %#x link %d show %d hide %d at (%.1f %.1f %.1f) active %d visible %d\n", n.id, n.kind, n.link[0], n.flagShow, n.flagHide, n.pos[0], n.pos[1], n.pos[2],
                             int(npcActive(app, n)), int(npcVisible(app, i)));
             }
         if (SDL_getenv("CR_CAPTURE_TRACE")) {

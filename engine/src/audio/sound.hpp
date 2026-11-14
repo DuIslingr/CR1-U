@@ -70,6 +70,7 @@ public:
     // Story lines can also live in Android's effects bank. Keep effects and
     // separately tagged battle lines playing when a dialogue page is skipped.
     void stopDialogueVoices();
+    void stopVoiceEffects(); // the voice-flagged effects only, not the story line
     int dialogueVoiceCount() const;
     bool linePlaying() const;
     // Battle lines (__voicego(clip | 0x200000, tag = speaker x 1000)): one per tag at a time -

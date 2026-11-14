@@ -1722,6 +1722,7 @@ constexpr float kWinParchment[4] = {1024, 248, 1024, 280};
 constexpr float kWinSkip[4] = {672, 1696, 64, 64};
 constexpr float kWinNext[2][4] = {{1024, 72, 40, 40}, {1064, 72, 40, 40}};
 constexpr float kWinBadge[4] = {936, 880, 88, 96};         // the "!" bubble over an NPC in reach (menuf_mainPut's FollowWindow type 0: tex2d (468, 440) 44 x 48)
+constexpr float kWinFlag[4] = {960, 32, 64, 64};           // FlagWindow's plain "!" over a person with news (type 1: tex2d (480, 16) 32 x 32)
 
 // A message page in the game's message window, across the whole screen's width: the parchment
 // while portraits are up, else the grey band; `next`: the page waits for a tap (the diamond)
@@ -2074,25 +2075,43 @@ void drawWinPiece(App& app, const float* piece, float x, float y, float w, float
     app.renderer.drawQuadUV(app.windowTex, x, y, w, h, piece[0], piece[1], piece[2], piece[3], 1, 1, 1, alpha);
 }
 
-// "[E]" over the examinable NPC in reach (the original's FollowWindow bubble). `vp` maps the
-// world to the 3D rectangle (rx, ry, rw, rh) of the logical screen.
+// The follow windows over the field's NPCs (__menuf_mainPut, 2.2.0 32366-32410: every one of the 8
+// slots that is up). Type 0, the "!" bubble: one per NPC in reach, lingering 10 frames after
+// (FollowWindow::set / FlagWindow::update), tex2d (468, 440) 44 x 48 at (x - 22, y - 24) (0x365c0-0x36634:
+// s18 -22 on x, s20 -24 on y). Type 1, FlagWindow's marker (init 78668-78740, update 78481-78660, the
+// Vita's 40140-40245 the same): a plain red "!" (480, 16) 32 x 32 at (x - 16, y - 16) over a person
+// (row +14 & 0x10) whose row +22 flag is set - a hall NPC with something new to say, the flag set by
+// the hall's script (j001_t01 0x4d10's per-chapter list) and cleared when talked to; the bubble takes
+// its slot while it is up. `vp` maps the world to the 3D rectangle (rx, ry, rw, rh) of the logical screen.
 void drawPrompt(App& app, const cr::Mat4& vp, float rx, float ry, float rw, float rh) {
     app.promptX = app.promptY = -1;
     if (app.runner.running() || !app.dialogue.empty() || app.itemWindowOpen) return;
+    // FollowWindow::update / FlagWindow::update: the window's point is the box's top, pos + offset + (0, sizeY, 0)
+    auto project = [&](const cr::FieldNpc& n, float& sx, float& sy) {
+        const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
+        const float p[3] = {n.pos[0] + k * n.offset[0] + n.offset[0], n.pos[1] + (k + 1) * n.offset[1] + n.box[1],
+                            n.pos[2] + k * n.offset[2] + n.offset[2]};
+        const float* m = vp.m;
+        const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+        if (cw <= 0) return false;
+        sx = rx + ((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * 0.5f + 0.5f) * rw;
+        sy = ry + (0.5f - (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * 0.5f) * rh;
+        return true;
+    };
+    float sx, sy;
+    if (app.windowTex.id && app.havePlayer)
+        for (const cr::FieldNpc& n : app.npcs) {
+            const bool bubble = app.examineLinger.count(n.id) && npcExaminable(app, n);
+            const bool marker = !bubble && (n.kind & 0x10) && n.link[0] > 0 && app.game.flag(n.link[0]) &&
+                                npcActive(app, n) && n.pos[1] < 900.0f && n.model >= 0;
+            if (!(bubble || marker) || !project(n, sx, sy)) continue;
+            if (bubble) drawWinPiece(app, kWinBadge, sx - 44, sy - 48, 88, 96);
+            else drawWinPiece(app, kWinFlag, sx - 32, sy - 32, 64, 64);
+        }
     const cr::FieldNpc* n = interactTarget(app);
-    if (!n) return;
-    const float k = n->model == 0 || n->model == 1 ? 1.0f : 0.0f;
-    // FollowWindow::update: the bubble's point is the box's top, pos + offset + (0, sizeY, 0)
-    const float p[3] = {n->pos[0] + k * n->offset[0] + n->offset[0], n->pos[1] + (k + 1) * n->offset[1] + n->box[1],
-                        n->pos[2] + k * n->offset[2] + n->offset[2]};
-    const float* m = vp.m;
-    const float cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
-    if (cw <= 0) return;
-    const float sx = rx + ((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * 0.5f + 0.5f) * rw;
-    const float sy = ry + (0.5f - (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * 0.5f) * rh;
+    if (!n || !project(*n, sx, sy)) return;
     app.promptX = sx, app.promptY = sy; // (a tap within 30 of it examines: touchPadDown, as FollowWindow::update's 900)
-    if (app.windowTex.id) drawWinPiece(app, kWinBadge, sx - 48, sy - 44, 88, 96); // the piece (468, 440) 44 x 48 at (x - 24, y - 22)
-    else app.promptHud.drawAt(app.renderer, {"[E]"}, sx - 24, sy - 16, 2.0f, 0, 0, 0.8f);
+    if (!app.windowTex.id) app.promptHud.drawAt(app.renderer, {"[E]"}, sx - 24, sy - 16, 2.0f, 0, 0, 0.8f);
 }
 
 void selectAction(App& app, int delta) {

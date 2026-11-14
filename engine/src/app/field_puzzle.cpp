@@ -555,7 +555,9 @@ void stepMsgWin(App::MsgWin& w) {
 // clears or closes by itself (0x1a then 0x10 / 0x14) sets no flag
 void advanceDialogue(App& app, bool tapped) {
     if (app.dialogue.empty()) return;
-    app.sound.stopDialogueVoices();
+    // (the story line is updateVoices' to cut: _PrcMsg 25241-25247 / 25308-25313 cut it on the tap
+    // unless the page's 0x1e 0xffff kept it, and a 0x13 / 0x14 end leaves it)
+    app.sound.stopVoiceEffects();
     app.voiceQueue.clear();
     if (tapped) app.game.setFlag(4075, true); // PrcMsg: a page turned (or the last one closed) - MsgUty_TexDispProc's cue
     resetTyping(app);
@@ -683,6 +685,10 @@ void tapDialogue(App& app) {
     }
     if (info && info->closeAfter >= 0) return;
     advanceDialogue(app);
+    // (the tap comes before this frame's stepTyping, which takes one of the hold's frames on the tap's
+    // own frame: _PrcMsg 25119-25480 - the tap frame's 0x12, the next frame's 0x10, then the first
+    // character - wants the two empty frames after it, as the skip's turn after stepTyping gets)
+    if (!app.dialogue.empty()) ++app.dialogueHold;
 }
 
 // Answers the open yes/no choice (Util 3): yes sets its flag, no clears it (_menuu_EventClr).
@@ -868,7 +874,13 @@ std::vector<App::NpcDraw*> ViewerHost::npc(int id) {
         if (d.id == id) out.push_back(&d);
     return out;
 }
-void ViewerHost::showMessage(int id) { showMessages(app, {id}); }
+void ViewerHost::showMessage(int id) {
+    const bool fresh = app.dialogue.empty();
+    showMessages(app, {id});
+    // (_gameapp_prc 1844-1845: PrcMsg runs after PrcEvnt and PrcWin, so with the window up the first
+    // character is out on the Msg op's own frame; ours typed before the script ran)
+    if (fresh && app.msgWin.state == 3) stepTyping(app);
+}
 bool ViewerHost::messageOpen() { return !app.dialogue.empty(); }
 bool ViewerHost::tapped() { const bool t = app.tapPending; app.tapPending = false; return t; }
 // _Uty_GetItem_Init (2.2.0 0x25434): the sound (0x10 for items 61..80, else 0xf; the Oz's 0xf), the
@@ -1113,6 +1125,24 @@ void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, in
     app.moves.push_back(m);
     if (stepMove(app, app.moves.back())) app.moves.pop_back(); // (its first step is this frame's: npc_autoctl_prc runs after PrcEvnt)
 }
+// A Tex2d slot's slide, fade and grey a frame on (tex2d_img_prc: drawn at t, then t + 1)
+static void stepPortraitBlend(App::Portrait& p) {
+    if (p.t < p.frames) {
+        ++p.t;
+        const float t = float(p.t) / float(p.frames);
+        p.x = p.xFrom + (p.xTo - p.xFrom) * t;
+        p.y = p.yFrom + (p.yTo - p.yFrom) * t;
+    }
+    if (p.aT < p.aFrames) {
+        ++p.aT;
+        p.alpha = p.aFrom + (p.aTo - p.aFrom) * float(p.aT) / float(p.aFrames);
+    }
+    if (p.gT < p.gFrames) {
+        ++p.gT;
+        p.shade = p.gFrom + (p.gTo - p.gFrom) * float(p.gT) / float(p.gFrames);
+    }
+}
+
 void ViewerHost::tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3]) {
     if (SDL_getenv("CR_TEXDISP_DEBUG")) std::printf("tex2d: slot %d flags %04x image %d\n", slot, f, image);
     if (slot < 0 || slot >= 16) return;
@@ -1199,6 +1229,10 @@ void ViewerHost::tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3
         p.x = p.xFrom, p.y = p.yFrom;
         p.frames = std::max(1, std::abs(n)), p.t = 0;
     }
+    // (__EvtTex2d 17590-17807 starts a blend's count at 1 and _gameapp_prc's tex2d_prc_2d runs after
+    // PrcEvnt in the same frame: the op's own frame already shows its first step - ours runs the
+    // slots before the script, so the step is taken here. The 0x40 zoom comes out the same as it is.)
+    if (f & 0xC2C) stepPortraitBlend(p);
     if (p.dying && p.t >= p.frames && p.aT >= p.aFrames) { app.renderer.destroy(p.tex); p = App::Portrait(); } // nothing to wait for
 }
 void ViewerHost::loadParty(int pair, bool clearData) { // Uty_LoadPrty: prty_init_new(pair - 1, mode)
@@ -3287,7 +3321,12 @@ void stepEvents(App& app) {
     stepTexDisp(app);
     stepVitaLogo(app);
     stepTutoTex(app);
-    stepMsgWin(app);
+    {
+        const bool opening = app.msgWin.state == 2;
+        stepMsgWin(app);
+        // (PrcWin then PrcMsg in one frame: the first character comes the frame the window is up)
+        if (opening && app.msgWin.state == 3) stepTyping(app);
+    }
     if (app.fadeT < app.fadeFrames) ++app.fadeT;
     if (app.backFade.t < app.backFade.frames) ++app.backFade.t;
     for (auto& d : app.npcDraws)
@@ -3322,20 +3361,7 @@ void stepEvents(App& app) {
     stepScriptCam(app);
     for (App::Portrait& p : app.portraits) // Tex2d slides and fades (tex2d_img_prc)
     {
-        if (p.t < p.frames) {
-            ++p.t;
-            const float t = float(p.t) / float(p.frames);
-            p.x = p.xFrom + (p.xTo - p.xFrom) * t;
-            p.y = p.yFrom + (p.yTo - p.yFrom) * t;
-        }
-        if (p.aT < p.aFrames) {
-            ++p.aT;
-            p.alpha = p.aFrom + (p.aTo - p.aFrom) * float(p.aT) / float(p.aFrames);
-        }
-        if (p.gT < p.gFrames) {
-            ++p.gT;
-            p.shade = p.gFrom + (p.gTo - p.gFrom) * float(p.gT) / float(p.gFrames);
-        }
+        stepPortraitBlend(p);
         if (p.dying && p.t >= p.frames && p.aT >= p.aFrames) {
             app.renderer.destroy(p.tex);
             p = App::Portrait();

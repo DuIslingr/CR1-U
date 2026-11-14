@@ -4329,10 +4329,12 @@ bool laterPairsOpen(const App& app) { // a first story finished (flag 32 or 34):
 void openCharSelect(App& app) {
     app.charSelectOpen = true;
     app.charSelectAnim = 0;
-    app.charSelectPage = 0;
+    // (__menuu_StartPrc 1, 72633-72640: the second sheet when flag 4092 is set - StartClr's for Olgar /
+    // Ayuta; the boot script clears it from the title (j001_t99 0x2ed5), not on Back from Load / New)
+    app.charSelectPage = app.game.flag(4092) && laterPairsOpen(app) ? 1 : 0;
     app.renderer.destroy(app.charSelectArt);
     cr::Image img;
-    if (loadImage(app, "chara1_hd.mct", img)) app.charSelectArt = app.renderer.upload(img);
+    if (loadImage(app, app.charSelectPage ? "chara2_hd.mct" : "chara1_hd.mct", img)) app.charSelectArt = app.renderer.upload(img);
 }
 
 void charSelectTurn(App& app) { // the other sheet, once it's open

@@ -621,6 +621,12 @@ The NPC table's `kind` (+14) bits:
 - **Solid box** (`RectWrapper::init`): the record's box, `offset ± size/2`, rotated by the NPC's
   angle (`RepeatPI`, `cosf`/`sinf`) and placed at the NPC.
 - **Examine range:** the box centre (position + offset) ± (size/2 + player radius + 1.5).
+- **News marker** (`FlagWindow`): a person (bit 4) with a model whose table +22 names a set flag
+  shows a plain red "!" (follow-window type 1: window piece (480, 16) 32 x 32 at (x − 16, y − 16))
+  while out of reach; in reach the "!" bubble (type 0: (468, 440) 44 x 48 at (x − 22, y − 24))
+  takes its slot. The hall's script sets these flags per chapter (j001_t01 0x4d10) and each talk
+  clears its own. Every window up is drawn (8 slots), so a bubble lingering 10 frames shows beside
+  the next one.
 - **`FollowWindow::TouchFollowWindowUtil(n)`:**
   - Treasure box (table +18 bits 0/1): var 11 = n, var 10 = item (table +12, or
     `TreasureBoxManager::getItemNo`), then `EvtStart(n + 1)`. The lid's script plays the lid's

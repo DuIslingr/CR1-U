@@ -320,7 +320,8 @@ c101/c102/c104/m207a, 2026-10-12).
       hide them; speakers' portraits slide and fade in beside the dialogue box (`Tex2d`, read
       from `__EvtTex2d` / `tex2d_img_prc`: 3-frame fade + 32 px slide, flag 0x200 swaps an
       expression in at once and clears that side, 0x40 zooms a centre image 200% -> 100% over 4
-      frames; in widescreen side portraits keep to the screen's edges)
+      frames; a blend's first step shows on the op's own frame, as `__EvtTex2d` starts its count at 1;
+      in widescreen side portraits keep to the screen's edges)
 - [x] Saves, as the original keeps them (`game/save.cpp`, a small text file in the save folder):
       one file for the four pairs, as 2.2.0's data.dat (`SaveData_Save`: the shared Oz, flags and
       shared bag, each pair's records, own bag, saved place and "saved" mark; the earlier releases'
@@ -332,7 +333,8 @@ c101/c102/c104/m207a, 2026-10-12).
       title's **Start** runs as the boot script has it (j001_t99: Util 0 -> Util 4 -> Util 5):
       **Character Select** (`__menuu_StartPut`: the chara1 art scaled to the screen, plates
       Escher / Eluca at (56 + 232k, 232), Back at (124, 288) - with its arrows, once the later pairs are
-      open, the other sheet: `__menuu_StartPrc`'s BackButtonPosSetXYProc -2 / -3), then that pair's save / load screen
+      open, the other sheet: `__menuu_StartPrc`'s BackButtonPosSetXYProc -2 / -3; it reopens on the
+      second sheet while flag 4092 holds, as Back from Load / New leaves it), then that pair's save / load screen
       (`__menuu_SaveLoadPut`: over the Character Select art again - piece 16 of its sheet at tex2d
       (-32, -64) -, the slot's face boards, its date and play time, the pair's three
       emblems for the stories it has cleared, Load / New at (328, 136 + 48k) - and "Final" once

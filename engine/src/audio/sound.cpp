@@ -122,6 +122,9 @@ void SoundSystem::stopLine() {
 
 void SoundSystem::stopDialogueVoices() {
     stopLine();
+    stopVoiceEffects();
+}
+void SoundSystem::stopVoiceEffects() {
     for (Voice& v : voices_) if (v.stream && v.voice) {
         SDL_DestroyAudioStream(v.stream);
         v = Voice();
