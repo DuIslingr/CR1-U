@@ -4720,6 +4720,8 @@ void scenariosScrollSideways(App& app, float d) { // the iPhone layout's chart (
 
 void scenariosKey(App& app, SDL_Keycode key) {
     if (app.scenariosOut) return; // (HistoryPrc 2 / 3: going)
+    // (a controller pans in padStep, held; its confirm doesn't close - the Vita's Back takes x or a touch, BackButtonProc 1)
+    if (app.padKeyNow && (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT || key == SDLK_RETURN)) return;
     switch (key) {
     case SDLK_UP: case SDLK_W: scenariosScrollBy(app, 96); break;
     case SDLK_DOWN: case SDLK_S: scenariosScrollBy(app, -96); break;

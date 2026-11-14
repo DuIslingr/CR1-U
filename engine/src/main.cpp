@@ -347,6 +347,25 @@ void padStep(App& app, float dt) {
         return;
     }
     if (!padLive(app) || !padMenus(app)) { app.padHeld = -1, app.padCountDir = 0; return; }
+    // Scenarios (the Vita's HistoryPrc 1, 59945-59963): the chart pans while held - the stick (each axis zeroed under
+    // 0.2549, FUN_8106bafc) x 4 a frame, else the D-pad 4 a frame - clamped as a drag is
+    if (app.scenariosOpen) {
+        if (app.scenariosOut) return;
+        auto axis = [&](SDL_GamepadAxis a) {
+            const float v = float(SDL_GetGamepadAxis(app.pad, a)) / 32767.0f;
+            return std::fabs(v) < 0.2549f ? 0.0f : std::clamp(v, -1.0f, 1.0f);
+        };
+        float x = axis(SDL_GAMEPAD_AXIS_LEFTX), y = axis(SDL_GAMEPAD_AXIS_LEFTY);
+        if (x == 0 && y == 0) {
+            x = float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+            y = float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) - float(SDL_GetGamepadButton(app.pad, SDL_GAMEPAD_BUTTON_DPAD_UP));
+        }
+        const float frames = dt * kFramesPerSecond;
+        if (x != 0) scenariosScrollSideways(app, -x * 4 * frames);
+        if (y != 0) scenariosScrollBy(app, -y * 4 * frames);
+        app.padHeld = -1;
+        return;
+    }
     // A count (the shop's, the Camp's seeds - _ComUty_NumCountProc, FUN_8105199e): L / R held change it
     // a step a press, then - its counter past 0x14 - one a frame (left / right the same here)
     {
