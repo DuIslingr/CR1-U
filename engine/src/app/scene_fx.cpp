@@ -331,20 +331,28 @@ void scrollFieldTo(App& app, float vx, float vy, float rate) {
     auto axis = [](float v, float lo, float len, float screen) {
         return len <= screen ? lo + len / 2 : std::clamp(v, lo + screen / 2, lo + len - screen / 2);
     };
-    const float tx = V / 2 - axis(vx, rx, rw, SW), ty = axis(vy, ry, rh, H) - Vh / 2;
+    // (FieldCamera::calcScroll 39301-39338 takes the lower limit, then the upper: a rect shorter than the
+    // screen - t0107 / t0137's 640 on a 768 screen, as on the iPad - has the screen's top on its top. Across,
+    // the same rule would put a narrow rect's right edge on the screen's: only screens wider than 4:3
+    // meet that, and there the port keeps its painting centred)
+    const float cy = rh <= H ? ry + H / 2 : axis(vy, ry, rh, H);
+    const float tx = V / 2 - axis(vx, rx, rw, SW), ty = cy - Vh / 2;
     if (SDL_getenv("CR_SCROLL_DEBUG")) std::printf("scroll clamp: screen %.0f x %.0f, view %.0f x %.0f, rect %.0f %.0f %.0f %.0f\n", SW, H, V, Vh, rx, ry, rw, rh);
     app.scroll.offX += (tx - app.scroll.offX) * rate;
     app.scroll.offY += (ty - app.scroll.offY) * rate;
 }
 
-// FieldCamera::setScrollPlayer, every frame while the camera follows the player
-void followPlayerScroll(App& app) {
+// FieldCamera::setScrollPlayer, every frame while the camera follows the player: 0.3 of the way a
+// 20 Hz frame (FUN_0001d244 14783-14789: rate 0x3e99999a), all the way on the scene's entry (state 3,
+// 14980: 1.0) - here as the same ease over `dt` seconds of shown frames
+void followPlayerScroll(App& app, float dt) {
     if (!scrollingField(app) || app.cam.free || !app.havePlayer) return;
     if (app.puzzle.stage >= 0 && app.puzzle.scroll.state == 1) return; // (ScrollCamera's: FieldCamera + 0 cleared, the view held where it was taken)
     app.scroll.scripted = false;
     const cr::Vec3 head = shownWalker(app).pos + cr::Vec3{0, 7.0f + float(app.stageCam.lookHeight), 0};
     float vx, vy;
-    if (fieldViewPoint(app, head, vx, vy)) scrollFieldTo(app, vx, vy, 1.0f);
+    const float rate = dt <= 0 || !app.scroll.followed ? 1.0f : 1.0f - std::pow(0.7f, dt * float(kFramesPerSecond));
+    if (fieldViewPoint(app, head, vx, vy)) scrollFieldTo(app, vx, vy, rate), app.scroll.followed = true;
     if (SDL_getenv("CR_SCROLL_DEBUG"))
         std::printf("scroll: head view (%.0f, %.0f) of %.0f x %.0f, rect %d %d %d %d -> offset (%.0f, %.0f)\n", vx, vy,
                     fieldViewW(app), fieldViewH(app), app.stageCam.rect[0], app.stageCam.rect[1], app.stageCam.rect[2],
@@ -372,6 +380,9 @@ bool stepMove(App& app, App::Move& m) {
     const float t = float(m.t) / float(m.frames);
     const cr::Vec3 p{m.from.x + (m.to.x - m.from.x) * t, m.from.y + (m.to.y - m.from.y) * t, m.from.z + (m.to.z - m.from.z) * t};
     const float yaw = m.yawFrom + (m.yawTo - m.yawFrom) * t;
+    if (m.tilt)
+        if (cr::FieldNpc* n = findNpc(app, m.npc))
+            for (int k = 0; k < 2; ++k) n->tilt[k] = m.tiltFrom[k] + (m.tiltTo[k] - m.tiltFrom[k]) * t;
     setActor(app, m.npc, p, m.turn ? &yaw : nullptr, m.mode == 2);
     return m.t >= m.frames;
 }
@@ -2398,7 +2409,7 @@ void drawFrame(App& app, bool present) {
         // The stage view on screen (vx, vy, vw, vh)
         float vx, vy, vw, vh;
         if (scrollingField(app)) {
-            followPlayerScroll(app);
+            followPlayerScroll(app, dt);
             const float fz = fieldFillZoom(app);
             vw = fieldViewW(app) * fz;
             vh = fieldViewH(app) * fz;
@@ -2592,13 +2603,18 @@ void drawFrame(App& app, bool present) {
         if (!messageNow && !(app.mode == Mode::Maps && app.battle.active)) drawFrontFade(app); // (a battle's: over its 2D, below)
     }
     if (fieldMenuWanted(app)) { // the corner button and its bar
+        app.fieldMenu.fade = fieldSceneRunning(app) ? 0 : 320; // (back the frame the scene ends)
         for (app.fieldMenu.clock += dt; app.fieldMenu.clock >= 1.0f / kFramesPerSecond; app.fieldMenu.clock -= 1.0f / kFramesPerSecond)
             stepFieldMenu(app), stepPuzzleHud(app), stepTouchPad(app);
         drawFieldMenu(app);
         drawTouchPad(app);
         r.setOrigin(r.uiX());
-    } else
+    } else {
         app.fieldMenu.fade = 0, app.fieldMenu.clock = 0, touchPadUp(app);
+        // (_MfMenu_RestFieldState 32570-32588, from CampMainClr / OptionClr / SaveLoadClr: the bar shut,
+        // its buttons back in the corner)
+        if (app.campOpen || app.optionsOpen || app.saveScreen.open) app.fieldMenu.open = false, app.fieldMenu.anim = 0;
+    }
     if (app.mode == Mode::Maps && app.puzzleBanner.on) { // Uty_PuzzleStart_Put, over the scene that runs it
         drawPuzzleBanner(app);
         r.setOrigin(r.uiX());

@@ -117,13 +117,17 @@ public:
     // Cutscene staging (EvtFrmSetc / FrmSetc2 / FrmAdjc / FrmAdjc2 / SetDir); npc 0 is the party
     // leader. Positions are world units; the y is snapped to the floor unless `mode` is 2.
     // Facing: Yaw turns to `yawDegrees`, Keep leaves it, Travel faces the way it moves.
-    enum class Facing { Yaw, Keep, Travel, Snap }; // Snap: the yaw set at once, before a move (FrmAdjc2 mode 0)
+    enum class Facing { Yaw, Keep, Travel, Snap, Set }; // Snap: the yaw set at once, before a move, the model too (FrmAdjc2 mode 0);
+                                                       // Set: the yaw set at once, the model turning to it (FrmAdjc)
     virtual void placeNpc(int /*npc*/, const float* /*pos*/, float /*yawDegrees*/, Facing /*facing*/) {}
     // Moves in a straight line over `frames` (npc_autoctl_set_fream); mode 0 position, 1 position
     // and turn, 2 position including y. Wait 0xFFFD waits for it (animBusy).
     virtual void moveNpc(int /*npc*/, const float* /*pos*/, float /*yawDegrees*/, Facing /*facing*/, int /*frames*/,
                          int /*mode*/) {}
     virtual void faceNpc(int /*npc*/, int /*target*/) {} // SetDir: npc turns towards target
+    virtual void stopNpcAuto(int /*npc*/) {} // FrmSetc / FrmSetc2: a move (or rescale) under way stops
+    // FrmSetc2 / FrmAdjc2: the record's x and z angles (degrees) - at once, or over the move just set
+    virtual void tiltNpc(int /*npc*/, float /*xDeg*/, float /*zDeg*/, bool /*overMove*/) {}
     // SetScale / AdjScale: npc's x y z scale (1 = 100%) at once (frames 0) or over frames
     virtual void scaleNpc(int /*npc*/, const float* /*scale*/, int /*frames*/) {}
     // Autoadj: npc walks straight to (x, z) at `speed` world units a frame

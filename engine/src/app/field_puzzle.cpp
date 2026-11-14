@@ -159,6 +159,13 @@ void showMap(App& app, int index, int forcedMap, int forcedArea) {
     app.mapNumber = app.haveStageCam ? app.stageCam.mapNumber : (candidates.empty() ? -1 : candidates[0]);
     app.area = app.haveStageCam ? app.stageCam.area : cr::areaForMap(app.mapNumber, forcedArea);
     if (forcedMap >= 0) { app.mapNumber = forcedMap; app.area = forcedArea >= 0 ? forcedArea : app.area; }
+    // (_fldread_prc 37795-37801: area 1's puzzle rooms scroll over the whole 1024 x 1024 painting, the
+    // record's rect replaced on the map's first load - FieldCamera::calcScroll follows the head both ways)
+    if (app.area == 1 && app.haveStageCam) {
+        const int whole[4] = {0, 0, 1024, 1024};
+        for (cr::StageCamera& c : app.stageCams) std::copy(whole, whole + 4, c.rect);
+        std::copy(whole, whole + 4, app.stageCam.rect);
+    }
     enterMap(app);
     app.playerByReadMdl = false; // (fldread_prc's read_mdl_set)
     placePlayer(app);
@@ -1091,6 +1098,7 @@ float travelYaw(float dx, float dz) {
 void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
     cr::Vec3 old;
     if (!actorPos(app, id, old)) return;
+
     const cr::Vec3 p{v[0], v[1], v[2]};
     float yaw = yawDeg * kDeg;
     if (facing == Facing::Travel) {
@@ -1098,6 +1106,8 @@ void ViewerHost::placeNpc(int id, const float* v, float yawDeg, Facing facing) {
         else yaw = travelYaw(p.x - old.x, p.z - old.z);
     }
     setActor(app, id, p, facing == Facing::Keep ? nullptr : &yaw, false);
+    if (facing == Facing::Snap)
+        if (cr::FieldNpc* n = id ? findNpc(app, id) : nullptr) n->shownSet = false; // (the model's yaw with it)
 }
 void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, int frames, int mode) {
     App::Move m;
@@ -1114,9 +1124,11 @@ void ViewerHost::moveNpc(int id, const float* v, float yawDeg, Facing facing, in
         m.turn = true;
         m.yawFrom = yawNow;
         m.yawTo = yawDeg * kDeg;
-    } else if (facing == Facing::Snap) { // (FrmAdjc2 mode 0: the rotation set before the move starts)
+    } else if (facing == Facing::Snap || facing == Facing::Set) { // (FrmAdjc2 mode 0 / FrmAdjc: the rotation set before the move starts)
         const float yaw = yawDeg * kDeg;
         setActor(app, id, m.from, &yaw, true);
+        if (facing == Facing::Snap) // (FrmAdjc2 mode 0, 19367-19372: the model's drawn yaw too; FrmAdjc's turns to it)
+            if (cr::FieldNpc* n = id ? findNpc(app, id) : nullptr) n->shownSet = false;
     }
     app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }),
                     app.moves.end());
@@ -1241,6 +1253,7 @@ void ViewerHost::loadParty(int pair, bool clearData) { // Uty_LoadPrty: prty_ini
 void ViewerHost::loadNpc(int id) {
     if (cr::FieldNpc* had = findNpc(app, id)) { // (+0x98: the standing push leaves it out)
         if (had->model >= 0) had->mdlRead = true;
+        had->shownSet = false; // (19179: the model's drawn yaw = its yaw)
         return;
     }
     cr::NpcRow row;
@@ -1513,6 +1526,26 @@ bool ViewerHost::choiceOpen() {
     return app.choiceFlag >= 0 || app.worldChoiceOpen || app.titleOpen || app.saveScreen.open || app.charSelectOpen || app.staffRoll.open || app.lastBattle.open ||
            (app.shop.open && !app.shop.talkRunning); // (the shopkeeper's talk mustn't wait on the shop)
 }
+void ViewerHost::stopNpcAuto(int id) { // (the actor's npc_autoctl state cleared: a move or rescale under way stops)
+    app.moves.erase(std::remove_if(app.moves.begin(), app.moves.end(), [&](const App::Move& o) { return o.npc == id; }), app.moves.end());
+    app.rescales.erase(std::remove_if(app.rescales.begin(), app.rescales.end(), [&](const App::Rescale& o) { return o.npc == id; }),
+                       app.rescales.end());
+}
+void ViewerHost::tiltNpc(int id, float xDeg, float zDeg, bool overMove) {
+    cr::FieldNpc* n = id ? findNpc(app, id) : nullptr; // (the leader's model never tilts in the data)
+    if (!n) return;
+    const float to[2] = {xDeg * kDeg, zDeg * kDeg};
+    if (overMove)
+        for (App::Move& m : app.moves)
+            if (m.npc == id) {
+                m.tilt = true;
+                for (int k = 0; k < 2; ++k) m.tiltFrom[k] = n->tilt[k], m.tiltTo[k] = to[k];
+                return;
+            }
+    n->tilt[0] = to[0], n->tilt[1] = to[1];
+    for (auto& d : app.npcDraws)
+        if (d.id == id) d.world = npcWorld(*n);
+}
 void ViewerHost::faceNpc(int id, int target) {
     cr::Vec3 a, b;
     if (!actorPos(app, id, a) || !actorPos(app, target, b)) return;
@@ -1644,7 +1677,9 @@ bool fieldEncountersOff(const App& app) { return app.game.noEncounters[size_t(fi
 
 void stepFieldMenu(App& app) {
     App::FieldMenu& f = app.fieldMenu;
-    f.fade = fieldSceneRunning(app) ? std::max(0, f.fade - 32) : std::min(320, f.fade + 32);
+    // (__menuf_mainPut, 0x35db4-0x35dd4: nothing drawn while G+0x2c0 & 9 - a script or a message - or a
+    // map load holds the field, so the bar never fades: gone at once, back at __menuf_mainSet's 320)
+    f.fade = fieldSceneRunning(app) ? 0 : 320;
     if (f.anim > 0) --f.anim;
 }
 
@@ -3296,7 +3331,24 @@ void drawFx(App& app, const cr::Mat4& mvp) {
 
 } // namespace puzzle
 
+// mdl_put (2.2.0 10202-10212, outside battles): each field frame a model's drawn yaw turns toward its
+// actor's yaw (copied each frame, 35339-35344) by at most 1/16 turn (FUN_00013734, step 0x3d800000), the
+// short way round - a SetDir about-face takes 8 frames. Runs after the frame's script, as mdl_put does.
+static void stepNpcTurns(App& app) {
+    if (app.battle.active) return;
+    constexpr float kTurn = 6.28318531f, kStep = kTurn / 16.0f;
+    for (cr::FieldNpc& n : app.npcs) {
+        if (!n.shownSet) { n.shownAngle = n.angle, n.shownSet = true; continue; }
+        const float d = std::remainder(n.angle - n.shownAngle, kTurn);
+        if (std::fabs(d) < 1e-6f) { n.shownAngle = n.angle; continue; }
+        n.shownAngle = std::fabs(d) <= kStep ? n.angle : n.shownAngle + (d > 0 ? kStep : -kStep);
+        for (auto& dr : app.npcDraws)
+            if (dr.id == n.id) dr.world = npcWorld(n);
+    }
+}
+
 void stepEvents(App& app) {
+    struct TurnAfter { App& a; ~TurnAfter() { stepNpcTurns(a); } } turnAfter{app}; // (every way out of the frame)
     if (app.npcNativesPending) { // npc_setup: SetVar(0, id); UtyPrcTbl[row + 8 - 1].init() for every created NPC with one
         app.npcNativesPending = false;
         ViewerHost natives(app);
@@ -3701,13 +3753,16 @@ cr::Mat4 playerWorld(const cr::FieldWalker& w) {
 // An NPC's model matrix: position (plus the offset for models 0/1), turned about Y, scaled
 cr::Mat4 npcWorld(const cr::FieldNpc& n) {
     const float k = n.model == 0 || n.model == 1 ? 1.0f : 0.0f;
-    const float c = std::cos(n.angle), sn = std::sin(n.angle);
+    const float yaw = n.shownSet ? n.shownAngle : n.angle;
     const bool set = n.axes[0] >= 0;
     const float sx = set ? n.axes[0] : n.scale, sy = set ? n.axes[1] : n.scale, sz = set ? n.axes[2] : n.scale;
+    // (mdl_put 10214-10215: mceTransform_setRotateEuler (x, yaw, z) - R = Rz Ry Rx, as a battle effect's)
+    const float cx = std::cos(n.tilt[0]), snx = std::sin(n.tilt[0]), cy = std::cos(yaw), sy0 = std::sin(yaw);
+    const float cz = std::cos(n.tilt[1]), snz = std::sin(n.tilt[1]);
     cr::Mat4 w;
-    w.m[0] = c * sx; w.m[2] = -sn * sx;
-    w.m[5] = sy;
-    w.m[8] = sn * sz; w.m[10] = c * sz;
+    w.m[0] = cy * cz * sx, w.m[1] = cy * snz * sx, w.m[2] = -sy0 * sx;
+    w.m[4] = (snx * sy0 * cz - cx * snz) * sy, w.m[5] = (snx * sy0 * snz + cx * cz) * sy, w.m[6] = snx * cy * sy;
+    w.m[8] = (cx * sy0 * cz + snx * snz) * sz, w.m[9] = (cx * sy0 * snz - snx * cz) * sz, w.m[10] = cx * cy * sz;
     w.m[12] = n.pos[0] + k * n.offset[0];
     w.m[13] = n.pos[1] + k * n.offset[1];
     w.m[14] = n.pos[2] + k * n.offset[2];

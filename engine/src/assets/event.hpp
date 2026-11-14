@@ -39,6 +39,11 @@ struct FieldNpc {
     int id = 0;                  // also the script started when it is touched / examined
     float pos[3] = {0, 0, 0};
     float angle = 0;             // radians
+    // The model's drawn yaw (mdl +0x554): mdl_put turns it toward `angle` (+0x540) at most 1/16 turn a
+    // field frame; unset, it takes `angle` at once (a model's load, FrmSetc2 flag 0, FrmAdjc2 mode 0)
+    float shownAngle = 0;
+    bool shownSet = false;
+    float tilt[2] = {0, 0};      // radians about x and z (FrmSetc2 / FrmAdjc2's record angles; mdl_put's Euler x, z)
     float box[3] = {0, 0, 0};    // trigger box size (x, y, z)
     float offset[3] = {0, 0, 0};
     int flagShow = -1, flagHide = -1; // NPC table +0 / +2 (flag numbers, -1 = none)

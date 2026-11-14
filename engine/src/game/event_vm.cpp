@@ -525,7 +525,11 @@ bool EventRunner::step(EventHost* host) {
             Vm::Scene s;
             float v[6];
             if (!host || !vm.scene(s) || !vm.actor(s, state.frmRecord, n, v)) break;
-            if (op == 53) host->placeNpc(n, v, v[4], s.words == 6 ? EventHost::Facing::Yaw : EventHost::Facing::Keep);
+            host->stopNpcAuto(n); // (__EvtFrmSetc 18381 / 18421, __EvtFrmSetc2 19468 / 19489: npc +0x88 / 0x358c8 = 0; Setc keeps it)
+            // (__EvtFrmSetc2 19458-19496: flag 0 writes the model's drawn yaw too - it stands turned at once;
+            // 1 / 2 only the actor's, the model turning to it)
+            if (op == 53) host->placeNpc(n, v, v[4], s.words != 6 ? EventHost::Facing::Keep : dir == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw);
+            if (op == 53 && s.words == 6) host->tiltNpc(n, v[3], v[5], false); // (19458-19470: all three angles)
             else { float yaw; const auto f = facingFor(dir, yaw); host->placeNpc(n, v, yaw, f); }
             break;
         }
@@ -544,11 +548,12 @@ bool EventRunner::step(EventHost* host) {
                 const bool rot = s.words == 6;
                 if (last == 2) host->moveNpc(n, v, v[4], EventHost::Facing::Keep, frames, 2);
                 else host->moveNpc(n, v, v[4], !rot ? EventHost::Facing::Keep : last == 0 ? EventHost::Facing::Snap : EventHost::Facing::Yaw, frames, 0);
+                if (rot && last != 2) host->tiltNpc(n, v[3], v[5], last != 0); // (19360-19383: x / z with the yaw)
             } else {
                 // __EvtFrmAdjc: a degree (or 0 for an unknown dir) and 2000's way are written to the
                 // actor's angle as the move is set up (npc ctl +0x24 / gac+0xd7c) - no turn over it
                 float yaw; auto f = facingFor(last, yaw);
-                if (f == EventHost::Facing::Yaw) f = EventHost::Facing::Snap;
+                if (f == EventHost::Facing::Yaw) f = EventHost::Facing::Set;
                 host->moveNpc(n, v, yaw, f, frames, 0);
             }
             break;

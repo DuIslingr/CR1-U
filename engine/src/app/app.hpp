@@ -309,6 +309,8 @@ struct App {
         cr::Vec3 from, to;
         float yawFrom = 0, yawTo = 0;      // radians, when turning
         bool turn = false;
+        bool tilt = false;                 // FrmAdjc2 1 / 10 / 20: the x / z angles carried over the move too
+        float tiltFrom[2] = {0, 0}, tiltTo[2] = {0, 0};
         int mode = 0;                      // 2: y moves too, else it follows the floor
         int frames = 1, t = 0;
     };
@@ -334,6 +336,7 @@ struct App {
         // shown is (offX / offY) - so FrmPanCam there and back again over its edge comes back where it was
         float curX = 0, curY = 0;
         bool scripted = false;
+        bool followed = false;  // the view has followed the leader since the map's entry (its first follow is at once)
         bool sliding = false;
         float fromX = 0, fromY = 0, toX = 0, toY = 0;
         int t = 0, frames = 0;
@@ -1007,7 +1010,7 @@ struct App {
     struct FieldMenu {                     // menuf_mainPut / Prc: the corner button and the bar it opens
         bool open = false;                 // G+0x3553c
         int anim = 0;                      // the bar's 4 frames of sliding (in or out)
-        int fade = 0;                      // +32 a frame (to 320) on the field, -32 while a scene runs
+        int fade = 0;                      // 320 on the field, 0 while a scene runs (never faded: menuf_mainPut skips)
         float clock = 0;
         int cursor = 0;                    // the Vita's: the bar's button under the buttons' cursor (DAT_81113a74)
     } fieldMenu;
@@ -1227,6 +1230,8 @@ struct ViewerHost : cr::EventHost {
     static constexpr float kDeg = 3.14159265f / 180.0f;
     void placeNpc(int id, const float* v, float yawDeg, Facing facing) override;
     void moveNpc(int id, const float* v, float yawDeg, Facing facing, int frames, int mode) override;
+    void tiltNpc(int id, float xDeg, float zDeg, bool overMove) override;
+    void stopNpcAuto(int id) override;
     void tex2d(int slot, uint16_t f, int image, const int16_t (*extra)[3]) override;
     void loadParty(int pair, bool clearData) override;
     void loadNpc(int id) override;
@@ -1399,7 +1404,7 @@ float fieldViewH(const App& app);
 float fieldFillZoom(const App& app);
 bool fieldViewPoint(const App& app, const cr::Vec3& p, float& vx, float& vy);
 void scrollFieldTo(App& app, float vx, float vy, float rate);
-void followPlayerScroll(App& app);
+void followPlayerScroll(App& app, float dt = 0); // dt <= 0: at once
 void stepFieldScroll(App& app);
 bool stepMove(App& app, App::Move& m);
 bool stepRescale(App& app, App::Rescale& r);

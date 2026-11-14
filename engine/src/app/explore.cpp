@@ -6477,7 +6477,7 @@ int runSelfTest(App& app) {
             if (const uint32_t at = app.events.scriptEntry(211); at && r.startAt(app.events, at, 211, gs, 8, 0))
                 for (int f = 0; f < 6000 && r.step(&mover) && mover.facing < 0; ++f) {}
         }
-        check(mover.facing == int(cr::EventHost::Facing::Snap) && mover.yaw == 90, "FrmAdjc's degree: set at once");
+        check(mover.facing == int(cr::EventHost::Facing::Set) && mover.yaw == 90, "FrmAdjc's degree: set at once (the model turning to it)");
         const float k = 180.0f / SDL_PI_F;
         check(std::fabs(travelYaw(1, 1) * k - 26.36f) < 0.05f && std::fabs(travelYaw(0, 1)) < 1e-4f &&
                   std::fabs(travelYaw(1, 0) * k - 90) < 1e-3f && std::fabs(travelYaw(-1, 0) * k - 270) < 1e-3f,
@@ -7822,7 +7822,7 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
             lastWhere = where;
         }
         animateNpcs(app, 1.0f / kFramesPerSecond);
-        followPlayerScroll(app); // (drawFrame's, every frame the game shows: a capture draws only its last)
+        followPlayerScroll(app, 1.0f / kFramesPerSecond); // (drawFrame's, every frame the game shows: a capture draws only its last)
         if (f % 45 == 44 && f + 1 < app.captureFrames && !SDL_getenv("CR_CAPTURE_NOTAP") && untilLeft < 0) { // (CR_CAPTURE_NOTAP: no taps)
             if (app.choiceFlag >= 0) answerChoice(app, true);
             else if (app.worldChoiceOpen) answerWorldChoice(app, 0);
