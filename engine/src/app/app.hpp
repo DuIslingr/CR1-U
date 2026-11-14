@@ -1648,6 +1648,7 @@ void punish(App& app, int t);
 void pkGrab(App& app, int t, float sx = -1e9f, float sy = -1e9f, float fromX = -1e9f, float fromY = -1e9f);
 void pkSend(App& app, int dir);
 void toughTap(App& app, int t);
+int pkDirection(float dx, float dy); // 1 up, 2 down, 3 left, 4 right
 bool allCandlesLit(App& app);
 void pyroTap(App& app, int t);
 void reset(App& app);

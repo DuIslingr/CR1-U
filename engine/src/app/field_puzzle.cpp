@@ -2652,6 +2652,22 @@ void pkSend(App& app, int dir) {
     pz.pkPointerCancelled = false;
 }
 
+// PsychokinesisDetector::update, 2.2.0 0x54d98 - decomp 53061-53090's way: a = atan2(dx, dy) in double,
+// then float; strict bands of float pi / 4 - down, right, up (Repeat2PI), else left - so an exact
+// diagonal to the right falls to LEFT, not to |dx| >= |dy|'s right
+int pkDirection(float dx, float dy) {
+    const float a = float(std::atan2(double(dx), double(dy)));
+    const float pi = 3.14159274f, q = pi * 0.25f, h = pi * 0.5f, two = 6.28318548f;
+    int dir = 3;
+    if (a > -q && a < q) dir = 2;
+    else if (h - q < a && a < h + q) dir = 4;
+    else {
+        const float r = a >= two ? a - two : a < 0 ? a + two : a;
+        if (pi - q < r && r < pi + q) dir = 1;
+    }
+    return dir;
+}
+
 // PsychokinesisDetector::update (2.2.0 0x54d98), a frame while a block is held by a touch: that touch let go -
 // let go of the block; still down and out of the dead zone (-29 < dx < 29, -35 < dy < 20 in
 // tex2d units from where it took hold) - the way it went; else wait
@@ -2661,7 +2677,7 @@ void pkDetect(App& app) {
     if (!pz.pkHeld) { pkSend(app, 0); return; }
     const float dx = pz.pkAtX - pz.pkFromX, dy = pz.pkAtY - pz.pkFromY;
     if (dx > -29 && dx < 29 && dy > -35 && dy < 20) return;
-    pkSend(app, std::fabs(dx) >= std::fabs(dy) ? (dx < 0 ? 3 : 4) : (dy < 0 ? 1 : 2));
+    pkSend(app, pkDirection(dx, dy));
 }
 
 // ---- Toughness (Toughness, FragileBlock, RedBlock, BlueBlock) ----

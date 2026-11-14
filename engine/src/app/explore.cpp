@@ -5046,6 +5046,12 @@ int runSelfTest(App& app) {
                 for (int f = 0; f < 60 && pz.pkState; ++f) steps(1);
                 letGo = pz.pkState == 0 && app.game.vars[13] == uses && pz.objs[size_t(a)].row == ar && pz.objs[size_t(a)].col == ac;
             }
+            { // PsychokinesisDetector::update's atan2 bands: straight ways as they go, an exact down-right diagonal to the left
+                const bool bands = puzzle::pkDirection(40, 0) == 4 && puzzle::pkDirection(-40, 0) == 3 && puzzle::pkDirection(0, -40) == 1 &&
+                                   puzzle::pkDirection(0, 40) == 2 && puzzle::pkDirection(40, 39) == 4 && puzzle::pkDirection(40, 40) == 3;
+                tp += !bands;
+                std::printf("puzzle touches: psychokinesis swipe bands as 2.2.0's atan2 %s\n", bands ? "ok" : "WRONG");
+            }
             tp += !window || !arrowsOn || !arrowsAt || !decided || !flicker || !locked || !letGo || !fade5 || pkInit != pkBlocks;
             std::printf("puzzle touches: psychokinesis - window %s, arrows %s at %s, swipe decided while held %s, the chosen arrow "
                         "flickers out %s, pad lock %s, a let-go fades them %s and costs nothing %s, blocks as the map has them %d/%d\n",
