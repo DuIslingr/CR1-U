@@ -5180,17 +5180,24 @@ int runSelfTest(App& app) {
             for (int f = 0; f < 20 && app.resumeIn > 0; ++f) stepEvents(app);
             rbad += app.titleOpen || app.resumePrompt || app.game.flag(0) || !SDL_GetPathInfo(savePath(app, "resume.dat").c_str(), nullptr);
             app.runner.stop();
-            // ... and none while the save holds flag 0x44, a new launch or not
-            cr::SaveData d;
-            if (readData(app, d)) d.game.setFlag(0x44, true), cr::writeSave(dataPath(app), d);
-            else rbad += 1;
-            cr::writeSave(savePath(app, "resume.dat"), resume);
-            app.interruptShown = false;
-            bootTitle(app);
-            for (int f = 0; f < 1000 && !app.titleOpen; ++f) stepEvents(app);
-            titleKey(app, SDLK_RETURN);
-            for (int f = 0; f < 8; ++f) stepEvents(app);
-            titleKey(app, SDLK_RETURN); // Start
+            // ... and none while the resume point holds flag 0x44, a new launch or not - the test reads the working
+            // block Uty_LoadData filled from cont.dat (21336-21355), not data.dat's: the save's 0x44 alone doesn't stop it
+            auto startFrom = [&](bool saveHas, bool resumeHas) {
+                cr::SaveData d;
+                if (readData(app, d)) d.game.setFlag(0x44, saveHas), cr::writeSave(dataPath(app), d);
+                else rbad += 1;
+                resume.game.setFlag(0x44, resumeHas);
+                cr::writeSave(savePath(app, "resume.dat"), resume);
+                app.interruptShown = false;
+                bootTitle(app);
+                for (int f = 0; f < 1000 && !app.titleOpen; ++f) stepEvents(app);
+                titleKey(app, SDLK_RETURN);
+                for (int f = 0; f < 8; ++f) stepEvents(app);
+                titleKey(app, SDLK_RETURN); // Start
+            };
+            startFrom(true, false);
+            rbad += app.resumeNotice != 1 || !app.interruptShown;
+            startFrom(false, true);
             rbad += app.resumeNotice || app.resumePrompt != 1 || app.interruptShown;
             bootTitle(app);
             rbad += app.resumePrompt || app.resumeNotice || app.resumeIn;

@@ -382,7 +382,11 @@ c101/c102/c104/m207a, 2026-10-12).
       **Progress Tracker**: a resume point is written at every scene's end on the field and as an
       encounter starts (the snapshot iOS's `_ContData_Save_set` takes and writes only when the game
       is left - so leaving mid-cutscene keeps the last scene's end); the next title offers "You have
-      save data from your last session. Resume game from last saved point?".
+      save data from your last session. Resume game from last saved point?". The title runs on
+      the flags `Uty_LoadData` puts in the working block - the resume point's when there is one,
+      else the save's: the first offer's "About Progress Tracker" (flag 0x44), the Scenarios chart
+      and Options' first notice (0x43); Character Select and the Load's emblems on the save's
+      (`__menuu_TitleClr`'s `_Load_SaveData`; none without a save).
       Saved: flags, variables, items, opened boxes, area / map / position / facing, the leader,
       play time, the date. Loading arrives as a warp would (the room's entry scripts run).
       `CR_SAVE_DIR` puts the files elsewhere; `--camp`, `--save-screen save|load`, `--char-select`,

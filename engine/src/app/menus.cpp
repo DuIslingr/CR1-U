@@ -4365,7 +4365,8 @@ void offerResume(App& app) {
     if (!cr::readSave(savePath(app, "resume.dat"), app.resumeData)) return;
     cr::SaveData d; // (an earlier release's: one pair's, folded into the one save as its newest)
     if (!app.resumeData.wholeGame && readData(app, d)) cr::foldPairSave(d, app.resumeData, &app.itemTable), app.resumeData = d;
-    if (!allPairsFlags(app).flag(0x44) && !app.game.flag(0x44) && !app.interruptShown) { // 0xf
+    // (0xf, 73126-73135: ChkFlag(0x44) on the working block - cont.dat's here, Uty_LoadData's - and DAT_000d3370)
+    if (!titleFlags(app).flag(0x44) && !app.interruptShown) {
         app.game.setFlag(0x44, true);
         app.interruptShown = true;
         app.game.setFlag(3, true); // 0x10: SetFlag(3), MsgUty_WinOpen(0x24)
@@ -4532,19 +4533,38 @@ void newPairParty(App& app, int pair, bool clearData) {
     app.playerChar = 2 * p;
 }
 
-// The flags the title and its menus run on (the Scenarios chart, the second Character Select
-// sheet, the Load's emblems): the one save's (TitleClr's Load_SaveData), the game's own while one
-// is on, and the prompts seen outside a save
+// The flags the menus after the title run on (the second Character Select sheet - StartSet's ChkFlag(0x20 / 0x22) -,
+// the Load's emblems - SaveLoadSet 1): the working block once TitleClr's Load_SaveData (72950-72960) has put the
+// one save there - none without it (prty_init_all clears the block), a resume point alone too -, the game's own
+// while one is on, and the prompts seen outside a save
+namespace {
+void orFlags(cr::GameState& g, const cr::GameState& s) {
+    for (size_t i = 0; i < g.flags.size() && i < s.flags.size(); ++i) g.flags[i] |= s.flags[i];
+}
+} // namespace
 cr::GameState allPairsFlags(const App& app) {
     cr::GameState g;
-    auto take = [&](const cr::GameState& s) {
-        for (size_t i = 0; i < g.flags.size() && i < s.flags.size(); ++i) g.flags[i] |= s.flags[i];
-    };
     cr::SaveData d;
-    if (readData(app, d)) take(d.game);
-    else if (cr::readSave(savePath(app, "resume.dat"), d)) take(d.game); // (a resume point alone)
-    if (!app.booting) take(app.game);
+    if (readData(app, d)) orFlags(g, d.game);
+    if (!app.booting) orFlags(g, app.game);
     for (int f : app.seenFlags) g.setFlag(f, true); // (the prompts seen outside a save)
+    return g;
+}
+
+// The flags the title itself runs on: the working block as Uty_LoadData (21336-21355) leaves it - cont.dat's (the
+// resume point; an earlier release's folded into the save, as offerResume takes it) when there is one, else
+// data.dat's - and the prompts seen outside a save. The title's ChkFlags read it: the Progress Tracker's 0x44
+// (TitlePrc 0xf), the Scenarios chart (HistorySet, from the title) and Options' first-time 0x43 (OptionSet)
+cr::GameState titleFlags(const App& app) {
+    cr::GameState g;
+    cr::SaveData d, r;
+    const bool haveData = readData(app, d);
+    if (cr::readSave(savePath(app, "resume.dat"), r)) {
+        if (!r.wholeGame && haveData) cr::foldPairSave(d, r, &app.itemTable), r = d;
+        orFlags(g, r.game);
+    } else if (haveData)
+        orFlags(g, d.game);
+    for (int f : app.seenFlags) g.setFlag(f, true);
     return g;
 }
 
@@ -4614,7 +4634,7 @@ void openScenarios(App& app) {
     app.scenariosScroll = 0;
     app.scenariosHScroll = 0;
     app.scenariosAnim = app.scenariosOut = app.scenariosBob = 0, app.scenariosBobDir = 1;
-    app.scenariosFlags = allPairsFlags(app);
+    app.scenariosFlags = titleFlags(app); // (HistorySet's ChkFlags: the title's working block)
     if (!app.scenariosSheet.id) {
         cr::Image img;
         if (loadImage(app, "flow_hd.mct", img)) app.scenariosSheet = app.renderer.upload(img);

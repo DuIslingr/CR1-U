@@ -627,7 +627,7 @@ struct App {
     bool interruptShown = false;           // DAT_000d3370 (MuTitle_GetInInterruptFlg): the message shown this launch
     // Prompts seen outside a save ("Option", OptionSet's flag 0x43): 2.2.0 sets it in the flags in
     // memory, which only a later save keeps - with no save written after it, it came back each launch.
-    // Kept in settings.ini (seen_flags=) too and read as the saves' (allPairsFlags)
+    // Kept in settings.ini (seen_flags=) too and read as the saves' (allPairsFlags, titleFlags)
     std::vector<int> seenFlags;
     int resumeCursor = 0;
     cr::SaveData resumeData;
@@ -1799,6 +1799,7 @@ void stepResume(App& app);
 void resumeClick(App& app, float px, float py);
 void newPairParty(App& app, int pair, bool clearData);
 cr::GameState allPairsFlags(const App& app);
+cr::GameState titleFlags(const App& app);
 void openScenarios(App& app);
 void closeScenarios(App& app);
 int scenarioState(const cr::GameState& g, int i);

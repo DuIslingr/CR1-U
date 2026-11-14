@@ -1064,10 +1064,10 @@ void openOptions(App& app, int page) {
     // 0x43 set and OptionPrc 0..2: SetFlag(3), MsgUty_WinOpen / SetMsg(0x23) - block 5's 35, 56035
     // "Option" in the manual's message window (no picture: _mwin[5]) - alone: no menu mask, the page
     // held back until the window has shut (then MuCom_MenuSetMask(1) and OptionPrc 3's slide-in).
-    // (The title's flags are the saves', as the Progress Tracker's: allPairsFlags)
+    // (The title's ChkFlag reads Uty_LoadData's working block, as the Progress Tracker's 0x44: titleFlags)
     // (and settings.ini's seen_flags: seen once, it stays seen across launches without a save - the
     // owner's choice, as Omega's port)
-    if (first && !app.game.flag(0x43) && !seenFlag(app, 0x43) && !(app.titleOpen && allPairsFlags(app).flag(0x43))) {
+    if (first && !app.game.flag(0x43) && !seenFlag(app, 0x43) && !(app.titleOpen && titleFlags(app).flag(0x43))) {
         app.game.setFlag(0x43, true);
         markSeen(app, 0x43);
         openManual(app, kOptionIntroPage);
