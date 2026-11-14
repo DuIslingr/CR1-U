@@ -2352,7 +2352,9 @@ void showHits(App& app) {
                 else if (!areaSounded) sound(0x65 + 2 * uint32_t(element)), areaSounded = true;
             }
             if (b.turn.action == 0x7a || b.turn.action == 0xe0) sound(0x6f); // (22200-22202: the poison's, every target)
-            if (element > 0) sound(0x71 + uint32_t(element)); // (FUN_00029ce8, 22211: the users' weapons take the element)
+            if (element > 0) // (FUN_00029ce8, 22211 / 23470-23492: each user's weapon takes the element - a sound a user a target)
+                for (int k : b.turn.actors)
+                    if (k >= 0) sound(0x71 + uint32_t(element));
             break;
         case 2: case 3: case 4: case 5: case 6: sound(0x60); break; // 0407 .. 0411
         case 7: if (t != user) sound(0x6d); break;                   // 0412
@@ -2360,8 +2362,9 @@ void showHits(App& app) {
             if ((t < 2) != (user < 2)) sound(0x6f);
             else if (h.amount < 0) healSound(-h.amount);
             break;
-        case 12: // 0417 (22803-22822): action 0xe8's one area burst sounds 0x70 once, the rest as healed
-            if (b.turn.action == 0xe8) sound(0x70);
+        case 12: // 0417 (22803-22822): action 0xe8's area burst sounds 0x70 with the first target's heal alone (param_3 0,
+            // a figure not 0), the rest as healed
+            if (b.turn.action == 0xe8) { if (&h == &b.turn.hits.front() && h.amount != 0) sound(0x70); }
             else if (h.amount < 0) healSound(-h.amount);
             break;
         case 15: case 17: if (h.amount < 0) healSound(-h.amount); break; // 0420, 0422
@@ -2414,8 +2417,8 @@ void showHits(App& app) {
             case 7: id = t == user ? -1 : kSacrifice; break;
             case 8: id = (t < 2) == (user < 2) ? kHeal : kDrain; break;
             case 12: // 0417: action 0xe8 one burst 0x30 at the field's middle, on the user's side (once), else each healed
-                if (b.turn.action == 0xe8) {
-                    if (!area) spawnEffectAt(app, 0x30, {500, 0, user < 2 ? 523.0f : 472.0f});
+                if (b.turn.action == 0xe8) { // (the first target's heal not 0: 22806-22816)
+                    if (!area && &h == &b.turn.hits.front() && h.amount != 0) spawnEffectAt(app, 0x30, {500, 0, user < 2 ? 523.0f : 472.0f});
                     area = true;
                 } else
                     id = kHeal;

@@ -1875,7 +1875,8 @@ void drawFieldMenu(App& app) {
     }
     r.setOrigin(wideRight(app)); // (widescreen: in the screen's corner)
     const bool bar = f.open || f.anim > 0;
-    m.piece(460 + 16 + fieldDx(app), -30 + 32 + fieldDy(app), kCornerPiece[bar][0], kCornerPiece[bar][1], 32, 32, a);
+    // (__menuf_mainPut 32236-32241: the iPhone's (444, 4) - 1.0.1's (460, -28) - where the bar slides out from, kCorner)
+    m.piece(460 + 16 + fieldDx(app), -28 + 32 + fieldDy(app), kCornerPiece[bar][0], kCornerPiece[bar][1], 32, 32, a);
     if (!bar) { r.setOrigin(r.uiX()); return; }
     for (int k = 0; k < 4; ++k) {
         if (!fieldButtonShown(app, k)) continue;
