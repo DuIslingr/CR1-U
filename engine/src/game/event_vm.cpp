@@ -134,7 +134,10 @@ struct EventRunner::Vm {
     }
 
     void skip(size_t n) { if (need(n)) pc += n; }
-    int resolve(int npc) const { return npc == 0xFFFF ? eventNo : npc; } // 65535 = the running NPC
+    // 65535 = the running NPC (G+0x32676) - only in Born / Kill, Setc, Anim, Anim2, Autoadj, Mapscroll, NpcFade,
+    // SetScale and AdjScale (2.2.0 17816-19614); the other ops take an npc of 0xFFFF as -1 (literal)
+    int resolve(int npc) const { return npc == 0xFFFF ? eventNo : npc; }
+    static int literal(uint16_t npc) { return int16_t(npc); }
 
     // Cutscene scene (section 6) helpers
     struct Scene { int actors = 0, words = 3; uint32_t count = 0; size_t ids = 0, first = 0, stride = 0; };
@@ -155,6 +158,7 @@ struct EventRunner::Vm {
     // FrmJmp's search: the record for `frame`, else the nearer of its neighbours, else the last
     uint32_t record(const Scene& s, int frame) const {
         if (s.count == 0) return 0;
+        if (frame < 0) return uint32_t(s.first + (s.count - 1) * s.stride); // (FUN_0001fa98: an unsigned compare - the last)
         for (uint32_t i = 0; i < s.count; ++i) {
             const size_t r = s.first + i * s.stride;
             uint32_t f;
@@ -326,7 +330,8 @@ bool EventRunner::step(EventHost* host) {
             break;
         case 1: { // Gosub
             const uint32_t to = vm.u32();
-            if (vm.calls.size() < 64) vm.calls.push_back(vm.pc);
+            if (vm.calls.size() >= 64) vm.calls.pop_back(); // (__EvtRun 16446-16452: full, the top entry overwritten)
+            vm.calls.push_back(vm.pc);
             if (vm.pendingFrame) { ++vm.bpIndex; vm.pendingFrame = false; }
             vm.pc = to;
             break;
@@ -346,7 +351,7 @@ bool EventRunner::step(EventHost* host) {
             const int32_t c = vm.eval();
             const uint32_t to = vm.u32();
             if (vm.loops.empty() || vm.loops.back().start != at) {
-                if (vm.loops.size() >= 32) vm.loops.erase(vm.loops.begin());
+                if (vm.loops.size() >= 32) vm.loops.pop_back(); // (__EvtRept 17211-17215: full, the top entry overwritten)
                 vm.loops.push_back({at, to});
             }
             // Loops that wait for something not modelled (yet) would spin forever: cap them
@@ -433,12 +438,14 @@ bool EventRunner::step(EventHost* host) {
             // synchronous) a frame later; a fade's the frame after it ends - see the resume above)
             const uint16_t w = vm.u16();
             if (w == 0xFFFD) {
-                vm.waitNpc = vm.resolve(vm.u16());
+                vm.waitNpc = Vm::literal(vm.u16()); // (__EvtWait 17262-17266: the npc as it is)
                 if (host) return yield(Vm::Wait::Npc);
             } else if (w == 0xFFFF || w == 0xFFFC) { // _ChkFade / _ChkFade_back
                 if (host) return yield(w == 0xFFFF ? Vm::Wait::Fade : Vm::Wait::BackFade);
             } else if (host) {
-                vm.waitFrames = w == 0xFFFE || w == 0 ? 1 : w;
+                // (17289-17297: the count steps down from w and goes on once it isn't above 0 - a negative w
+                // other than the four above, 0xFFFE's read check too, a frame later)
+                vm.waitFrames = w == 0 || int16_t(w) < 0 ? 1 : w;
                 return yield(Vm::Wait::Frames);
             }
             break;
@@ -494,11 +501,15 @@ bool EventRunner::step(EventHost* host) {
         }
         case 5: case 6: // Close: the window fades out (styles 2 / 8 / 64 over 5 frames, 16 / 32 at once), then a frame
             if (host) {
-                host->closeWindow();
+                // (__EvtClose 17085-17113: op 6 is Close's follow-up - it waits for the window, no SE 7, no ClrWin)
+                if (op == 5) host->closeWindow();
                 return yield(Vm::Wait::Window);
             }
             break;
-        case 7: case 8: { // Msg
+        case 8: // (__EvtMsg 17117-17157: Msg's follow-up - no operand, waits for the message as a Msg's own wait)
+            if (host) return yield(Vm::Wait::Message);
+            break;
+        case 7: { // Msg
             const int id = vm.u16();
             res.messages.push_back(id);
             if (host) {
@@ -524,7 +535,7 @@ bool EventRunner::step(EventHost* host) {
             break;
         }
         case 36: case 53: { // FrmSetc npc, dir / FrmSetc2 npc, flag: place from the current record
-            const int n = vm.resolve(vm.u16());
+            const int n = Vm::literal(vm.u16()); // (18293-18433 / 19391-19501: no 0xFFFF self)
             const int16_t dir = int16_t(vm.u16());
             Vm::Scene s;
             float v[6];
@@ -538,7 +549,7 @@ bool EventRunner::step(EventHost* host) {
             break;
         }
         case 35: case 52: { // FrmAdjc npc, frame, frames, dir / FrmAdjc2 npc, frame, frames, mode
-            const int n = vm.resolve(vm.u16());
+            const int n = Vm::literal(vm.u16()); // (18152-18293 / 19277-19391: no 0xFFFF self)
             const int16_t frame = int16_t(vm.u16());
             const int frames = vm.u16();
             const int16_t last = int16_t(vm.u16());
@@ -563,7 +574,7 @@ bool EventRunner::step(EventHost* host) {
             break;
         }
         case 57: { // SetDir npc, target: turn towards it
-            const int n = vm.resolve(vm.u16()), t = vm.resolve(vm.u16());
+            const int n = Vm::literal(vm.u16()), t = Vm::literal(vm.u16()); // (__EvtSetDir 19708-19799: as they are)
             if (host) host->faceNpc(n, t);
             break;
         }
@@ -671,13 +682,13 @@ bool EventRunner::step(EventHost* host) {
             break;
         }
         case 44: { // LoadAct: s16 npc (sign picks the loader), u16 action file, u16 slot
-            const int n = vm.resolve(vm.u16());
+            const int n = Vm::literal(vm.u16()); // (__EvtLoadAct 18823-18856: 0xFFFF is -1, npc 1 by mdl_act_init2)
             const int action = vm.u16(), slot = vm.u16();
-            if (host) host->loadAction(int16_t(n) < 0 ? -int16_t(n) : n, action, slot);
+            if (host) host->loadAction(n < 0 ? -n : n, action, slot);
             break;
         }
         case 45: { // UnloadAct: u16 npc, u16 slot
-            const int n = vm.resolve(vm.u16()), slot = vm.u16();
+            const int n = Vm::literal(vm.u16()), slot = vm.u16(); // (18856-18890: no 0xFFFF self)
             if (host) host->unloadAction(n, slot);
             break;
         }

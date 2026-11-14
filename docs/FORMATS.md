@@ -779,13 +779,18 @@ NPC scripts play).
 | Command | Effect |
 |---|---|
 | `FrmSet n` | scene n, its first record |
-| `FrmJmp f` | the record with frame f, else the nearer neighbour, else the last |
+| `FrmJmp f` | the record with frame f, else the nearer neighbour, else the last (a negative f too: `FUN_0001fa98` compares unsigned) |
 | `FrmSetc2 npc, flag` | place the actor from the current record (position, Y rotation), y snapped to the floor (`get_floor`) |
 | `FrmSetc npc, dir` | place from the current record; `dir` −4499…999 = degrees, 1000 keep the facing, 2000 face the way it moved (turns = (1 − dz / len) / 4, 1 − that when dx < 0: linear in the cosine, so a 45° move faces 26.4°), else 0 |
 | `FrmAdjc npc, f, n, dir` | walk to record f's position over n frames in a straight line (`npc_autoctl_set_fream`); the facing per `dir` is written as the move starts - no turn over it |
 | `FrmAdjc2 npc, f, n, mode` | the same; mode 0 turns to the record's angles at once and moves (`__EvtFrmAdjc2` writes the rotation, `npc_autoctl_set_fream` mode 1), 2 moves in y too without turning (mode 4), anything else (1, 10 / 20) turns to them over the move (mode 2) |
 | `SetDir a, b` | a turns to face b |
 | `Wait 0xFFFD, npc` | wait until the actor's move ends (`npc_autoctl_chk`; animations don't count) |
+
+An npc of 0xFFFF is the running NPC (G+0x32676) only in `Born` / `Kill`, `Setc`, `Anim`, `Anim2`,
+`Autoadj`, `Mapscroll`, `NpcFade`, `SetScale` and `AdjScale`; `FrmSetc` / `FrmSetc2` / `FrmAdjc` /
+`FrmAdjc2`, `LoadAct`, `UnloadAct`, `SetDir`, `Wait 0xFFFD`, `FrmPlayEff` / `FrmPlayEff2` and
+`FrmStopEff2` take it as -1 (no shipped script uses it there).
 
 During a move y follows the floor each frame (unless mode 2). `Kill 0` hides the party leader
 for a scene and `Born 0` shows it again.
@@ -877,14 +882,15 @@ gives 27,010/27,010 entries with no misaligned jump targets):
 | 1 | Gosub | u32 address |
 | 2 | Abort | — |
 | 3, 4 | Open (window) | u8 style, u16 lines (see below) |
-| 5, 6 | Close | — |
-| 7, 8 | Msg | u16 message |
+| 5, 6 | Close (6: its follow-up state - waits for the window, no SE 7, no ClrWin) | — |
+| 7 | Msg | u16 message |
+| 8 | Msg's follow-up state: waits for the message (`__EvtMsg` with 8) | — |
 | 9 | Set | expression, target |
 | 10 | Goto | u32 |
 | 11 | Break | u32 |
 | 12 | Ifn | expression, u32 (jump if zero) |
-| 13 | Rept | expression, u32 end (loop head; jump to end and pop if zero) |
-| 14 | Wait | u16 frames; 0xFFFD + u16 waits for an NPC; 0xFFFF / 0xFFFE / 0xFFFC wait for fades / loading |
+| 13 | Rept | expression, u32 end (loop head; jump to end and pop if zero; 32 deep - a 33rd overwrites the top entry, as a 65th `Gosub` does) |
+| 14 | Wait | u16 frames; 0xFFFD + u16 waits for an NPC; 0xFFFF / 0xFFFE / 0xFFFC wait for fades / loading; any other value over 0x7FFF a frame |
 | 15 | Call | u16 native function |
 | 16, 58 | Screen (fade: 16 the front, 58 the back mask) | 7 bytes |
 | 17, 59 | Warp, Warp2 | 6 × u16 |

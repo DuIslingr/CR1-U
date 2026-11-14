@@ -14,7 +14,7 @@ import sys
 # 'e' expression, 's' assignment (value expression + target), 'w' Wait operand
 OPS = {
     0: ("Return", ""), 1: ("Gosub", "a"), 2: ("Abort", ""), 3: ("Open", "bbb"), 4: ("Open", "bbb"),
-    5: ("Close", ""), 6: ("Close", ""), 7: ("Msg", "h"), 8: ("Msg", "h"), 9: ("Set", "s"),
+    5: ("Close", ""), 6: ("Close", ""), 7: ("Msg", "h"), 8: ("MsgWait", ""), 9: ("Set", "s"),
     10: ("Goto", "a"), 11: ("Break", "a"), 12: ("Ifn", "ea"), 13: ("Rept", "ea"), 14: ("Wait", "w"),
     15: ("Call", "h"), 16: ("Screen", "hhbbb"), 17: ("Warp", "hhhhhh"), 18: ("Push", "e"),
     19: ("PushBP", ""), 20: ("PopBP", ""), 21: ("Util", "b"), 22: ("Bgm", "hh"), 23: ("Eff", "hh"),
