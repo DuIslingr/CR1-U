@@ -295,7 +295,12 @@ c101/c102/c104/m207a, 2026-10-12).
       Achievements % (each chapter's points). It reads every pair's saves together, as the
       original's system data; Up/Down, the wheel or a drag (from the chart's box, tex2d (0, 62)-(480,
       285)) scroll it, the arrows bobbing while there is more (`ComUty_PictMoveDraw`); it fades in over
-      4 frames, and Back (SE 3) closes it 7 frames on (`HistoryPrc` 2 / 3). Options opens the screen
+      4 frames, and Back (SE 3) closes it 7 frames on (`HistoryPrc` 2 / 3: whole that frame and the next, then
+      fading). Frame counts follow 2.2.0's state machines: a tap's next state runs the frame after it (the
+      Map, Scenarios, staff roll, World Select, last battle's pair choice, Util 3's Yes / No - the script on 7
+      frames after the answer -, the title's states, the battle results), windows leave as `ClrWin` / `PrcWin`
+      move them (`campWinOn` / `campWinOff`: a whole frame first, then linear), the field Save's "Save
+      complete." goes 31 frames after Yes. Options opens the screen
       below in title mode. `--viewer` (or `--map`,
       `--model`, …) opens the asset viewer instead; `--new-game` skips the title
 - [x] The Options screen (**V**, or Options on the title), rebuilt from the original's pieces
@@ -741,7 +746,8 @@ c101/c102/c104/m207a, 2026-10-12).
       the original's random numbers (`core/random.hpp`: MT19937, its bounded draw and
       `get_random`'s discards, one stream for battles and the field)
 - [x] A battle's rounds as 2.2.0's `btl_main` 700-899: `btlord_chk` at 799 ends the battle
-      as soon as a side is down - before the round's end (`btlcalc_status_prc`, 899), so no
+      as soon as a side is down - before the round's end (`btlcalc_status_prc`, 899 at +0xae0 28: two frames
+      after 800), the commands back through 400 and 499 (35 frames after the action's 9999), so no
       poison, regen or countdown follows a win or a loss, and before it looks at the Break: a
       last blow that also turns the Break gives no "BREAK!!". `btlque_make_que` keeps its state
       per action: Trompe-L'œil's cancel roll and its Break point are once an action (que +0xbe /

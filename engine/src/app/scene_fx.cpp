@@ -2916,10 +2916,11 @@ void drawFrame(App& app, bool present) {
         // __menuu_EventPut: ComUty_YesNoChoiceDraw - the plates at (336, 104) and (336, 160) of
         // window 0, which slides in from 360 to the right - linearly, fading in (ComUty_WinDispOn(.., 0x168, 0): PrcWin
         // state 2 / SetWinXY2, 360 270 180 90 0 at alpha 0 63 127 191 255; YesNoChoicePosDraw with the window's alpha);
-        // answered, a frame whole and out to the right over 4 fading (WinDispOff, FUN_0001c260)
-        const int out = app.choiceOut > 1 ? app.choiceOut - 1 : 0;
-        const float t = app.choiceOut > 0 ? 1.0f - float(out) / 4.0f : std::min(1.0f, float(app.choiceAnim) / 4.0f);
-        const float dx = 360 * (1 - t), pa = std::floor(255 * t) / 255.0f;
+        // answered on F (choiceOut 2), home and whole on F, then out to the right linearly (SetWinXY2) - 90 px whole on
+        // F+1 - fading from F+2 to 0 on F+5 (WinDispOff: ClrWin's whole frame, FUN_0001c260): campWinOff
+        const float t = std::min(1.0f, float(app.choiceAnim) / 4.0f);
+        const CampWin out = campWinOff(app.choiceOut, 2, 360);
+        const float dx = app.choiceOut > 0 ? out.dx : 360 * (1 - t), pa = std::floor(255 * (app.choiceOut > 0 ? out.a : t)) / 255.0f;
         if (app.windowTex.id) {
             app.menu.begin(r, app.windowTex, &app.font);
             r.setOrigin(r.uiX());
@@ -2971,11 +2972,11 @@ void drawFrame(App& app, bool present) {
     }
     drawFrontFade(app); // (189: over the message window, when no text came)
     r.setOrigin(r.uiX());
-    if (app.nowLoading.on && app.windowTex.id) { // NowLoadProc (draw order 500): 8 frames of (820 + 24k, 96, 24 x 24) at tex2d (464, 320)
+    if (app.nowLoading.on && app.nowLoading.cell >= 0 && app.windowTex.id) { // NowLoadProc (draw order 500): 8 frames of (820 + 24k, 96, 24 x 24) at tex2d (464, 320)
         app.menu.begin(r, app.windowTex, &app.font);
         r.setOrigin(r.uiX());
         const bool phone = app.renderer.phoneLayout(); // 2.2.0: (448, 288), the iPhone screen's corner
-        app.menu.piece((phone ? 448 : 464) + 16, (phone ? 288 : 320) + 32, 820 + 24.0f * float(app.nowLoading.frame % 8), 96, 24, 24, 1);
+        app.menu.piece((phone ? 448 : 464) + 16, (phone ? 288 : 320) + 32, 820 + 24.0f * float(app.nowLoading.cell), 96, 24, 24, 1);
     }
     // The menus over everything else (Options draws above them)
     if (app.charSelectOpen) {

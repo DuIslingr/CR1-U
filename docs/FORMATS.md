@@ -587,7 +587,11 @@ file) is part of the destination. If the destination map equals the current one,
 moves; otherwise the field reloads.
 
 After loading, `FieldScene::onLoading` calls `SetMask2(1)` (Android 0x82b6c, iPad 0x3ee18):
-keep the mask's colour and fade its alpha from 255 to 0 over 500 ms. This is needed even when
+keep the mask's colour and fade its alpha from 255 to 0 over 500 ms. It comes once `_fldread_prc`
+(2.2.0 37590-37875) has stepped its states a frame each, even with instant reads, after FieldScene
+1's `onTerm` frame: a script's Warp (load flags 0x22: -1, 10, 30, 50, 70, 9999) reveals on the 7th
+frame, a battle's return (| 0xd: -1, 10, 20, 30, 50, 60, 70, 9999) on the 9th, its music starting
+under the black at -1 (the 2nd). This is needed even when
 an exit's event file changes and its bytecode stops at `Warp`; puzzle exits leave a white mask
 and rely on this arrival fade. A save load also discards the previous scene's transient mask
 and crystal-camera request before entering the saved field.
@@ -1030,7 +1034,7 @@ set. 2008 `DrawController`: flag 0 set; until it clears the cross key (1864, 158
 window_hd's pixels) at (64, 384) and its centre (1864, 1448, 96 × 96) at (88, 408) of the HD
 frame. 2002 `init_tex2d` (texture setup) and 2021 `LoadData` (the continue / save data into the
 work area) do nothing visible. 2028: flag 4086 set `NowLoadStart`, else `NowLoadEnd` - `NowLoadProc` draws (820 + 24
-(n % 8), 96, 24 × 24) of the window sheet at tex2d (464, 320), n + 1 a frame. 2030 / 2031
+(n % 8), 96, 24 × 24) of the window sheet at tex2d (464, 320), n + 1 a frame after it is drawn. 2030 / 2031
 (`Uty_Btl_ParamUp01` / `02`): bytes +0x143..+0x146 / +0x8b..+0x8e of the battle work = 6 -
 fighter 1 / 0's attack, defense, speed and luck ups (statuses 2..5, 0xb8 a fighter) for 6 rounds;
 called by the story scripts 201 / 301 of areas 12 and 24 (the port keeps them for the next battle
@@ -2088,8 +2092,12 @@ own art stands alone: `title1.mct` (slot 0x11) and `chaos.mct` (0x12), MuTex she
 ("Please Touch"), 6 (the logo) in window 0 and 8 (the credits strip) in window 1 - 2.2.0: (184, 360,
 112 × 32) at (184, 216), (0, 0, 480 × 256) at (0, 0), (0, 320, 480 × 40) at (0, 280); 1.0.1's iPad
 sheets (0, 848, 1024 × 64), (0, 0, 1024 × 512), (0, 768, 1024 × 80) at tex2d (−32, 432), (−32, −64),
-(−32, 624). A tap anywhere plays SE 0 and turns windows 0 and 2 off; six frames on, window 3 (the
-plates, pictures 155 / 124) slides in. In 2.2.0 Start goes to the resume offer when there is
+(−32, 624). The art takes its window's alpha (`MuComPictTexNoInfoDraw`): in over 4 frames. A tap
+anywhere plays SE 0 and turns windows 0 and 2 off; seven frames on (state 2's count, 3), window 3
+(the plates, pictures 155 / 124) slides in from +240 over 4 frames, linearly, the plates taking taps
+the frame after. Start with no resume point slides the plates out (`WinDispOff(3, 0xf0)`, 5, 0x16 ..
+0x18): the menu goes 9 frames after the tap. Scenarios / Options take the strip and plates off and
+open the frame after; back, the strip comes in, the plates two frames on, their taps a frame later. In 2.2.0 Start goes to the resume offer when there is
 interrupt data (0xf..0x14; Yes: `__bgmgo(0x8000000)`, `SetFade` black 500 ms, 10 frames, then
 `SaveData_Load_set`); picture 155's box (320, 16, 57 × 57) opens the store with SE 2, 124's (380,
 16, 80 × 72) the publisher's page (1.0.1: both the store).

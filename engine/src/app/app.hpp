@@ -289,7 +289,10 @@ struct App {
     bool titleOpen = false;                // Util 0
     int titleCursor = 0;
     int titleAnim = 0;
-    int titleStage = 0;                    // __menuu_TitlePrc: 0 the title's art alone, a tap away (state 1); 1 the plates (2..4)
+    int titleStage = 0;                    // __menuu_TitlePrc: 0 the title's art alone, a tap away (state 1); 1 the plates (2..4);
+                                           // 2 Start's plates leaving (5, 0x16 .. 0x18); 3 Scenarios / Options (6 .. 0xb)
+    int titleSub = 0;                      // stage 3: 1 Scenarios, 2 Options (opened on the tap's frame + 1)
+    bool titleBack = false;                // stage 1 after a sub-menu: the strip back (TitlePrc 7 / 10), the plates 2 frames on
     int resumeIn = 0;                      // the Progress Tracker's Yes: frames of black left before the load (TitlePrc 0x16 / 0x17)
     int titleReturnIn = 0;                 // Options' Return to Title: frames of black left before the title (OptionPrc 0x18 / 0x19)
     cr::Texture titleArt[2];               // __menuu_TitleSet: title1.mct (MuCom slot 0x11), chaos.mct (0x12)
@@ -683,6 +686,12 @@ struct App {
         float clock = 0;
     } menuMask;
     int fadeFrames = 0, fadeT = 0;
+    // fldread_prc's states before FieldScene's SetMask2(1) (37590-37875, 14920-14954): frames the reveal waits in the
+    // black after a load - a script's Warp (flags 0x22) 7, a battle's return (| 0xd) 9 - and the field's music, due
+    // at fldread -1 (bgmDueIn frames on)
+    int revealHold = 0;
+    uint32_t bgmDue = 0;
+    int bgmDueIn = 0;
     cr::SystemText systemText;             // sys.evt: messages >= 51000
     std::vector<std::vector<std::string>> dialogue; // pages of the messages the last event showed
     size_t dialoguePage = 0;
@@ -855,7 +864,10 @@ struct App {
         struct Shadow { int fighter = -1; float alpha = 0; cr::Vec3 at; float rx = 0, rz = 0; }; // _btl_shadow's fans drawn (tests)
         std::vector<Shadow> shadows;
         std::vector<float> shadowTris;     // their triangles this frame (xyz x 3 each)
-        int introStep = 300;               // the opening's btl_main state past 200: 300 (the counter), 400, 499
+        uint32_t openSound = 0;            // btl_main 0's opening sound and track (the first battle frame)
+        int openTrack = 8;
+        int introStep = 300;               // the opening's btl_main state past 200: 300 (the counter), 400, 499 (an ambush's 500);
+                                           // the round's end (RoundEnd): 899, 400, 499
         bool roundFirst = false;           // btl_main 500 / 600: the round's first action doesn't wait for the banner
         int handover = 0;                  // frames before the next action's turn (btl_main 700's frame and 799's)
         int tutorialDue = 0;               // the action's tutorial (0xff3..0xff5) for btl_main 700's frame
@@ -888,6 +900,8 @@ struct App {
             bool tick = true;              // DAT_000d2aea: the count's SE 0x13 every third frame
             std::vector<std::pair<int, int>> ups, items; // (member, levels), (item, how many)
             size_t upNext = 0, itemNext = 0;
+            int prc = 3, prcAt = -1;       // MbResultPrc's state from 3 (a tap's from the frame after it: prcAt), 13 done
+            int offAt = -1;                // the frame (frames) state 10 took the five windows off
         } result;
         cr::Mat4 vp;                       // the last frame's camera (the damage numbers)
         int cam = -1, camActor = 0, camFrame = 0; // btlcamera_set: the camera (+0xa8e), its actor (+0xa8c), its count (+0xa88)
@@ -1085,7 +1099,7 @@ struct App {
     // G+0x358e0: the last play request __bgmgo took on the field (G+0x2c0 bit 6), the flags with it;
     // __EvtBattle zeroes it. Uty_GetBgmNo reads it and the field plays it again after a battle
     uint32_t bgmNo = 0;
-    struct NowLoading { bool on = false; int frame = 0; } nowLoading; // NowLoadProc's spinner
+    struct NowLoading { bool on = false; int frame = 0, cell = -1; } nowLoading; // NowLoadProc's spinner (cell: drawn this frame)
     struct VitaLogo {                      // the Vita's boot opcodes 0x47..0x4a: a full-screen logo
         cr::Texture tex[2];                // by slot (0x47's slot + 16 in the original's Tex2d)
         int slot = -1, phase = 0, frame = 0, in = 0, hold = 0, out = 0;
@@ -1210,6 +1224,8 @@ struct App {
         float lineStep = 0;                // the lines' rise a frame (the layout's: kLine, kPhoneLine, Android's)
         struct Line { bool on = false; float y = 0; int entry = 0; } lines[32];
         float win[5] = {}, winTo[5] = {};  // ComUty_WinDispOn / Off: each window's alpha
+        int winHold[5] = {};               // WinDispOff's whole frame (ClrWin: PrcWin 4) before the fade
+        bool tapped = false;               // state 7's tap, read on the step after the event (8 runs the next)
         cr::Texture tex;                   // EndBack0<mode + 1>_hd.mct
         float clock = 0;
     } staffRoll;
@@ -1224,8 +1240,11 @@ struct App {
         bool skip = false;                 // +0x26: ... and Yes (flag 1)
         bool cancelled = false;            // +0x24: Back (flag 0)
         float win[11] = {}, winTo[11] = {}, fromX[11] = {}, fromY[11] = {};
+        float slide[11] = {};              // the share of fromX / fromY still to go (SetWinXY2: linear)
+        int winAt[11] = {-99, -99, -99, -99, -99, -99, -99, -99, -99, -99, -99}; // the frame (mark) of its WinDispOn / Off
+        int stateAt = -1;                  // the frame a tap set the state: it runs from the next (PrcMenu's order)
         ScrList scroll, levelScroll;       // MuScrList: the lists' rows (scrlist::)
-        int mark = 0;                      // the board's mark (one a frame)
+        int mark = 0;                      // the board's mark (one a frame); the windows' clock
         cr::Texture maps[6];               // MAP_01..06.mct (slots 0x11..)
         float clock = 0;
     } worldSelect;
@@ -1237,6 +1256,9 @@ struct App {
         int cursor = 0, chosen = -1, confirm = 0;
         ScrList scroll;                    // the pairs' MuScrList (SetIdInfo(0xd, 4, 7, 0, 0, 0): layout 0, no Back): scrlist::
         float win[7] = {}, winTo[7] = {};
+        float slide[7] = {};               // the share of its offset still to go (SetWinXY2: linear)
+        int winAt[7] = {-99, -99, -99, -99, -99, -99, -99}; // the frame (mark) of its WinDispOn / Off
+        int mark = 0, stateAt = -1;        // frames stepped; the frame a tap set the state (it runs from the next)
         cr::Texture tex;                   // hi / mizu / kaze / mu.mct: this round's guardian
         float clock = 0;
     } lastBattle;
@@ -1738,6 +1760,7 @@ void stepStaffRoll(App& app);
 void staffRollTap(App& app);
 void drawStaffRoll(App& app);
 std::string lastBattlePlate(const App& app, int p);
+void lbWin(App& app, int w, bool on, bool again = false);
 void openLastBattle(App& app);
 void lastBattleChoose(App& app, int i);
 void lastBattleAnswer(App& app, bool yes, bool cancelled = false);
@@ -1811,6 +1834,12 @@ bool historyBackAt(const App& app, float px, float py);
 void drawTitleMenu(App& app);
 void titleStart(App& app);
 void titleChoose(App& app, int i);
+void titleTap(App& app);
+void stepTitle(App& app);
+bool titlePlatesLive(const App& app);
+struct TitleWins { float logo = 0, strip = 0; CampWin plates{0, 240}; };
+TitleWins titleWindows(const App& app);
+int timingSelfTest(App& app);
 bool titleKey(App& app, SDL_Keycode key);
 void titleClick(App& app, float px, float py);
 
@@ -2030,6 +2059,8 @@ void stepMenuView(App& app);
 void startBreakFx(App& app);
 bool stepBreakFx(App& app);
 void endRound(App& app);
+void roundStatuses(App& app);
+void battleLost(App& app);
 int battleSlideDistance(const App& app);
 bool battleMenuReady(const App& app);
 void stepBattle(App& app);
@@ -2037,6 +2068,8 @@ void drawBattle(App& app, float dt);
 bool battleCursorLit(const App& app);
 bool battlePressIn(const App& app, float x, float y, float w, float h);
 void resultsTap(App& app);
+void resultsSettle(App::Battle::Result& rs);
+void battleWon(App& app);
 void stepResults(App& app);
 void drawBattleHud(App& app, float W, float H);
 void battleKey(App& app, SDL_Keycode key);

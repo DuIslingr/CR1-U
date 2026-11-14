@@ -427,7 +427,12 @@ void drawSaveScreen(App& app) {
     // SetFade_back black at 0xa0), so 0x5f of it shows
     if (art) drawCharArt(app, 1, false, 1 - 0xA0 / 255.0f); // (else the menu mask, drawFrame's)
     r.setOrigin(r.uiX());
-    const float a = std::min(1.0f, ss.anim / 8.0f);
+    // (the field Save's "Save complete.": SaveLoadPrc 8's Yes on F, 10 counts 0x14 to F+21, 0xb takes the board (6, 7) off
+    // on F+22, 9's FUN_00076178 the rest on F+23 - whole that frame and the next, out over 4 - and 0xf leaves on F+31;
+    // the timer is k + 1 on F+k)
+    const bool saved = ss.phase == 2 && ss.pending == 1 && !ss.load;
+    const float in = std::min(1.0f, ss.anim / 8.0f);
+    const float a = in * (saved ? campWinOff(ss.timer, 24, 0).a : 1.0f), am = in * (saved ? campWinOff(ss.timer, 23, 0).a : 1.0f);
     // Widescreen: the face boards, emblems to the screen's left; the date, the plates to its right;
     // Back and the message centred (as the shop). (No heading: SaveLoadPut draws none, 2.2.0 and 1.0.1
     // alike - the port had the Camp's)
@@ -464,18 +469,18 @@ void drawSaveScreen(App& app) {
         // board (ComUty_MsgBoardDraw, picture 12) at (0, 220), lines from (24, 234) - MuComFontDisp's +1: 235; Yes / No the
         // plates at window 6 + (336, 104) / (336, 160). The board's mark (picture 13 at (458, 298), out and
         // back: SaveLoadSet's ComUty_PictAnimInit(d357c, 0x30, 1, 4, ..)) and its lines in the menu font
-        m.picture(12, 0, 220, a);
+        m.picture(12, 0, 220, am);
         const short* mark = cr::kMenuPicture[13];
-        m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(ss.anim, 1, 4)), mark[1], mark[2], mark[3], a);
+        m.piece(458, 298, float(mark[0] + 20 * pictAnimFrame(ss.anim, 1, 4)), mark[1], mark[2], mark[3], am);
         const std::string msg = ss.message > 0 ? sysText(app, ss.message) : std::string("The save couldn't be written.");
-        m.text(msg.empty() ? "?" : msg, 24, 235, false, a, menuFontSize(app));
+        m.text(msg.empty() ? "?" : msg, 24, 235, false, am, menuFontSize(app));
         int extra = 0;
         for (int l : ss.lines)
-            if (l > 0) m.text(sysText(app, l), 24, 235 + 16.0f * float(++extra), false, a, menuFontSize(app));
+            if (l > 0) m.text(sysText(app, l), 24, 235 + 16.0f * float(++extra), false, am, menuFontSize(app));
         if (ss.phase == 1) { // (__ComUty_YesNoChoiceProc: a held plate takes the cursor)
             const bool hy = pressIn(app, kPressSave, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressSave, r.uiX(), 336, 160, 136, 40);
-            m.plate(336, 104, 0, 0, hy || (!hn && ss.confirm == 0), a, false);
-            m.plate(336, 160, 1, 1, hn || (!hy && ss.confirm == 1), a, false);
+            m.plate(336, 104, 0, 0, hy || (!hn && ss.confirm == 0), am, false);
+            m.plate(336, 160, 1, 1, hn || (!hy && ss.confirm == 1), am, false);
         }
     } else { // the message board, Yes / No under it while asking
         r.setOrigin(r.uiX());
@@ -485,13 +490,13 @@ void drawSaveScreen(App& app) {
         int extra = 0;
         for (int l : ss.lines) extra += l > 0;
         const float ty = my + 24 - 9.0f * float(extra);
-        m.textCentred(msg.empty() ? "?" : msg, mx + 20, ty, false, a, 15);
-        for (int l = 0; l < extra; ++l) m.textCentred(sysText(app, ss.lines[l]), mx + 20, ty + 18.0f * float(l + 1), false, a, 13);
+        m.textCentred(msg.empty() ? "?" : msg, mx + 20, ty, false, am, 15);
+        for (int l = 0; l < extra; ++l) m.textCentred(sysText(app, ss.lines[l]), mx + 20, ty + 18.0f * float(l + 1), false, am, 13);
         if (ss.phase == 1) { // (a held one takes the cursor, as the iPhone layout's plates)
             const bool hy = pressIn(app, kPressSave, r.uiX(), 128, 288, 112, 48), hn = pressIn(app, kPressSave, r.uiX(), 272, 288, 112, 48);
             const bool yes = hy || (!hn && ss.confirm == 0), no = hn || (!hy && ss.confirm == 1);
-            m.button(128, 296, 0, "", yes, a, yes); // Yes
-            m.button(272, 296, 1, "", no, a, no);   // No
+            m.button(128, 296, 0, "", yes, am, yes); // Yes
+            m.button(272, 296, 1, "", no, am, no);   // No
         }
     }
     r.setOrigin(wideLeft(app));
@@ -506,7 +511,8 @@ void stepSaveScreen(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     if (!ss.open) return;
     ++ss.anim;
-    if (ss.phase == 2 && ++ss.timer >= 20) { // SaveLoadPrc 4 / 8: 0x14 frames of "Save complete." or the load's message
+    // SaveLoadPrc 4 / 8: 0x14 frames of the load's message; the field Save's "Save complete." gone on F+31 (drawSaveScreen)
+    if (ss.phase == 2 && ++ss.timer >= (ss.pending == 1 && !ss.load ? 32 : 20)) {
         if (ss.startAfter) {
             ss.startAfter = false;
             saveScreenStart(app);
@@ -2941,7 +2947,12 @@ int staffLines(const App& app) { // the scripts': 2.2.0's and the Vita's (voiced
 float staffPicEnd(const App::StaffRoll& st) { return st.phone ? staffroll::kPhonePicEnd - 2 * st.edgeY : staffroll::kPicEnd; }
 int staffShown(const App::StaffRoll& st) { return st.phone ? std::clamp(int((340 + 2 * st.edgeY) / 20), 1, 32) : 21; }
 
-void staffWin(App& app, int w, bool on) { app.staffRoll.winTo[w] = on ? 1.0f : 0.0f; }
+// (WinDispOff: ClrWin's PrcWin state 4 leaves the window whole the frame after, then 5 fades it over 4 - one step held)
+void staffWin(App& app, int w, bool on) {
+    App::StaffRoll& st = app.staffRoll;
+    if (!on && st.winTo[w] > 0) st.winHold[w] = 1;
+    st.winTo[w] = on ? 1.0f : 0.0f;
+}
 
 void openStaffRoll(App& app, int mode) {
     App::StaffRoll& st = app.staffRoll;
@@ -2974,7 +2985,8 @@ void stepStaffRoll(App& app) {
     App::StaffRoll& st = app.staffRoll;
     if (!st.open) return;
     for (int w = 0; w < 5; ++w) // the windows fade 4 frames
-        st.win[w] = st.win[w] < st.winTo[w] ? std::min(st.winTo[w], st.win[w] + 0.25f) : std::max(st.winTo[w], st.win[w] - 0.25f);
+        if (st.winHold[w] > 0) --st.winHold[w];
+        else st.win[w] = st.win[w] < st.winTo[w] ? std::min(st.winTo[w], st.win[w] + 0.25f) : std::max(st.winTo[w], st.win[w] - 0.25f);
     switch (st.state) {
     case 0: st.state = 1; break; // the texture read
     case 1:
@@ -3013,7 +3025,7 @@ void stepStaffRoll(App& app) {
         break;
     case 5: staffWin(app, 4, true); st.timer = 4, st.state = 6; break;
     case 6: if (st.timer-- < 0) st.state = 7; break;
-    case 7: break; // a tap (staffRollTap)
+    case 7: if (st.tapped) st.state = 8; break; // (74152-74157: the tap read here on F - 8 runs on F+1, the close on F+8)
     case 8: staffWin(app, 0, false), staffWin(app, 1, false); st.timer = 4, st.state = 9; break;
     case 9: if (st.timer-- < 0) st.state = 3; break;
     case 3: // __mc_SetMenuStat(0xc, 4): the script goes on
@@ -3026,9 +3038,9 @@ void stepStaffRoll(App& app) {
 
 void staffRollTap(App& app) {
     App::StaffRoll& st = app.staffRoll;
-    if (!st.open || st.state != 7) return;
+    if (!st.open || st.state != 7 || st.tapped) return;
     menuSound(app, 2);
-    st.state = 8;
+    st.tapped = true;
 }
 
 void drawStaffRoll(App& app) {
@@ -3096,7 +3108,13 @@ constexpr int kListKey = 1;
 // MuScrList_ItemRegist(0x1e + 2p) registers block 7 entry id - 1: the pair's leader
 std::string lastBattlePlate(const App& app, int p) { return sysText(app, 58029 + 2 * p); }
 
-void lbWin(App& app, int w, bool on) { app.lastBattle.winTo[w] = on ? 1.0f : 0.0f; }
+// ComUty_WinDispOn / Off on this frame (lb.mark: a tap's handler and the step after it share it): SetWin leaves a
+// shown window be, ClrWin a gone one - unless `again` (LastBtPrc 0xc's second WinDispOff restarts PrcWin 4)
+void lbWin(App& app, int w, bool on, bool again) {
+    App::LastBattle& lb = app.lastBattle;
+    if ((lb.winTo[w] > 0) != on || again) lb.winAt[w] = lb.mark;
+    lb.winTo[w] = on ? 1.0f : 0.0f;
+}
 
 void openLastBattle(App& app) {
     App::LastBattle& lb = app.lastBattle;
@@ -3104,6 +3122,9 @@ void openLastBattle(App& app) {
     lb.open = true, lb.state = 0, lb.timer = 0, lb.cursor = 0, lb.chosen = -1, lb.confirm = 0;
     for (float& w : lb.win) w = 0;
     for (float& w : lb.winTo) w = 0;
+    for (float& w : lb.slide) w = 0;
+    for (int& w : lb.winAt) w = -99;
+    lb.mark = 0, lb.stateAt = -1;
     cr::Image img;
     static const char* const kGuardian[4] = {"hi.mct", "mizu.mct", "kaze.mct", "mu.mct"};
     if (loadImage(app, kGuardian[std::clamp(lb.count, 0, 3)], img)) lb.tex = app.renderer.upload(img);
@@ -3130,22 +3151,21 @@ void lastBattleChoose(App& app, int i) {
     if (lb.state != 3 || i < 0 || i >= int(lb.pairs.size())) return;
     menuSound(app, se::kChoose);
     lb.chosen = lb.pairs[size_t(i)];
-    lb.state = 4;
+    lb.state = 4, lb.stateAt = lb.mark; // (LastBtPrc 3 on F: 4 runs on F+1)
 }
 
 void lastBattleAnswer(App& app, bool yes, bool cancelled) {
     App::LastBattle& lb = app.lastBattle;
     if (lb.state != 10) return;
     menuSound(app, cancelled ? se::kBack : se::kChoose); // (LastBtPrc's ComUty_YesNoChoiceProc(.., 1): the Vita's × 3)
-    if (yes) lb.state = 11;
-    else lbWin(app, 5, false), lbWin(app, 6, false), lb.state = 2;
+    // (LastBtPrc 10 on F: Yes -> 0xb; No -> FUN_00073ad8(1) - windows 5 and 6 off on F - and 2, the plates on F+1)
+    if (!yes) lbWin(app, 5, false), lbWin(app, 6, false);
+    lb.state = yes ? 11 : 2, lb.stateAt = lb.mark;
 }
 
 void stepLastBattle(App& app) {
     App::LastBattle& lb = app.lastBattle;
     if (!lb.open) return;
-    for (int w = 0; w < 7; ++w)
-        lb.win[w] = lb.win[w] < lb.winTo[w] ? std::min(lb.winTo[w], lb.win[w] + 0.25f) : std::max(lb.winTo[w], lb.win[w] - 0.25f);
     { // (LastBtPrc 3: MuScrList_Proc - the held touch a frame at a time, lastBattleClick's units; the ease and flick)
         ScrList& sl = lb.scroll;
         const int n = int(lb.pairs.size());
@@ -3160,12 +3180,12 @@ void stepLastBattle(App& app) {
         } else if (!up) sl.hold = ScrList::None;
         if (scrlist::frame(sl, lastbt::kListKey, lb.cursor, n) && up) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1))
     }
-    switch (lb.state) {
+    switch (lb.mark == lb.stateAt ? -1 : lb.state) { // (a tap's state from the frame after it)
     case 0: lb.state = 1; break;
     case 1: lastBattleList(app, true); break;
     case 2: lastBattleList(app, false); break;
     case 3: break; // a plate (lastBattleChoose)
-    case 4:
+    case 4: // (72264-72272: 1 to -140, 2 to -240, the plates' list to -480)
         for (int w = 0; w < 4; ++w) lbWin(app, w, false);
         lb.state = 5, lb.timer = 4;
         break;
@@ -3185,11 +3205,15 @@ void stepLastBattle(App& app) {
         lb.state = 10;
         break;
     case 10: break; // Yes / No (lastBattleAnswer)
-    case 11: case 12:
-        for (int w = 0; w < 7; ++w) lbWin(app, w, false);
+    case 11: // (0xb, 72330: FUN_00073ad8(0) - 0, 1, 2, 5, 6 off)
+        for (int w : {0, 1, 2, 5, 6}) lbWin(app, w, false);
+        lb.state = 12;
+        break;
+    case 12: // (0xc: WinDispOff 0, 1, 2 again - ClrWin puts PrcWin back to 4: their fade starts over)
+        for (int w : {0, 1, 2}) lbWin(app, w, false, true);
         lb.state = 13, lb.timer = 4;
         break;
-    case 13: if (lb.timer-- < 0) lb.state = 14; break;
+    case 13: if (lb.timer-- < 0) lb.state = 14; break; // (0xd: 4 .. -1, then 0xe's SetMenuStat(9, 4): Yes on F gone on F+9)
     case 14: { // __mc_SetMenuStat(9, 4) - __menuu_LastBtClr
         app.renderer.destroy(lb.tex);
         lb.open = false;
@@ -3204,6 +3228,11 @@ void stepLastBattle(App& app) {
     }
     default: break;
     }
+    for (int w = 0; w < 7; ++w) { // (PrcWin 1-5: in from the offset over 4 fading in; off whole a frame, then out)
+        const CampWin c = lb.winTo[w] > 0 ? campWinOn(lb.mark, lb.winAt[w], 1) : campWinOff(lb.mark, lb.winAt[w], 1);
+        lb.win[w] = c.a, lb.slide[w] = c.dx;
+    }
+    ++lb.mark;
 }
 
 void drawLastBattle(App& app) {
@@ -3220,21 +3249,21 @@ void drawLastBattle(App& app) {
     // Widescreen: the heading, rule and picture to the screen's left, the rows and Yes / No to its
     // right, the question centred
     r.setOrigin(wideLeft(app));
-    auto ease = [](float t) { return 1 - (1 - t) * (1 - t); };
     if (lb.win[0] > 0) m.picture(109, 8, 6, lb.win[0]);
-    if (lb.win[1] > 0) {
-        const float dx = -140 * (1 - ease(lb.win[1]));
+    if (lb.win[1] > 0) { // (SetWinXY2: linear)
+        const float dx = -140 * lb.slide[1];
         m.picture(15, dx, 56, lb.win[1]);
         m.textCentred(sysText(app, 58000 + 0x68 + lb.count), dx + 12, 47, false, lb.win[1], menuFontSize(app)); // (LastBtSet 72185: 13 / 14)
     }
     if (lb.win[2] > 0 && lb.tex.id) { // sheet 1 picture 5: (0, 0, 256, 256) at (0, 64)
-        const float dx = -240 * (1 - ease(lb.win[2]));
+        const float dx = -240 * lb.slide[2];
         m.imagePiece(lb.tex, dx, 64, 0, 0, 256, 256, lb.win[2]);
     }
     r.setOrigin(wideRight(app));
     if (lb.win[3] > 0) { // MuScrList_Draw (LastBtPut): the focus row on the line, cut to 76..280, the pills, the gauge
         using namespace lastbt;
-        const float a = lb.win[3], x = kRowX + 200 * (1 - ease(a));
+        // (MuScrList_Start(.., 0): in from +480; LastBtPrc 4's MuScrList_DispOff(.., 4, 0xfffffe20): out to -480)
+        const float a = lb.win[3], x = kRowX + (lb.winTo[3] > 0 ? 480.0f : -480.0f) * lb.slide[3];
         const int n = int(lb.pairs.size());
         const ScrList& sl = lb.scroll;
         const bool live = sl.key == kListKey;
@@ -3260,13 +3289,13 @@ void drawLastBattle(App& app) {
     }
     r.setOrigin(r.uiX());
     if (lb.win[5] > 0) { // the question (ComUty_MsgBoardDraw at y 220, sliding up from 160 below)
-        const float dy = 160 * (1 - ease(lb.win[5]));
+        const float dy = 160 * lb.slide[5];
         m.picture(12, 0, 220 + dy, lb.win[5]);
         m.text(sysText(app, 57000 + 0x13 + lb.count, sysText(app, 58029 + 2 * std::max(0, lb.chosen))), 24, 235 + dy,
                false, lb.win[5], 15);
     }
     if (lb.win[6] > 0) { // Yes / No (from 360 to the right)
-        const float dx = 360 * (1 - ease(lb.win[6]));
+        const float dx = 360 * lb.slide[6];
         r.setOrigin(wideRight(app));
         // (__menuu_LastBtPrc's ComUty_YesNoChoiceProc: a held plate takes the cursor)
         const bool hy = pressIn(app, kPressLastBattle, wideRight(app), 336, 104, 136, 40), hn = pressIn(app, kPressLastBattle, wideRight(app), 336, 160, 136, 40);
@@ -3352,13 +3381,23 @@ constexpr float kListX = 192, kListY = 92, kListStep = 48; // list layout 0, as 
 constexpr int kRows = 4;
 constexpr float kBackX = 208, kBackY = 320;
 
+// ComUty_WinDispOn / Off on the frame ahead (the taps come before the step that is their frame in 2.2.0's PrcMenu):
+// SetWin leaves a shown window be (state 3), ClrWin a gone one; the moves and fades are PrcWin's - campWinOn / Off
 void on(App& app, int w, float x = 0, float y = 0) {
     App::WorldSelect& ws = app.worldSelect;
+    if (ws.winTo[w] == 0) ws.winAt[w] = ws.mark + 1;
     ws.winTo[w] = 1, ws.fromX[w] = x, ws.fromY[w] = y;
 }
 void off(App& app, int w, float x = 0, float y = 0) {
     App::WorldSelect& ws = app.worldSelect;
+    if (ws.winTo[w] != 0) ws.winAt[w] = ws.mark + 1;
     ws.winTo[w] = 0, ws.fromX[w] = x, ws.fromY[w] = y;
+}
+// A tap's state: 2.2.0 sets it in the PrcMenu pass that reads the tap (F) and runs it from F+1
+void setState(App& app, int state, int timer = -1) {
+    App::WorldSelect& ws = app.worldSelect;
+    ws.state = state, ws.stateAt = ws.mark + 1;
+    if (timer >= 0) ws.timer = timer;
 }
 // __MuWldChoice_LvlToYesNoChange: the lists' windows go, Yes / No and the board come
 void toYesNo(App& app, bool ask) {
@@ -3377,7 +3416,7 @@ void levelList(App& app, float from, bool fresh = false) {
     on(app, 7, from, 0);
     if (fresh) ws.levelCursor = ws.levelTop = 0, ws.levelScroll.key = -1; // (FUN_00050934: the list built anew, focus at the top)
     ws.levelCursor = std::clamp(ws.levelCursor, 0, ws.levels - 1);
-    ws.state = 6;
+    setState(app, 2); // (WldChoicePrc 2: a frame, then 6 takes the list's taps)
 }
 } // namespace wldsel
 
@@ -3433,7 +3472,7 @@ void worldSelectChoose(App& app, int pos) { // state 1: a gate, or Back (-1)
         for (int w = 0; w < 11; ++w)
             if (w != 6) off(app, w);
         ws.cancelled = true;
-        ws.state = 9, ws.timer = 4;
+        setState(app, 9, 4);
         return;
     }
     if (pos >= int(ws.worlds.size())) return;
@@ -3442,10 +3481,10 @@ void worldSelectChoose(App& app, int pos) { // state 1: a gate, or Back (-1)
     off(app, 6, -480, 0);
     if (ws.world == 5) {
         toYesNo(app, false);
-        ws.state = 7, ws.timer = 4;
+        setState(app, 7, 4);
     } else if (ws.world < 4 && app.game.flag(kAskFlag[ws.pair][ws.world])) {
         toYesNo(app, true);
-        ws.state = 3, ws.timer = 4;
+        setState(app, 3, 4);
     } else
         levelList(app, 480, true); // (WldChoicePrc 49398)
 }
@@ -3459,7 +3498,7 @@ void worldSelectLevel(App& app, int n) { // state 6: a band, or Back (-1)
         off(app, 3, 0, -140), off(app, 7, 480, 0), on(app, 6, -480, 0);
         ws.level = -1; // (WldChoicePrc 6, 49440-49447: d1b48 = MuScrList_GetChoiceListNo's -1)
         ws.skip = false;
-        ws.state = 1;
+        setState(app, 1);
         return;
     }
     if (n >= ws.levels) return;
@@ -3467,7 +3506,7 @@ void worldSelectLevel(App& app, int n) { // state 6: a band, or Back (-1)
     ws.level = n;
     toYesNo(app, false);
     off(app, 7, -480, 0);
-    ws.state = 7, ws.timer = 4;
+    setState(app, 7, 4);
 }
 
 void worldSelectAnswer(App& app, bool yes, bool cancelled) { // states 4 (skip?) and 8 (okay?)
@@ -3487,13 +3526,13 @@ void worldSelectAnswer(App& app, bool yes, bool cancelled) { // states 4 (skip?)
         on(app, 2, -140, 0), on(app, 4), on(app, 5);
         if (ws.world == 5) {
             on(app, 6, -480, 0);
-            ws.state = 1;
+            setState(app, 1);
         } else
             levelList(app, -480);
         return;
     }
     off(app, 0), off(app, 1), off(app, 8), off(app, 9, 0, 160), off(app, 10, 0, 160);
-    ws.state = 9, ws.timer = 4;
+    setState(app, 9, 4);
 }
 
 // A point in the lists' units (tex2d: menuPointAt takes off the phone layout's 16, 32 - drawWorldSelect's ownPlace)
@@ -3505,9 +3544,11 @@ void worldListPoint(const App& app, float px, float py, float& x, float& y) {
 void stepWorldSelect(App& app) {
     App::WorldSelect& ws = app.worldSelect;
     if (!app.worldChoiceOpen) return;
-    for (int w = 0; w < 11; ++w)
-        ws.win[w] = ws.win[w] < ws.winTo[w] ? std::min(ws.winTo[w], ws.win[w] + 0.25f) : std::max(ws.winTo[w], ws.win[w] - 0.25f);
     ++ws.mark;
+    for (int w = 0; w < 11; ++w) { // (PrcWin 1-5: in from the offset over 4 fading in; off whole a frame, then out)
+        const CampWin c = ws.winTo[w] > 0 ? campWinOn(ws.mark, ws.winAt[w], 1) : campWinOff(ws.mark, ws.winAt[w], 1);
+        ws.win[w] = c.a, ws.slide[w] = c.dx;
+    }
     // (WldChoicePrc 2 / 6: MuScrList_Proc on the list up - the held touch a frame at a time, worldSelectClick's units)
     for (int k = 0; k < 2; ++k) {
         ScrList& sl = k ? ws.levelScroll : ws.scroll;
@@ -3525,11 +3566,13 @@ void stepWorldSelect(App& app) {
         if (scrlist::frame(sl, 1, cursor, n) && up) menuSound(app, se::kListFocus); // (MuScrList_Draw: __effgo(1))
         (k ? ws.levelTop : ws.top) = cursor;
     }
-    switch (ws.state) {
+    switch (ws.mark == ws.stateAt ? -1 : ws.state) { // (a tap's state from the frame after it: see setState)
+    case 2: ws.state = 6; break; // (49407-49409)
     // (asm 0x50094 / 0x502ac: the count at 1 or more moves on at once, then counts down - with 4, one frame)
     case 3: if (ws.timer-- >= 1) ws.state = 4; break;
     case 7: if (ws.timer-- >= 1) ws.state = 8; break;
-    case 9: if (--ws.timer < 0) ws.state = 10; break;
+    // (49492-49498: the test before the count - 4 .. -1 over F+1 .. F+5, 10 on F+6 - and 10's SetMenuStat(4, 4) on F+7)
+    case 9: if (ws.timer-- < 0) ws.state = 10; break;
     case 10: closeWorldSelect(app); break;
     default: break;
     }
@@ -3554,9 +3597,8 @@ void drawWorldSelect(App& app) {
     // Widescreen: the title, rules and the gate's picture to the screen's left, the lists (with
     // their Back) and Yes / No to its right, the board centred
     r.setOrigin(wideLeft(app));
-    auto ease = [](float t) { return 1 - (1 - t) * (1 - t); };
-    auto dx = [&](int w) { return ws.fromX[w] * (1 - ease(ws.win[w])); };
-    auto dy = [&](int w) { return ws.fromY[w] * (1 - ease(ws.win[w])); };
+    auto dx = [&](int w) { return ws.fromX[w] * ws.slide[w]; }; // (SetWinXY2: linear)
+    auto dy = [&](int w) { return ws.fromY[w] * ws.slide[w]; };
     if (ws.win[1] > 0 && ws.maps[std::clamp(ws.world, 0, 5)].id) // the gate's picture
         m.imagePiece(ws.maps[std::clamp(ws.world, 0, 5)], dx(1) + ox, dy(1) + 64 + oy, 0, 0, 256, 256, ws.win[1]);
     if (ws.win[0] > 0) m.picture(0, dx(0) + 8 + ox, dy(0) + 4 + oy, ws.win[0]);
@@ -4568,8 +4610,9 @@ void closeScenarios(App& app) {
     app.scenariosOut = 0;
     app.renderer.destroy(app.scenariosSheet);
 }
-// Back (__menuu_HistoryPrc 1, 77757-77779): __effgo(3), the window off (WinDispOff); 2 counts 4 down past 0, 3 a frame
-// on leaves (__mc_SetMenuStat(0xe, 4)) - gone 7 frames after the tap
+// Back (__menuu_HistoryPrc 1, 77757-77779): __effgo(3), the window off (WinDispOff); 2 counts 4 down past 0 (F+1 ..
+// F+5), its test true on F+6 sets 3, which leaves on F+7 (__mc_SetMenuStat(0xe, 4)). scenariosOut is 2 on the tap's
+// frame F (the first step after it): the close at 9 = F+7
 void scenariosBack(App& app) {
     if (!app.scenariosOpen || app.scenariosOut) return;
     menuSound(app, se::kBack);
@@ -4582,7 +4625,7 @@ void stepScenarios(App& app) {
     ++app.scenariosAnim;
     app.scenariosBob += app.scenariosBobDir;
     if (app.scenariosBob >= 4 || app.scenariosBob <= 0) app.scenariosBobDir = -app.scenariosBobDir;
-    if (app.scenariosOut && ++app.scenariosOut > 7) closeScenarios(app);
+    if (app.scenariosOut && ++app.scenariosOut > 8) closeScenarios(app);
 }
 
 // 0 locked, 1 next, 2 reached, 3 cleared (HistorySet)
@@ -4651,8 +4694,9 @@ void drawScenarios(App& app) {
     r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 1);
     r.setOrigin(r.uiX());
     if (!t.id) return;
-    // (HistoryPrc 0: WinDispOn the frame after HistorySet - in over 4 frames; Back's WinDispOff: whole a frame, then out)
-    const float a = app.scenariosOut ? campWinOff(app.scenariosOut - 1, 0, 0).a : campWinOn(app.scenariosAnim, 1, 0).a;
+    // (HistoryPrc 0: WinDispOn the frame after HistorySet - in over 4 frames; Back's WinDispOff on F (scenariosOut 2):
+    // whole on F and F+1, then out to 0 on F+5)
+    const float a = app.scenariosOut ? campWinOff(app.scenariosOut, 2, 0).a : campWinOn(app.scenariosAnim, 1, 0).a;
     const float bob = float(app.scenariosBob); // (the arrows: up -1, down +1, left -1, right +1 x the count, tex2d)
     auto rect = [&](int n) -> const short* {
         if (app.phoneData && (n == 13 || n == 15 || n == 16)) return kPhoneDataHistoryPiece[n == 13 ? 0 : n == 15 ? 1 : 2];
@@ -5355,23 +5399,60 @@ void drawTitleArt(App& app, float logo, float strip) {
     }
 }
 
+// The title's windows this frame (titleAnim: 1 on the frame of the tap that started the stage): the art takes its
+// window's alpha (MuComPictTexNoInfoDraw 51363) - windows 0 / 2 the logo and "Please Touch", 1 the strip - and the
+// plates and the store's pictures window 3's, in from x +240 (SetWinXY2: linear)
+TitleWins titleWindows(const App& app) {
+    const int t = app.titleAnim;
+    TitleWins w;
+    switch (app.titleStage) {
+    case 0: w.logo = w.strip = campWinOn(t, 0, 0).a; break; // (TitlePrc 0: WinDispOn 0, 1, 2 on TitleSet's frame)
+    case 1:
+        if (app.titleBack) w.strip = campWinOn(t, 1, 0).a, w.plates = campWinOn(t, 3, 240); // (7 / 10, 8, 3: H+1, H+3)
+        else w.logo = campWinOff(t, 1, 0).a, w.strip = 1, w.plates = campWinOn(t, 8, 240); // (1's tap on F, 3 on F+7)
+        break;
+    case 2: w.strip = 1, w.plates = campWinOff(t, 1, 240); break; // (4: WinDispOff(3, 0xf0) on the Start's frame)
+    case 3: w.strip = campWinOff(t, 1, 0).a, w.plates = campWinOff(t, 1, 240); break; // (4: WinDispOff 1 and 3)
+    default: break;
+    }
+    return w;
+}
+
+// TitlePrc's states after a choice, a frame at a time (titleAnim already counts this frame)
+void stepTitle(App& app) {
+    if (app.titleStage == 2 && app.titleAnim >= 11) { // (5, 0x16 (count 4), 0x17 to F+8, 0x18's SetMenuStat(1, 4) on F+9:
+        app.titleStage = 1, app.titleBack = false;    // the script on from F+10)
+        titleStart(app);
+    } else if (app.titleStage == 3) {
+        if (app.titleAnim == 2) { // (6 / 9 on F+1: HistorySet / OptionSet)
+            if (app.titleSub == 1) openScenarios(app);
+            else openOptions(app, 0); // SetOptionMenu + ModeOptionMenu(1)
+        } else if (app.titleAnim > 2 && !app.scenariosOpen && !app.optionsOpen && app.titleReturnIn == 0) {
+            // (7 / 10 see the sub-menu gone: WinDispOn(1) - 8 / 0xb, 3's WinDispOn(3, 0xf0), 4's taps a frame on)
+            app.titleStage = 1, app.titleBack = true, app.titleAnim = 1;
+        }
+    }
+}
+
 void drawTitleMenu(App& app) {
     cr::MenuPainter& m = app.menu;
     // TitlePrc: the art alone (windows 0 / 1 / 2) until a tap (state 1); then the logo and "Please
-    // Touch" go (windows 0 and 2 off), the strip stays, and six frames on (state 2's count of 4,
+    // Touch" go (windows 0 and 2 off), the strip stays, and seven frames on (state 2's count of 4,
     // then 3) the plates and the store's pictures slide in from x +240 (window 3)
-    const bool plates = app.titleStage == 1;
-    const float t = std::min(1.0f, app.titleAnim / 10.0f);
-    drawTitleArt(app, plates ? std::max(0.0f, 1 - t) : t, plates ? 1.0f : t);
+    if (app.titleStage == 2 && app.titleAnim >= 10) return; // (0x18: the menu gone)
+    const bool plates = app.titleStage != 0;
+    const TitleWins tw = titleWindows(app);
+    const float t = std::min(1.0f, app.titleAnim / 4.0f);
+    drawTitleArt(app, tw.logo, tw.strip);
     m.begin(app.renderer, app.windowTex, &app.font);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
-    if (plates && !app.resumeNotice && !app.resumePrompt) { // (Start with a resume point: window 3 off, the strip stays)
-        const float pt = std::clamp((app.titleAnim - 6) / 10.0f, 0.0f, 1.0f), ease = 1 - (1 - pt) * (1 - pt);
+    if (plates && !app.resumeNotice && !app.resumePrompt && tw.plates.a > 0) { // (Start with a resume point: window 3 off, the strip stays)
+        const float pt = tw.plates.a;
         app.renderer.setOrigin(wideRight(app)); // (widescreen: the emblems and plates to the screen's right)
         m.picture(155, 320, 16, pt);
         m.picture(124, 380, 16, pt);
         for (int i = 0; i < 3; ++i)
-            m.plate(328 + 240 * (1 - ease), 114 + 56.0f * float(i), kTitleIcons[i], kTitleWords[i],
+            m.plate(328 + tw.plates.dx, 114 + 56.0f * float(i), kTitleIcons[i], kTitleWords[i],
                     (app.titleCursor == i && menuCursorLit(app)) || pressIn(app, kPressTitle, wideRight(app), 328, 114 + 56.0f * float(i), 136, 40),
                     pt, !titleChoiceReady(i)); // (lit: the keys' cursor, or a touch holding it - TitlePrc's pad_chk_updw_box)
     }
@@ -5392,27 +5473,32 @@ void titleStart(App& app) {
     }
 }
 
-// TitlePrc state 1: a tap anywhere - SE 0, windows 0 and 2 off, the plates six frames on
+// TitlePrc state 1 (72996-73007): a tap anywhere on F - SE 0, windows 0 and 2 off, 2 counts 4 past 0 to F+5, 3 puts the
+// plates on on F+7 and 4 takes their taps from F+8
 void titleTap(App& app) {
     if (app.titleStage != 0) return;
     menuSound(app, 0);
     app.titleStage = 1;
-    app.titleAnim = 0;
+    app.titleBack = false;
+    app.titleAnim = 0; // (1 on F)
 }
 
-// The plates take taps from state 4 on (the frame after window 3 goes on)
-bool titlePlatesLive(const App& app) { return app.titleStage == 1 && app.titleAnim >= 6; }
+// The plates take taps from state 4 on, the frame after window 3 goes on (a tap's event comes before its frame's step)
+bool titlePlatesLive(const App& app) { return app.titleStage == 1 && app.titleAnim >= (app.titleBack ? 3 : 8); }
 
 void titleChoose(App& app, int i) {
     app.titleCursor = i;
     if (!titleChoiceReady(i)) { menuSound(app, se::kBuzzer); return; }
     menuSound(app, se::kChoose);
-    if (i == 2) { openOptions(app, 0); return; } // SetOptionMenu + ModeOptionMenu(1)
-    if (i == 1) { openScenarios(app); return; }  // SetHistoryMenu
+    if (i == 1 || i == 2) { // (TitlePrc 4: WinDispOff 1 and 3 on F, 6 / 9 open the sub-menu on F+1: stepTitle)
+        app.titleStage = 3, app.titleSub = i, app.titleAnim = 0;
+        return;
+    }
     // Start (TitlePrc 4 -> 0xf .. 0x14): the Progress Tracker's offer first, when there is a resume point
     offerResume(app);
     if (app.resumePrompt || app.resumeNotice) return;
-    titleStart(app);
+    // (no resume point: 4's WinDispOff(3, 0xf0), 5, 0x16 .. 0x18 - stepTitle starts the game on F+10)
+    app.titleStage = 2, app.titleAnim = 0;
 }
 
 // Keys on the title; false = quit

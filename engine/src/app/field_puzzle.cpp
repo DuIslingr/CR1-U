@@ -399,6 +399,9 @@ bool performWarp(App& app, const cr::WarpRequest& w, int fromEvent) {
         // colour and reveal the loaded field over 500 ms. Area-changing scripts
         // end at Warp and rely on this, notably puzzle crystals' white-out.
         app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0;
+        // (a script's: load flags 0x22 - FieldScene 1 (onTerm) the frame after, then fldread_prc -1, 10, 30, 50, 70, 9999
+        // a frame each, its 1 the 7th frame: SetMask2(1) there)
+        if (fromEvent >= 0) app.revealHold = 7;
         // A script's warp within its area goes on with the script, and no room entry script
         // (EvrStart 5) follows it: fldread_prc runs that only on the load flag's bit 3, which
         // __EvtWarp never sets (0x22 / 1 / 4) - the lost battle's return does (prc: | 0xd)
@@ -752,8 +755,10 @@ void answerChoice(App& app, bool yes, bool cancelled) {
     if (app.choiceFlag < 0) return;
     app.game.setFlag(app.choiceFlag, yes);
     app.choiceFlag = -1;
-    // (__menuu_EventPrc: ComUty_WinDispOff(.., 0, 0x168) - a frame whole, then out to the right over 4 fading - and
-    // the script on once DAT_d36ec drops below 0, the 6th frame after the tap: SetMenuStat(10, 4), EventClr)
+    // (__menuu_EventPrc 74384-74418: ComUty_WinDispOff(.., 0, 0x168) - a frame whole, then out to the right over 4
+    // fading - with DAT_d36ec = 4; state 2 counts it 4 .. -1 over F+1 .. F+5 and at F+6 SetMenuStat(10, 4) with
+    // EventClr in the same PrcMenu pass; PrcEvnt, which runs before PrcMenu and waits on 0x2c0 bit 4, goes on at F+7.
+    // choiceOut is 2 on F, the tap's frame (the first step after it): 0 again on F+7, before runner.step)
     app.choiceOut = 1;
     // Yes and No alike (EventPrc's ComUty_YesNoChoiceProc(.., 1)); the Vita's × for No: SE 3
     // (__ComUty_YesNoChoiceProc, Vita 8104e070)
@@ -1119,7 +1124,7 @@ void ViewerHost::showNpc(int id, bool shown) {
 void ViewerHost::screenFade(float grey, float from, float to, int frames) {
     app.fadeGrey = grey; app.fadeFrom = from; app.fadeTo = to; app.fadeFrames = std::max(frames, 1); app.fadeT = 0;
 }
-bool ViewerHost::screenFading() { return app.fadeT < app.fadeFrames; }
+bool ViewerHost::screenFading() { return app.revealHold > 0 || app.fadeT < app.fadeFrames; }
 void ViewerHost::backFade(float grey, float from, float to, int frames) { // _SetFade_back (PutMask: 50 ms a frame)
     app.backFade = App::BackFade{grey, from, to, std::max(frames, 1), 0};
 }
@@ -1657,6 +1662,7 @@ bool ViewerHost::menu(int n) {
         app.titleCursor = 0;
         app.titleAnim = 0;
         app.titleStage = 0;
+        app.titleSub = 0, app.titleBack = false;
         return true;
     }
     if (n == 1) { openWorldSelect(app); return true; }
@@ -2309,7 +2315,9 @@ void closeMapScreen(App& app) {
     if (!app.mapScreen.open || app.mapScreen.closing || app.mapScreen.wait > 0) return; // (MapPrc 1: not for 4 frames)
     menuSound(app, se::kChoose); // __effgo(2)
     app.mapScreen.closing = true;
-    app.mapScreen.closeWait = 6; // (76449-76456: DAT_000d3704 = 4, counted down until below 0)
+    // (76449-76456: DAT_000d3704 = 4 at the tap's frame F, counted down until below 0 - F+1 .. F+5 - and
+    // SetMenuStat(0xd, 4) on F+6; WinDispOff's window whole on F and F+1, 3/4 on F+2 .. 0 on F+5)
+    app.mapScreen.closeWait = 7;
 }
 
 void stepMapScreen(App& app) {
@@ -3578,7 +3586,7 @@ void stepEvents(App& app) {
     stepTyping(app);
     if (skipping && !app.dialogue.empty() && pageTyped(app) && !(pageInfo(app) && pageInfo(app)->closeAfter >= 0))
         advanceDialogue(app);
-    if (app.titleOpen) ++app.titleAnim; // the title menu fades in
+    if (app.titleOpen) ++app.titleAnim, stepTitle(app); // the title menu's windows and states (TitlePrc)
     stepResume(app); // the title's Progress Tracker offer: its message, windows, and the load / Start after the answer
     if (app.titleReturnIn > 0) { // Options' Return to Title (resetAnswer), after its black
         if (app.titleReturnIn == 16) { // (OptionPrc 0x18, the frame after Yes: SetFade(0, 0, 0xff, 500 ms), MuCom_PreReturnTitle)
@@ -3588,10 +3596,11 @@ void stepEvents(App& app) {
         if (--app.titleReturnIn == 0) { app.optionsOpen = false; bootTitle(app); }
     }
     if (app.choiceFlag >= 0 && app.choiceAnim < 4) ++app.choiceAnim;
-    if (app.choiceOut > 0 && ++app.choiceOut >= 6) app.choiceOut = 0;
+    if (app.choiceOut > 0 && ++app.choiceOut >= 9) app.choiceOut = 0; // (F+7: EventPrc's count, see answerChoice)
     updateVoices(app);
     if (!app.battle.active) stepEffects(app, app.fieldEffects), stepQuake(app.fieldQuake); // eff3d_prc, UpdateQuake
-    if (app.nowLoading.on) app.nowLoading.frame = (app.nowLoading.frame + 1) & 15; // NowLoadProc
+    if (app.nowLoading.on) // NowLoadProc (76675-76680): the cell frame % 8 taken before the count steps
+        app.nowLoading.cell = app.nowLoading.frame % 8, app.nowLoading.frame = (app.nowLoading.frame + 1) & 15;
     stepTexDisp(app);
     stepVitaLogo(app);
     stepTutoTex(app);
@@ -3601,7 +3610,9 @@ void stepEvents(App& app) {
         // (PrcWin then PrcMsg in one frame: the first character comes the frame the window is up)
         if (opening && app.msgWin.state == 3) stepTyping(app);
     }
-    if (app.fadeT < app.fadeFrames) ++app.fadeT;
+    if (app.revealHold > 0) --app.revealHold; // (the load's states first: the field still black)
+    else if (app.fadeT < app.fadeFrames) ++app.fadeT;
+    if (app.bgmDueIn > 0 && --app.bgmDueIn == 0) playBgm(app, app.bgmDue); // (fldread_prc -1's __bgmgo)
     if (app.backFade.t < app.backFade.frames) ++app.backFade.t;
     bool unlit = false; // (only the drawn models' fades step: mdl_put's)
     for (auto& d : app.npcDraws)

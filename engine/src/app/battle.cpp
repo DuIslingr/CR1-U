@@ -896,16 +896,13 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     }
     setBattleCamera(app, std::max(0, b.formation - 2), -1); // (under the white; btl_main 200 sets it again)
     stepBattleCamera(app);
-    { // btl_main 0: FUN_0000bcc4(group) - the battle's opening sound (__effgo)
-        const uint32_t id = uint32_t(battleInSound(start.group));
-        app.sound.play(id);
-        app.soundLog.push_back(id);
-    }
-    // btl_main 100: var 58 under 29 names the battle's track; else the route's World Select band
+    // btl_main 0 (6271-6293), the frame after the encounter's (stepBattle's first): FUN_0000bcc4(group) - the battle's
+    // opening sound (__effgo) - and __bgmgo: var 58 under 29 names the battle's track; else the route's World Select band
     // (prty+0xc10[pair], the byte btl_enemy_init_lv levels the monsters by) picks 8, or 9 from band 5
+    b.openSound = uint32_t(battleInSound(start.group));
     const auto v58 = app.game.vars.find(58);
-    const int track = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : worldBand < 5 ? 8 : 9;
-    playBgm(app, uint32_t(track));
+    b.openTrack = v58 != app.game.vars.end() && v58->second >= 0 && v58->second < 29 ? v58->second : worldBand < 5 ? 8 : 9;
+    app.revealHold = 0, app.bgmDueIn = 0; // (a load's wait and its music: the battle's now)
     app.dialogue.clear();
     ++app.battlesFought;
     SDL_Log("battle: group %d on stage %s (formation %d, %s)", start.group, cr::kBattleStageFile[start.stage],
@@ -983,11 +980,11 @@ void endBattle(App& app, bool won, bool keepMusic) {
     if (!keepMusic) { // fldread_prc's return from a battle (the load flag's bit 3): var 60 says what plays - 998 nothing
       // (the battle's music faded out at its end), under 29 that track, else the field's last request
       // (G+0x358e0, which __EvtBattle zeroes: a scene's battle without a var 60 gets track 0)
+        // (fldread -1 the second field frame - FieldScene 1's onTerm the first: under the black, bgmDueIn)
         const auto v60 = app.game.vars.find(60);
         const int after = v60 != app.game.vars.end() ? v60->second : 999;
-        if (after == 998) playBgm(app, 1u << 29);
-        else if (after >= 0 && after < 29) playBgm(app, uint32_t(after));
-        else playBgm(app, app.bgmNo);
+        app.bgmDue = after == 998 ? 1u << 29 : after >= 0 && after < 29 ? uint32_t(after) : uint32_t(app.bgmNo);
+        app.bgmDueIn = 2;
     }
     cr::EncounterTable table;
     const bool have = cr::encounterTable(app.events, app.mapNumber, table);
@@ -998,8 +995,11 @@ void endBattle(App& app, bool won, bool keepMusic) {
     // other the room's entry script (EvrStart 5) runs again, as the field reloads
     app.runner.setGate(-1);
     app.game.setFlag(battletalk::kFlag, false);
-    // FieldScene::onLoading's SetMask2(1): the field revealed out of the battle's black over 10 frames
+    // FieldScene::onLoading's SetMask2(1): the field revealed out of the battle's black over 10 frames - once
+    // fldread_prc's states are through (load flags | 0xd: -1, 10, 20, 30, 50, 60, 70, 9999 a frame each after FieldScene
+    // 1's onTerm - its 1 the 9th field frame)
     app.fadeGrey = 0, app.fadeFrom = 1, app.fadeTo = 0, app.fadeFrames = 10, app.fadeT = 0;
+    app.revealHold = 9;
     b.ending = false, b.endFrames = b.pendingExit = 0;
     if (b.eventBattle) {
         b.eventBattle = false;
@@ -2673,43 +2673,19 @@ void endRound(App& app) {
         return;
     }
     // btl_main 799 (2.2.0 decomp 6161-6185): btlord_chk decides a win (2: chk_karaok_end, the victory) or a loss (3:
-    // 0x4b0) before 800 - the round's end (btlcalc_status_prc at 899) runs only for a battle still going
-    const int decided = b.rules.outcome();
-    const bool wonBefore = decided == 2;
-    if (decided == 0) battletalk::rules(app); // (status_prc's boss rules as the round ends)
-    b.rules.endRound();                        // (nothing once decided)
-    for (int i : b.rules.roundPoisoned) { (void)i; app.sound.play(0x5a); } // (btlcalc_status_prc 24690-24693: each poisoned one)
-    for (int t : b.rules.roundFell) // (btlcalc_chk_dead 24541-24548 at 24748: a fall to poison as one to a blow)
-        if (App::Battle::Actor* a = battleActor(app, t)) {
-            const cr::Fighter& f = b.rules.f[size_t(t)];
-            const cr::MonsterDef* def = a->enemy ? f.def : nullptr;
-            if (def && def->strongGrowth) playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle, true);
-            else {
-                if (a->enemy) a->fading = true, a->alpha = std::max(0.0f, a->alpha - 1.0f / 20.0f);
-                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown, true);
-            }
-            if (t >= 2 && def && !def->strongGrowth) spawnEffect(app, effects::kFall, t), app.sound.play(0x5e);
-        }
-    for (int k = 0; k < b.rules.roundChimes; ++k) app.sound.play(0x12);
+    // 0x4b0) before 800 - the round's end (btlcalc_status_prc in 899, roundStatuses) runs only for a battle still going
     for (int k = 0; k < 2; ++k) // the guard pose ends with the round: played to its end, then the idle (nextanm 0)
         if (App::Battle::Actor* a = battleActor(app, k); a && a->slot == btlui::kSlotGuard) endIntoIdle(*a);
     for (int i = 0; i < 5; ++i) b.shownHp[i] = b.rules.f[size_t(i)].hp, b.shownMp[i] = b.rules.f[size_t(i)].mp;
     switch (b.rules.outcome()) {
-    case 2: // won: the victory pose and tune, then the results (btl_main 0x44b) - a story boss's
-        // last word first (8000). Won only by the round's end - the poison took the last -: btlcalc_status_prc
-        // (24753-24760) sets 1000 at once, past chk_karaok_end's last word and the boss's fall (0x3de / 0x3e3)
-        if (!wonBefore) battleWon(app);
-        else if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
+    case 2: // won: the victory pose and tune, then the results (btl_main 0x44b) - a story boss's last word first (8000)
+        if (battletalk::end(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0;
         else if (battleLineHolds(app)) b.phase = App::Battle::WinTalk, b.phaseFrames = 0, b.waitLine = true;
         else battleVictory(app);
         break;
-    case 3: { // lost (0x4b0): the battle's music out over 10 frames, then (0x4b1) the defeat tune and "... lost the battle"
-        b.phase = App::Battle::Lost;
-        b.phaseFrames = 0;
-        b.lostTap = false;
-        playBgm(app, 1u << 26); // (btl_main 0x4b0: __bgmgo(0x4000000); 0x4b1 plays 0x1a)
+    case 3: // lost (0x4b0): the battle's music out over 10 frames, then (0x4b1) the defeat tune and "... lost the battle"
+        battleLost(app);
         break;
-    }
     case 1:
         b.phase = App::Battle::Fled;
         b.phaseFrames = 0;
@@ -2725,11 +2701,47 @@ void endRound(App& app) {
                 endIntoIdle(*a);
         b.phase = App::Battle::RoundEnd;
         b.phaseFrames = 0;
+        b.introStep = 899;
         b.member = 0;
         b.commandSaid[0] = b.commandSaid[1] = false; // +0xafc / +0xafd
         setBattleCamera(app, std::max(0, b.formation - 2));
         break;
     }
+}
+
+void battleLost(App& app) {
+    App::Battle& b = app.battle;
+    b.phase = App::Battle::Lost;
+    b.phaseFrames = 0;
+    b.lostTap = false;
+    playBgm(app, 1u << 26); // (btl_main 0x4b0: __bgmgo(0x4000000); 0x4b1 plays 0x1a)
+}
+
+// btl_main 899 with +0xae0 at 28 (6115-6120), F+5: btlcalc_status_prc - poison, the falls to it, regeneration's chimes,
+// the boss rules. A side down to it: status_prc sets 1000 / 0x4b0 (+0xae0 10) itself (24753-24760), from the next frame
+void roundStatuses(App& app) {
+    App::Battle& b = app.battle;
+    battletalk::rules(app);  // (status_prc's boss rules as the round ends)
+    b.rules.endRound();
+    for (int i : b.rules.roundPoisoned) { (void)i; app.sound.play(0x5a); } // (btlcalc_status_prc 24690-24693: each poisoned one)
+    for (int t : b.rules.roundFell) // (btlcalc_chk_dead 24541-24548 at 24748: a fall to poison as one to a blow)
+        if (App::Battle::Actor* a = battleActor(app, t)) {
+            const cr::Fighter& f = b.rules.f[size_t(t)];
+            const cr::MonsterDef* def = a->enemy ? f.def : nullptr;
+            if (def && def->strongGrowth) playSlot(app, *a, btlui::kSlotHit, def->size == 1 ? btlui::kSlotDown : btlui::kSlotIdle, true);
+            else {
+                if (a->enemy) a->fading = true, a->alpha = std::max(0.0f, a->alpha - 1.0f / 20.0f);
+                playSlot(app, *a, btlui::kSlotHit, a->enemy ? btlui::kSlotIdle : btlui::kSlotDown, true);
+            }
+            if (t >= 2 && def && !def->strongGrowth) spawnEffect(app, effects::kFall, t), app.sound.play(0x5e);
+        }
+    for (int k = 0; k < b.rules.roundChimes; ++k) app.sound.play(0x12);
+    for (int i = 0; i < 5; ++i) b.shownHp[i] = b.rules.f[size_t(i)].hp, b.shownMp[i] = b.rules.f[size_t(i)].mp;
+    // (won only by the round's end - the poison took the last -: 1000 at once, past chk_karaok_end's last word and the
+    // boss's fall (0x3de / 0x3e3); 1000's / 0x4b0's first frame the next - the phase's frame 0 there)
+    const int o = b.rules.outcome();
+    if (o == 2) battleWon(app), b.phaseFrames = -1;
+    else if (o == 3) battleLost(app), b.phaseFrames = -1;
 }
 
 // How far a page slides: 320 in iOS 2.2.0 (__menub_mainPrc 0x17920: +0x38 by 0x50 to 0x140); Android
@@ -3017,6 +3029,11 @@ void stepBattle(App& app) {
     }
     switch (b.phase) {
     case App::Battle::Intro: // btl_main 10 / 100 / 199 under the encounter's white, then 200, 300 and 400
+        if (b.phaseFrames == 1) { // (btl_main 0: see startBattle)
+            app.sound.play(b.openSound);
+            app.soundLog.push_back(b.openSound);
+            playBgm(app, uint32_t(b.openTrack));
+        }
         if (b.phaseFrames == kIntroWhite) {
             // 200 (2.2.0 btl_main 0xd34c, decomp 6372-6389): the fade in over 20 frames, the formation's
             // camera held still (actor -1), the 300 counter (+0xae0: 30, formation 2's 60), a strike's or
@@ -3039,11 +3056,11 @@ void stepBattle(App& app) {
         } else if (b.introStep == 400) {
             // 400 (6422-6459): ambushed (+0x35874 2) - 500, the enemies' round, no menu and no camera of its
             // own; else +0x2c0 |= 0x200 and 499
-            if (b.start.strike == 2) {
-                battleStartRound(app);
-                b.roundFirst = true;
-            } else
-                b.introStep = 499;
+            // (6436-6441: 500 runs the frame after 400 sets it, 600 - the first action's init - the frame after that)
+            b.introStep = b.start.strike == 2 ? 500 : 499;
+        } else if (b.introStep == 500) {
+            battleStartRound(app);
+            b.roundFirst = true;
         } else if (b.introStep == 499) {
             // __menub_mainPrc 0 the frame after: the top menu and its camera (formation + 0xc)
             b.phase = App::Battle::Command;
@@ -3102,7 +3119,7 @@ void stepBattle(App& app) {
                                 u1 ? u1->model.c_str() : "-", u1 ? u1->slot : -1, b.hitFrame, b.strikes[0], b.strikes[1], int(b.rules.pair), int(b.rules.enemyPair),
                                 app.battleActions.get(b.turn.action) ? app.battleActions.get(b.turn.action)->motion : -1);
                 }
-            } else if (std::none_of(std::begin(b.popups), std::end(b.popups), [](const App::Battle::Popup& p) { return p.on; }))
+            } else // (799 holds only on 0xfff, the message flag and the queue's count - the numbers still up don't: 6157-6160)
                 endRound(app);
             break;
         }
@@ -3253,29 +3270,42 @@ void stepBattle(App& app) {
             }
         }
         break;
-    case App::Battle::RoundEnd: // (899: thirty frames, then 400 - the menu - and _chk_karaok_between)
-        if (b.phaseFrames >= 30) {
-            b.phase = App::Battle::Command;
-            b.phaseFrames = 0;
-            battleMenu(app, App::Battle::Top);
-            battletalk::between(app); // btl_main 899 -> 400
+    case App::Battle::RoundEnd: // (800 on F+3 (endRound); 899 counts +0xae0 30 down - the statuses at 28, F+5 -, at 0 on
+        // F+33 sets 400 and _chk_karaok_between; 400 on F+34 sets +0x2c0 |= 0x200 and 499, __menub_mainPrc 0 sees it on F+35)
+        if (b.introStep == 899) {
+            if (b.phaseFrames == 2) roundStatuses(app);
+            if (b.phase == App::Battle::RoundEnd && b.phaseFrames >= 30) {
+                b.introStep = 400;
+                battletalk::between(app); // btl_main 899 -> 400
+            }
+        } else if (b.introStep == 400) { // (held while a talk runs: 0xfff - stepBattle's talk returns first)
             // (btl_main 400, 6447-6456: a guest battle (+0xaef) with member 0 fallen goes straight to 500 - no
             // menu; the guest acts alone, as Solo with only the guest standing does)
             if (b.rules.allyAuto && !b.rules.f[0].alive() && !app.runner.running()) {
+                b.phase = App::Battle::Command;
+                b.phaseFrames = 0;
+                battleMenu(app, App::Battle::Top);
                 const int keep = b.topCursor;
                 battleChooseTop(app, 0);
                 b.topCursor = keep;
-            }
+            } else
+                b.introStep = 499;
+        } else if (b.introStep == 499) {
+            b.phase = App::Battle::Command;
+            b.phaseFrames = 0;
+            battleMenu(app, App::Battle::Top);
         }
         break;
     case App::Battle::Won: // 0x3e8's ten frames, then 0x3e9 (the poses, tune and banner) and 1099's 140 or a tap
         if (b.phaseFrames == 10) victoryShown(app);
-        if (b.phaseFrames < 10) { b.wonTap = false; break; } // (a tap in the fade counts for nothing)
+        // (a tap in the fade counts for nothing - nor on 1001's frame, F+13: 1099 reads it from F+14, 6699)
+        if (b.phaseFrames <= 10) { b.wonTap = false; break; }
         if (b.phaseFrames >= 150 || b.wonTap) {
             b.wonTap = false;
             b.phase = App::Battle::Results;
             b.phaseFrames = 0;
             b.result.stage = 0, b.result.frames = 0, b.result.lineAt = -1, b.result.message = 57007;
+            b.result.prc = 3, b.result.prcAt = b.result.offAt = -1;
         }
         break;
     case App::Battle::Results: stepResults(app); break;
@@ -3283,10 +3313,11 @@ void stepBattle(App& app) {
         // battle starts over from the title, any other goes back to the pair's Ark (drawFrame does either,
         // between frames). An event battle's: gameover.mct read at 0x4b0, fading in over 20 frames from
         // 0x4b1, the tap taken after 40; any other's tap at once (the port goes on by itself after 120)
+        // 0x4b0 -> 0x4b1 (2.2.0 decomp 6044-6074): the defeat voice on 0x4b0's last frame (+0xae0 below 1, F+12), only for a
+        // battle a script started (+0xaee, as for a pair: +0xae8 set round it)
+        if (b.phaseFrames == 9 && b.eventBattle) btlvoice::playSide(app, 99, 0x1f, 0x20, 0x21);
         if (b.phaseFrames == 10) { // 0x4b1: the tune, "... lost the battle" for 60 frames (font_set_utf16(0xb, 6, 0x10, 0x3c))
-            // 0x4b0 -> 0x4b1 (2.2.0 decomp 6044-6074): the defeat voice only for a battle a script started (+0xaee,
-            // as for a pair: +0xae8 set round it); then the camera 0x48 and the monsters still standing out of sight (+0x55c)
-            if (b.eventBattle) btlvoice::playSide(app, 99, 0x1f, 0x20, 0x21);
+            // then the camera 0x48 and the monsters still standing out of sight (+0x55c)
             setBattleCamera(app, 0x48);
             for (App::Battle::Actor& a : b.actors)
                 if (a.fighter >= 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
@@ -3304,7 +3335,8 @@ void stepBattle(App& app) {
         // 0x513: a tap (pad_chk_trg_up) once +0xa46 reads 40 - at once for any battle but an event's, whose count
         // starts at 0 with the picture; nothing else ends it
         // (the Vita's 0x513, 15391-15398: only the touch waits for the count to pass 0x27 - its buttons end it at once)
-        if (b.phaseFrames >= 10 && (b.lostButton || (b.phaseFrames >= (b.eventBattle ? 50 : 10) && b.lostTap))) b.exit = b.eventBattle ? 2 : 3;
+        // (0x513 from F+14, the frame after 0x4b1: 6080)
+        if (b.phaseFrames >= 11 && (b.lostButton || (b.phaseFrames >= (b.eventBattle ? 50 : 11) && b.lostTap))) b.exit = b.eventBattle ? 2 : 3;
         b.lostTap = b.lostButton = false;
         break;
     case App::Battle::Fled:
@@ -3315,14 +3347,20 @@ void stepBattle(App& app) {
     // btl_main 9000: every way out (the results done, a flight, a defeat) first masks the screen to
     // black over 10 frames (_SetMask(0): 500 ms) with the music fading out, and 0x238b leaves 12 frames
     // later - the field then comes back out of the black (FieldScene::onLoading's SetMask2(1), endBattle)
-    if (b.exit && !b.ending) {
+    // (5951-5954: 9000 runs the frame after it is set - the mask and the music from then -, 0x238b's +0xae0 = 12 brings
+    // the field back on the 13th frame after it was set; a way out set again meanwhile counts for nothing)
+    if (b.ending) {
+        b.exit = 0;
+        if (++b.endFrames == 0) {
+            app.fadeGrey = 0, app.fadeFrom = screenFadeAlpha(app), app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
+            playBgm(app, 1u << 26);
+        } else if (b.endFrames >= 12) {
+            b.exit = b.pendingExit;
+            b.ending = false, b.endFrames = b.pendingExit = 0;
+        }
+    } else if (b.exit) {
         b.pendingExit = b.exit, b.exit = 0;
-        b.ending = true, b.endFrames = 0;
-        app.fadeGrey = 0, app.fadeFrom = screenFadeAlpha(app), app.fadeTo = 1, app.fadeFrames = 10, app.fadeT = 0;
-        playBgm(app, 1u << 26);
-    } else if (b.ending && ++b.endFrames >= 12) {
-        b.exit = b.pendingExit;
-        b.ending = false, b.endFrames = b.pendingExit = 0;
+        b.ending = true, b.endFrames = -1;
     }
     battleTouchStep(app); // (__menub_mainPrc: the held touch, a frame at a time)
     // the pages after the frame's logic: a page set this frame starts at its distance with its camera's cut
@@ -3642,28 +3680,21 @@ void drawBattleRow(App& app, cr::MenuPainter& m, int k, bool dimmed, float a) {
 // a tick (0xa4) every second frame while anything came; a tap (0x93) puts everything at its end.
 // Then a tap at a time: each member's level-up line (0xa2: 57008, or 57034 for several), each
 // item's (0xa0: 57010, or 57035 with how many), and 0x93 as the windows go (4 frames)
-void resultsNext(App& app) {
+// MbResultPrc 5 / 7 (58757-58847): the next level-up's or item's line on the board - only the line changes, the
+// windows stay where they are; 6 / 8 take the next tap from the frame after (video 02 814.6-815.4 s)
+void resultsLine(App& app, bool up) {
     App::Battle::Result& rs = app.battle.result;
-    // (MbResultPrc 5 -> 6 / 7 -> 8, 58801-58866: only the board's line changes - the windows stay where they are -
-    // and the next tap is taken a frame on; video 02 814.6-815.4 s)
     rs.lineAt = rs.frames;
-    if (rs.upNext < rs.ups.size()) {
+    if (up && rs.upNext < rs.ups.size()) {
         const auto [k, n] = rs.ups[rs.upNext++];
-        menuSound(app, se::kMenuBase + 0x11);
         rs.stage = 1, rs.message = n == 1 ? 57008 : 57034, rs.value = n;
         const App::Battle::Actor* u = battleActor(app, k);
         rs.name = u ? u->name : std::string();
         rs.level[k] = rs.levelTo[k], rs.exp[k] = rs.expTo[k]; // (pcparam_change_lv)
-        return;
-    }
-    if (rs.itemNext < rs.items.size()) {
+    } else if (!up && rs.itemNext < rs.items.size()) {
         const auto [item, n] = rs.items[rs.itemNext++];
-        menuSound(app, se::kMenuBase + 0xf);
         rs.stage = 2, rs.message = n == 1 ? 57010 : 57035, rs.value = n, rs.name = itemName(app, item);
-        return;
     }
-    menuSound(app, se::kChoose);
-    rs.stage = 3, rs.count = 4;
 }
 
 void resultsSettle(App::Battle::Result& rs) { // __RestoreParam
@@ -3672,27 +3703,43 @@ void resultsSettle(App::Battle::Result& rs) { // __RestoreParam
     rs.count = 0;
 }
 
+// A tap, read on the step after it (T): MbResultPrc 3 / 6 / 8 set the next state, which runs from T+1
 void resultsTap(App& app) {
     App::Battle::Result& rs = app.battle.result;
     if (rs.frames < 4 || rs.stage == 3) return; // (the windows coming in, or going)
-    if (rs.stage != 0 && rs.frames <= rs.lineAt) return; // (a line's own frame)
-    if (rs.stage == 0 && rs.count > 0) {
+    if (rs.prc != 3 && rs.prc != 6 && rs.prc != 8) return; // (4, 5, 7, 10..: no tap read)
+    if (rs.prc == 3 && rs.count > 0) { // (3, 58736-58741: the count cut short - SE 2, __RestoreParam)
         menuSound(app, se::kChoose);
         resultsSettle(rs);
         return;
     }
-    resultsNext(app);
+    rs.prcAt = rs.frames + 1;
+    if (rs.prc == 6 && rs.upNext < rs.ups.size()) menuSound(app, se::kMenuBase + 0x11), rs.prc = 5; // (6: 58812-58825)
+    else if (rs.prc == 8 && rs.itemNext < rs.items.size()) menuSound(app, se::kMenuBase + 0xf), rs.prc = 7; // (8: 58849-58862)
+    else rs.prc = 4; // (3: the count done; 6 / 8: the last of theirs)
 }
 
 void stepResults(App& app) {
     App::Battle& b = app.battle;
     App::Battle::Result& rs = b.result;
     ++rs.frames;
-    if (rs.stage == 3) {
-        if (--rs.count < 0) b.exit = 4;
+    switch (rs.frames == rs.prcAt ? -1 : rs.prc) { // (a tap's state from the frame after it)
+    case 4: // (58743-58756: a level-up line next - SE 0x11 -, else an item's - SE 0xf -, else SE 2 and away)
+        rs.prcAt = -1;
+        if (rs.upNext == 0 && !rs.ups.empty()) menuSound(app, se::kMenuBase + 0x11), rs.prc = 5;
+        else if (rs.itemNext == 0 && !rs.items.empty()) menuSound(app, se::kMenuBase + 0xf), rs.prc = 7;
+        else menuSound(app, se::kChoose), rs.prc = 10;
         return;
+    case 5: case 7: resultsLine(app, rs.prc == 5); rs.prc += 1; return;
+    case 10: // (58870-58880: the five windows off, MuCom_MenuClrMask, the count 4)
+        rs.stage = 3, rs.count = 4, rs.offAt = rs.frames;
+        rs.prc = 11;
+        return;
+    case 11: if (rs.count-- < 0) rs.prc = 12; return; // (0xb: 4 .. -1, 0xc on T+8)
+    case 12: b.exit = 4, rs.prc = 13; return;        // (0xc: SetMenuStat(5, 4) on T+9 - btl_main 1199 sets 9000)
+    default: break;
     }
-    if (rs.stage != 0 || rs.frames < 4 || rs.count <= 0) return;
+    if (rs.prc != 3 || rs.stage != 0 || rs.frames < 4 || rs.count <= 0) return;
     for (int k = 0; k < 2; ++k) {
         if (rs.character[k] < 0 || rs.exp[k] >= rs.expTo[k]) continue;
         rs.exp[k] = std::min(rs.expTo[k], rs.exp[k] + rs.expStep[k]);
@@ -3720,8 +3767,12 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     const App::Battle::Result& rs = b.result;
     const PhoneMenu phoneMenu(app, m); // MbResultPut: the iPhone screen's menu coordinates
     cr::Renderer& r = app.renderer;
-    const float in = rs.stage == 3 ? std::max(0.0f, float(rs.count) / 4) : std::min(1.0f, float(rs.frames) / 4);
-    const float away = 1 - in;
+    // (leaving, MbResultPrc 10's WinDispOff: whole that frame and the next, then out linearly over 4 fading - 1 to the
+    // left, 2 to the right, 3 / 4 down: TypeY)
+    const CampWin off = campWinOff(rs.frames, rs.offAt, 1);
+    if (rs.stage == 3) a *= off.a;
+    const float in = rs.stage == 3 ? 1.0f : std::min(1.0f, float(rs.frames) / 4);
+    const float away = rs.stage == 3 ? off.dx : 1 - in;
     r.setOrigin(wideLeft(app)); // (widescreen: the heading and boards left, the takings right)
     m.picture(19, 8, 4, a * in); // "Results"
     for (int k = 0; k < 2; ++k) {

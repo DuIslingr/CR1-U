@@ -1117,7 +1117,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 app.runner.stop();
             }
             { // The battle scene as 2.2.0's (CRO's 54a299d .. 0150c2d, checked against CR1's code): the encounter's
-              // white and btl_main 200 / 300 / 400 / 499 (the commands at 32, an ambush's round at 31), the strike
+              // white and btl_main 200 / 300 / 400 / 499 (the commands at 32, an ambush's round at 32), the strike
               // banner's name, FUN_0000bcc4's sound, read_btlcpl's idle phases, _btl_shadow's fans, the casts' loops,
               // mdl_put's turning, the gauge every other frame, the banner a frame late
                 app.game = saved;
@@ -1148,7 +1148,8 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 app.rng.seed(5);
                 startBattle(app, {group, 0, -1, 0}, 0);
                 if (b.active) {
-                    check(std::find(app.soundLog.begin(), app.soundLog.end(), uint32_t(battleInSound(group))) != app.soundLog.end(), "in-eff-played");
+                    // (btl_main 0, the frame after the encounter's: the opening sound and the battle's music)
+                    const bool inEffEarly = std::find(app.soundLog.begin(), app.soundLog.end(), uint32_t(battleInSound(group))) != app.soundLog.end();
                     std::set<int> seen;
                     bool inRange = true;
                     for (const App::Battle::Actor& a : b.actors)
@@ -1157,6 +1158,8 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     bool white = true;
                     for (int f = 1; f < kIntroWhite; ++f) stepBattle(app), white &= app.fadeFrom == 1 && app.fadeTo == 1 && app.fadeGrey == 1;
                     check(white, "white-held");
+                    check(!inEffEarly && std::find(app.soundLog.begin(), app.soundLog.end(), uint32_t(battleInSound(group))) != app.soundLog.end(),
+                          "in-eff-played");
                     const int fm = std::max(0, b.formation - 2);
                     stepBattle(app); // 200
                     check(app.fadeFrom == 1 && app.fadeTo == 0 && app.fadeT == 0 && app.fadeFrames == 20 && b.cam == fm && b.camActor == -1, "state-200");
@@ -1266,11 +1269,11 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     stepBattle(app);
                     check(before && b.bannerShown == "x", "banner-late");
                     endBattle(app, false);
-                    // ambushed: 400 goes to the enemies' round at 31, no menu
+                    // ambushed: 400 sets 500, which runs the frame after (6436-6441) - the enemies' round at 32, no menu
                     app.rng.seed(5);
                     startBattle(app, {group, 0, -1, 2}, 0);
                     for (; ambushAt < 100 && b.phase == App::Battle::Intro; ++ambushAt) stepBattle(app);
-                    check(ambushAt == kIntroWhite + 31 && b.phase == App::Battle::Acting, "ambush-400");
+                    check(ambushAt == kIntroWhite + 32 && b.phase == App::Battle::Acting, "ambush-400");
                     endBattle(app, false);
                     // a first strike: "<the lead>'s team attacks first!" (var 0 the lead's name), kept over the first page
                     startBattle(app, {group, 0, -1, 1}, 0);
@@ -3824,6 +3827,154 @@ void settleOptions(App& app) {
     for (int f = 0; f < 12 && app.optionsOpen; ++f) stepOptions(app);
 }
 
+// Round 32's frame counts (2.2.0's state machines; F = the frame a tap is read on, the first step after its event)
+int timingSelfTest(App& app) {
+    int problems = 0;
+    auto fail = [&](const char* what) { std::printf("  timing: %s\n", what); ++problems; };
+    // The title (__menuu_TitlePrc): the tap on F takes windows 0 / 2 off (whole on F and F+1), 3 puts the plates on on
+    // F+7 - in from +240 linearly - and 4 reads them from F+8; Scenarios opens on F+1, and back the strip comes on the
+    // frame after it goes, the plates two frames on, read a frame after that
+    {
+        const bool keepTitle = app.titleOpen, keepBooting = app.booting;
+        app.titleOpen = true, app.titleStage = 0, app.titleAnim = 0, app.titleBack = false;
+        auto step = [&] { ++app.titleAnim; stepTitle(app); };
+        for (int f = 0; f < 4; ++f) step();
+        if (titleWindows(app).logo != 1.0f) fail("title art NOT in over 4 frames (its window's alpha)");
+        titleTap(app);
+        step(), step(); // F, F+1
+        if (titleWindows(app).logo != 1.0f) fail("title logo NOT whole on F+1 (ClrWin)");
+        for (int f = 0; f < 5; ++f) step(); // F+2 .. F+6
+        if (titlePlatesLive(app) || titleWindows(app).plates.a != 0) fail("title plates on before F+7");
+        step(); // F+7
+        if (!titlePlatesLive(app)) fail("title plates NOT read from F+8");
+        step(), step(); // F+9
+        if (titleWindows(app).plates.a != 0.5f || titleWindows(app).plates.dx != 120.0f) fail("title plates NOT linear from +240");
+        titleChoose(app, 1); // Scenarios
+        step(); // F
+        if (app.scenariosOpen || titlePlatesLive(app)) fail("Scenarios open on the tap's frame (TitlePrc 6: F+1)");
+        step(); // F+1
+        if (!app.scenariosOpen) fail("Scenarios NOT open on F+1");
+        closeScenarios(app); // (gone on H)
+        step(); // H+1: the strip
+        if (app.titleStage != 1 || titleWindows(app).strip != 0 || titlePlatesLive(app)) fail("title strip NOT back on H+1");
+        step(), step(); // H+3: the plates
+        if (!titlePlatesLive(app) || titleWindows(app).plates.a != 0) fail("title plates NOT on on H+3, read from H+4");
+        app.titleOpen = keepTitle, app.booting = keepBooting, app.titleStage = 0, app.titleBack = false;
+    }
+    // Util 3's Yes / No (__menuu_EventPrc): answered on F, the plates home and whole on F, 90 px whole on F+1, alpha 0 on
+    // F+5; the script on from F+7 (choiceOut 0 before that frame's runner.step)
+    {
+        const int keepFlag = app.choiceFlag;
+        app.choiceFlag = 4000, app.choiceAnim = 4;
+        answerChoice(app, true);
+        std::vector<int> outs;
+        for (int f = 0; f < 8; ++f) stepEvents(app), outs.push_back(app.choiceOut);
+        const CampWin f0 = campWinOff(2, 2, 360), f1 = campWinOff(3, 2, 360), f5 = campWinOff(7, 2, 360);
+        if (outs != std::vector<int>{2, 3, 4, 5, 6, 7, 8, 0} || f0.a != 1 || f0.dx != 0 || f1.a != 1 || f1.dx != 90 || f5.a != 0)
+            fail("Util 3's Yes / No NOT freeing the script on F+7");
+        app.game.setFlag(4000, false);
+        app.choiceFlag = keepFlag, app.choiceOut = 0;
+    }
+    // The field Save's "Save complete." (SaveLoadPrc 8's Yes on F, 10 / 0xb / 9 / 0xd / 0xe, 0xf on F+31)
+    {
+        App::SaveScreen& ss = app.saveScreen;
+        const App::SaveScreen keep = ss;
+        ss.open = true, ss.phase = 2, ss.pending = 1, ss.load = false, ss.toTitle = false, ss.startAfter = false, ss.timer = 0;
+        int closed = -1;
+        for (int f = 0; f < 40 && ss.open; ++f) {
+            stepSaveScreen(app);
+            if (!ss.open) closed = f;
+        }
+        if (closed != 31) fail("the field Save's message NOT gone on F+31");
+        ss = keep;
+    }
+    // The battle (btl_main / __menuu_MbResultPrc; F = the frame an action's state reaches 9999 - endRound on F+3, 800)
+    {
+        const cr::GameState keepGame = app.game;
+        const int keepChar = app.playerChar;
+        startBattle(app, {1, 0, -1, 0}, 0);
+        App::Battle& b = app.battle;
+        if (!b.active) fail("no battle");
+        else {
+            // 10: an ambush's first action - 400 on X+1 sets 500, 500 on X+2 (battleStartRound), 600 on X+3
+            b.phase = App::Battle::Intro, b.introStep = 400, b.start.strike = 2, b.phaseFrames = 100;
+            stepBattle(app);
+            const bool at500 = b.phase == App::Battle::Intro && b.introStep == 500;
+            stepBattle(app);
+            if (!at500 || b.phase != App::Battle::Acting || b.turnOn) fail("an ambush's round NOT from 500 on X+2");
+            b.start.strike = 0;
+            // 7 / 8: the round's end - 800 on F+3, the statuses on F+5 (899 at 28), the commands on F+35 (400 F+34, 499)
+            for (int k = 0; k < 2; ++k) b.rules.f[size_t(k)].hp = std::max(b.rules.f[size_t(k)].hp, 100);
+            b.rules.f[0].status[cr::kStatusPoison] = 3;
+            const int hp0 = b.rules.f[0].hp;
+            b.phase = App::Battle::Acting, b.turnOn = false;
+            endRound(app); // F+3
+            stepBattle(app); // F+4
+            const bool notYet = b.rules.f[0].hp == hp0;
+            stepBattle(app); // F+5
+            if (!notYet || b.rules.f[0].hp >= hp0) fail("the round's poison NOT on F+5 (899's 28)");
+            b.rules.f[0].status[cr::kStatusPoison] = 0;
+            int menuAt = -1;
+            for (int f = 6; f <= 40 && menuAt < 0; ++f) {
+                stepBattle(app);
+                if (b.phase == App::Battle::Command) menuAt = f;
+            }
+            if (menuAt != 35) std::printf("  timing: the commands back on F+%d (2.2.0 F+35)\n", menuAt), ++problems;
+            // 12: the victory - 1001 on F+13 (the Won phase's frame 10) takes no tap, 1099 from F+14
+            battleWon(app);
+            for (int f = 0; f < 9; ++f) stepBattle(app);
+            b.wonTap = true; // (read on 1001's frame, the Won phase's 10th)
+            stepBattle(app);
+            const bool held = b.phase == App::Battle::Won;
+            b.wonTap = true;
+            stepBattle(app);
+            if (!held || b.phase != App::Battle::Results) fail("the victory's tap NOT from 1099 (F+14)");
+            // 2 / 11: the results' last tap on T - 4 on T+1 (SE 2), 10 on T+2 (the windows off), 0xc on T+9; 9000 runs
+            // on T+10 (the mask), the field on T+22
+            App::Battle::Result& rs = b.result;
+            for (int f = 0; f < 6; ++f) stepBattle(app);
+            rs.ups.clear(), rs.items.clear();
+            resultsSettle(rs);
+            app.menuSoundLog.clear();
+            resultsTap(app);
+            stepBattle(app); // T
+            const bool tSilent = app.menuSoundLog.empty() && rs.stage == 0;
+            stepBattle(app); // T+1
+            const bool t1 = !app.menuSoundLog.empty() && app.menuSoundLog.back() == se::kChoose && rs.stage == 0;
+            stepBattle(app); // T+2
+            const bool t2 = rs.stage == 3 && rs.offAt == rs.frames;
+            for (int f = 3; f <= 8; ++f) stepBattle(app);
+            const bool t8 = !b.ending;
+            stepBattle(app); // T+9
+            const bool t9 = b.ending && b.endFrames == -1;
+            stepBattle(app); // T+10
+            const bool t10 = b.endFrames == 0 && app.fadeTo == 1 && app.fadeT == 0;
+            for (int f = 11; f <= 21; ++f) stepBattle(app);
+            const bool t21 = b.exit == 0;
+            stepBattle(app); // T+22
+            if (!tSilent || !t1 || !t2 || !t8 || !t9 || !t10 || !t21 || b.exit != 4)
+                std::printf("  timing: results / 9000 NOT as MbResultPrc / btl_main's (%d %d %d %d %d %d %d, exit %d)\n", tSilent, t1, t2,
+                            t8, t9, t10, t21, b.exit), ++problems;
+            b.exit = 0;
+            // 9: back on the field - fldread_prc's states before SetMask2(1): the reveal waits 9 frames, the music 2
+            endBattle(app, true);
+            app.runner.stop();
+            app.pendingEntry = App::Entry::None;
+            const bool held9 = app.revealHold == 9 && app.bgmDueIn == 2 && app.fadeT == 0;
+            for (int f = 0; f < 9; ++f) stepEvents(app);
+            const bool still = app.fadeT == 0;
+            stepEvents(app);
+            if (!held9 || !still || app.fadeT != 1) fail("the battle's return NOT revealed on the 9th field frame (fldread_prc)");
+            app.runner.stop();
+            app.pendingEntry = App::Entry::None;
+        }
+        app.game = keepGame;
+        app.playerChar = keepChar;
+    }
+    std::printf("timing (round 32): title, Util 3, the field Save, battle round / results / exit, the reveal; %d problems\n", problems);
+    return problems;
+}
+
 int runSelfTest(App& app) {
     app.persist = false;
     app.trophy.live = false; // (none unlocked by the other checks - trophiesSelfTest turns them on for its own)
@@ -5365,7 +5516,7 @@ int runSelfTest(App& app) {
             scenariosKey(app, SDLK_DOWN);
             hist += app.scenariosScroll < 0;
             scenariosKey(app, SDLK_ESCAPE);
-            for (int f = 0; f < 6; ++f) stepScenarios(app);
+            for (int f = 0; f < 7; ++f) stepScenarios(app); // (the tap's frame F .. F+6: HistoryPrc 2's count, then 3)
             hist += app.scenariosOpen;
             stepScenarios(app);
             hist += !app.scenariosOpen;
@@ -5842,9 +5993,12 @@ int runSelfTest(App& app) {
         const int mapErrs = app.renderer.takeErrors();
         closeMapScreen(app);
         stepMapScreen(app);
-        problems += ms.fade != 4; // (ClrWin: whole the frame after, then out over 4)
-        for (int f = 0; f < 4; ++f) stepMapScreen(app);
-        problems += !ms.open || ms.fade != 0; // (MapPrc 2: 6 frames from the tap to the close)
+        stepMapScreen(app);
+        problems += ms.fade != 4; // (ClrWin: whole on the tap's frame F and on F+1, then out over 4)
+        stepMapScreen(app);
+        problems += ms.fade != 3; // (F+2: 3/4)
+        for (int f = 0; f < 3; ++f) stepMapScreen(app);
+        problems += !ms.open || ms.fade != 0; // (F+5: alpha 0; MapPrc 2 closes on F+6)
         stepMapScreen(app);
         problems += ms.open + mapErrs + expectSounds("map screen", {2, 2}) + offMap + (spots != 60);
         app.mapNumber = keepMap;
@@ -6789,7 +6943,18 @@ int runSelfTest(App& app) {
         const bool ended = st.state == 7 && st.picY == staffPicEnd(st) && st.panel < staffroll::kPanelEnd && st.next > staffLines(app) &&
                            st.win[4] == 1.0f;
         staffRollTap(app);
-        for (int f = 0; f < 20 && st.open; ++f) stepStaffRoll(app);
+        // (StaffRollPrc 7 reads the tap on F, 8 takes windows 0 and 1 off on F+1 - whole on F+1 and F+2, 3/4 on F+3 -
+        // 9 counts 4 past 0 to F+7, 3 leaves on F+8)
+        float winF2 = 0, winF3 = 0;
+        int closedAt = -1;
+        for (int f = 0; f < 20 && st.open; ++f) {
+            stepStaffRoll(app);
+            if (f == 2) winF2 = st.win[0];
+            if (f == 3) winF3 = st.win[0];
+            if (!st.open) closedAt = f;
+        }
+        if (winF2 != 1.0f || winF3 != 0.75f || closedAt != 8)
+            std::printf("staff roll: the close NOT as StaffRollPrc 7-9's (F+2 %.2f, F+3 %.2f, closed F+%d)\n", winF2, winF3, closedAt), ++problems;
         problems += !tex || lines < 100 || !ended || st.open || app.renderer.takeErrors();
         std::printf("staff roll: picture %s, %d of block 9's %d lines with text, end card after %d fast frames %s, closed %s; %d problems\n",
                     tex ? "read" : "MISSING", lines, staffLines(app), frames, ended ? "reached" : "NOT reached",
@@ -6797,6 +6962,7 @@ int runSelfTest(App& app) {
         mapErrors += problems;
     }
     mapErrors += menusAuditSelfTest(app);
+    mapErrors += timingSelfTest(app);
     mapErrors += touchSemanticsSelfTest(app);
     mapErrors += textFacesSelfTest(app);
     { // The last battle's pair choice (Util 8): four rounds, each pair once; a No goes back to the
@@ -6818,6 +6984,7 @@ int runSelfTest(App& app) {
         };
         std::vector<int> order;
         bool campFor = true, backOk = true, texOk = true, healed = true;
+        int lbTimes = 0;
         for (int round = 0; round < 4; ++round) {
             app.game.party[3].hp = 1;
             openLastBattle(app);
@@ -6828,6 +6995,12 @@ int runSelfTest(App& app) {
             const int left = int(lb.pairs.size());
             backOk &= left == 4 - round;
             lastBattleChoose(app, left - 1); // the last one listed
+            if (round == 0) { // (LastBtPrc 3 on F, 4 on F+1, 5 counts 4 past 0 to F+7, 6 opens the Camp on F+8)
+                int f = 0;
+                for (; f < 20 && !app.campOpen; ++f) stepLastBattle(app);
+                lbTimes += f - 1 == 8;
+                if (f - 1 != 8) std::printf("last battle: the Camp on F+%d (LastBtPrc 6: F+8)\n", f - 1);
+            }
             stepTo(7);
             campFor &= app.campOpen && app.playerChar == 2 * lb.chosen;
             app.campOpen = false;
@@ -6844,6 +7017,17 @@ int runSelfTest(App& app) {
             }
             const int chosen = lb.chosen;
             lastBattleAnswer(app, true);
+            if (round == 0) { // (Yes on F: 0xb on F+1 takes 0-2, 5, 6 off, 0xc on F+2 0-2 again - whole on F+3 - and 0xe leaves on F+9)
+                int f = 0;
+                float a0 = 0, a6 = 0;
+                for (; f < 20 && lb.open; ++f) {
+                    stepLastBattle(app);
+                    if (f == 3) a0 = lb.win[0], a6 = lb.win[6];
+                }
+                lbTimes += f - 1 == 9 && a0 == 1.0f && a6 == 0.75f;
+                if (f - 1 != 9 || a0 != 1.0f || a6 != 0.75f)
+                    std::printf("last battle: Yes closed on F+%d, F+3 windows %.2f / %.2f (LastBtPrc 0xb-0xe: F+9, 1 / 0.75)\n", f - 1, a0, a6);
+            }
             stepTo(-1);
             order.push_back(chosen);
             problems += lb.open || app.game.vars[0] != chosen;
@@ -6854,7 +7038,8 @@ int runSelfTest(App& app) {
         problems += !leaders;
         const bool reset = lb.count == 0 && lb.mask == 0 && !app.game.flag(1);
         std::sort(order.begin(), order.end());
-        problems += !texOk || !healed || !campFor || !backOk || !reset || order != std::vector<int>{0, 1, 2, 3} || app.renderer.takeErrors();
+        problems += !texOk || !healed || !campFor || !backOk || !reset || order != std::vector<int>{0, 1, 2, 3} || app.renderer.takeErrors() ||
+                    lbTimes != 2;
         std::printf("last battle: 4 rounds, each pair once %s, its camp menu %s, No back to the plates %s, HP / MP restored %s, "
                     "flag 1 and the rounds clear %s, plates name the leaders %s; %d problems\n", order == std::vector<int>{0, 1, 2, 3} ? "yes" : "NO",
                     campFor ? "opens" : "DOESN'T open", backOk ? "yes" : "NO", healed ? "yes" : "NO", reset ? "yes" : "NO", leaders ? "yes" : "NO", problems);
@@ -7047,7 +7232,7 @@ int runSelfTest(App& app) {
         errs += r.takeErrors();
         app.saveScreen.open = false;
         app.titleOpen = true;
-        app.titleStage = 1, app.titleAnim = 10; // (past the title's tap, the plates in)
+        app.titleStage = 1, app.titleAnim = 12; // (past the title's tap, the plates in)
         app.titleCursor = 2;
         tap(wideRight(app), 328 + 60, 114 + 20, px, py); // Start's plate
         const int before = app.titleCursor;
@@ -7960,7 +8145,19 @@ int runSelfTest(App& app) {
         openWorldSelect(app); // Back
         settle();
         worldSelectChoose(app, -1);
-        finish();
+        // (WldChoicePrc 1's Back on F: WinDispOff - window 0 whole on F+1, 3/4 on F+2, the list half way out linearly
+        // on F+2 - 9 counts 4 past 0, 10 on F+6, SetMenuStat(4, 4) on F+7)
+        int wsClosed = -1;
+        float wsA1 = 0, wsA2 = 0, wsSlide2 = 0;
+        for (int f = 0; f < 30 && app.worldChoiceOpen; ++f) {
+            stepWorldSelect(app);
+            if (f == 1) wsA1 = ws.win[0];
+            if (f == 2) wsA2 = ws.win[0], wsSlide2 = ws.slide[6];
+            if (!app.worldChoiceOpen) wsClosed = f;
+        }
+        if (wsClosed != 7 || wsA1 != 1.0f || wsA2 != 0.75f || wsSlide2 != 0.5f)
+            std::printf("world select: Back NOT as WldChoicePrc 9 / 10's (closed F+%d, window 0 %.2f %.2f, list %.2f)\n", wsClosed,
+                        wsA1, wsA2, wsSlide2), ++problems;
         const bool back = !app.worldChoiceOpen && app.game.flag(0);
         app.game.setFlag(1122, true); // the first gate asks to skip its first half
         app.game.setFlag(0, false), app.game.setFlag(1, false); // (j001_t01 0x4f8 / 0x504: the script's own, before Util 1)
