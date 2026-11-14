@@ -1633,6 +1633,45 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             glErrors += rerrs;
         }
 
+        // The do-nothing actions (413..429, class 0) as 2.2.0's btlai_prc kind 7 -> btlact_none: the name, the user's
+        // camera (a size-1 monster's slot + 0x54, a bigger one's size + 0x57), no motion, no glow, sixty frames, no hits
+        {
+            int nbad = 0, kind = -1, slot = -1, effects = 0, cam = -1, wantCam = -2, endAt = -1, hits = -1;
+            const cr::GameState saved = app.game;
+            startBattle(app, {1, 0, -1, 0}, 0);
+            App::Battle& b = app.battle;
+            if (b.active) {
+                b.rules.forceAction = 417;
+                for (int f = 0; f < 6000 && b.active && endAt < 0; ++f) {
+                    if (b.phase == App::Battle::Command && b.menu == App::Battle::Top) { // the pair defends
+                        battleChooseTop(app, 0);
+                        battleChooseCommand(app, 3);
+                        if (b.menu == App::Battle::Commands) battleChooseCommand(app, 3);
+                    }
+                    const bool was = b.turnOn && b.turn.action == 417;
+                    stepBattle(app);
+                    const bool on = b.turnOn && b.turn.action == 417;
+                    if (on) {
+                        if (kind < 0) {
+                            kind = b.turn.kind, hits = int(b.turn.hits.size()), cam = b.cam;
+                            const int size = monsterSize(app, b.turn.actors[0]);
+                            wantCam = size == 1 ? (b.rules.enemyPair ? 0x58 : b.turn.actors[0] + 0x54) : size + 0x57;
+                        }
+                        if (const App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) slot = std::max(slot, u->slot);
+                        effects = std::max(effects, int(b.effects.size()));
+                    }
+                    if (was && !b.turnOn) endAt = b.turnFrame;
+                }
+                endBattle(app, false);
+            }
+            app.runner.stop();
+            app.game = saved;
+            nbad = (kind != cr::kCmdIdle) + (hits != 0) + (slot != btlui::kSlotIdle) + (effects != 0) + (cam != wantCam) + (endAt != 60);
+            std::printf("do-nothing action 417: kind %d, %d hits, user slot %d, %d effects, camera %d (%d), %d frames; %d problems\n",
+                        kind, hits, slot, effects, cam, wantCam, endAt, nbad);
+            problems += nbad;
+        }
+
         // The weather goes on in battles with the "(128)" copies (snow: slots 62 / 65, stepped by the
         // battle's frames), and the tower's Space backdrop scrolls (Up +1, Down -1 a frame, Stop
         // still; the fog's drift wraps past 480), drawn on the field and in battles without errors

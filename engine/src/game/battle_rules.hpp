@@ -174,7 +174,9 @@ struct BattleHit {
                            // kind 99) - not one of the action's targets (que +0x7a / +0x8e)
 };
 
-enum BattleCommandKind { kCmdNone = 0, kCmdAttack = 1, kCmdGene = 2, kCmdItem = 3, kCmdDefend = 4, kCmdEscape = 5 };
+// (kCmdIdle: btlai_prc's kind 7 for an action of no attack / gene / item class - the do-nothing actions
+// 413..429 and 459..467, class 0 - played by btlact_none: its name, no motion, no glow, no calc)
+enum BattleCommandKind { kCmdNone = 0, kCmdAttack = 1, kCmdGene = 2, kCmdItem = 3, kCmdDefend = 4, kCmdEscape = 5, kCmdIdle = 7 };
 struct BattleCommand {
     int kind = kCmdNone;
     int action = 0;       // gene action (kCmdGene)

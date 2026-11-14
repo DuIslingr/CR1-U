@@ -2052,6 +2052,13 @@ void startTurn(App& app) {
     for (int k : t.actors) // the gene's MP leaves as it's cast
         if (k >= 0) b.shownMp[k] = b.rules.f[size_t(k)].mp;
     b.stageAction = 0;
+    if (t.kind == cr::kCmdIdle) { // btlai_prc's kind 7 (the do-nothing actions, class 0): _btlact_none_init (0x6d504) -
+        // the user's camera (as a cancelled command's), no motion, no glow, no sound; sixty frames, no calc
+        b.hitFrame = 0;
+        b.camHold = 25;
+        if (t.actors[0] >= 0) castCamera(app, cr::kCmdItem, t.actors[0]);
+        return;
+    }
     if (isStagedAction(t.action) && t.actors[0] >= 2) { // btlact_430_init.. instead of btlact_gene_init
         startStaged(app, a);
         return;
@@ -3143,7 +3150,7 @@ void stepBattle(App& app) {
                               : b.analyze.endAt >= 0 ? b.turnFrame >= b.analyze.endAt
                               : b.turn.kind == cr::kCmdEscape ? b.turnFrame >= (b.turn.escaped ? 30 + 40 : 40)
                               : b.stageAction ? b.turnFrame >= b.hitFrame + b.stageWait // the staged ones' wait
-                              : b.turn.cancelled ? b.turnFrame >= 60
+                              : b.turn.cancelled || b.turn.kind == cr::kCmdIdle ? b.turnFrame >= 60
                               : b.turn.kind == cr::kCmdAttack && (b.attackBackAt >= 0 || b.attackEndAt >= 0)
                                   ? (b.attackEndAt >= 0 && b.turnFrame >= b.attackEndAt) || b.turnFrame > 400 // (_btlact_attack's counts)
                               : b.turn.kind == cr::kCmdAttack ? (b.idleSince >= 0 && b.turnFrame >= b.idleSince + 10) || b.turnFrame > 400

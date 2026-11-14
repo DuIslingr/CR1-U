@@ -514,10 +514,12 @@ void BattleRules::enemyChoice(int enemy, bool asPair, Entry& e, const BattleActi
         e.kind = kCmdNone;
         return;
     }
-    const int c = a->cls + 1; // the kind: attacks 8-10 (and -1), genes 11 / 13 / 14, items 12
+    // the kind (btlai_prc 56170-56192, the class read signed): attacks 8-10 (and -1), genes 11 / 13 / 14, items 12,
+    // anything else 7 - btlact_none (the do-nothing actions' class 0)
+    const int c = a->cls + 1;
     e.kind = c < 16 && ((1 << c) & 0xe01) ? kCmdAttack : c < 16 && ((1 << c) & 0xd000) ? kCmdGene
            : c == 13                     ? kCmdItem
-                                         : kCmdGene;
+                                         : kCmdIdle;
     e.target = aiTarget(*a, enemy);
     if (!exclude) e.repeats = std::max(1, int(x.def ? x.def->raw[0x3e] : 1));
 }
@@ -810,8 +812,10 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
         // btlque_make_que: a gene silenced since it was chosen (+0x8f) - "can't use genes" (57065)
         // in place of the action; the pair's without the MP any more - 57081
         const unsigned ac = unsigned(e.action);
-        if (e.kind == kCmdGene && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u && ac - 1u > 124u && ac - 413u > 16u)
+        if ((e.kind == kCmdGene || e.kind == kCmdIdle) && f[size_t(e.actors[0])].status[kStatusSilence] && ac - 301u > 64u &&
+            ac - 1u > 124u && ac - 413u > 16u)
             return cancel(57065);
+        if (e.kind == kCmdIdle) return true; // btlact_none_init / btlact_none: sixty frames, no calc
         // (btlque_make_que 31096-31125: the pair broke this round - a member whose own plates lack the
         // gene can't cast it, 57003 with the first actor's name; before the MP's check)
         if (e.kind == kCmdGene && e.actors[0] < 2 && pairBroken_)

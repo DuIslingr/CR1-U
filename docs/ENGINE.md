@@ -721,6 +721,8 @@ c101/c102/c104/m207a, 2026-10-12).
       command's MP
       Risk Breaker's quarter of its users' HP is paid only when the first target's final figure
       (after the variance, Invincible and a story boss's last HP) is above 0
+      A monster's do-nothing action ("... is watching", 413..429) is `btlact_none`: its name, the
+      monster's own camera, no motion or casting glow, sixty frames
 - [x] The battle's status messages (`btl_add_msgque`): "<name> was poisoned!", the stat ups,
       the barrier, endure, invincible, silence, an element given, a command cancelled and each
       stolen item queue up (one per fighter) and take the banner one at a time for 60 frames,
