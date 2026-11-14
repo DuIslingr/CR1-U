@@ -7372,7 +7372,7 @@ int runSelfTest(App& app) {
         desc.naxes = 6, desc.nbuttons = 15;
         desc.axis_mask = (1u << 6) - 1, desc.button_mask = (1u << 15) - 1; // (the gamepad's own order)
         desc.name = "selftest pad";
-        const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+        SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
         SDL_Gamepad* pad = id ? SDL_OpenGamepad(id) : nullptr;
         SDL_Joystick* js = pad ? SDL_GetGamepadJoystick(pad) : nullptr;
         if (!pad) {
@@ -7672,13 +7672,66 @@ int runSelfTest(App& app) {
                         closed ? "yes" : "NO", moved ? "yes" : "NO", confirmed ? "yes" : "NO", backed ? "yes" : "NO",
                         fieldQuiet ? "yes" : "NO", swapped ? "yes" : "NO", problems);
             app.campOpen = false;
+            // hot-plug: the pad in use taken out while another is connected - that one goes on (not none
+            // until a new one comes); a pad that comes while the held one is gone (a wireless pad's
+            // receiver: a dead handle) taken
+            SDL_JoystickID second = SDL_AttachVirtualJoystick(&desc);
+            SDL_Event ev{};
+            ev.type = SDL_EVENT_GAMEPAD_REMOVED, ev.gdevice.which = id;
+            SDL_AppEvent(&app, &ev); // (app.pad: `pad`, the first)
+            pad = nullptr; // (closed by the event)
+            const bool handedOver = app.pad && SDL_GetGamepadID(app.pad) == second;
+            SDL_Gamepad* stale = SDL_OpenGamepad(id); // (the first again, held as the second goes quiet)
+            if (app.pad) SDL_CloseGamepad(app.pad);
+            app.pad = stale;
+            SDL_DetachVirtualJoystick(id), id = 0; // (the held handle dead now, no REMOVED seen)
+            ev.type = SDL_EVENT_GAMEPAD_ADDED, ev.gdevice.which = second;
+            SDL_AppEvent(&app, &ev);
+            const bool takenOver = app.pad && SDL_GetGamepadID(app.pad) == second;
+            problems += !handedOver + !takenOver;
+            std::printf("controller: the pad in use taken out - another connected goes on %s; one come while the held one is dead taken %s\n",
+                        handedOver ? "yes" : "NO", takenOver ? "yes" : "NO");
+            if (app.pad) SDL_CloseGamepad(app.pad);
+            if (second) SDL_DetachVirtualJoystick(second);
             app.pad = keepPad;
             app.game = keepGame;
-            SDL_CloseGamepad(pad);
+            if (pad) SDL_CloseGamepad(pad);
         }
         if (id) SDL_DetachVirtualJoystick(id);
         mapErrors += problems;
     }
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    { // F11 / Alt+Enter: windowed <-> fullscreen, the kind last chosen (borderless at first; exclusive once
+      // Options chose it), as Options' Display setting; a held key's repeats ignored
+        const App::Video keepVideo = app.video;
+        const bool keepPersist = app.persist;
+        app.persist = false; // (settings.ini left as it was)
+        auto press = [&app](SDL_Keycode key, SDL_Keymod mod, bool repeat = false) {
+            SDL_Event ev{};
+            ev.type = SDL_EVENT_KEY_DOWN, ev.key.key = key, ev.key.mod = mod, ev.key.down = true, ev.key.repeat = repeat;
+            SDL_AppEvent(&app, &ev);
+        };
+        app.video.display = 0, app.video.fullscreenKind = 2;
+        press(SDLK_F11, SDL_KMOD_NONE);
+        const bool borderless = app.video.display == 2;
+        press(SDLK_F11, SDL_KMOD_NONE, true);
+        const bool repeatIgnored = app.video.display == 2;
+        press(SDLK_RETURN, SDL_KMOD_LALT);
+        const bool windowed = app.video.display == 0;
+        adjustVideo(app, 1, 1); // (Options: Fullscreen)
+        const bool chosen = app.video.display == 1;
+        press(SDLK_F11, SDL_KMOD_NONE);
+        press(SDLK_F11, SDL_KMOD_NONE);
+        const bool exclusive = app.video.display == 1;
+        const int problems = !borderless + !repeatIgnored + !windowed + !chosen + !exclusive;
+        std::printf("fullscreen key: F11 borderless %s (a repeat ignored %s), Alt+Enter windowed %s, Options' Fullscreen %s then F11 back to it %s; %d problems\n",
+                    borderless ? "yes" : "NO", repeatIgnored ? "yes" : "NO", windowed ? "yes" : "NO", chosen ? "yes" : "NO", exclusive ? "yes" : "NO", problems);
+        app.video = keepVideo;
+        applyVideo(app);
+        app.persist = keepPersist;
+        mapErrors += problems;
+    }
+#endif
     { // btl_lose: an ordinary battle lost goes back to the pair's Ark, a fifth of the Oz gone
         int problems = 0;
         const cr::GameState keepGame = app.game;

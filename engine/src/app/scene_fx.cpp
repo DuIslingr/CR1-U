@@ -455,6 +455,7 @@ void loadVideo(App& app, const char* text) {
     v.width = std::clamp(keyValue(text, "\nwidth=", v.width), 320, 3840);
     v.height = std::clamp(keyValue(text, "\nheight=", v.height), 240, 2160);
     v.display = std::clamp(keyValue(text, "\ndisplay=", v.display), 0, 2);
+    v.fullscreenKind = std::clamp(keyValue(text, "\nfullscreen_kind=", v.display ? v.display : v.fullscreenKind), 1, 2);
     v.widescreen = keyValue(text, "\nwidescreen=", v.widescreen) != 0;
     // painted_fill= 0 / 1 (Original / Fill); the old painted_rooms= (0 Original, 1 Whole, 2 Fill Width) and
     // zoom_paintings=: their Fill Width becomes Fill, Whole the original
@@ -601,6 +602,21 @@ std::string aaName(const App::Video& v) {
     return v.msaa <= 1 ? std::string("Off") : std::to_string(v.msaa) + "x MSAA";
 }
 
+// F11 / Alt+Enter (a desktop's): windowed <-> fullscreen - the kind last chosen, borderless at first -,
+// the Options' Display setting itself (shown there, saved)
+void toggleFullscreen(App& app) {
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    App::Video& v = app.video;
+    if (v.display) v.fullscreenKind = v.display;
+    v.display = v.display ? 0 : std::clamp(v.fullscreenKind, 1, 2);
+    SDL_Log("display: %s (F11 / Alt+Enter)", v.display == 0 ? "windowed" : v.display == 1 ? "fullscreen" : "borderless");
+    applyVideo(app);
+    saveMix(app);
+#else
+    (void)app;
+#endif
+}
+
 void adjustVideo(App& app, int row, int dir) {
     App::Video& v = app.video;
     switch (row) {
@@ -621,7 +637,10 @@ void adjustVideo(App& app, int row, int dir) {
         v.height = kResolutions[i][1];
         break;
     }
-    case 1: v.display = (v.display + dir + 3) % 3; break;
+    case 1:
+        v.display = (v.display + dir + 3) % 3;
+        if (v.display) v.fullscreenKind = v.display; // (F11's from now on)
+        break;
     case 2: v.widescreen = !v.widescreen; break;
     case 3: v.paintings = (v.paintings + dir + 2) % 2; break;
     case 4: stepChoice(v.renderScale, kRenderScales, int(sizeof kRenderScales / sizeof kRenderScales[0]), dir); break;

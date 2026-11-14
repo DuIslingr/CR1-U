@@ -304,6 +304,7 @@ struct App {
     struct Video {
         int width = 1024, height = 768;    // window size (windowed) or display mode (fullscreen)
         int display = 0;                   // 0 windowed, 1 fullscreen (that mode), 2 borderless (the desktop's)
+        int fullscreenKind = 2;            // F11 / Alt+Enter's fullscreen: the last one chosen (1 or 2)
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
         bool widescreen = true;            // the screen widens to the window (up to 21:9); else 4:3 (a phone's: wide, filling it)
 #else
@@ -1607,6 +1608,8 @@ void scriptFieldScroll(App& app, float x, float y, int frames);
 void loadVideo(App& app, const char* text);
 void applyOrientation(App& app, bool captureDirection = false);
 void applyVideo(App& app);
+void toggleFullscreen(App& app); // F11 / Alt+Enter (a desktop's): windowed <-> the fullscreen kind last chosen
+void adjustVideo(App& app, int row, int dir); // an Options Display-page row stepped (row 1: Display)
 std::string sysLabel(const App& app, int id, const char* fallback);
 std::vector<OptRow> optionRows(App& app, int page);
 void openOptions(App& app, int page);

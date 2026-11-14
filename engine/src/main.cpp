@@ -1057,16 +1057,26 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     switch (event->type) {
     case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;
-    case SDL_EVENT_GAMEPAD_ADDED:
-        if (!app.pad) {
-            app.pad = SDL_OpenGamepad(event->gdevice.which);
-            if (app.pad) SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));
-        }
+    case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)
+        if (!app.pad || !SDL_GamepadConnected(app.pad))
+            if (SDL_Gamepad* pad = SDL_OpenGamepad(event->gdevice.which)) {
+                if (app.pad) holdSkip(app, kSkipPad, false), stickPointerButton(app, false), SDL_CloseGamepad(app.pad);
+                app.pad = pad;
+                SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));
+            }
         break;
     case SDL_EVENT_GAMEPAD_REMOVED:
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gdevice.which) {
             holdSkip(app, kSkipPad, false);
+            stickPointerButton(app, false); // (R3 held as it went: a puzzle room's finger lifted, not left pressed)
             SDL_CloseGamepad(app.pad), app.pad = nullptr;
+            int count = 0; // (another still connected: that one, not none until a new one comes)
+            if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+                for (int k = 0; k < count && !app.pad; ++k)
+                    if (ids[k] != event->gdevice.which) app.pad = SDL_OpenGamepad(ids[k]);
+                SDL_free(ids);
+            }
+            if (app.pad) SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));
         }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
@@ -1090,6 +1100,10 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         // X holds the skip corner wherever a scene runs - a battle's talk too, whose key handler
         // takes every key before the switch below (seen in metastigma's fork, 8a3aa5d)
         if (event->key.key == SDLK_X && app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true);
+        if (event->key.key == SDLK_F11 || ((event->key.key == SDLK_RETURN || event->key.key == SDLK_KP_ENTER) && (event->key.mod & SDL_KMOD_ALT))) {
+            if (!event->key.repeat) toggleFullscreen(app); // (windowed <-> fullscreen: Options' Display)
+            break; // (anywhere: the logos too)
+        }
         if (app.vitaLogo.phase) { // the Vita's logos: confirm cuts the hold short
             const SDL_Keycode k = event->key.key;
             if (app.vitaLogo.phase == 2 && (k == SDLK_RETURN || k == SDLK_KP_ENTER || k == SDLK_SPACE || k == SDLK_E || k == SDLK_ESCAPE))

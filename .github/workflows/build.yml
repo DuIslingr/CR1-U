@@ -161,7 +161,7 @@ jobs:
         with:
           gradle-version: '8.11.1'
       - name: SDL3 source (its Java glue and the engine's SDL)
-        run: git clone --depth 1 -b release-3.2.0 https://github.com/libsdl-org/SDL.git android/SDL
+        run: git clone --depth 1 -b release-3.4.20 https://github.com/libsdl-org/SDL.git android/SDL
       - name: Release key (the repository's secrets; a fork's pull request has none - the debug key)
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

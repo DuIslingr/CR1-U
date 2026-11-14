@@ -11,7 +11,8 @@ names referring to the lost context. Continuing to draw could produce missing
 art or a blank screen even though the gameplay state was still present.
 
 The pinned SDL release itself establishes the recovery contract:
-[`SDL_androidevents.c`, release-3.2.0](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/video/android/SDL_androidevents.c).
+[`SDL_androidevents.c`, release-3.2.0](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/video/android/SDL_androidevents.c)
+(the same in [release-3.4.20](https://github.com/libsdl-org/SDL/blob/release-3.4.20/src/video/android/SDL_androidevents.c), pinned since 2026-11-14).
 `android_egl_context_restore` tries to make the old EGL context current. When that
 fails, SDL creates and makes a replacement current, then pushes
 `SDL_EVENT_RENDER_DEVICE_RESET` with the window ID. The port must adopt that

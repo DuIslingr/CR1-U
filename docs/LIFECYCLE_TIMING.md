@@ -22,7 +22,8 @@ The ports had lifecycle timing gaps independent of the graphics recovery fix:
 
 The pinned SDL 3.2.0 implementation already handles native Android audio pause
 and resume when using its default blocking-on-pause behavior. In
-[`SDL_androidevents.c`](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/video/android/SDL_androidevents.c),
+[`SDL_androidevents.c`](https://github.com/libsdl-org/SDL/blob/release-3.2.0/src/video/android/SDL_androidevents.c)
+(unchanged in [release-3.4.20](https://github.com/libsdl-org/SDL/blob/release-3.4.20/src/video/android/SDL_androidevents.c), pinned since 2026-11-14),
 `Android_OnPause` pauses the OpenSL ES/AAudio devices and `Android_OnResume`
 resumes them. The port's missing work was excluding suspended time from its
 clocks; a second audio-device pause layer is unnecessary for that path.
