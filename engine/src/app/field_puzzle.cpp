@@ -1860,6 +1860,19 @@ void drawFieldMenu(App& app) {
     r.setOrigin(r.uiX());
     const float a = float(std::min(255, f.fade)) / 255.0f;
     if (app.puzzle.stage >= 0) drawPuzzleHud(app, a);
+    { // (__menuf_mainPut 32492-32552: the dungeons' puzzle marks at (4 / 36 / 68, 284), 32 x 32 from picture 0x30's
+      // (128 / 160 / 192, 312) - white once the flag (+ 400 x route) is set, else 0xff404040 - till the set's last
+      // flag: maps 35..46 flags 0x48c / 0x48d (gone at 0x48e), 47..51 0xbb098's 1184 / 1185 (0x4a5), 52..63 0xbb068's
+      // 1186..1188 (0x4a6); j001_d03 / d04 set them as their puzzles are solved)
+        const int map = app.mapNumber, p = 400 * fieldRoute(app);
+        auto mark = [&](float x, float u, int flag) {
+            const float k = app.game.flag(flag + p) ? 1.0f : 0x40 / 255.0f;
+            m.piece(x + 16, 284 + 32, u, 312, 32, 32, a, k, k, k);
+        };
+        if (map >= 35 && map <= 46 && !app.game.flag(0x48e + p)) mark(4, 128, 0x48c), mark(36, 160, 0x48d);
+        else if (map >= 47 && map <= 51 && !app.game.flag(0x4a5 + p)) mark(4, 192, 1184), mark(36, 192, 1185);
+        else if (map >= 52 && map <= 63 && !app.game.flag(0x4a6 + p)) mark(4, 192, 1186), mark(36, 192, 1187), mark(68, 192, 1188);
+    }
     r.setOrigin(wideRight(app)); // (widescreen: in the screen's corner)
     const bool bar = f.open || f.anim > 0;
     m.piece(460 + 16 + fieldDx(app), -30 + 32 + fieldDy(app), kCornerPiece[bar][0], kCornerPiece[bar][1], 32, 32, a);

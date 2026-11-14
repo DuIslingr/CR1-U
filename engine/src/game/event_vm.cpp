@@ -60,7 +60,7 @@ struct EventRunner::Vm {
         return i >= 0 && i < 34 ? args[i] : dummy;
     }
     int32_t var(int n) const {
-        if (n < -198) n += 317; // __VAR
+        if (n < -199) n += 317; // __VAR (16107, 0x1f1a0: mvn r3, #198; cmp; movlt - below -199)
         auto it = gs.vars.find(n);
         return it == gs.vars.end() ? 0 : it->second;
     }
@@ -118,7 +118,7 @@ struct EventRunner::Vm {
         const uint8_t op = u8();
         switch (op) {
         case 17: result = v; break;
-        case 19: { int n = eval(); if (n < -198) n += 317; gs.vars[n] = v; break; }
+        case 19: { int n = eval(); if (n < -199) n += 317; gs.vars[n] = v; break; }
         case 20: gs.setFlag(flagIndex(eval()), v != 0); break;
         case 22: arg(u8()) = v; break;
         case 33: case 34: case 42: break;

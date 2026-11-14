@@ -703,7 +703,7 @@ void rules(App& app) {
 // btl_main 300 -> 400: the battle's first moment, else the first battle's tutorial (0xff1)
 void first(App& app) {
     if (meets(app, kFirst, [](const Moment&) { return true; })) open(app);
-    else tutorial(app, 0xff1);
+    else if (tutorial(app, 0xff1)) setBattleCamera(app, app.battle.formation + 0xc, 0); // (6413-6417: the menu's camera with it)
 }
 // btl_main 899: a round over and everyone standing
 void between(App& app) {
@@ -773,7 +773,8 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     }
     app.sound.stopDialogueVoices();
     app.voiceQueue.clear();
-    app.game.setFlag(0xffe, false); // (btl_main 0, 6273: the scripted early end's flag cleared)
+    app.game.setFlag(0xffe, false); // (btl_main 0, 6272-6273: the defeat's and the scripted early end's flags cleared)
+    app.game.setFlag(0xffd, false);
     b.active = true;
     b.start = start;
     b.flags = flags;
@@ -3198,7 +3199,16 @@ void stepBattle(App& app) {
                 if (b.breakDue) b.rules.breakChangeSeen();
                 // btl_main 700 (the next frame, as it sees btlact's 1): the action's tutorials - an element
                 // taken, a status, a gene learned - from the hand-over above (an escape's 99 has none)
-                b.tutorialDue = b.handover == 0 ? 0 : b.rules.elementTaken ? 0xff3 : b.rules.statusTaken ? 0xff4 : b.rules.learnedNew ? 0xff5 : 0;
+                // (6198-6217: a trigger whose tutorial was seen falls through to the next - the element's, the status's,
+                // the gene learned's)
+                {
+                    const auto due = [&](bool on, int f) { return on && !app.game.flag(f); };
+                    b.tutorialDue = b.handover == 0                       ? 0
+                                    : due(b.rules.elementTaken, 0xff3) ? 0xff3
+                                    : due(b.rules.statusTaken, 0xff4)  ? 0xff4
+                                    : due(b.rules.learnedNew, 0xff5)   ? 0xff5
+                                                                       : 0;
+                }
                 // (_btlact_attack's end, 2.2.0 _btlact_attack 0x164a8: each attacker's wanted yaw home, turned over 3
                 // frames - a size-3 monster's 7; the other actions don't turn their actors)
                 for (int k = 0; k < 2; ++k)
@@ -3250,6 +3260,9 @@ void stepBattle(App& app) {
             for (App::Battle::Actor& a : b.actors)
                 if (a.fighter >= 2 && b.rules.f[size_t(a.fighter)].alive()) a.hidden = true;
             playBgm(app, 0x1a);
+            // (6060: SetFlag(0xffd) - btl_lose's test, and the Ark's area script 0 (j00x_t01 0x51e6): the defeat's
+            // tune 19 and a remark (6704..6706 / 6732..6736), then it clears it; btl_main 0 clears it too, 6272)
+            app.game.setFlag(0xffd, true);
             const App::Battle::Actor* lead = battleActor(app, 0);
             setBanner(app, sysText(app, 57016, lead ? lead->name : std::string()), 60);
             if (b.eventBattle && !b.gameOver.id) {
