@@ -1032,7 +1032,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             problems += int(bad.size());
         }
 
-        // The bosses' staged actions (btlact_430..436): each plays its own slot (the boss models'
+        // The bosses' staged actions (btlact_430, 432, 434..436 - 433 is a gene, below): each plays its own slot (the boss models'
         // 14th / 15th, read past the usual 13), steps through its cameras, flashes and shakes
         // where it has them, hits at its frame and ends after its wait; hits shake the screen;
         // and the effects' textures scroll with their materials' actions
@@ -1040,7 +1040,7 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             // quake: one before the hit; after: the strongest from the hit on (3 = the calc's own, when a hit lands)
             struct Want { int action, group, hit, wait, cams; bool flash, quake; float after; };
             const Want wants[] = {{430, 340, 140, 40, 3, true, true, 3},    {432, 348, -1, 40, 5, false, false, 0},
-                                  {433, 352, 112, 40, 0, false, false, 0}, {434, 352, 130, 65, 2, true, true, 3},
+                                  {434, 352, 130, 65, 2, true, true, 3},
                                   {435, 356, 163, 40, 5, true, false, 3},   {436, 356, 61, 50, 4, false, false, 10}};
             int sbad = 0, rerrs = 0, ran = 0, hitQuakes = 0;
             const cr::GameState saved = app.game;
@@ -1626,10 +1626,10 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             app.runner.stop();
             app.game = saved;
             const int boss15 = app.battleData.anim(9, 14).loopEnd > 0 || app.battleData.anim(9, 14).hit > 0;
-            std::printf("battle staging: %d of 6 boss actions staged, hit quake %s, effect 48: %d of %d scrolling materials move, "
+            std::printf("battle staging: %d of 5 boss actions staged, hit quake %s, effect 48: %d of %d scrolling materials move, "
                         "boss slots past 13 %s; %d problems, %d render API errors\n", ran, hitQuakes ? "yes" : "no", moved,
                         scrolling, boss15 ? "read" : "missing", sbad, rerrs);
-            problems += sbad + rerrs + (ran != 6) + !hitQuakes + (scrolling == 0 || moved == 0);
+            problems += sbad + rerrs + (ran != 5) + !hitQuakes + (scrolling == 0 || moved == 0);
             glErrors += rerrs;
         }
 
@@ -1670,6 +1670,46 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
             std::printf("do-nothing action 417: kind %d, %d hits, user slot %d, %d effects, camera %d (%d), %d frames; %d problems\n",
                         kind, hits, slot, effects, cam, wantCam, endAt, nbad);
             problems += nbad;
+        }
+
+        // Action 433 (monsters 111..114) as 2.2.0 casts it: btlai_prc's jump table leaves it its class's kind, a gene
+        // (btlact_433 is never reached) - btlact_gene's cast slot and glow, then at the hit the formation's camera (+ 0xc)
+        {
+            int kind = -1, staged = -1, slot = -1, glow = 0, hitCam = -1, wantCam = -1;
+            const cr::GameState saved = app.game;
+            startBattle(app, {352, 0, -1, 0}, 0);
+            App::Battle& b = app.battle;
+            const cr::BattleActionDef* def = app.battleActions.get(433);
+            if (b.active && def) {
+                b.rules.forceAction = 433;
+                wantCam = b.formation + 0xc;
+                bool ended = false;
+                for (int f = 0; f < 6000 && b.active && !ended; ++f) {
+                    if (b.phase == App::Battle::Command && b.menu == App::Battle::Top) {
+                        battleChooseTop(app, 0);
+                        battleChooseCommand(app, 3);
+                        if (b.menu == App::Battle::Commands) battleChooseCommand(app, 3);
+                    }
+                    const bool was = b.turnOn && b.turn.action == 433, shown = b.hitsShown;
+                    stepBattle(app);
+                    if (b.turnOn && b.turn.action == 433) {
+                        if (kind < 0) {
+                            kind = b.turn.kind, staged = b.stageAction;
+                            if (const App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) slot = u->slot;
+                            glow = int(b.effects.size());
+                        }
+                        if (b.hitsShown && !shown) hitCam = b.cam;
+                    }
+                    ended = was && !b.turnOn;
+                }
+                endBattle(app, false);
+            }
+            app.runner.stop();
+            app.game = saved;
+            const int gbad = (kind != cr::kCmdGene) + (staged != 0) + (!def || slot != def->cls) + (glow == 0) + (hitCam != wantCam);
+            std::printf("action 433 as a gene: kind %d, staged %d, cast slot %d, %d effects at the cast, camera at the hit %d (%d); "
+                        "%d problems\n", kind, staged, slot, glow, hitCam, wantCam, gbad);
+            problems += gbad;
         }
 
         // The weather goes on in battles with the "(128)" copies (snow: slots 62 / 65, stepped by the

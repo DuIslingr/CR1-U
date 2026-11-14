@@ -1480,7 +1480,10 @@ void stepFlash(App& app) {
 // Each runs its own timeline instead of the gene's: the user's motion, a run of cameras (the
 // next set as the last one ends), effects at points or on the targets, sounds, quakes and
 // flashes at fixed frames, the hit (btlcalc_prc) at the end of it, then a wait.
-bool isStagedAction(int action) { return action == 430 || (action >= 432 && action <= 436); }
+// (btlai_prc's jump table, 2.2.0 0x59644 - 1.0.1 the same: 430 kind 10, 432 11, 434..436 13..15; 433 is left its class's
+// kind, a gene - btlact_433 (kind 0xc) is never reached, and 433 casts through btlact_gene: its sound 0xd4 at frame 36 and
+// the formation's camera, + 0xc, 38331 / 38389)
+bool isStagedAction(int action) { return action == 430 || action == 432 || (action >= 434 && action <= 436); }
 
 bool cameraDone(const App& app) { return !app.battle.camLive; } // btlcamera_prc clears +0xa80 when its frames are over
 
@@ -1525,14 +1528,6 @@ void startStaged(App& app, const cr::BattleActionDef* a) {
         setBattleCamera(app, 0x1fe);
         break;
     }
-    case 433: // the item cameras, frames 82..83 held
-        if (u) playSlot(app, *u, cls, -1), u->loopFrom = 82, u->loopTo = 83;
-        b.hitFrame = 112;
-        if (user < 2) setBattleCamera(app, b.rules.pair ? 0x55 : user + 0x53);
-        else if (monsterSize(app, user) == 1) setBattleCamera(app, b.rules.enemyPair ? 0x58 : user + 0x54, user);
-        else setBattleCamera(app, monsterSize(app, user) + 0x57, user);
-        spawnEffect(app, effects::kCast, user);
-        break;
     case 434:
         if (u) playSlot(app, *u, cls, btlui::kSlotIdle);
         b.hitFrame = 130;
@@ -1642,7 +1637,6 @@ void stagedHit(App& app) {
         app.sound.play(0x7e);
         if (u) u->then = btlui::kSlotIdle; // mdl_set_act_nextanm: the loop plays out, then stands
         break;
-    case 433: setBattleCamera(app, b.formation + 12); break;
     case 435:
         if (u) u->then = btlui::kSlotIdle;
         break;
@@ -3160,8 +3154,6 @@ void stepBattle(App& app) {
                     std::printf("turn over: battle frame %d, turn frame %d (hit %d, back %d, end %d, joint %d, shot %d, fx %d)\n", b.frames, b.turnFrame,
                                 b.hitFrame, b.attackBackAt, b.attackEndAt, int(b.attackJoint), b.shotAt, b.shotFx);
                 b.analyze = {};
-                if (b.stageAction == 433) // 9999: mdl_set_act_motion(0), it stands
-                    if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) playSlot(app, *u, btlui::kSlotIdle);
                 b.stageAction = 0;
                 b.turnOn = false;
                 releasePair(b); // (a turn without a hit shown)

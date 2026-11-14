@@ -1510,7 +1510,10 @@ of `btlcalc_0404` / `0406` starts (3, 100, 0, 5). Flashes (`_SetFade_back(rgb, f
 with G+0x39c60 = 0: full screen; `PutMask`): alpha from + (to − from) × t / ms, t + 50 a frame,
 held at its end unless 0 — over the 3D, under the HUD.
 
-The bosses' staged actions (`btlact_430`..`436`, instead of `btlact_gene_init`; counter +4,
+The bosses' staged actions (`btlact_430`, `432`, `434`..`436`, instead of `btlact_gene_init` - `btlai_prc`'s
+jump table gives those kinds 10, 11, 13..15; 433 keeps its class's kind, a gene, so `btlact_433`, kind 12, is
+never reached in 1.0.1 or 2.2.0: 433 casts through `btlact_gene`, sound 0xd4 at frame 36, the hit's camera
+formation + 0xc; counter +4,
 length +8, state +0x98: 0x44c running, 0x76c waiting, 9999 done; cameras at +0x2c, the next set
 whenever `btlcamera_prc` has finished the last one — G+0x9e0 cleared once its raw[15] frames
 are over). Frames count from 1; the hit (`btlcalc_prc`) at the length, then the wait.
@@ -1519,7 +1522,7 @@ are over). Frames count from 1; the hit (`btlcalc_prc`) at the length, then the 
 |---|---|---|---|---|
 | 430 (m103) | slot cls, then idle | 0x207..0x20a | init effect 0x59 at (500, −4, 500), sound 0x7b; 70: effect 0x5a at (500, −2, 500), 0x7c, quake (3, 0→100, 2, held); 79 / 82: white in / out over 150; 110 / 130: in / out over 500; 133: EndQuake (3, 100→0, 2) | 140, 40 |
 | 432 (m102) | slot cls looped (its loop frames) | 0x1fe..0x202, then 0x203 + target (0x205 pair) | init sound 0xbd; 14: 0xc2; 36: effect 0x19 at the user's bone 1206, 0x5b on each target, 0x7d | loop start + 45: effect 0x5c on the targets, 0x7e, the loop plays out; 40 |
-| 433 (m104) | slot cls, frames 82..83 looped | the item cameras (0x53 + k, pair 0x55; monsters 0x54 + k / 0x58 / size + 0x57) | init effect 0x15 on the user | 112: camera formation + 12; 40, then idle |
+| (433 (m104), unused: `btlact_433`) | slot cls, frames 82..83 looped | the item cameras (0x53 + k, pair 0x55; monsters 0x54 + k / 0x58 / size + 0x57) | init effect 0x15 on the user | 112: camera formation + 12; 40, then idle |
 | 434 (m104) | slot cls, then idle | 0x20c..0x20e | init effect 0x1e on the user, 0x62; 84: 0xd4; 86 / 89: white in / out over 150; 100: effect 0x22 on the targets, 0x6d, quake (5, 0→100, 2, held); 128: EndQuake | 130, 65 |
 | 435 (m105a) | slot cls, frames 103..113 looped | 0x215..0x21a (on past the hit) | init 0xf0, 0xf1; 103: effect 0x21 at (500, 0, 523), 0x65, white in over 150; 106: out; 133: in over 1500; 163: out over 500 | 163, the loop plays out; 40 |
 | 436 (m105a) | slot cls, then idle | 0x210..0x214 (on past the hit) | init 0x83, 0xf0 | 61: quake (10, 100→0, 10); 50 |
