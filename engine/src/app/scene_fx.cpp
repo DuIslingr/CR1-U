@@ -2330,9 +2330,9 @@ void drawItemBand(App& app) {
     cr::MenuPainter& m = app.menu;
     m.begin(r, app.windowTex, &app.font);
     r.setOrigin(r.uiX());
-    const float tw = m.textWidth(text);
+    const float tw = m.textWidth(text, 16); // (_Uty_GetItem_Init 20399: 16 pt - video 02 474 s "You got Plum!")
     if (w.icon >= 0) m.piece(16 + 206 - tw / 2, 32 + y + 1, float(w.icon % 16 * 32), 248 + float(w.icon / 16 * 32), 32, 32, a);
-    m.text(text, 16 + 240 - tw / 2, 32 + y + 8, false, a);
+    m.text(text, 16 + 240 - tw / 2, 32 + y + 8, false, a, 16);
 }
 
 // PutMask's quad (tex2d-space +-512 x +-384 at z -1: over the 3D, under the 2D); widescreen

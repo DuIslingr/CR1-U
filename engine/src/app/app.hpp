@@ -1620,6 +1620,7 @@ void campPointerMove(App& app, float px, float py);
 void campPointerUp(App& app, float px, float py);
 bool campPressIn(const App& app, float origin, float x, float y, float w, float h);
 void drawCampRow(App& app, cr::MenuPainter& m, float x, float y, int item, int count, bool lit, float a, int style = 0, const std::string& label = std::string());
+float menuFontSize(const App& app); // MuComFont*: 13 pt, 14 in Japanese / Chinese / Korean
 void drawCampScrollBar(cr::MenuPainter& m, float scroll, int n, float a);
 int staffLines(const App& app);
 float staffPicEnd(const App::StaffRoll& st);

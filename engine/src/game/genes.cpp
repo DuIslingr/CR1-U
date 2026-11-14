@@ -27,13 +27,6 @@ int owned(const GameState& gs, int item) {
     return it == gs.items.end() ? 0 : it->second;
 }
 
-// The Human Genes' abilities and skills are each character's own (81 + c, 131 + c)
-bool ownEntry(int entry, int character) {
-    if (entry >= 81 && entry <= 88) return entry == 81 + character;
-    if (entry >= 131 && entry <= 138) return entry == 131 + character;
-    return true;
-}
-
 } // namespace
 
 const std::array<int, 8>& plateContents(int plate) { return isPlate(plate) ? kPlate[plate - kFirstPlate] : kNone; }
@@ -44,12 +37,15 @@ int plateLearned(const GameState& gs, int plate) {
     return n;
 }
 
+// (_chk_gene 60376-60398, make_item_list kinds 4 / 5, MuCom_IsSkillEquip: any known entry of any worn plate - the
+// partner's Human Genes plate too, its 81..88 / 131..138 known per pair (_GetItmCnt): Escher in Human Mage has
+// Musiea's ability and skill 132)
 std::vector<int> usableAbilities(const GameState& gs, int character) {
     std::vector<int> out;
     character = std::clamp(character, 0, 7);
     for (int plate : gs.party[size_t(character)].genes)
         for (int e : plateContents(plate))
-            if (isGeneAbility(e) && owned(gs, e) > 0 && ownEntry(e, character) &&
+            if (isGeneAbility(e) && owned(gs, e) > 0 &&
                 std::find(out.begin(), out.end(), e) == out.end())
                 out.push_back(e);
     return out;
@@ -64,7 +60,7 @@ int armorSkill(int armor) {
 bool hasSkill(const GameState& gs, int character, int skill) {
     if (skill >= 148 && skill <= 150 && armorSkill(gs.party[size_t(std::clamp(character, 0, 7))].equip[kArmor]) == skill)
         return true; // chk_gene_btl: the resisting armors
-    if (!isSkill(skill) || owned(gs, skill) <= 0 || !ownEntry(skill, character)) return false;
+    if (!isSkill(skill) || owned(gs, skill) <= 0) return false;
     for (int plate : gs.party[size_t(std::clamp(character, 0, 7))].genes) {
         const auto& p = plateContents(plate);
         if (std::find(p.begin(), p.end(), skill) != p.end()) return true;

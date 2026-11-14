@@ -2665,7 +2665,7 @@ void drawGeneBoard(App& app, cr::MenuPainter& m, float x, float y, int plate, fl
     for (int e : cr::plateContents(plate)) {
         if (e <= 0 || ownedCount(app, e) <= 0 || shown >= 6) continue;
         const std::string entry = itemName(app, e);
-        m.text(entry, x + 12 + (128 - m.textWidth(entry, 12)) / 2, ly, false, a, 12);
+        m.text(entry, x + 12 + (128 - m.textWidth(entry, menuFontSize(app))) / 2, ly, false, a, menuFontSize(app)); // (ComUty_GeneAbilityStrChange 46306: 13 / 14)
         ly += 18;
         ++shown;
     }
@@ -2813,8 +2813,8 @@ void drawStaffRoll(App& app) {
     if (st.win[3] > 0)
         for (const auto& l : st.lines) {
             if (!l.on) continue;
-            if (st.phone) { if (l.y > -20 - st.edgeY && l.y < 320 + st.edgeY) m.text(staffLine(app, l.entry), 16 + 16, l.y + 32, false, st.win[3], 13); }
-            else if (l.y > -40 && l.y < 800) m.text(staffLine(app, l.entry), 16, l.y / 2, false, st.win[3], 13);
+            if (st.phone) { if (l.y > -20 - st.edgeY && l.y < 320 + st.edgeY) m.text(staffLine(app, l.entry), 16 + 16, l.y + 32, false, st.win[3], menuFontSize(app)); } // (StaffRollSet 73990: 13 / 14)
+            else if (l.y > -40 && l.y < 800) m.text(staffLine(app, l.entry), 16, l.y / 2, false, st.win[3], menuFontSize(app));
         }
     if (st.win[2] > 0 && app.windowTex.id) // the fast button (2.2.0: (444, 0))
         m.picture(114, (st.phone ? 444 : 460) + 16, (st.phone ? -st.edgeY : -32) + 32, st.win[2]);
@@ -2962,7 +2962,7 @@ void drawLastBattle(App& app) {
     if (lb.win[1] > 0) {
         const float dx = -140 * (1 - ease(lb.win[1]));
         m.picture(15, dx, 56, lb.win[1]);
-        m.textCentred(sysText(app, 58000 + 0x68 + lb.count), dx + 12, 47, false, lb.win[1], 15);
+        m.textCentred(sysText(app, 58000 + 0x68 + lb.count), dx + 12, 47, false, lb.win[1], menuFontSize(app)); // (LastBtSet 72185: 13 / 14)
     }
     if (lb.win[2] > 0 && lb.tex.id) { // sheet 1 picture 5: (0, 0, 256, 256) at (0, 64)
         const float dx = -240 * (1 - ease(lb.win[2]));
@@ -3255,11 +3255,11 @@ void drawWorldSelect(App& app) {
     if (ws.win[0] > 0) m.picture(0, dx(0) + 8 + ox, dy(0) + 4 + oy, ws.win[0]);
     if (ws.win[2] > 0) { // (the labels as the camp's: FontDisp's y the line box's top)
         m.picture(15, dx(2) + ox, dy(2) + 56 + oy, ws.win[2]);
-        m.textCentred(sysText(app, 58000), dx(2) + 12 + ox, dy(2) + 47 + oy, false, ws.win[2], 15);
+        m.textCentred(sysText(app, 58000), dx(2) + 12 + ox, dy(2) + 47 + oy, false, ws.win[2], menuFontSize(app)); // (WldChoiceSet 49230: MuComFont* 13 / 14 - video 01 929 s)
     }
     if (ws.win[3] > 0) {
         m.picture(16, dx(3) + 24 + ox, dy(3) + 72 + oy, ws.win[3]);
-        m.textCentred(sysText(app, 58001), dx(3) + 40 + ox, dy(3) + 65 + oy, false, ws.win[3], 15);
+        m.textCentred(sysText(app, 58001), dx(3) + 40 + ox, dy(3) + 65 + oy, false, ws.win[3], menuFontSize(app));
     }
     auto plate = [&](float x, float y, bool chosen, const std::string& name, int pips, float a) {
         m.picture(chosen ? 9 : 8, x, y, a);
@@ -3581,7 +3581,8 @@ void drawCamp(App& app) {
                             const cr::PartyMember& pm = app.game.party[size_t(campCharacter(app, g))];
                             worn |= std::find(std::begin(pm.equip), std::end(pm.equip), it) != std::end(pm.equip) || campWears(app, campCharacter(app, g), it);
                         }
-                        drawCampRow(app, m, x, y, it, cr::isPlate(it) ? 0 : heldCount(app, it), lit, le, worn ? 3 : campUsable(app, it) ? 0 : 2);
+                        // (55769-55772: one member in the party - the jewel member 1 wears off the count)
+                        drawCampRow(app, m, x, y, it, cr::isPlate(it) ? 0 : pairHeldCount(app, it), lit, le, worn ? 3 : campUsable(app, it) ? 0 : 2);
                     });
                     left();
                 } else if (ph == App::Camp::Member) memberPlates(current, {e, 360 * (1 - e)}); // (the face boards above)

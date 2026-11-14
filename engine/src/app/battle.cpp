@@ -3543,7 +3543,9 @@ void drawBattlePlate(App& app, cr::MenuPainter& m, float x, float y, int fighter
     std::string name;
     for (const App::Battle::Actor& ac : b.actors)
         if (ac.fighter == fighter) name = ac.name;
-    m.textCentred(name, x + 146 - m.textWidth(name, 13) / 2, y + 15, selected, a, 13);
+    // (_btlord_make_select 30243: registered at 16 pt; __menub_mainPut 13113 drawfont_center - white edged black, lit or not;
+    // video 02 679.5 s "Hanuman")
+    m.textCentred(name, x + 146 - m.textWidth(name, 16) / 2, y + 15, false, a, 16);
     drawBattleStatus(m, f, x + 56, y - 8, a);
 }
 
@@ -3696,7 +3698,7 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     if (away <= 0.0f && app.systemText.message(rs.message, app.language, [&](int) { return value; }, pages, nullptr,
                                [&](int) { return rs.name; }) &&
         !pages.empty())
-        for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 235 + by + 16.0f * float(i), false, a, 14);
+        for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 235 + by + 16.0f * float(i), false, a, menuFontSize(app)); // (MbResultSet 58536: 13 / 14)
     r.setOrigin(wideLeft(app));
     if (keyHints(app)) // (our key hints)
         m.text("Enter: continue", 20, 372, false, a * 0.8f * in, 9);
