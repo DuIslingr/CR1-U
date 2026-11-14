@@ -2321,18 +2321,30 @@ int fieldRenderSelfTest(App& app) {
         check(n19 == 1 && f19 == 2000 && n86 == 11 && f86 == 1000 && n42 == 501 && std::fabs(n0 - far0) < 1e-3f && f0 == 2000, "near / far");
     }
     // Options (2.2.0's data): one Language row, its arrows through the languages the data has
+    // - and a fan translation's after them (translation/: its language a choice of its own, English kept)
+    const bool keepFan = app.fanText;
     if (languageSheet(app)) {
-        app.language = 1;
+        app.language = 1, app.fanText = false;
         std::vector<OptRow> rows = optionRows(app, 0);
         bool ok = rows.size() > 1 && rows[0].kind == OptControl::Value && rows[0].valueTex && rows[1].label != "Text Language";
         std::set<int> seen;
-        for (int k = 0; ok && k < cr::kLanguages; ++k) {
-            optionRows(app, 0)[0].act(1);
-            seen.insert(app.language);
-        }
         int usable = 0;
-        for (int l = 0; l < cr::kLanguages; ++l) usable += languageUsable(app, l);
-        ok = ok && app.language == 1 && int(seen.size()) == usable;
+        for (int c = 0; c <= cr::kLanguages; ++c) usable += choiceUsable(app, c);
+        bool fanSeen = false, fanRight = true;
+        for (int k = 0; ok && k < usable; ++k) {
+            optionRows(app, 0)[0].act(1);
+            seen.insert(languageChoice(app));
+            if (app.fanText) {
+                std::vector<std::vector<std::string>> pages;
+                fanSeen = true;
+                fanRight = app.language == 1 && textLanguage(app) == cr::kFanLanguage && app.systemText.message(51000 + 7082, textLanguage(app), nullptr, pages) &&
+                           optionRows(app, 0)[0].valueText == languageChoiceName(app, cr::kLanguages);
+            }
+        }
+        ok = ok && app.language == 1 && !app.fanText && int(seen.size()) == usable && fanSeen == app.fanArchive.isOpen() && fanRight;
+        if (app.fanArchive.isOpen())
+            std::printf("field render: the fan translation (%s) a choice after the release's, English kept: %s\n", app.fanName.c_str(),
+                        fanSeen && fanRight ? "yes" : "NO");
         app.language = 1;
         optionRows(app, 0)[0].act(-1);
         const int back = app.language;
@@ -2347,7 +2359,7 @@ int fieldRenderSelfTest(App& app) {
               "the Language pair (1.0.1)");
         std::printf("field render: Options keep 1.0.1's Japanese / English pair\n");
     }
-    app.language = keepLang;
+    app.language = keepLang, app.fanText = keepFan;
     applyLanguage(app);
     app.showBackground = keepBg, app.noEncounters = keepNoEnc;
     problems += app.renderer.takeErrors();

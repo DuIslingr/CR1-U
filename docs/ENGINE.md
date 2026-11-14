@@ -479,7 +479,11 @@ c101/c102/c104/m207a, 2026-10-12).
       itself on macOS / Windows, Liberation Sans or Arimo (Arial's metrics) on Linux -, the
       Chinese and Korean glyphs it lacks from the CJK font's SC / TC / KR face on its baseline,
       as iOS's font fallback draws them. The CJK font: Noto Sans CJK on Linux, Hiragino / PingFang /
-      Apple SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows. Fonts in the game folder's `font/`
+      Apple SD Gothic on macOS, Yu Gothic / MS Gothic / Meiryo on Windows. A fan translation in `translation/`
+      (metastigma's Russian rePatch: the Vita's cr1.psarc with the English text replaced in place, each
+      file its size, and 16 textures redrawn as bare UBC3 / RGBA GXTs) is a ninth choice: English's
+      slot read from its own copy of each script (`EventFile` / `SystemText` keep both; the scripts
+      run from the game's), its art over the game's while chosen - English untouched. Fonts in the game folder's `font/`
       take their place (`gfx/font.cpp` `ownFonts`: one with CJK glyphs the CJK font - a
       `...bold...` file its bold, else it too -, one without the Latin one). `CR_FONT=<file>` picks
       the CJK font, `CR_FONT_BOLD=<file>` its bold, `CR_LATIN_FONT=<file>` the Latin one (`none`:

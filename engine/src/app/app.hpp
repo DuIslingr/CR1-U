@@ -336,6 +336,12 @@ struct App {
     std::string modelsDir;                 // replacement models: models/hd/ in the game folder, or CR_HD_MODELS
     int hdModelsLoaded = 0;                // since startup
     int language = 1;                      // text language (cr::kLanguageName): English by default
+    // A fan translation as a language of its own (cr::kFanLanguage): `language` stays English's (its
+    // layout, its font), the messages the translation's own files' and its art over the game's
+    bool fanText = false;
+    cr::PsarcArchive fanArchive;           // translation/<name>/ (its rePatch folder's cr1.psarc), not open: none
+    std::string fanName;                   // its language ("Russian"; settings.ini's choice 8)
+    bool englishPatched = false;           // the copy's own English is a fan translation's (patched in place: named so)
     cr::Font font;                         // the game's text in the language's face (applyLanguage: one of these three)
     cr::Font fontLatin;                    // ArialMT's metrics (Arial / Liberation Sans): every language but Japanese
     cr::Font fontCjk;                      // a CJK system font: Chinese / Korean glyphs Arial lacks; the rest without a Latin face
@@ -1680,6 +1686,7 @@ std::string savePath(const App& app, const char* file);
 cr::SaveData captureSave(const App& app);
 bool applySave(App& app, const cr::SaveData& s);
 bool languageSheet(App& app);
+const cr::Texture* charSheet(App& app); // (window_char: loaded once; refreshFanArt again)
 std::string slotPath(const App& app, int pair);
 std::string dataPath(const App& app);
 bool readData(const App& app, cr::SaveData& d);
@@ -1875,6 +1882,18 @@ const cr::FieldNpc* interactTarget(const App& app);
 bool npcExaminable(const App& app, const cr::FieldNpc& n);
 bool interact(App& app, bool instant = false);
 bool languageUsable(const App& app, int language);
+// The text slot the messages are read in: kFanLanguage while the fan translation is chosen, else `language`
+int textLanguage(const App& app);
+// The Options' language choices: 0..7 the game's languages, 8 the fan translation (English's slot, its text)
+int languageChoice(const App& app);
+bool choiceUsable(const App& app, int choice);
+std::string languageChoiceName(const App& app, int choice);
+void setLanguageChoice(App& app, int choice); // (applyLanguage, its art, saved)
+// The art a fan translation redrew - the message window's, window_char's names, the titles' - again
+// from the right archive (now, where it is on screen; else as it next loads)
+void refreshFanArt(App& app);
+// The fan translation in translation/ (each game folder's, the profile folder's; `path` first): opened, its text set
+bool openFanTranslation(App& app, const std::string& path);
 bool cjkTextLanguage(const App& app);
 float msgScale(const App& app, float points);
 void applyLanguage(App& app);

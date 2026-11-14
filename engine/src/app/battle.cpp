@@ -13,7 +13,7 @@ int partyLevel(const App& app) {
 // A system text's first line (sys.evt ids >= 51000), empty if none; `name` fills string 0
 std::string sysText(const App& app, int id, const std::string& name) {
     std::vector<std::vector<std::string>> pages;
-    if (app.systemText.message(id, app.language, nullptr, pages, nullptr,
+    if (app.systemText.message(id, textLanguage(app), nullptr, pages, nullptr,
                                [&](int n) { return n == 0 || n == 9 ? name : std::string(); }) &&
         !pages.empty() && !pages[0].empty())
         return pages[0][0];
@@ -2238,7 +2238,7 @@ void startAnalyze(App& app) {
     App::Battle& b = app.battle;
     auto line = [&](int id, int value, const std::string& text) {
         std::vector<std::vector<std::string>> pages;
-        if (!app.systemText.message(id, app.language, [&](int) { return value; }, pages, nullptr,
+        if (!app.systemText.message(id, textLanguage(app), [&](int) { return value; }, pages, nullptr,
                                     [&](int) { return text; }) || pages.empty() || pages[0].empty())
             return std::string();
         std::string s = pages[0][0];
@@ -2299,7 +2299,7 @@ void showHits(App& app) {
             if (App::Battle::Actor* u = battleActor(app, b.turn.actors[0])) name = u->name;
         std::vector<std::vector<std::string>> pages;
         const int value = b.turn.messageValue;
-        if (app.systemText.message(b.turn.message, app.language, [&](int) { return value; }, pages, nullptr,
+        if (app.systemText.message(b.turn.message, textLanguage(app), [&](int) { return value; }, pages, nullptr,
                                    [&](int) { return name; }) &&
             !pages.empty() && !pages[0].empty())
             setBanner(app, pages[0][0], btlui::kMessageFrames);
@@ -3811,7 +3811,7 @@ void drawBattleResults(App& app, cr::MenuPainter& m, float a) {
     m.piece(458, 298 + by, float(mk[0] + 20 * pictAnimFrame(rs.frames, 1, 4)), mk[1], mk[2], mk[3], a);
     std::vector<std::vector<std::string>> pages;
     const int value = rs.value;
-    if (away <= 0.0f && app.systemText.message(rs.message, app.language, [&](int) { return value; }, pages, nullptr,
+    if (away <= 0.0f && app.systemText.message(rs.message, textLanguage(app), [&](int) { return value; }, pages, nullptr,
                                [&](int) { return rs.name; }) &&
         !pages.empty())
         for (size_t i = 0; i < pages[0].size() && i < 4; ++i) m.text(pages[0][i], 24, 235 + by + 16.0f * float(i), false, a, menuFontSize(app)); // (MbResultSet 58536: 13 / 14)

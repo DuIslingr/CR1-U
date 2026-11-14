@@ -548,6 +548,27 @@ bool languageUsable(const App& app, int language) {
     return (language >= 1 && language <= 4) || app.fontCjk.loaded() || (language == 0 && app.fontCjkBold.loaded());
 }
 
+int textLanguage(const App& app) { return app.fanText && app.language == 1 ? cr::kFanLanguage : app.language; }
+int languageChoice(const App& app) { return app.fanText ? cr::kLanguages : app.language; }
+bool choiceUsable(const App& app, int choice) {
+    if (choice == cr::kLanguages) return app.fanArchive.isOpen() && app.systemText.hasLanguage(cr::kFanLanguage) && languageUsable(app, 1);
+    return languageUsable(app, choice);
+}
+std::string languageChoiceName(const App& app, int choice) {
+    if (choice == cr::kLanguages) return app.fanName == "Russian" ? "\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9 (fan translation)" : app.fanName;
+    if (choice == 1 && app.englishPatched) return "\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9 (patched over English)";
+    return cr::kLanguageName[std::clamp(choice, 0, cr::kLanguages - 1)];
+}
+void setLanguageChoice(App& app, int choice) {
+    if (!choiceUsable(app, choice)) return;
+    const bool fan = choice == cr::kLanguages, artChanges = fan != app.fanText;
+    app.fanText = fan;
+    app.language = fan ? 1 : choice;
+    applyLanguage(app);
+    if (artChanges) refreshFanArt(app);
+    saveMix(app);
+}
+
 // FUN_000373e4 (2.2.0 0x373e4, decomp 32921): the language is Japanese, Chinese or Korean (0, 5, 6, 7) -
 // the menus' 14-unit text, the message window's own margins; false for English, French, German, Spanish
 bool cjkTextLanguage(const App& app) {
@@ -563,6 +584,7 @@ bool cjkTextLanguage(const App& app) {
 // draws everything (its Latin wider than Arial's).
 void applyLanguage(App& app) {
     if (!languageUsable(app, app.language)) app.language = 1;
+    if (app.fanText && (app.language != 1 || !choiceUsable(app, cr::kLanguages))) app.fanText = false;
     static const char* const kRegion[cr::kLanguages] = {"JP", "JP", "JP", "JP", "JP", "SC", "TC", "KR"};
     app.fontCjk.selectRegion(kRegion[app.language]);
     app.fontCjkBold.selectRegion(kRegion[app.language]);
@@ -579,7 +601,7 @@ void applyLanguage(App& app) {
 
 std::string itemName(const App& app, int item) {
     std::vector<std::vector<std::string>> name;
-    if (app.systemText.message(cr::itemNameId(item), app.language, nullptr, name) && !name.empty() && !name[0].empty())
+    if (app.systemText.message(cr::itemNameId(item), textLanguage(app), nullptr, name) && !name.empty() && !name[0].empty())
         return name[0][0];
     return "item " + std::to_string(item);
 }
@@ -802,8 +824,8 @@ void showMessages(App& app, const std::vector<int>& ids) {
         std::vector<std::vector<std::string>> pages;
         cr::MessageInfo info;
         auto var = [&](int v) { auto it = app.game.vars.find(v); return it == app.game.vars.end() ? 0 : it->second; };
-        if (app.events.message(id, app.language, var, pages, &info) ||
-            app.systemText.message(id, app.language, var, pages, &info))
+        if (app.events.message(id, textLanguage(app), var, pages, &info) ||
+            app.systemText.message(id, textLanguage(app), var, pages, &info))
             app.dialogue.insert(app.dialogue.end(), pages.begin(), pages.end());
         else
             pages = {{"[message " + std::to_string(id) + "]"}}, app.dialogue.push_back(pages[0]);

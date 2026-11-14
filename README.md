@@ -72,6 +72,7 @@ folder above). The release downloads already have these folders, each with a `RE
 ├── ios/        ChaosRingsHD.app/ (iPad 1.0.1), ChaosRings.app/ (iPhone 2.2.0), Payload/... as unpacked - or the .ipa itself, unpacked there when the game starts
 ├── android/    the OBB and the 1.1.1 APK (or the APK's classes.dex) - or its .xapk / .apks, unpacked there when the game starts
 ├── vita/       PCSG00497/ as installed - or a NoNpDrm dump's app/ (and addcont/), decrypted there when the game starts
+├── translation/ optional: a fan translation (Russian), or the archive it comes in - see Fan translation
 ├── fsr4/       optional: AMD FSR 4's files (see Settings)
 ├── textures/   optional: export/ and hd/ for HD textures
 └── models/     optional: export/ and hd/ for HD models
@@ -86,6 +87,18 @@ For a copy kept elsewhere, use `--data <iOS data>`, `--vita <PCSG00497 folder>` 
 `--android <folder>` (or the variables `CR_DATA`, `CR_VITA`, `CR_ANDROID`), or pick the folder in
 Options, Game; `--vita none` / `--android none` start without that add-on. If nothing is found,
 the program tells you where it looked.
+
+### Fan translation
+
+metastigma's [Russian translation](https://forum.zoneofgames.ru/topic/72457-chaos-rings/) (a rePatch
+for the Vita release, PCSG00497) is a language of its own here rather than a replacement: put its
+`.7z` (or its `PCSG00497` folder) into `translation/` - the archive is unpacked into
+`translation/ru/` on the next start - and choose **Русский (fan translation)** after the game's
+eight languages in Options, Game, Language. English and the rest stay as they were: the game's files
+aren't touched, and the translation's text and redrawn art (message window, menu names, titles) are
+read from it only while it is the language. It works over the iOS copy, the Vita copy or both (the
+Vita copy as the game shows its translated title screens too). `--translation <folder or cr1.psarc>`
+(or `CR_TRANSLATION`) gives one from elsewhere; `--language 8` starts in it.
 
 **Settings and saves** live in your profile folder, not the game folder:
 `~/.local/share/preservation/ChaosRingsHD/` (Linux), `%APPDATA%\preservation\ChaosRingsHD\`

@@ -506,6 +506,19 @@ static cr::SetupGame crSetupGame() {
             if (SDL_GetPathInfo((p + rel).c_str(), nullptr)) return true;
         return false;
     };
+    // A fan translation (the Russian one: a rePatch PCSG00497/ with the whole cr1.psarc, its English
+    // text replaced): a language of its own beside the release's (openFanTranslation), never asked
+    // for in the setup - a .7z / .rar / .zip dropped into translation/ unpacked there (translation/ru/)
+    setup.patchOk = setup.vitaOk;
+    setup.untranslated = [](const std::string&) { return false; };
+    setup.patchName = [](const std::string& p) {
+        for (const char* rel : {"CR1/resources/cr1.psarc", "resources/cr1.psarc", "cr1.psarc"}) {
+            cr::PsarcArchive a;
+            std::vector<uint8_t> sys;
+            if (a.open(p + rel) && a.read("sys.evt", sys)) return std::string(cr::fanLanguageName(sys) == "Russian" ? "ru" : "");
+        }
+        return std::string();
+    };
     return setup;
 }
 
@@ -804,7 +817,25 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     else if (app->androidOnly) // its files, as they are named
         for (const std::string& n : app->android.names()) collectAssets(app, nullptr, n.c_str());
     else SDL_EnumerateDirectory(app->dataDir.c_str(), collectAssets, app);
+    { // a fan translation in translation/ (one dropped there as its .7z first unpacked): a language of its own
+        const char* given = nullptr;
+        bool quiet = false; // (a capture's, a test's: logged, no messages)
+        for (int i = 1; i < argc; ++i) {
+            if (i + 1 < argc && SDL_strcmp(argv[i], "--translation") == 0) given = argv[i + 1];
+            for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
+                if (SDL_strcmp(argv[i], f) == 0) quiet = true;
+        }
+        if (!given) given = SDL_getenv("CR_TRANSLATION");
+        if (!given || !*given)
+            for (const std::string& place : cr::gameFolders())
+                if (cr::installDroppedPatch(crSetupGame(), place, quiet)) break;
+        openFanTranslation(*app, given ? given : "");
+    }
     app->systemText.load(app->dataDir);
+    // (a Vita copy with the Russian translation copied over it: its English is Russian - so named; the
+    // untouched cr1.psarc and translation/ keep both)
+    app->englishPatched = cr::fanLanguageName(app->systemText.bytes()) == "Russian";
+    if (app->englishPatched) SDL_Log("translation: this copy's English is the Russian fan translation, patched in place - its own cr1.psarc and translation/ keep English too");
     // The game's text in every language: a system font (CR_FONT overrides), else the 8x8 font
     cr::loadSystemFonts(app->fontLatin, app->fontCjk, app->fontCjkBold);
     if (app->fontCjk.loaded()) SDL_Log("font: %s", app->fontCjk.path().c_str());
@@ -823,7 +854,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     if (const char* env = SDL_getenv("CR_LANGUAGE")) languageArg = SDL_atoi(env);
     for (int i = 1; i + 1 < argc; ++i)
         if (SDL_strcmp(argv[i], "--language") == 0) languageArg = SDL_atoi(argv[i + 1]);
-    if (languageArg >= 0) app->language = languageArg;
+    if (languageArg >= 0) app->fanText = languageArg == cr::kLanguages, app->language = app->fanText ? 1 : languageArg; // (8: the fan translation)
     applyLanguage(*app);
     const bool hdTexturesAtFirstUpload = app->video.hdTextures; // (the UI atlas', reloaded after loadMix if it changes)
     {
@@ -1024,8 +1055,9 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
             noteWindowAtlas(*app, wi);
         }
     }
-    if (languageArg >= 0) { // the command line wins over settings.ini
-        app->language = languageArg;
+    if (languageArg >= 0) { // the command line wins over settings.ini (8: the fan translation's)
+        app->fanText = languageArg == cr::kLanguages;
+        app->language = app->fanText ? 1 : languageArg;
         applyLanguage(*app);
     }
     showTexture(*app, 0);

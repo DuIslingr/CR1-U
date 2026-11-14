@@ -1,5 +1,8 @@
 #include "app/app.hpp"
 
+#include <filesystem>
+#include <system_error>
+
 namespace crapp {
 
 void holdSkip(App& app, unsigned source, bool held) {
@@ -200,6 +203,12 @@ bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img, bool* f
                                                "chara3_hd.mct", "daimei01_hd.mct", "daimei02_hd.mct", "title1_hd.mct",
                                                "title2_hd.mct", "t0107-b00a00.mct"};
     const bool redrawn = std::any_of(std::begin(kVitaRedrawn), std::end(kVitaRedrawn), [&](const char* n) { return mct == n; });
+    // the fan translation's own art while it is the language (its window, names, titles: Vita sheets, as
+    // the Vita copy's - those redrawn for the Vita's screen alone with the Vita copy as the game)
+    if (app.fanText && app.fanArchive.isOpen() && mct.size() > 4 && (!redrawn || app.vitaOnly)) {
+        std::vector<uint8_t> g;
+        if (app.fanArchive.read(mct.substr(0, mct.size() - 4) + ".gxt", g) && cr::decodeGxt(g, img)) return true;
+    }
     if (app.vita.isOpen() && mct.size() > 4 && (!redrawn || app.vitaOnly)) { // (alone: its own screens too)
         std::vector<uint8_t> g;
         if (app.vita.read(mct.substr(0, mct.size() - 4) + ".gxt", g) && cr::decodeGxt(g, img)) { ++app.vitaTextures; return true; }
@@ -237,6 +246,55 @@ std::vector<std::string> vitaNames(const std::string& name) {
 // Opens the Vita copy at `path` (its PCSG00497 folder, CR1, resources or cr1.psarc itself): the
 // textures and models (loadOriginalImage, loadModelFile), the scripts through the data folder's
 // overlay, and the sound folder's archives (hooked up by vitaAudio once the sound starts)
+// A fan translation: the first cr1.psarc in translation/ (each game folder's, then the profile folder's)
+// up to five folders down - translation/ru/CR1/resources/ as the setup unpacks one, a rePatch/PCSG00497/
+// copied in as it is -, or `path` (its folder or the file). Its language a choice of its own (8, after
+// the release's): the scripts' text and the art it redrew read from it while that is chosen
+bool openFanTranslation(App& app, const std::string& path) {
+    app.fanArchive = cr::PsarcArchive();
+    app.fanName.clear();
+    cr::setFanText(nullptr);
+    std::vector<std::string> roots;
+    if (!path.empty()) roots.push_back(path);
+    else {
+        for (const std::string& g : cr::gameFolders()) roots.push_back(g + "translation");
+        roots.push_back(cr::saveDir() + "/translation");
+    }
+    std::string found;
+    for (const std::string& root : roots) {
+        std::error_code ec;
+        const std::filesystem::path r = std::filesystem::u8path(root);
+        if (std::filesystem::is_regular_file(r, ec)) {
+            found = root;
+            break;
+        }
+        std::vector<std::pair<int, std::string>> hits; // (depth, path): the shallowest, then by name
+        std::filesystem::recursive_directory_iterator it(r, std::filesystem::directory_options::skip_permission_denied, ec), end;
+        for (; it != end && !ec; it.increment(ec)) {
+            if (it.depth() >= 5) it.disable_recursion_pending();
+            if (it->path().filename() == "cr1.psarc" && it->is_regular_file(ec)) hits.push_back({it.depth(), it->path().u8string()});
+        }
+        std::sort(hits.begin(), hits.end());
+        if (!hits.empty()) {
+            found = hits.front().second;
+            break;
+        }
+    }
+    if (found.empty()) return false;
+    std::string error;
+    std::vector<uint8_t> sys;
+    if (!app.fanArchive.open(found, &error) || !app.fanArchive.read("sys.evt", sys)) {
+        SDL_Log("translation: %s can't be read (%s)", found.c_str(), error.empty() ? "no sys.evt" : error.c_str());
+        app.fanArchive = cr::PsarcArchive();
+        return false;
+    }
+    app.fanName = cr::fanLanguageName(sys);
+    const cr::PsarcArchive* fan = &app.fanArchive;
+    cr::setFanText([fan](const std::string& name, std::vector<uint8_t>& out) { return fan->read(name, out); });
+    SDL_Log("translation: %s in %s - Options, Language (English stays)", app.fanName.c_str(), found.c_str());
+    return true;
+}
+
 bool openVita(App& app, const std::string& path) {
     std::string err;
     std::string root = path;
@@ -772,6 +830,7 @@ void loadMix(App& app) {
             if (const char* at = SDL_strstr(text, keys[i])) // (the gauges' steps of 10: an older file's 5s rounded up)
                 *fields[i] = std::clamp((SDL_atoi(at + SDL_strlen(keys[i])) + 5) / 10 * 10, 0, 100);
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
+        if (const char* at = SDL_strstr(text, "fan_text=")) app.fanText = SDL_atoi(at + 9) != 0 && app.language == 1; // (applyLanguage: while the translation is there)
         // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
         if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
         app.seenFlags.clear();
@@ -834,7 +893,7 @@ void saveMix(const App& app) {
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
     std::string seen;
     for (int f : app.seenFlags) seen += (seen.empty() ? "" : ",") + std::to_string(f);
-    const std::string all = t + "language=" + std::to_string(app.language) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
+    const std::string all = t + "language=" + std::to_string(app.language) + "\nfan_text=" + std::to_string(int(app.fanText)) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
                             "trophies=" + app.trophy.flags.hex() + "\n";
     std::string error;
     if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());
