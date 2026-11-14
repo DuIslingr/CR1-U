@@ -435,9 +435,26 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     }
                 }
                 qbad += falls == 0 || countersAfterFall != 0;
+                int rbPaid = -1;
+                { // Risk Breaker (203) on an Invincible monster: its final figure 0 (que +0x44, _btlcalc_0404 22036) - no quarter
+                    cr::BattleRules r;
+                    setup(r, 5);
+                    r.f[2].hp = r.f[2].hpMax = 99999, r.f[2].lck = -1000, r.f[2].status[cr::kStatusInvincible] = 2;
+                    r.f[0].mp = 999, r.f[0].spd = 9999;
+                    const int hp0 = r.f[0].hp;
+                    cr::BattleCommand c[2];
+                    c[0].kind = cr::kCmdGene, c[0].action = 203, c[0].target = 2, c[1].kind = cr::kCmdDefend;
+                    r.forceAction = 413;
+                    r.beginRound(c, app.battleActions);
+                    cr::BattleTurn t;
+                    while (r.nextTurn(app.battleActions, t))
+                        if (t.actors[0] == 0 && t.action == 203) rbPaid = hp0 - r.f[0].hp;
+                    qbad += rbPaid != 0;
+                }
                 std::printf("battle rounds (make_que per action): Trompe-L'oeil's Break point %d %d %d, Asura Lotus refused and "
-                            "%d strikes after, the guest's MP %+d (%d genes, %d refused), %d counters after %d falls: %d problems\n",
-                            points[0], points[1], points[2], strikesAfter, guestMp, guestGenes, guestRefused, countersAfterFall, falls, qbad);
+                            "%d strikes after, the guest's MP %+d (%d genes, %d refused), %d counters after %d falls, Risk Breaker "
+                            "on an Invincible foe cost %d HP: %d problems\n", points[0], points[1], points[2], strikesAfter, guestMp,
+                            guestGenes, guestRefused, countersAfterFall, falls, rbPaid, qbad);
                 bad += qbad;
             }
             // skills: the damage scaling, criticals, MP, healing, regen, the Gates, level-up boosts

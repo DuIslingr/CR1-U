@@ -992,27 +992,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                 continue;
             case 0: case 1: case 12: {
                 h = calc == 0 ? (thisHit < physicalHits.size() ? physicalHits[thisHit] : physical(*a, e.actors, t)) : calc == 1 ? magical(*a, e.actors, t) : heal(*a, e.actors, t);
-                if (calc == 0 && a->id == 203 && h.amount > 0) { // btlcalc_0404: Risk Breaker
+                if (calc == 0 && a->id == 203 && h.amount > 0) // btlcalc_0404: Risk Breaker (its users' quarter below)
                     h.amount = h.amount * (holdsBreak(e.actors[0]) ? 200 : 125) / 100;
-                    if (t == hitList.front()) // the users give a quarter of their HP first
-                        for (int k : e.actors) {
-                            if (k < 0 || !f[size_t(k)].alive()) continue;
-                            Fighter& u = f[size_t(k)];
-                            BattleHit self;
-                            self.target = k;
-                            self.own = true; // (2.2.0 _btlcalc_0404 22035-22045: chk_dead kind 99)
-                            self.amount = u.hp / 4;
-                            if (keepAlive && k >= 2 && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
-                            if (self.amount > 0) breakEvent(e.actors[0], 2, t);
-                            u.hp = std::max(0, u.hp - self.amount);
-                            if (u.hp == 0 && u.status[kStatusEndure]) u.status[kStatusEndure] = 0, u.hp = 1;
-                            if (u.hp == 0) { // btlcalc_chk_dead
-                                self.fell = true;
-                                fall(k, e.actors, true);
-                            }
-                            out.hits.push_back(self);
-                        }
-                }
                 // (FUN_00029f5c 23594: the roll is drawn whenever the action has a variance, a 0 too)
                 if (a->variance > 0) h.amount = (100 - a->variance + random(2 * a->variance + 1)) * h.amount / 100;
                 break;
@@ -1067,6 +1048,27 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             if (h.amount > 0 && invincible(t)) h.amount = 0;
             // (chk_karaok_dmg_hp - the story battles' last HP - only for a monster: +0xa2 > 7, 23757 / 23996 / 23768)
             if (keepAlive && t >= 2 && h.amount > 0 && tf.hp - h.amount < 1) h.amount = std::max(0, tf.hp - 1);
+            // btlcalc_0404: Risk Breaker - at the first target, when its final figure (que +0x44, after the variance,
+            // Invincible and the story's last HP: _btlcalc_0404 22036, 23996-24004) is above 0, the users give a
+            // quarter of their HP first
+            if (calc == 0 && a->id == 203 && t == hitList.front() && h.amount > 0)
+                for (int k : e.actors) {
+                    if (k < 0 || !f[size_t(k)].alive()) continue;
+                    Fighter& u = f[size_t(k)];
+                    BattleHit self;
+                    self.target = k;
+                    self.own = true; // (2.2.0 _btlcalc_0404 22035-22045: chk_dead kind 99)
+                    self.amount = u.hp / 4;
+                    if (keepAlive && k >= 2 && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
+                    if (self.amount > 0) breakEvent(e.actors[0], 2, t);
+                    u.hp = std::max(0, u.hp - self.amount);
+                    if (u.hp == 0 && u.status[kStatusEndure]) u.status[kStatusEndure] = 0, u.hp = 1;
+                    if (u.hp == 0) { // btlcalc_chk_dead
+                        self.fell = true;
+                        fall(k, e.actors, true);
+                    }
+                    out.hits.push_back(self);
+                }
             if (calc == 8) drained += h.amount; // (0413: que +0x80 adds what dmg_hp took - after Invincible)
             if (calc == 0 && round > 3 && h.amount >= 1 && a->id == 18) lateAttack = true; // btlcalc_0404: +0xa50
             if (h.amount > 0) breakEvent(breakBy, 2, t);

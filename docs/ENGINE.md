@@ -719,6 +719,8 @@ c101/c102/c104/m207a, 2026-10-12).
       monster's second go - and no counter follows an action in which anyone fell (que +0xc4);
       the guest's own genes (groups 370 / 372 / 373) cost nothing, as only the menu writes a
       command's MP
+      Risk Breaker's quarter of its users' HP is paid only when the first target's final figure
+      (after the variance, Invincible and a story boss's last HP) is above 0
 - [x] The battle's status messages (`btl_add_msgque`): "<name> was poisoned!", the stat ups,
       the barrier, endure, invincible, silence, an element given, a command cancelled and each
       stolen item queue up (one per fighter) and take the banner one at a time for 60 frames,
