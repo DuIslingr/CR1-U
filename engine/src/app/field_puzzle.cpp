@@ -224,7 +224,7 @@ bool npcVisible(const App& app, size_t index) {
 bool npcDrawn(const App& app, size_t index) {
     if (app.puzzle.stage >= 0)
         for (const App::Puzzle::Obj& o : app.puzzle.objs)
-            if (o.npc == int(index)) return o.shown || o.ghost;
+            if (o.npc == int(index)) return o.shown || o.ghost || o.fadeOut > 0;
     return npcVisible(app, index);
 }
 
@@ -2331,7 +2331,9 @@ void stepBlock(App& app, App::Puzzle::Obj& o) { // NormalBlockTP / NormalGem (th
             if (int* to = cellSlot(app, o.layer, o.row, o.col)) *to = self; // replacePuzzleObject
             o.onSwitch = o.type == cr::kTypeNormal && sw;
             cr::Vec3 p = centre(app, o.row, o.col);
-            p.y = cr::kPuzzleStage[app.puzzle.stage].y; // the room's height, raised on a switch
+            // (NormalGem / NormalBlockTP's arrival, FUN_0006cd7c / FUN_0006ca58: the object's own record y -
+            // getEvsTbl() + 8: a gem's 15, a block's 10 - raised 2.5 on a switch)
+            p.y = o.baseY;
             if (sw) p.y += cr::kPuzzleSwitchRise;
             place(app, o, p);
             npcEffect(app, 4, o.npc); // onDisappear (the block's and the gem's)
@@ -2352,6 +2354,7 @@ void stepBlock(App& app, App::Puzzle::Obj& o) { // NormalBlockTP / NormalGem (th
 // (WarpCrystalWS) while every switch is pressed; the first time the crystal's NPC script plays
 
 void stepCrystal(App& app, App::Puzzle::Obj& o) {
+    if (o.fadeOut > 0 && --o.fadeOut == 0) buildNpcDraws(app); // (its fade out over: no longer drawn)
     const unsigned bits = app.npcs[size_t(o.npc)].puzzle;
     bool ready = false;
     if (bits & cr::kPuzzleObject100) ready = !gemsLeft(app);
@@ -2360,6 +2363,7 @@ void stepCrystal(App& app, App::Puzzle::Obj& o) {
         if (!ready && o.shown) { // a switch let go: it goes again
             npcEffect(app, 3, o.npc);
             fade(app, o.npc, 1, 0, 4);
+            o.fadeOut = 4; // (WS 68156-68163 / CS 70083-70086: npc_kill, then mdl_set_alpha 0xff -> 0 over 4 frames)
             show(app, o, false);
             app.sound.play(0x29);
             return;
@@ -2369,6 +2373,7 @@ void stepCrystal(App& app, App::Puzzle::Obj& o) {
         if (!ready && o.shown) { // one gone out: it goes again
             npcEffect(app, 3, o.npc);
             fade(app, o.npc, 1, 0, 4);
+            o.fadeOut = 4; // (WS 68156-68163 / CS 70083-70086: npc_kill, then mdl_set_alpha 0xff -> 0 over 4 frames)
             show(app, o, false);
             app.sound.play(0x29);
             return;
@@ -2595,7 +2600,7 @@ void stepPkBlock(App& app, App::Puzzle::Obj& o) {
 }
 
 // Take hold of block `t` (onCheckTouch); (sx, sy) the touch (tex2d), -1e9 by key
-void pkGrab(App& app, int t, float sx, float sy) {
+void pkGrab(App& app, int t, float sx, float sy, float fromX, float fromY) {
     App::Puzzle& pz = app.puzzle;
     if (pz.busy || pz.pkState || t < 0 || t >= int(pz.objs.size())) return;
     App::Puzzle::Obj& o = pz.objs[size_t(t)];
@@ -2604,8 +2609,11 @@ void pkGrab(App& app, int t, float sx, float sy) {
     if (pz.esp == 0) { punish(app, t); return; } // no ESP left - only the mark
     pz.busy = true;
     o.pkMsg = 1;
-    pz.pkState = 1, pz.pkTarget = t, pz.pkMoved = false, pz.pkFromX = sx, pz.pkFromY = sy;
-    pz.pkAtX = sx, pz.pkAtY = sy, pz.pkHeld = sx > -1e8f; // PsychokinesisDetector::init: that touch
+    // (PsychokinesisDetector::init, 0x43dcc: from getNearestPuzzleObject's point - the block's on the
+    // screen, not the finger's - so the dead zone (-29..29, -35..20) is around the block)
+    pz.pkState = 1, pz.pkTarget = t, pz.pkMoved = false;
+    pz.pkFromX = fromX > -1e8f ? fromX : sx, pz.pkFromY = fromX > -1e8f ? fromY : sy;
+    pz.pkAtX = sx, pz.pkAtY = sy, pz.pkHeld = sx > -1e8f;
     pz.pkPointerCancelled = false;
     pz.pkEffect = npcEffect(app, 5, -1, true);
 }
@@ -2685,7 +2693,7 @@ void toughTap(App& app, int t) {
 
 void stepTough(App& app) {
     App::Puzzle& pz = app.puzzle;
-    bool born = false, killed = false, rebuild = false;
+    bool born = false, killed = false, rebuild = false, squash = false;
     for (App::Puzzle::Obj& o : pz.objs) {
         if (!o.hit) continue;
         o.hit = false;
@@ -2702,15 +2710,9 @@ void stepTough(App& app) {
                 o.shown = true, o.ghost = false;
                 born = rebuild = true;
                 npcEffect(app, 4, o.npc);
-                if (inBox(app, n)) { // came in on the leader
-                    buildNpcDraws(app);
-                    fade(app, o.npc, kGhostAlpha, 1, 4);
-                    app.sound.play(0x2a);
-                    fieldEffect(app, 0x19, app.walker.pos + cr::Vec3{0, 5, 0});
-                    app.sound.play(0x54);
-                    reset(app);
-                    return;
-                }
+                // came in on the leader: the squash - the other blocks still take their change-over this
+                // frame (each object's update runs after PuzzleScene::reset, 68911-68914)
+                if (inBox(app, n)) squash = true;
             } else {
                 o.shown = false, o.ghost = true;
                 killed = rebuild = true;
@@ -2729,6 +2731,11 @@ void stepTough(App& app) {
         const bool wasGhost = d->alphaTo < 0.5f;
         if (o.ghost && !wasGhost) fade(app, o.npc, 1, kGhostAlpha, 4);
         else if (!o.ghost && wasGhost) fade(app, o.npc, kGhostAlpha, 1, 4);
+    }
+    if (squash) {
+        fieldEffect(app, 0x19, app.walker.pos + cr::Vec3{0, 5, 0});
+        app.sound.play(0x54);
+        reset(app);
     }
 }
 
@@ -2877,7 +2884,7 @@ bool target(const App& app, const App::Puzzle::Obj& o) {
 bool inWindow(int type, float dx, float dy) {
     return type == cr::kTypeGem ? std::fabs(dx) <= 17 && dy >= 7 && dy <= 33 : std::fabs(dx) <= 20 && dy >= -16 && dy <= 21;
 }
-int pick(App& app, float tx, float ty) {
+int pick(App& app, float tx, float ty, float* atX, float* atY) {
     const App::Puzzle& pz = app.puzzle;
     int best = -1;
     float bestD = 1e30f, bx = 0, by = 0;
@@ -2893,6 +2900,8 @@ int pick(App& app, float tx, float ty) {
     }
     if (best < 0) return -1;
     const App::Puzzle::Obj& o = pz.objs[size_t(best)];
+    if (atX) *atX = bx;
+    if (atY) *atY = by;
     return inWindow(o.type, tx - bx, ty - by) && target(app, o) ? best : -1;
 }
 
@@ -2999,7 +3008,7 @@ void step(App& app) {
             if (k == 0 && app.game.vars[0] == 1) { reset(app); return; }
         }
     ++pz.clock;
-    stepScroll(app, fresh);
+    if (!pz.busy) stepScroll(app, fresh); // (PuzzleManager::update 42536-42539: ScrollCamera only while no ability is busy, +0x26)
     if (pz.scroll.state != 1) { // the ability's update
         stepTeleport(app);
         if (stage(app)->ability == cr::kAbilityPsychokinesis) {
@@ -3082,7 +3091,10 @@ void stepCrystalCam(App& app) {
     const float ox = app.scroll.offX, oy = app.scroll.offY;
     float vx, vy;
     if (scrollingField(app) && fieldViewPoint(app, at, vx, vy)) scrollFieldTo(app, vx, vy, 0.25f);
-    const bool settled = std::fabs(app.scroll.offX - ox) < 0.5f && std::fabs(app.scroll.offY - oy) < 0.5f;
+    // (Uty_WarpCrystalCamera_Proc 20889-20950: on once the scroll moves 0.01 or less a frame - GetScroll's
+    // units, the record's pixels: x 2 x the view's scale in this scroll's)
+    const float still = 0.01f * 2.0f * fieldViewScale(app);
+    const bool settled = std::fabs(app.scroll.offX - ox) <= still && std::fabs(app.scroll.offY - oy) <= still;
     if (!settled) return;
     if (cc.phase == 0 && app.game.vars[0] == 0) { // there: the crystal comes
         for (App::Puzzle::Obj& o : app.puzzle.objs)
@@ -3115,13 +3127,14 @@ bool click(App& app, float px, float py) {
     if (bx >= 8 && bx < 52 && ty >= 56 && ty < 84 && ask(app, 0)) return true;
     if (bx >= 84 && bx < 124 && ty >= 14 && ty < 46 && ask(app, 1)) return true;
     if (cleared(app) || pz.scene != 4 || pz.scroll.state == 1) return false;
-    const int t = pick(app, tx, ty);
+    float ox = 0, oy = 0;
+    const int t = pick(app, tx, ty, &ox, &oy);
     if (t < 0) return false;
     if (stage(app)->ability == cr::kAbilityPsychokinesis) {
         int r, c; // (onCheckTouch: the leader in a cell, not moving, the pad not held)
         if (pz.leaderMoved || pz.padHold > 0 || !cellOf(app, app.walker.pos, r, c)) return false;
         pz.tapX = tx, pz.tapY = ty;
-        pkGrab(app, t, tx, ty);
+        pkGrab(app, t, tx, ty, ox, oy);
         pz.tapX = pz.tapY = -1;
         return true;
     }

@@ -516,7 +516,9 @@ c101/c102/c104/m207a, 2026-10-12).
       armor / jewel, what the bag holds for it with the state board showing the change (2.2.0's bag
       keeps worn gear - `_GetItmCnt` counts it - so the lists, the Items page's counts and the shop's
       "You have" / 99 take the port's spares plus what the pair wears; the member's own worn piece
-      listed yellow and refused, the partner's changing hands with no spare);
+      listed yellow and refused, the partner's changing hands with no spare; MP over the most brought
+      down to it as the Camp or shop opens and after an item or an equipment change -
+      `_ComUty_CharInfoInit`);
       **Status** - a member's portrait and board, < > to its equipment and skills; **Genes** - the
       gene plates in the bag on the gene board (n / 6 known, the known entries by name), a plate
       opens its known entries (the plate's picture). As 2.2.0's `__MuCamp_NextProc` runs it: the

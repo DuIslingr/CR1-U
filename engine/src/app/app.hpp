@@ -836,6 +836,7 @@ struct App {
             // NormalBlockPK: 0 idle, 1 rising, 2 held (bobbing), 3 sliding, 4 falling, 5 falling onto a switch
             int pk = 0, pkMsg = 0, pkTimer = 0, bob = 0;
             bool ghost = false;            // RedBlock / BlueBlock put away: drawn at 0x60 alpha, not solid
+            int fadeOut = 0;               // killed, still drawn while mdl_set_alpha takes it out (a crystal: 4 frames)
             bool hit = false;              // message 9 (Toughness) / 12 (a candle block's switch) waiting
             // CandleSwitch: 0 out, 1 catching (a neighbour's), 2 lighting, 3 lit, 4 going out
             // (a neighbour's), 5 cooling; csMsg 10 a tap, 11 a neighbour's; the beam from csFrom
@@ -1354,6 +1355,7 @@ bool paintedField(const App& app);
 bool scrollingField(const App& app);
 bool vitaLayout(const App& app);
 float fieldViewW(const App& app);
+float fieldViewScale(const App& app);
 float fieldViewH(const App& app);
 float fieldFillZoom(const App& app);
 bool fieldViewPoint(const App& app, const cr::Vec3& p, float& vx, float& vy);
@@ -1633,7 +1635,7 @@ bool gemsLeft(App& app);
 void enter(App& app);
 void teleportTo(App& app, int t);
 void punish(App& app, int t);
-void pkGrab(App& app, int t, float sx = -1e9f, float sy = -1e9f);
+void pkGrab(App& app, int t, float sx = -1e9f, float sy = -1e9f, float fromX = -1e9f, float fromY = -1e9f);
 void pkSend(App& app, int dir);
 void toughTap(App& app, int t);
 bool allCandlesLit(App& app);
@@ -1641,7 +1643,7 @@ void pyroTap(App& app, int t);
 void reset(App& app);
 bool target(const App& app, const App::Puzzle::Obj& o);
 bool inWindow(int type, float dx, float dy);
-int pick(App& app, float tx, float ty);
+int pick(App& app, float tx, float ty, float* atX = nullptr, float* atY = nullptr);
 void step(App& app);
 bool ask(App& app, int k);
 int ahead(App& app);

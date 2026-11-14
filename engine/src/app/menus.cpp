@@ -673,6 +673,18 @@ void refreshShopList(App& app) {
     s.listTop = std::clamp(s.listTop, std::max(0, s.listCursor - shopui::kRows + 1), s.listCursor);
 }
 
+// _ComUty_CharInfoInit (0x4a714, 46342-46378): the pair's boards built afresh - and MP over the most
+// brought down to it (MuCom_SetNowFldMp). It runs as the Camp and the shop open, after an item used in
+// the Camp, an equipment change (__ChangeEquipItem, Remove too) and the shop's gear lists and Equip
+void capPairMp(App& app) {
+    const int route = std::clamp(app.playerChar / 2, 0, 3);
+    for (int c : {2 * route, 2 * route + 1}) {
+        cr::PartyMember& pm = app.game.party[size_t(c)];
+        const int most = cr::memberStat(app.game, c, cr::kMp, app.itemTable);
+        if (pm.mp > most) pm.mp = most;
+    }
+}
+
 void openShop(App& app) {
     App::Shop& s = app.shop;
     cr::Texture keeper = s.keeper;
@@ -682,6 +694,7 @@ void openShop(App& app) {
     s.level = cr::shopLevel(app.game, shopRoute(app));
     s.member = std::clamp(app.playerChar - shopRoute(app) * 2, 0, 1);
     s.bgmBack = app.game.vars[0]; // ShopSet: var 0 kept, the shop's music (_bgmgo(0x13))
+    capPairMp(app); // (65675)
     playBgm(app, 0x13);
     if (!s.keeper.id) {
         cr::Image img;
@@ -757,6 +770,7 @@ void shopChooseCategory(App& app, int c) {
         menuSound(app, se::kBuzzer);
         return;
     }
+    capPairMp(app); // (65891 / 66500: the gear lists' boards built afresh)
     s.category = c;
     s.listCursor = s.listTop = 0;
     s.scroll = 0;
@@ -853,6 +867,7 @@ void shopEquip(App& app) {
         slot = item;
         menuSound(app, shopui::kSoundEquip);
         ViewerHost(app).recoverPair(); // (anywhere: not the Camp's home-map test)
+        capPairMp(app);                // (66077)
     }
     shopBackToList(app);
 }
@@ -912,7 +927,7 @@ void drawShopBar(cr::MenuPainter& m, float x, float y, float value, float most, 
 }
 
 // ComUty_StateBoardDraw at (bx, by) for character c; `item` (if > 0) shows what wearing it changes
-void drawShopBoard(App& app, float bx, float by, int c, int item, float a) {
+void drawShopBoard(App& app, float bx, float by, int c, int item, float a, bool face = true) {
     using namespace shopui;
     cr::MenuPainter& m = app.menu;
     const cr::PartyMember& pm = app.game.party[size_t(c)];
@@ -920,7 +935,7 @@ void drawShopBoard(App& app, float bx, float by, int c, int item, float a) {
     m.quad(bx + 12, by, 143, 16, white, white); // the name
     m.textCentred(sysText(app, 58029 + c), bx + 12 + (143 - m.textWidth(sysText(app, 58029 + c), 14)) / 2, by + 8, true, a,
                   14);
-    m.picture(144 + (facePicture(c) - 29), bx - 8, by - 32, a);
+    if (face) m.picture(144 + (facePicture(c) - 29), bx - 8, by - 32, a); // (StateBoardDraw's last argument: 0 on Status)
     m.quad(bx + 12, by + 32, 143, 15, white, white); // LV
     m.picture(82, bx + 50, by + 36, a);
     drawShopNumber(m, pm.level, bx + 80, by + 33, 3, 12, a, 2, true);
@@ -1570,6 +1585,7 @@ void openCamp(App& app) {
     c.statusArt = std::move(portraits);
     c.cursor = campEntries(app) - 1;
     campEquipRefill(app); // (CampMainSet: opened on a home map, the pair healed - pcparam_hpmp_recovery)
+    capPairMp(app);       // (63012: ComUty_CharInfoInit)
     // __menuu_CampMainSet (0x635e8): the first time an ability 0x59..0x71 or a skill 0x8b..0xba is in the
     // bag (flag 0x38), message 56010 ("Gene Plates") comes before the Camp's windows (CampMain 0-2, then 3)
     if (!app.game.flag(0x38))
@@ -1813,6 +1829,7 @@ void campChoose(App& app) {
                 return;
             }
             if (!campUseItem(app, campCharacter(app, c.member), item, c.count)) { menuSound(app, se::kBuzzer); return; } // (SE 4, the Yes / No up)
+            capPairMp(app); // (63558)
             menuSound(app, campui::kSoundUse); // 0x14, then the board (window 0x12) until a tap (CampMainPrc 8, 9)
             c.resultItem = item;
             c.resultCount = item >= 3 && item <= 6 ? c.count : 0;
@@ -1837,6 +1854,7 @@ void campChoose(App& app) {
             if (item == campui::kRemove) { // EquipProc 0x19: Remove acts at once (__ChangeEquipItem 200)
                 pm.genes[c.slot - 3] = 0;
                 menuSound(app, campui::kSoundEquip);
+                capPairMp(app); // (65036)
                 c.phase = App::Camp::Slot;
             } else if (campPlateLocked(app, item)) menuSound(app, se::kBuzzer);
             else { // SE 2, then the plate's known entries (0x1a) with the board in picture mode
@@ -1848,6 +1866,7 @@ void campChoose(App& app) {
             pm.genes[c.slot - 3] = c.plate;
             menuSound(app, campui::kSoundEquip);
             campEquipRefill(app);
+            capPairMp(app); // (65036)
             c.plate = 0;
             c.phase = App::Camp::Slot;
         } else if (c.phase == App::Camp::List && !c.list.empty()) {
@@ -1866,6 +1885,7 @@ void campChoose(App& app) {
             worn = wear;
             menuSound(app, campui::kSoundEquip);
             if (wear > 0) campEquipRefill(app);
+            capPairMp(app); // (__ChangeEquipItem -> ComUty_CharInfoInit, 65036)
             c.phase = App::Camp::Slot;
         }
         return;
@@ -3271,7 +3291,7 @@ void drawCamp(App& app) {
                 m.imagePieceTo(art, 0 - 140 * (1 - ease), 64, 256, 256, 0, 0, 256 * k, 256 * k, ease);
             }
             right();
-            if (c.statusView == 0) drawShopBoard(app, 308 + 200 * (1 - ease), 68, ch, 0, ease);
+            if (c.statusView == 0) drawShopBoard(app, 308 + 200 * (1 - ease), 68, ch, 0, ease, false); // (CampMainPut 3: no face, 0x668ac)
             else {
                 scrollList(kRowX, int(c.list.size()), [&](int k, float x, float y, bool lit) {
                     const int it = c.list[size_t(k)];
