@@ -2127,14 +2127,17 @@ int npcEffect(App& app, int id, int npc, bool loop) {
 bool fieldToLogical(const App& app, cr::Vec3 p, float& lx, float& ly) {
     const float SW = app.renderer.screenW(), H = cr::Renderer::kLogicalH;
     float vx, vy, vw, vh;
-    if (scrollingField(app)) {
+    if (scrollingField(app)) { // (as drawFrame places the view: the scroll as shown, the quake's offset)
         const float fz = fieldFillZoom(app);
         vw = fieldViewW(app) * fz, vh = fieldViewH(app) * fz;
-        vx = (SW - vw) / 2 + app.scroll.offX * fz, vy = (H - vh) / 2 - app.scroll.offY * fz;
+        float sx, sy;
+        shownScroll(app, sx, sy);
+        vx = (SW - vw) / 2 + sx * fz, vy = (H - vh) / 2 - sy * fz;
     } else {
         vw = vh = std::min(SW, H);
         vx = (SW - vw) / 2, vy = (H - vh) / 2;
     }
+    vx += std::trunc(vx + app.fieldQuake.off[0]) - std::trunc(vx), vy += std::trunc(vy + app.fieldQuake.off[1]) - std::trunc(vy);
     float hx, hy;
     if (!fieldViewPoint(app, p, hx, hy)) return false;
     lx = vx + hx * vw / fieldViewW(app), ly = vy + hy * vh / fieldViewH(app);
