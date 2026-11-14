@@ -20,6 +20,7 @@
 
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
+#include <cstdio>
 #include <SDL3/SDL_main.h>
 #include "app/app.hpp"
 
@@ -452,6 +453,39 @@ using namespace crapp;
 
 // The game as the setup (platform/setup.hpp) knows it: the first start's on a PC, a Vita dump copied
 // into vita/ on any start
+// The desktop builds' log file (a WIN32 GUI build has no console, nor has a double-click launch elsewhere): SDL's log
+// teed into chaosrings.log in the profile folder (cr::saveDir), the previous start's kept as chaosrings.prev.log; not
+// for the tests, captures or exports (their output is their own). Chains to the output function before it.
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+static FILE* gLogFile = nullptr;
+static SDL_LogOutputFunction gLogNext = nullptr;
+static void* gLogNextData = nullptr;
+static void logTee(void* data, int category, SDL_LogPriority priority, const char* message) {
+    if (gLogFile) {
+        static const char* const kLevel[] = {"", "TRACE", "VERBOSE", "DEBUG", "INFO", "WARN", "ERROR", "CRITICAL"};
+        const int lv = int(priority);
+        std::fprintf(gLogFile, "%s%s%s\n", lv > 4 && lv < 8 ? kLevel[lv] : "", lv > 4 && lv < 8 ? ": " : "", message);
+        std::fflush(gLogFile);
+    }
+    if (gLogNext) gLogNext(gLogNextData, category, priority, message);
+    (void)data;
+}
+static void startLogFile(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i)
+        for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
+            if (SDL_strcmp(argv[i], f) == 0) return;
+    const std::string dir = cr::saveDir(), log = dir + "chaosrings.log", prev = dir + "chaosrings.prev.log";
+    std::remove(prev.c_str());
+    std::rename(log.c_str(), prev.c_str());
+    gLogFile = std::fopen(log.c_str(), "w");
+    if (!gLogFile) return;
+    SDL_GetLogOutputFunction(&gLogNext, &gLogNextData);
+    SDL_SetLogOutputFunction(logTee, nullptr);
+}
+#else
+static void startLogFile(int, char**) {}
+#endif
+
 static cr::SetupGame crSetupGame() {
     cr::SetupGame setup;
     setup.title = "Chaos Rings", setup.port = "CR1:U", setup.vitaId = "PCSG00497", setup.trilogyDir = "CR1";
@@ -477,6 +511,7 @@ static cr::SetupGame crSetupGame() {
 SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     SDL_SetAppMetadata("Chaos Rings HD (reimplementation)", "0.1", "local.preservation.chaosrings");
+    startLogFile(argc, argv);
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL_Init: %s", SDL_GetError());
         return SDL_APP_FAILURE;
