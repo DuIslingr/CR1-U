@@ -84,7 +84,7 @@ void main() {
         if (uAlphaTex == 2 && uTexMode == 0) c.a = base.a; // (GL_RGB: replace takes the colour alone)
     }
     if (uTexMode2 >= 0) c = texEnv(uTexMode2, c, texture(uTex2, vUV * uUv2.xy + uUv2.zw));
-    if (uAlphaRef > 0.0 && c.a < uAlphaRef) discard;
+    if (uAlphaRef > 0.0 && c.a < uAlphaRef - 0.5 / 255.0) discard; // (8-bit as GL ES 1: CRO-U #5)
     fragColor = c;
 }
 )";

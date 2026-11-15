@@ -30,7 +30,10 @@ void main() {
         if (pc.alphaTex == 2 && pc.texMode == 0) c.a = base.a; // (GL_RGB: replace takes the colour alone)
     }
     if (pc.texMode2 >= 0) c = texEnv(pc.texMode2, c, texture(uTex2, vUV * pc.uv2.xy + pc.uv2.zw));
-    if (pc.alphaRef > 0.0 && c.a < pc.alphaRef) discard;
+    // GL ES 1's alpha test compares in 8-bit fixed point: a fragment within half a step of the reference passes. Exact
+    // float made "alpha >= 1.0" (the 255 tests of a battle model's blended copy) fail at scattered pixels where a
+    // GPU's interpolation lands a hair under 1.0 - Vieg's skin speckled with the sky through it (CRO-U #5)
+    if (pc.alphaRef > 0.0 && c.a < pc.alphaRef - 0.5 / 255.0) discard;
     fragColor = c;
 #ifdef SCENE
     fragMotion = (vPrev.xy / vPrev.w - vCur.xy / vCur.w) * pc.motion.zw;
