@@ -203,6 +203,46 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                 bad += !cast || pr.f[0].mp != mp0 - cost || pr.f[1].mp != mp1 - cost;
                 std::printf("genes: new game knows %zu, a plate adds %zu, plates dropped %d/40, genes taught %d/40\n", own.size(),
                             more.size() - own.size(), plates, taught);
+                // Options' Cheats in the rules: the pair's gene costs nothing (Infinite MP), a monster's blows leave the
+                // pair's HP full and nobody falls (Infinite HP), the pair's attack fells a monster at once (One-Hit
+                // Kills), and the win's EXP is the multiplier's times the plain one's
+                int cbad = 0, roundsWon = 0;
+                for (uint32_t seed = 1; seed <= 20; ++seed) {
+                    cr::BattleRules ch;
+                    ch.seed(seed);
+                    ch.setupParty(g, app.itemTable, 0);
+                    ch.setupEnemies(app.battleData, app.battleData.group(1), 0);
+                    ch.cheatHp = ch.cheatMp = ch.cheatOneHit = ch.cheatBreak = true;
+                    ch.pair = true;
+                    for (int k = 0; k < 2; ++k) ch.f[size_t(k)].hp = 1; // (any blow would fell them)
+                    const int m0 = ch.f[0].mp, m1 = ch.f[1].mp;
+                    cr::BattleCommand cc[2];
+                    cc[0].kind = cr::kCmdGene, cc[0].action = cr::geneAction(94), cc[0].target = 2;
+                    for (int r = 0; r < 3 && ch.outcome() == 0; ++r) {
+                        ch.beginRound(cc, app.battleActions);
+                        cr::BattleTurn ct;
+                        while (ch.nextTurn(app.battleActions, ct)) {}
+                        ch.endRound();
+                    }
+                    cbad += ch.f[0].mp != m0 || ch.f[1].mp != m1;                        // no MP paid
+                    cbad += !ch.f[0].alive() || !ch.f[1].alive();                         // nobody fell
+                    cbad += ch.breakGauge != 8 || ch.breakTarget != 8 || ch.breakChanging(); // the Break the pair's, full
+                    roundsWon += ch.outcome() == 2;                                       // the monsters felled
+                }
+                cbad += roundsWon < 18; // (a gene that misses now and then: nearly every time)
+                {
+                    cr::GameState a = g, b2 = g;
+                    cr::BattleRules plain, scaled;
+                    plain.setupParty(a, app.itemTable, 0), scaled.setupParty(b2, app.itemTable, 0);
+                    plain.expGained = scaled.expGained = 40;
+                    scaled.expScale = 5;
+                    const int e0 = a.party[0].exp;
+                    plain.applyRewards(a), scaled.applyRewards(b2);
+                    cbad += b2.party[0].exp - e0 != 5 * (a.party[0].exp - e0);
+                }
+                std::printf("cheats: Infinite HP / MP, One-Hit Kills and Full Break over 20 battles (%d won), EXP x5: %s\n", roundsWon,
+                            cbad ? "WRONG" : "ok");
+                bad += cbad;
             }
             { // 1.0.1 / 2.2.0 decompile checks: levels from 20 grow every stat (pcparam_change_lv),
               // seeds share that bonus's 5000, guests' Speed / Luck are their Defense, a monster
@@ -4814,13 +4854,17 @@ int runSelfTest(App& app) {
         problems += app.language != 0;
         optionsKey(app, SDLK_RIGHT); // English
         problems += app.language != 1;
-        optionsKey(app, SDLK_Q);     // wraps to the last page (Graphics)
+        optionsKey(app, SDLK_Q);     // wraps to the last page (Cheats)
         problems += app.optionsPage != kOptionPages - 1;
         settleOptions(app);          // (OptionPrc 6: the page's halves out, 5 frames, the new in)
         optionsKey(app, SDLK_UP);    // from row 0 to Back
         problems += app.optionsRow != kOptionsBackRow;
         if (app.optionsRow != kOptionsBackRow) std::printf("  options: Up after the page turned: row %d\n", app.optionsRow);
         problems += expectSounds("options buttons, page", {2, 2, 3, 1});
+        optionsKey(app, SDLK_Q);     // on back to Graphics (the page before the Cheats)
+        problems += app.optionsPage != kOptionPages - 2;
+        settleOptions(app);
+        app.menuSoundLog.clear();
         // Graphics: Anti-aliasing steps through MSAA to FSR Native AA and DLAA (the upscaler at
         // native size), the Upscaler row on to its other modes
         if (app.renderer.scalable()) { // (OpenGL: the row is off)

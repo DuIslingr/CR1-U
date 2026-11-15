@@ -831,6 +831,15 @@ void loadMix(App& app) {
             if (const char* at = SDL_strstr(text, keys[i])) // (the gauges' steps of 10: an older file's 5s rounded up)
                 *fields[i] = std::clamp((SDL_atoi(at + SDL_strlen(keys[i])) + 5) / 10 * 10, 0, 100);
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
+        if (const char* at = SDL_strstr(text, "\ncheats=")) { // (Options' Cheats: hp,mp,oz,first strike,no battles,one hit,exp,full break)
+            int c[8] = {0, 0, 0, 0, 0, 0, 1, 0};
+            if (std::sscanf(at + 8, "%d,%d,%d,%d,%d,%d,%d,%d", &c[0], &c[1], &c[2], &c[3], &c[4], &c[5], &c[6], &c[7]) >= 6) {
+                App::Cheats& ch = app.cheats;
+                ch.hp = c[0], ch.mp = c[1], ch.oz = c[2], ch.firstStrike = c[3], ch.noEncounters = c[4], ch.oneHit = c[5];
+                ch.fullBreak = c[7] != 0;
+                ch.exp = c[6] == 2 || c[6] == 3 || c[6] == 5 || c[6] == 10 ? c[6] : 1;
+            }
+        }
         if (const char* at = SDL_strstr(text, "fan_text=")) app.fanText = SDL_atoi(at + 9) != 0 && app.language == 1; // (applyLanguage: while the translation is there)
         // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
         if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
@@ -882,6 +891,10 @@ void saveMix(const App& app) {
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
                               std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) + "\navoid_cutout=" + std::to_string(int(v.avoidCutout)) +
+                              "\ncheats=" + std::to_string(int(app.cheats.hp)) + "," + std::to_string(int(app.cheats.mp)) + "," +
+                              std::to_string(int(app.cheats.oz)) + "," + std::to_string(int(app.cheats.firstStrike)) + "," +
+                              std::to_string(int(app.cheats.noEncounters)) + "," + std::to_string(int(app.cheats.oneHit)) + "," +
+                              std::to_string(app.cheats.exp) + "," + std::to_string(int(app.cheats.fullBreak)) +
                               "\nsmooth_models=" + std::to_string(v.smoothModels) + "\nhd_models=" + std::to_string(int(v.hdModels)) +
                               "\nanisotropy=" + std::to_string(v.anisotropy) + "\nsharp_textures=" + std::to_string(int(v.sharpTextures)) +
                               "\nlayout=" + std::to_string(v.layout) +

@@ -750,7 +750,7 @@ void adjustVideo(App& app, int row, int dir) {
 // Environment Effects, Lock Screen Orientation, Return to Title / Reset Data), with their own
 // labels in the game's language; ours are added beside them.
 
-const char* const kOptionPageName[kOptionPages] = {"Game", "Sound", "Display", "Detail", "Graphics"};
+const char* const kOptionPageName[kOptionPages] = {"Game", "Sound", "Display", "Detail", "Graphics", "Cheats"};
 
 std::string sysLabel(const App& app, int id, const char* fallback) {
     const std::string t = sysText(app, id);
@@ -1045,6 +1045,32 @@ std::vector<OptRow> optionRows(App& app, int page) {
             if (app.video.sharpTextures != (i == 1)) adjustVideo(app, 17, 1);
         });
         rows.back().hint = "Sharp: the world's textures magnified by the nearest texel (square pixels up close)";
+        break;
+    }
+    case 5: { // Cheats: the port's own, none of the original's (settings.ini's cheats=)
+        App::Cheats& c = app.cheats;
+        onOff("Infinite HP", &c.hp, nullptr);
+        rows.back().hint = "The pair's HP never runs down: blows still show their numbers, nobody falls";
+        onOff("Infinite MP", &c.mp, nullptr);
+        rows.back().hint = "Genes and skills cost no MP";
+        onOff("Max Oz", &c.oz, nullptr);
+        rows.back().hint = "Oz held at 9,999,999 - spend all you like";
+        static const int kExp[] = {1, 2, 3, 5, 10};
+        value("EXP Multiplier", std::to_string(c.exp) + "x", [&app](int dir) {
+            int k = 0;
+            while (k < 4 && kExp[k] != app.cheats.exp) ++k;
+            app.cheats.exp = kExp[((k + (dir ? dir : 1)) % 5 + 5) % 5];
+            saveMix(app);
+        });
+        rows.back().hint = "EXP won in battle multiplied (the result screen shows the total)";
+        onOff("Always First Strike", &c.firstStrike, nullptr);
+        rows.back().hint = "Every random battle opens with the pair striking first - never an ambush";
+        onOff("No Random Battles", &c.noEncounters, nullptr);
+        rows.back().hint = "Walk the dungeons without random battles (the story's battles still come)";
+        onOff("One-Hit Kills", &c.oneHit, nullptr);
+        rows.back().hint = "The pair's damaging blows fell a monster at once";
+        onOff("Full Break Gauge", &c.fullBreak, nullptr);
+        rows.back().hint = "The Break is the pair's and full from the battle's start - it never changes hands";
         break;
     }
     default: { // Graphics: what the Vulkan renderer adds

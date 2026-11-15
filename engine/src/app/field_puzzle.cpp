@@ -3767,7 +3767,7 @@ void stepEvents(App& app) {
 // are off (flag 4076, the pair's unencountflg); with skill 174 on either member every 10 units
 // banks 1 EXP for the pair (to 100000; one a step at most)
 void fieldWalked(App& app, float dist) {
-    if (!app.noEncounters && !fieldEncountersOff(app)) app.encounters.walked(dist);
+    if (!app.noEncounters && !app.cheats.noEncounters && !fieldEncountersOff(app)) app.encounters.walked(dist);
     const int pr = fieldRoute(app) * 2;
     if (!cr::hasSkill(app.game, pr, 174) && !cr::hasSkill(app.game, pr + 1, 174)) return;
     app.walkExpDistance += dist;
@@ -4011,6 +4011,7 @@ void updatePlayer(App& app, float dt, float camYaw) {
         const bool first = cr::hasSkill(app.game, pr, 171) || cr::hasSkill(app.game, pr + 1, 171);
         const bool alert = cr::hasSkill(app.game, pr, 172) || cr::hasSkill(app.game, pr + 1, 172);
         if (app.encounters.check(random, partyLevel(app), first, alert, start)) {
+            if (app.cheats.firstStrike) start.strike = 1; // (Options' Always First Strike: never an ambush either)
             writeResume(app); // (fldencount_encount: the Progress Tracker at the fight's start)
             app.game.vars[58] = 999; // the usual battle music, victory tune 10
             app.game.vars[59] = 10;

@@ -296,6 +296,11 @@ std::vector<int> BattleRules::targets(const BattleActionDef& a, int user) const 
 }
 
 void BattleRules::breakEvent(int who, int event, int target) {
+    if (cheatBreak) { // (Options' Full Break Gauge: the pair's, full, whatever happens - no change of hands)
+        breakStarted = true;
+        breakTarget = breakGauge = 8;
+        return;
+    }
     const bool party = who < 2;
     if (!breakStarted) { // the battle's first event: four for whoever caused it
         breakStarted = true;
@@ -836,9 +841,9 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             bool enough = true;
             for (int k : e.actors)
                 if (k >= 0) enough &= f[size_t(k)].mp >= cost;
-            if (!enough) return cancel(57081);
+            if (!enough && !(cheatMp && e.actors[0] >= 0 && e.actors[0] < 2)) return cancel(57081);
             for (int k : e.actors)
-                if (k >= 0) f[size_t(k)].mp -= cost;
+                if (k >= 0 && !(cheatMp && k < 2)) f[size_t(k)].mp -= cost; // (Options' Infinite MP: the party pays nothing)
         }
         // (make_que 31152-31158: a class-9 record - 201 / 203 / 207 / 219 - goes as kind 1, btlact_attack_init's
         // spot, swing, voice and camera; no barrier sends it back, that being btlact_gene's)
@@ -1054,6 +1059,8 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             // (an instant death on an Invincible target: type 0 and 0 - "0", not the kill's label: 23941-23947 / 22223-22229)
             if (h.type == kHitKill && invincible(t)) h.type = kHitNormal, h.amount = 0;
             if (h.type == kHitKill) h.amount = tf.hp;
+            // (Options' One-Hit Kills: the party's damaging blow takes a monster's every HP)
+            if (cheatOneHit && t >= 2 && h.amount > 0 && e.actors[0] >= 0 && e.actors[0] < 2) h.amount = tf.hp;
             // _btlcalc_dmg_hp (23744): Is_invincible (a pair's either member) takes the damage to 0 and
             // leaves the result's type - a "0" with the hit's own label, if any
             if (h.amount > 0 && invincible(t)) h.amount = 0;
@@ -1073,6 +1080,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
                     if (keepAlive && k >= 2 && u.hp - self.amount < 1) self.amount = std::max(0, u.hp - 1);
                     if (self.amount > 0) breakEvent(e.actors[0], 2, t);
                     u.hp = std::max(0, u.hp - self.amount);
+                    if (cheatHp && k < 2) u.hp = u.hpMax; // (Options' Infinite HP)
                     if (u.hp == 0 && u.status[kStatusEndure]) u.status[kStatusEndure] = 0, u.hp = 1;
                     if (u.hp == 0) { // btlcalc_chk_dead
                         self.fell = true;
@@ -1084,6 +1092,7 @@ bool BattleRules::nextTurn(const BattleActionTable& actions, BattleTurn& out) {
             if (calc == 0 && round > 3 && h.amount >= 1 && a->id == 18) lateAttack = true; // btlcalc_0404: +0xa50
             if (h.amount > 0) breakEvent(breakBy, 2, t);
             tf.hp = std::clamp(tf.hp - h.amount, 0, tf.hpMax);
+            if (cheatHp && t < 2) tf.hp = tf.hpMax; // (Options' Infinite HP: the number shown, the HP back at once)
             if (tf.hp == 0 && before > 0 && tf.status[kStatusEndure]) {
                 tf.status[kStatusEndure] = 0;
                 tf.hp = 1;
@@ -1273,6 +1282,7 @@ void BattleRules::endRound() {
         if (d > 0 && invincible(i)) d = 0;
         if (keepAlive && i >= 2 && d > 0 && x.hp - d < 1) d = std::max(0, x.hp - 1);
         x.hp = std::clamp(x.hp - d, 0, x.hpMax);
+        if (cheatHp && i < 2) x.hp = x.hpMax; // (Options' Infinite HP: poison too)
         if (x.hp == 0 && x.status[kStatusEndure]) x.status[kStatusEndure] = 0, x.hp = 1;
         if (x.hp == 0) fall(i, party, true), roundFell.push_back(i);
     }
@@ -1407,7 +1417,7 @@ std::vector<int> BattleRules::applyRewards(GameState& gs) const {
         // only Options' Return to Title (MuCom_BitSet(0x10000), 70743) skips it - and nothing is kept then
         m.mp = x.skills[163 - 131] ? x.mpMax : x.mp;
         if (won) {
-            const int gained = expGained * (doubleExp ? 2 : 1);
+            const int gained = expGained * (doubleExp ? 2 : 1) * std::max(1, expScale);
             m.exp += x.hp > 0 ? gained : gained / 2; // MbResultSet: a fallen member gets half
             const int before = m.level;
             while (m.level < kMaxLevel && m.exp >= expForLevel(m.level + 1)) ++m.level;

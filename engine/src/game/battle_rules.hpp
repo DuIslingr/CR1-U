@@ -256,6 +256,11 @@ public:
     // after the third round (btlcalc_0404)
     bool keepAlive = false;
     std::array<bool, 5> regenFull{};
+    // Options' cheats (the port's): the party (fighters 0 and 1) back to full HP after any damage - the blow's
+    // number still shown - and paying no MP; the party's damaging blows felling a monster at once; EXP x expScale
+    bool cheatHp = false, cheatMp = false, cheatOneHit = false;
+    bool cheatBreak = false; // (Options' Full Break Gauge: the pair holds the Break at 8 - btlbreak_set moves it no more)
+    int expScale = 1;
     bool lateAttack = false;
 
     // _get_random: the game's one stream (useRandom: the app's), or a stream of its own (seed: tests)

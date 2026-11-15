@@ -347,6 +347,14 @@ struct App {
     cr::PsarcArchive fanArchive;           // translation/<name>/ (its rePatch folder's cr1.psarc), not open: none
     std::string fanName;                   // its language ("Russian"; settings.ini's choice 8)
     bool englishPatched = false;
+    // Options' Cheats page (the port's own; settings.ini's cheats=): the party's HP and MP never run down (in battle
+    // the blows still show their numbers), the Oz held at the most there can be, EXP won multiplied, the party
+    // striking first in every random battle, no random battles, the party's blows felling a monster at once, the Break
+    // the pair's and full all battle long
+    struct Cheats {
+        bool hp = false, mp = false, oz = false, firstStrike = false, noEncounters = false, oneHit = false, fullBreak = false;
+        int exp = 1; // EXP multiplier: 1, 2, 3, 5, 10
+    } cheats;
     std::string screenLogged;              // the last "screen:" log line's values (logged again when they change)           // the copy's own English is a fan translation's (patched in place: named so)
     cr::Font font;                         // the game's text in the language's face (applyLanguage: one of these three)
     cr::Font fontLatin;                    // ArialMT's metrics (Arial / Liberation Sans): every language but Japanese
@@ -1367,7 +1375,7 @@ struct OptRow {
     bool enterSounds = false;     // act(0) plays a sound of its own (Sound Test), so none from the menu
 };
 
-constexpr int kOptionPages = 5;
+constexpr int kOptionPages = 6; // Game, Sound, Display, Detail, Graphics, Cheats
 constexpr int kOptionsBackRow = 99;
 extern const char* const kOptionPageName[kOptionPages];
 // Layout, in menu units

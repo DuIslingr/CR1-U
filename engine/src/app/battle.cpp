@@ -854,6 +854,13 @@ void startBattle(App& app, const cr::BattleStart& start, int flags) {
     rules.formation = b.formation; // (btlord_enemy_rand: the enemy pair only in formation 2)
     (void)flags;
     rules.setupParty(app.game, app.itemTable, route);
+    // Options' cheats (the port's): the rules' own - the party's HP and MP kept, one-hit kills, EXP scaled
+    rules.cheatHp = app.cheats.hp, rules.cheatMp = app.cheats.mp, rules.cheatOneHit = app.cheats.oneHit;
+    rules.expScale = std::max(1, app.cheats.exp);
+    rules.cheatBreak = app.cheats.fullBreak;
+    if (app.cheats.fullBreak) rules.breakStarted = true, rules.breakTarget = rules.breakGauge = 8; // (full from the start)
+    if (app.cheats.mp)
+        for (int k = 0; k < 2; ++k) rules.f[size_t(k)].mp = rules.f[size_t(k)].mpMax; // (Infinite MP: from a full bar)
     // btl_enemy_init_lv: a monster without a level of its own takes the route's World Select band
     // (prty+0xc10[pair], 0..9: levels band x 10 + 1..10, kept near the pair's)
     const int worldBand = app.game.bands[size_t(route)];
@@ -937,7 +944,7 @@ void settleBattle(App& app) {
         if (rs.levels[k] > 0) rs.ups.push_back({k, rs.levels[k]});
     }
     rs.count = (most + 1) * 60;
-    rs.expTotal = b.rules.expGained * (b.rules.doubleExp ? 2 : 1);
+    rs.expTotal = b.rules.expGained * (b.rules.doubleExp ? 2 : 1) * std::max(1, b.rules.expScale);
     rs.ozTotal = b.rules.ozGained * (b.rules.doubleOz ? 2 : 1);
     // (MbResultSet 58480-58527, DAT_000d2aea: the count ticks unless no HP bar refills and either every
     // member is level 100 or nothing - no EXP, no Oz - was earned)

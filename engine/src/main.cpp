@@ -1669,6 +1669,14 @@ SDL_AppResult SDL_AppIterate(void* state) {
     for (app.fingerClock += activeDt; app.fingerClock >= 1.0f / kFramesPerSecond; app.fingerClock -= 1.0f / kFramesPerSecond)
         app.fingerMoved = false;
     pressCountStep(app, activeDt);
+    { // Options' Cheats outside the battles' own rules: the Oz held at the most, the pair's HP / MP full (-1)
+        if (app.cheats.oz) app.game.oz = cr::kMaxOz;
+        if (app.cheats.hp || app.cheats.mp)
+            for (cr::PartyMember& m : app.game.party) {
+                if (app.cheats.hp) m.hp = -1;
+                if (app.cheats.mp) m.mp = -1;
+            }
+    }
     stickPointerStep(app, activeDt);
     app.music.update(activeDt);
     // the frame rate's limit: each frame no sooner than its slot (vsync may hold it longer)
