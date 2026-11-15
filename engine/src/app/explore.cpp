@@ -757,6 +757,31 @@ int battleSelfTest(App& app, int& frames, int& glErrors) {
                     kr.endRound();
                     if (kr.f[0].hp != 0 || kr.f[2].hp != 1) std::printf("  story battle's last HP: member %d, monster %d\n", kr.f[0].hp, kr.f[2].hp), ++cbad;
                 }
+                { // the cheats in a story battle (chk_karaok_dmg_hp): One-Hit Kills still leaves a kept monster its last HP
+                    // (the story's moments come by rounds and the boss's HP, never the pair's fall: Infinite HP stalls none)
+                    for (const bool keep : {true, false}) {
+                        cr::BattleRules kr;
+                        kr.seed(3);
+                        for (cr::Fighter& x : kr.f) x = cr::Fighter();
+                        for (int i : {0, 2}) {
+                            cr::Fighter& x = kr.f[size_t(i)];
+                            x.present = true, x.enemy = i >= 2, x.level = 1, x.hp = x.hpMax = i < 2 ? 100 : 50000;
+                            x.atk = 100, x.spd = i == 2 ? 1 : 100, x.character = i < 2 ? i : -1;
+                        }
+                        kr.keepAlive = keep, kr.cheatOneHit = kr.cheatHp = true;
+                        cr::BattleCommand kc[2];
+                        kc[0].kind = cr::kCmdAttack, kc[0].target = 2;
+                        kc[1].kind = cr::kCmdNone;
+                        kr.beginRound(kc, app.battleActions);
+                        cr::BattleTurn tt;
+                        while (kr.nextTurn(app.battleActions, tt)) {}
+                        kr.endRound();
+                        const int want = keep ? 1 : 0;
+                        if (kr.f[2].hp != want || kr.f[0].hp != kr.f[0].hpMax)
+                            std::printf("  cheats in a %s battle: monster %d (want %d), member %d\n", keep ? "story" : "plain", kr.f[2].hp, want,
+                                        kr.f[0].hp), ++cbad;
+                    }
+                }
                 { // 0413 (Vampire, 222): the pair's drain heals each member by the total over the users (que +0xc2)
                     cr::BattleRules dr;
                     dr.seed(7);
