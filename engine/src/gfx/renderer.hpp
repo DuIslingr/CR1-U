@@ -74,6 +74,9 @@ public:
 
     // Converts window pixel coordinates to logical coordinates.
     void toLogical(float px, float py, float& lx, float& ly) const;
+    // A point on the picture (a puzzle's blocks, the field's own): as toLogical, but not back through a cutout's
+    // interface shrink - the picture is never shrunk
+    void toPicture(float px, float py, float& lx, float& ly) const;
 
     // 3D path. begin3D clears depth and sets the viewport to the letterboxed screen.
     GpuMesh upload(const Mesh& mesh);

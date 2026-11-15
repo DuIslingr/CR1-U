@@ -1802,6 +1802,8 @@ void drawPuzzleHud(App& app, float a) {
         piece(84, 14, 984, 64, 40, 32);
     }
     app.renderer.setOrigin(app.renderer.uiX()); // (the mark and the arrows: where on the field)
+    const bool pictureWas = app.renderer.pictureLayer();
+    app.renderer.setPictureLayer(true); // (on the field's blocks: the picture's, not a cutout's interface shrink)
     // the psychokinesis arrows (2.2.0's _s_Arrows at 0xc7430: on, or fading - their colour's alpha
     // byte), 24 x 24 at their point less 12: left (432, 72), up (480, 48), right (456, 72), down (480, 72)
     static const float kArrowUV[4][2] = {{432, 72}, {480, 48}, {456, 72}, {480, 72}};
@@ -1812,6 +1814,7 @@ void drawPuzzleHud(App& app, float a) {
         m.pieceTo(ar.x - 12 + 16, ar.y - 12 + 32, 24, 24, kArrowUV[k][0], kArrowUV[k][1], 24, 24, aa);
     }
     if (pz.punished > 0 && pz.punishPhase == 0) piece(pz.punishX, pz.punishY, 448, 120, 64, 64);
+    app.renderer.setPictureLayer(pictureWas);
 }
 
 // menuf_mainPut's counters, a 20 Hz frame: the count's swell (set as it changes:
@@ -3307,7 +3310,7 @@ void stepScroll(App& app) {
         if (++sc.count < 6) {
             if (f.doubleTap && f.held == 1) {
                 float lx, ly;
-                app.renderer.toLogical(f.x, f.y, lx, ly);
+                app.renderer.toPicture(f.x, f.y, lx, ly);
                 logicalToView(app, lx, ly, sc.x, sc.y);
                 sc.state = 1;
             } else done = false;
@@ -3471,7 +3474,7 @@ bool click(App& app, float px, float py) {
     App::Puzzle& pz = app.puzzle;
     if (pz.stage < 0 || app.runner.running() || !app.dialogue.empty() || !paintedField(app)) return false;
     float lx, ly;
-    app.renderer.toLogical(px, py, lx, ly);
+    app.renderer.toPicture(px, py, lx, ly);
     float tx, ty;
     logicalToTex2d(app, lx, ly, tx, ty);
     const float bx = tx + (app.renderer.uiX() - wideLeft(app)) / 2; // (widescreen: the pad in the corner)
@@ -3505,7 +3508,7 @@ void drag(App& app, float px, float py) {
     App::Puzzle& pz = app.puzzle;
     if (pz.stage < 0 || !pz.pkHeld) return;
     float lx, ly;
-    app.renderer.toLogical(px, py, lx, ly);
+    app.renderer.toPicture(px, py, lx, ly);
     logicalToTex2d(app, lx, ly, pz.pkAtX, pz.pkAtY);
 }
 

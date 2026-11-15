@@ -1219,13 +1219,15 @@ void phoneMenuPoint(const App& app, float& mx, float& my) {
 // (inside the display's safe area: off a camera hole)
 // (inside the display's safe area: the groups at the screen's edges no further out than the cutout's inset;
 // where it reaches into the interface itself, the renderer draws it smaller - Renderer::interfaceRect)
+// (with the interface shrunk for a cutout - Renderer::interfaceShrink < 1 - the layout's own edges: the shrink
+// maps them onto the cutout's edge; the safe edge besides would push the groups in twice, over the middle ones)
 float wideLeft(const App& app) {
     const cr::Renderer& r = app.renderer;
-    return r.phoneLayout() ? r.uiX() : r.safeLeft();
+    return r.phoneLayout() || r.interfaceShrink() < 1 ? r.uiX() : r.safeLeft();
 }
 float wideRight(const App& app) {
     const cr::Renderer& r = app.renderer;
-    return r.phoneLayout() ? r.uiX() : 2 * r.uiX() - r.safeRight();
+    return r.phoneLayout() || r.interfaceShrink() < 1 ? r.uiX() : 2 * r.uiX() - r.safeRight();
 }
 // The Android layout: how far the phone's own edges lie outside the centred 480 x 320 screen, in
 // tex2d units - Android 1.1.1's gac +0x3d14c / +0x3d150 (the centring offset in pixels) over +0x3d154
@@ -2295,6 +2297,14 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
                     const std::string& pageNo) {
     cr::Renderer& r = app.renderer;
     const float W = cr::Renderer::kLogicalW;
+    // (the iPad / Vita layout's parchment is as wide as the screen and its name streak part of the same piece: under
+    // a cutout's interface shrink the parchment, its name and lines are drawn unshrunk - the paper reaching the
+    // screen's edges, the name on its streak - the name, lines and mark moved in clear of the cutout instead)
+    struct Picture {
+        cr::Renderer& r;
+        bool was;
+        ~Picture() { r.setPictureLayer(was); }
+    } picture{r, r.pictureLayer()};
     // The screen's edges in the 1024 layout's units - in the iPhone layout (2.2.0) the safe area
     // tex2d (0, 0)..(480, 320), which its corners keep to (the skip button at (444, 0), the "next"
     // mark at y 296)
@@ -2322,6 +2332,13 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
     const short* rect = kRect[base | (app.msgLines == 1)];
     const float right = left + width;
     const float ex = 2 * androidEdgeX(app); // (Android: how far the phone's edges lie outside the centred screen)
+    // The bands across the screen (style 0x20's black, a tutorial's): its whole width - the iPhone layout's 960 is
+    // 2.2.0's 3:2 screen, a wider one (a 20:9 phone) the band stopping short of its edges otherwise
+    float bandL = left - ex, bandW = width + 2 * ex;
+    if (phone && ex == 0) {
+        const float lr = r.layoutRight(); // (the visible screen's right edge in the layout's units; its left the mirror)
+        bandL = (r.screenW() - lr) - r.uiX() - 1, bandW = 2 * (lr - r.screenW() / 2) + 2;
+    }
     if (base != 0 || style & 0x80 || style & 0x200) {
         const float wy = 2.0f * rect[0] + 64, ty = 2.0f * (rect[0] + rect[1]) + 64;
         float tx = 2.0f * 36 + 32;
@@ -2330,7 +2347,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
             outline = (style & 0x10) != 0;
         } else if (style & 0x20) { // a black band across the bottom (tex2d y 252..352), the name on its edge
             // (draw_vista; Android 1.1.1 0x7d678: x - ox / scale - 1 .. 480 + ox / scale + 1, the phone's whole width)
-            r.fillRect(left - ex, 2.0f * 252 + 64, width + 2 * ex, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
+            r.fillRect(bandL, 2.0f * 252 + 64, bandW, 768 - (2.0f * 252 + 64), 0, 0, 0, wa);
             if (!speaker.empty() && textOn) { // PutMsg: drawfont_l at tex2d (16, 236), just above the band
                 // draw_vista2 (2.2.0 0x1c640): the grey streak under the name - window (612, 14)
                 // 140 x 22 at tex2d (0, 238) (the HD binary's iPad at (-16, 238))
@@ -2351,7 +2368,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         } else if (style & 8) { // a tutorial's band: dark, its edges soft (8 / 88 / 8 tex2d), the text further left
             // (draw_abeblack: 0xc0 at the window's alpha; Android 1.1.1 0x7d48c: x - ox / scale .. the
             // phone's right edge - its whole width)
-            const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192, bl = left - ex, bw = width + 2 * ex;
+            const float a = 0.75f * wa, y1 = wy + 16, y2 = wy + 192, bl = bandL, bw = bandW;
             for (int k = 0; k < 8; ++k) { // the 2D path has no per-vertex colour: the edges in strips
                 const float t = (float(k) + 0.5f) / 8.0f;
                 r.fillRect(bl, wy + 2.0f * float(k), bw, 2.0f, 0, 0, 0, a * t);
@@ -2394,7 +2411,14 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
     }
     (void)portraits;
     float textY;
-    float textX = left + 68;
+    float textX = left + 68, markRight = right;
+    float clearL = 0; // (how far the name and lines move in, clear of a cutout)
+    if (!phone && r.interfaceShrink() < 1) {
+        r.setPictureLayer(true);
+        clearL = std::max(0.0f, r.safeLeft() + 16 - (left + 44 + r.uiX()));
+        markRight = std::min(right, right - (r.safeRight() + 8 - 48));
+        textX += clearL;
+    }
     if (phone) { // 2.2.0 (FUN_0001c940, the Retina path): the parchment's 480 x 128 - window_hd
         // (1024, 240, 960, 256) - at tex2d (0, y + 16); the name (drawfont_text) at (24, 206), the
         // lines at (36, y + text y) - no +18 - (the port's font offsets as for the iPad)
@@ -2443,7 +2467,7 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
             drawFrontFade(app); // (the name: text, over the front fade)
             app.nameHud.setTint(1, 1, 1);
             const float s = msgScale(app, kNamePoints); // (14 points; the line where the port had it on the iPad's streak)
-            app.nameHud.drawAt(r, {speaker}, left + 44 - cr::Hud::pad(s), H - 274 + cr::Hud::pad(2.0f) - cr::Hud::pad(s), s, 0, 0,
+            app.nameHud.drawAt(r, {speaker}, left + 44 + clearL - cr::Hud::pad(s), H - 274 + cr::Hud::pad(2.0f) - cr::Hud::pad(s), s, 0, 0,
                                0.0f); // on the streak (piece y 14..52)
         }
         app.dialogueHud.setTint(0, 0, 0); // ink (black: FUN_0002bd10's 0xff000000 for style 2)
@@ -2460,7 +2484,8 @@ void drawMessageBox(App& app, const std::vector<std::string>& page, const std::s
         textY = H - 140;
     }
     if (textOn) drawMessageLines(app, page, textX, textY, msgScale(app, kMsgPoints), false, textX); // text and name from the screen's left
-    if (next && textOn) drawMessageMark(app, style, 0, right, H); // (steady: PutMsg doesn't blink it)
+    if (next && textOn) drawMessageMark(app, style, 0, markRight, H); // (steady: PutMsg doesn't blink it)
+    r.setPictureLayer(picture.was);
     drawMessageSkip(app, right, top, textOn); // a scene is playing
 }
 
@@ -3024,8 +3049,10 @@ void drawFrame(App& app, bool present) {
                     // screen: (32, 64) 960 x 640); the slide moves it
                     const bool phone = r.phoneLayout(), small = app.phoneData || app.vitaOnly;
                     const float pw = small ? 960.0f : 1024.0f, ph = small ? 640.0f : 768.0f;
-                    const float vw = phone ? 960.0f : SW, vh = phone ? 640.0f : float(H), top = phone ? 64.0f : 0.0f;
-                    const float k = phone ? vh / ph : std::max(vw / pw, vh / ph); // (the iPhone's: its height)
+                    // (the iPhone layout's visible screen in its units - 960 x 640 at 3:2, wider on a wider phone -, covered
+                    // as the other layouts' are: a 20:9 phone's screen filled, not pillarboxed)
+                    const float vw = phone ? r.screenW() / r.layoutScale() : SW, vh = phone ? 640.0f : float(H), top = phone ? 64.0f : 0.0f;
+                    const float k = std::max(vw / pw, vh / ph);
                     r.drawQuadUV(p.tex, 512 - pw * k / 2 + p.x, top + (vh - ph * k) / 2 + p.y, pw * k, ph * k, 0, 0, pw, ph,
                                  p.shade, p.shade, p.shade, p.alpha);
                     app.order2d.portrait = ++app.order2d.seq;

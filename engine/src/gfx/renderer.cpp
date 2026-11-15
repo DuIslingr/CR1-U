@@ -395,6 +395,12 @@ void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
     dev_->drawQuad(white_, v, proj_, c);
 }
 
+void Renderer::toPicture(float px, float py, float& lx, float& ly) const {
+    lx = (px - offX_) / scaleX_;
+    ly = (py - offY_) / scaleY_;
+    if (phone_) screenToLayout(lx, ly);
+}
+
 void Renderer::toLogical(float px, float py, float& lx, float& ly) const {
     lx = (px - offX_) / scaleX_;
     ly = (py - offY_) / scaleY_;

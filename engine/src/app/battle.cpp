@@ -3869,6 +3869,9 @@ void drawBattleHud(App& app, float W, float H) {
     // beyond the 1024 layout added); slots 1 and 3 48 lower (a heal 28) while slot 0 shows, slot 2's heal
     // within 20 of slot 0's put 30 higher. Drawn opaque (tex2d_add's own colour, not the HUD's fade)
     r.setOrigin(0);
+    // (on their targets in the 3D: the picture's - a cutout's interface shrink would move them off)
+    const bool pictureWas = r.pictureLayer();
+    r.setPictureLayer(true);
     for (int slot = 0; slot < 5; ++slot) {
         App::Battle::Popup& p = b.popups[slot];
         if (!p.on) continue;
@@ -3907,6 +3910,7 @@ void drawBattleHud(App& app, float W, float H) {
             m.piece(dx, dy - hop, float((t[i] - '0') * 24 + style % 2 * 240), float(style / 2 * 24 + 24), 24, 24, a);
         }
     }
+    r.setPictureLayer(pictureWas);
 
     // Top left: the Break badge - the ring, a piece per point, the holder's name (at x - +0x3c: a talk's slide)
     const int g = b.gaugeShown;
