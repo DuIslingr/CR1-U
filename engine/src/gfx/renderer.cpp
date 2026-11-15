@@ -210,19 +210,18 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
     screenW_ = kLogicalH * aspect;
     const float sx = float(frameW_) / screenW_, sy = float(frameH_) / kLogicalH;
     scale_ = sx < sy ? sx : sy;
-    // The display's safe area (a camera's notch or punch hole, a foldable's cover screen's): the layout's own
-    // centred screen - the iPad's 1024, the iPhone's 3:2 (the Android phone's) - kept clear of the side and
-    // top insets, at a smaller scale if need be; in widescreen the screen then widens again to the frame, so
-    // the scene and the backgrounds still reach its edges. (The bottom's home indicator is no camera: the
-    // layout may run under it, as the original's did)
-    const float px = float(frameW_) / float(windowW_); // (the insets are the window's pixels)
-    const float side = std::max(safeL_, safeR_) * px, top = safeT_ * px;
-    if (side > 0 || top > 0) {
-        const float uiW = phone_ ? kLogicalH * fixed : kLogicalW;
-        const float halfW = float(frameW_) * 0.5f - side;
-        if (halfW > 0) scale_ = std::min(scale_, halfW / (uiW * 0.5f));
-        if (top > 0 && float(frameH_) > 2 * top) scale_ = std::min(scale_, (float(frameH_) - 2 * top) / kLogicalH); // (centred: as deep below)
-        if (widescreen_) screenW_ = std::max(screenW_, std::min(float(frameW_) / scale_, kLogicalH * 21.0f / 9.0f));
+    // The display's safe area (a camera's notch or punch hole) leaves the picture alone: the scene, the
+    // backgrounds and the full-screen art fill the screen. The interface keeps off it: where the cutout
+    // reaches into its width - the iPhone layout's 1152 (its 480 x 320 at 2.4), the iPad layout's 1024 -
+    // it is drawn smaller about the screen's centre, just clear of the cutout on both sides (interfaceRect;
+    // toLogical maps a touch back); none else. Options' Camera Cutout: Ignore, no insets, no shrink
+    uiShrink_ = 1;
+    {
+        const float k = float(frameW_) / float(windowW_);
+        const float bar = (float(frameW_) - screenW_ * scale_) * 0.5f;
+        const float cut = scale_ > 0 ? std::max(0.0f, (std::max(safeL_, safeR_) * k - bar) / scale_) : 0.0f; // (logical units in)
+        const float need = phone_ ? kLogicalH * 1.5f : float(kLogicalW);
+        if (cut > 0 && screenW_ - 2 * cut < need) uiShrink_ = std::clamp((screenW_ - 2 * cut) / need, 0.5f, 1.0f);
     }
     // ... and a smaller scene (upscaling) is exactly the frame scaled down per axis, so its pixels
     // land where the upscaler puts them
@@ -311,6 +310,13 @@ bool Renderer::clipV(float& y, float& h, float& t0, float& t1) const {
     return true;
 }
 
+void Renderer::interfaceRect(float& x, float& y, float& w, float& h) const {
+    if (uiShrink_ >= 1 || std::fabs(w) >= screenW_ * 0.98f) return; // (none, or the screen's whole width: art)
+    const float cx = screenW_ * 0.5f, cy = kLogicalH * 0.5f;
+    x = cx + (x - cx) * uiShrink_, y = cy + (y - cy) * uiShrink_;
+    w *= uiShrink_, h *= uiShrink_;
+}
+
 void Renderer::drawQuad(const Texture& tex, float x, float y, float w, float h, float r, float g,
                         float b, float a) {
     if (!tex.id) return;
@@ -321,6 +327,7 @@ void Renderer::drawQuad(const Texture& tex, float x, float y, float w, float h, 
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
+    interfaceRect(x, y, w, h);
     const float v[24] = {
         x, y, 0, t0,  x + w, y, 1, t0,  x + w, y + h, 1, t1,
         x, y, 0, t0,  x + w, y + h, 1, t1,  x, y + h, 0, t1,
@@ -339,6 +346,7 @@ void Renderer::drawQuadUV(const Texture& tex, float x, float y, float w, float h
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
+    interfaceRect(x, y, w, h);
     float u0 = sx / tex.width, u1 = (sx + sw) / tex.width;
     // An atlas piece drawn at a fractional number of the frame's pixels per texel (a window that
     // isn't the layout's whole multiple - 1024 x 768 for the Android layout: 0.8) samples its
@@ -373,6 +381,10 @@ void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
         p[2 * k] = xy[2 * k] + originX_, p[2 * k + 1] = std::clamp(xy[2 * k + 1], clipY0_, clipY1_); // (axis-aligned edges)
         if (phone_) layoutToScreen(p[2 * k], p[2 * k + 1]);
     }
+    if (uiShrink_ < 1 && std::max({p[0], p[2], p[4], p[6]}) - std::min({p[0], p[2], p[4], p[6]}) < screenW_ * 0.98f) // (interfaceRect's)
+        for (int k = 0; k < 4; ++k)
+            p[2 * k] = screenW_ * 0.5f + (p[2 * k] - screenW_ * 0.5f) * uiShrink_,
+            p[2 * k + 1] = kLogicalH * 0.5f + (p[2 * k + 1] - kLogicalH * 0.5f) * uiShrink_;
     const float v[24] = {
         p[0], p[1], 0, 0,  p[2], p[3], 1, 0,  p[4], p[5], 1, 1,
         p[0], p[1], 0, 0,  p[4], p[5], 1, 1,  p[6], p[7], 0, 1,
@@ -384,6 +396,8 @@ void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
 void Renderer::toLogical(float px, float py, float& lx, float& ly) const {
     lx = (px - offX_) / scaleX_;
     ly = (py - offY_) / scaleY_;
+    if (uiShrink_ < 1) // (a touch is on the interface: back through its shrink)
+        lx = screenW_ * 0.5f + (lx - screenW_ * 0.5f) / uiShrink_, ly = kLogicalH * 0.5f + (ly - kLogicalH * 0.5f) / uiShrink_;
     if (phone_) screenToLayout(lx, ly);
 }
 

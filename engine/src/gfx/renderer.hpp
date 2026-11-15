@@ -155,11 +155,16 @@ public:
     int frameHeight() const { return drawableH_; }
     // Window pixels per logical pixel (text is rasterised at this density).
     float pixelScale() const { return phone_ ? scale_ * layoutScale() : scale_; }
+    float interfaceShrink() const { return uiShrink_; } // (1 unless a camera's cutout reaches into the interface)
 
 private:
     bool clipV(float& y, float& h, float& t0, float& t1) const;
     void mapScreen(int w, int h); // logical screen -> the current target's pixels
     float safeEdge(float insetPx) const; // a window-pixel inset, in logical units in from the screen's edge
+    // The interface's shrink about the screen's centre, clear of a camera's cutout (1: none - mapScreen);
+    // a quad as wide as the screen (art, backgrounds, fades) keeps its place: the picture fills the screen
+    float uiShrink_ = 1;
+    void interfaceRect(float& x, float& y, float& w, float& h) const;
 
     std::unique_ptr<RenderDevice> dev_;
     Backend backend_ = Backend::OpenGL;

@@ -979,7 +979,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
             app.video.avoidCutout = i == 0;
             saveMix(app);
         });
-        rows.back().hint = "Avoid: the menus and the picture kept clear of the camera's notch or punch hole. Ignore: the picture to the screen's edges";
+        rows.back().hint = "Avoid: the menus and buttons kept clear of the camera's notch or punch hole (the picture fills the screen either way). Ignore: they reach the edges too";
 #else
         static const char* const kDisplay[] = {"Window", "Fullscreen", "Borderless"};
         value("Resolution", v.display == 2 ? "Desktop" : std::to_string(v.width) + " x " + std::to_string(v.height),
@@ -1185,13 +1185,15 @@ void phoneMenuPoint(const App& app, float& mx, float& my) {
 // the screen's edges, as the later widescreen release does (and the shop and the battle here),
 // the rest centred (uiX). The iPhone layout's one 480-wide screen doesn't spread
 // (inside the display's safe area: off a camera hole)
+// (inside the display's safe area: the groups at the screen's edges no further out than the cutout's inset;
+// where it reaches into the interface itself, the renderer draws it smaller - Renderer::interfaceRect)
 float wideLeft(const App& app) {
     const cr::Renderer& r = app.renderer;
-    return r.phoneLayout() ? r.uiX() : std::min(r.uiX(), r.safeLeft());
+    return r.phoneLayout() ? r.uiX() : r.safeLeft();
 }
 float wideRight(const App& app) {
     const cr::Renderer& r = app.renderer;
-    return r.phoneLayout() ? r.uiX() : std::max(r.uiX(), 2 * r.uiX() - r.safeRight());
+    return r.phoneLayout() ? r.uiX() : 2 * r.uiX() - r.safeRight();
 }
 // The Android layout: how far the phone's own edges lie outside the centred 480 x 320 screen, in
 // tex2d units - Android 1.1.1's gac +0x3d14c / +0x3d150 (the centring offset in pixels) over +0x3d154
