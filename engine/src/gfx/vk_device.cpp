@@ -722,7 +722,8 @@ public:
         if (present) {
             int w = 0, h = 0;
             SDL_GetWindowSizeInPixels(window_, &w, &h);
-            if (!swapchain_ || swapchainDirty_ || w != int(swapExtent_.width) || h != int(swapExtent_.height))
+            if (surfaceStale_) recreateSurface();
+            if (surface_ && (!swapchain_ || swapchainDirty_ || w != int(swapExtent_.width) || h != int(swapExtent_.height)))
                 createSwapchain();
             if (swapchain_) {
                 const VkResult r = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, f.acquired, VK_NULL_HANDLE, &image);
@@ -730,7 +731,7 @@ public:
                     swapchainDirty_ = true;
                     image = UINT32_MAX;
                 } else if (r < 0) {
-                    ok(r);
+                    presentFailed(r);
                     image = UINT32_MAX;
                 } else if (r == VK_SUBOPTIMAL_KHR) {
                     swapchainDirty_ = true;
@@ -774,7 +775,7 @@ public:
             pi.pImageIndices = &image;
             const VkResult r = vkQueuePresentKHR(queue_, &pi);
             if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) swapchainDirty_ = true;
-            else ok(r);
+            else if (r < 0) presentFailed(r);
         }
         cmd_ = VK_NULL_HANDLE;
         haveFrame_ = true;
@@ -1854,6 +1855,34 @@ private:
         swapchainDirty_ = false;
     }
 
+    void surfaceChanged() override { surfaceStale_ = true; }
+
+    // The window's surface anew (back from the background, or VK_ERROR_SURFACE_LOST_KHR): the swapchain on
+    // it first, then the surface from SDL again; the next present makes a swapchain on the new one
+    void recreateSurface() {
+        surfaceStale_ = false;
+        vkDeviceWaitIdle(device_);
+        destroySwapchain();
+        if (surface_) SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
+        surface_ = VK_NULL_HANDLE;
+        if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Vulkan surface again: %s", SDL_GetError());
+            surface_ = VK_NULL_HANDLE;
+        }
+        swapchainDirty_ = true;
+        SDL_Log("vulkan: the window's surface made again");
+    }
+
+    // A present-side failure other than out-of-date: a lost surface is made again; a lost device - the GPU's
+    // work refused, as iOS refuses it in the background - can't come back here: said once, in the log
+    void presentFailed(VkResult r) {
+        if (r == VK_ERROR_SURFACE_LOST_KHR) surfaceStale_ = true;
+        else if (r == VK_ERROR_DEVICE_LOST && !deviceLostLogged_) {
+            deviceLostLogged_ = true;
+            SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Vulkan: the GPU device was lost - nothing more can be drawn; restart the game");
+        } else ok(r);
+    }
+
     void destroySwapchain() {
         for (VkSemaphore s : presentSems_) vkDestroySemaphore(device_, s, nullptr);
         presentSems_.clear();
@@ -1899,6 +1928,7 @@ private:
     std::array<Frame, kFrames> frames_{};
     uint64_t serial_ = 0;
     bool inFrame_ = false, haveFrame_ = false, colorWrite_ = true, vsync_ = true, swapchainDirty_ = true;
+    bool surfaceStale_ = false, deviceLostLogged_ = false; // (surfaceChanged / a surface lost: made anew before the next present)
     int errors_ = 0;
     // Offscreen target
     int targetW_ = 0, targetH_ = 0;

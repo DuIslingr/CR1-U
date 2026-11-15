@@ -98,6 +98,8 @@ public:
     // way readPixels can read it back afterwards.
     virtual void beginFrame(int drawableW, int drawableH) = 0;
     virtual void endFrame(bool present) = 0;
+    // The window's drawing surface may be another now (the app back from the background): rebuilt before the next present
+    virtual void surfaceChanged() {}
     // Drawable pixels, top-left origin (fractional where the API allows: a scene smaller than
     // the frame keeps the frame's layout exactly)
     virtual void setViewport(float x, float y, float w, float h) = 0;

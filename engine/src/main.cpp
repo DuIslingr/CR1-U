@@ -1645,6 +1645,21 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
 
 SDL_AppResult SDL_AppIterate(void* state) {
     if (!consumeGraphicsReset(*static_cast<App*>(state))) return SDL_APP_FAILURE;
+    { // In the background (a phone's): nothing drawn - iOS refuses a background app's GPU work, and the device it
+      // leaves draws nothing again (the user's iPhone: the picture frozen on return, the game running on beneath it).
+      // The game's clock is stopped meanwhile (LifecycleClock). Back in front: the window's surface made anew
+        App& a = *static_cast<App*>(state);
+        if (a.clock.backgrounded()) {
+            SDL_Delay(20);
+            return SDL_APP_CONTINUE;
+        }
+        static Uint64 resumes = 0;
+        if (const Uint64 n = a.clock.resumes(); n != resumes) {
+            resumes = n;
+            a.renderer.surfaceChanged();
+            SDL_Log("lifecycle: back from the background (%llu), the drawing surface made anew", (unsigned long long)n);
+        }
+    }
     consumeInputCancel(*static_cast<App*>(state));
     static_cast<App*>(state)->sound.update();
     App& app = *static_cast<App*>(state);
