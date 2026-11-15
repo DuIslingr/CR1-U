@@ -531,6 +531,14 @@ static cr::SetupGame crSetupGame() {
 
 SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#ifdef SDL_PLATFORM_WINDOWS
+    // Flydigi pads (CRO-U #4: a Vader 4 Pro, wired and through its receiver, not found since SDL 3.4.20): SDL
+    // 3.4.0 added a HIDAPI driver for Flydigi controllers, on by default, which takes the pad and then gets no
+    // input from one in XInput mode (SDL's own fixes for it are on its development branch only, after 3.4.20).
+    // Off here, so the pad is read through XInput as with SDL 3.2.0, where it worked.
+    // SDL_JOYSTICK_HIDAPI_FLYDIGI=1 in the environment turns it back on (the environment's value wins)
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_FLYDIGI, "0");
+#endif
     SDL_SetAppMetadata("Chaos Rings HD (reimplementation)", "0.1", "local.preservation.chaosrings");
     startLogFile(argc, argv);
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
@@ -1105,6 +1113,14 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         break;
     case SDL_EVENT_QUIT:
         return SDL_APP_SUCCESS;
+    case SDL_EVENT_JOYSTICK_ADDED: { // (logged: what SDL found and whether it maps it as a gamepad - a pad that never
+        // takes shows in chaosrings.log)
+        const SDL_JoystickID id = event->jdevice.which;
+        const char* name = SDL_GetJoystickNameForID(id);
+        SDL_Log("joystick: %s (%04x:%04x, type %d)%s", name ? name : "(unnamed)", unsigned(SDL_GetJoystickVendorForID(id)),
+                unsigned(SDL_GetJoystickProductForID(id)), int(SDL_GetJoystickTypeForID(id)), SDL_IsGamepad(id) ? "" : " - not a gamepad to SDL");
+        break;
+    }
     case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)
         if (!app.pad || !SDL_GamepadConnected(app.pad))
             if (SDL_Gamepad* pad = SDL_OpenGamepad(event->gdevice.which)) {
