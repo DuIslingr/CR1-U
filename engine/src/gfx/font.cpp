@@ -264,6 +264,117 @@ bool loadAppleFont(Font& font, const char* postScriptName) {
 bool loadAppleFont(Font&, const char*) { return false; }
 #endif
 
+// Android's fonts beyond the AOSP file names: a phone maker's system may name or place its CJK font otherwise.
+// The system's own font list - /system/etc/fonts.xml, font_fallback.xml from Android 15, the product / vendor
+// partitions' - names each family's files and languages: Japanese's first, then Chinese (Simplified,
+// Traditional) and Korean, then the default sans-serif family; after them, any font in the font folders,
+// CJK-named ones first. In the order to try
+std::vector<std::string> androidFonts(const std::string& root) {
+    static const char* const kDirs[] = {"/system/fonts/", "/product/fonts/", "/system_ext/fonts/", "/vendor/fonts/"};
+    auto locate = [&root](const std::string& name) -> std::string {
+        if (!name.empty() && name[0] == '/') return SDL_GetPathInfo((root + name).c_str(), nullptr) ? root + name : std::string();
+        for (const char* d : kDirs)
+            if (const std::string p = root + d + name; SDL_GetPathInfo(p.c_str(), nullptr)) return p;
+        return {};
+    };
+    auto attr = [](const std::string& tag, const char* key) -> std::string {
+        const std::string k = std::string(" ") + key + "=\"";
+        const size_t at = tag.find(k);
+        if (at == std::string::npos) return {};
+        const size_t b = at + k.size(), e = tag.find('"', b);
+        return e == std::string::npos ? std::string() : tag.substr(b, e - b);
+    };
+    // (a family's rank: 0 Japanese, 1 Simplified Chinese, 2 Traditional, 3 Korean, 4 the default family, -1 none)
+    auto rank = [](const std::string& lang, const std::string& name) {
+        int best = -1;
+        size_t i = 0;
+        while (i < lang.size()) {
+            size_t e = lang.find_first_of(" ,", i);
+            if (e == std::string::npos) e = lang.size();
+            const std::string t = lang.substr(i, e - i);
+            i = e + 1;
+            int r = -1;
+            if (t.rfind("ja", 0) == 0 || t.find("Jpan") != std::string::npos) r = 0;
+            else if (t.rfind("zh-Hans", 0) == 0 || t.find("Hans") != std::string::npos || t == "zh" || t == "zh-CN") r = 1;
+            else if (t.rfind("zh-Hant", 0) == 0 || t.find("Hant") != std::string::npos || t == "zh-TW") r = 2;
+            else if (t.rfind("ko", 0) == 0 || t.find("Kore") != std::string::npos) r = 3;
+            if (r >= 0 && (best < 0 || r < best)) best = r;
+        }
+        if (best < 0 && name == "sans-serif") best = 4;
+        return best;
+    };
+    std::vector<std::string> ranked[5];
+    for (const char* xml : {"/product/etc/fonts_customization.xml", "/system/etc/font_fallback.xml", "/system/etc/fonts.xml",
+                            "/vendor/etc/fonts.xml", "/system/etc/fallback_fonts.xml", "/system/etc/system_fonts.xml"}) {
+        std::vector<uint8_t> data;
+        if (!readFile(root + xml, data)) continue;
+        const std::string s(data.begin(), data.end());
+        for (size_t f = s.find("<family"); f != std::string::npos; f = s.find("<family", f + 1)) {
+            const size_t tagEnd = s.find('>', f), end = s.find("</family>", f);
+            if (tagEnd == std::string::npos || end == std::string::npos) break;
+            const std::string tag = s.substr(f, tagEnd - f);
+            const int r = rank(attr(tag, "lang"), attr(tag, "name"));
+            if (r < 0) continue;
+            std::vector<std::string> regular, other; // (the 400 weight first)
+            for (size_t t = s.find("<font", tagEnd); t != std::string::npos && t < end; t = s.find("<font", t + 1)) {
+                const size_t te = s.find('>', t);
+                if (te == std::string::npos || te > end) break;
+                if (std::isalpha(static_cast<unsigned char>(s[t + 5])) || s[t + 5] == '-') continue; // (<fontVariation...>)
+                const std::string ftag = s.substr(t, te - t);
+                std::string file;
+                if (s[te - 1] != '/') {
+                    size_t a = te + 1, b = s.find('<', a);
+                    if (b == std::string::npos) break;
+                    while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+                    while (b > a && std::isspace(static_cast<unsigned char>(s[b - 1]))) --b;
+                    file = s.substr(a, b - a);
+                }
+                if (file.empty()) file = attr(ftag, "path");
+                // (not italics, nor a serif family's stand-in - fallbackFor="serif")
+                if (file.empty() || attr(ftag, "style") == "italic" || !attr(ftag, "fallbackFor").empty()) continue;
+                const std::string w = attr(ftag, "weight");
+                (w == "400" || w.empty() ? regular : other).push_back(file);
+            }
+            for (auto* list : {&regular, &other})
+                for (const std::string& file : *list)
+                    if (const std::string p = locate(file); !p.empty()) ranked[r].push_back(p);
+        }
+    }
+    std::vector<std::string> out;
+    auto add = [&out](const std::string& p) {
+        if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(p);
+    };
+    for (const auto& list : ranked)
+        for (const std::string& p : list) add(p);
+    // The font folders themselves (a list that names none of these): CJK-named first, then sans faces, the rest
+    std::vector<std::string> cjk, sans, rest;
+    for (const char* d : kDirs) {
+        int n = 0;
+        char** names = SDL_GlobDirectory((root + d).c_str(), "*", 0, &n);
+        for (int i = 0; names && i < n; ++i) {
+            const std::string name = names[i];
+            std::string lower = name;
+            for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+            const std::string ext = lower.size() > 4 ? lower.substr(lower.size() - 4) : std::string();
+            if (ext != ".ttf" && ext != ".otf" && ext != ".ttc") continue;
+            auto has = [&lower](const char* k) { return lower.find(k) != std::string::npos; };
+            if (has("emoji") || has("symbol") || has("italic")) continue;
+            const std::string path = root + d + name;
+            if (has("cjk") || has("jp") || has("sc-") || has("tc-") || has("kr") || has("han")) cjk.push_back(path);
+            else if (has("roboto") || has("sans")) sans.push_back(path);
+            else rest.push_back(path);
+        }
+        SDL_free(names);
+    }
+    for (auto* list : {&cjk, &sans, &rest}) {
+        std::stable_sort(list->begin(), list->end(), [](const std::string& a, const std::string& b) {
+            return a.find("Regular") != std::string::npos && b.find("Regular") == std::string::npos;
+        });
+        for (const std::string& p : *list) add(p);
+    }
+    return out;
+}
+
 namespace {
 // The first of `paths` that loads (an environment variable's file first; its value "none": none -,
 // then `own`: the font/ folder's)
@@ -381,6 +492,23 @@ bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold) {
                   // Android (ChromeOS-derived builds ship Arimo)
                   "/system/fonts/Arimo-Regular.ttf",
               });
+#ifdef SDL_PLATFORM_ANDROID
+    // (a system without the AOSP files - a phone maker's own names and partitions -: its own font list's, the
+    // first that draws Latin text, in the CJK font's place and its bold's)
+    if (!cjk.loaded() && !SDL_getenv("CR_FONT")) {
+        std::string found;
+        for (const std::string& c : androidFonts(""))
+            if (cjk.load(c) && cjk.covers("Aa")) {
+                found = c;
+                break;
+            }
+        if (found.empty()) cjk.load(std::string()); // (none: no face left loaded)
+        else {
+            SDL_Log("font: %s from the system's font list", found.c_str());
+            if (!cjkBold.loaded() && !SDL_getenv("CR_FONT_BOLD")) cjkBold.load(found);
+        }
+    }
+#endif
 #ifdef SDL_PLATFORM_IOS
     // iOS: none of the paths above (macOS's) - the system's own faces through CoreText, as 2.2.0 asks UIKit
     // for them: ArialMT, Hiragino Kaku Gothic ProN W6 for Japanese, W3 the CJK fallback (applyLanguage

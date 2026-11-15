@@ -65,6 +65,9 @@ private:
 // overrides; CR_FONT=none: no font at all - the 8x8 one); `cjkBold` a bold weight for Japanese
 // (2.2.0's HiraKakuProN-W6; CR_FONT_BOLD overrides). True if `latin` or `cjk` loaded.
 bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold);
+// Android's fonts from the system's own font lists (fonts.xml, font_fallback.xml, ...) and font folders, under
+// `root` ("" on a device): Japanese, Chinese, Korean families first, then the default sans-serif, then the rest
+std::vector<std::string> androidFonts(const std::string& root);
 // Apple's (iOS, macOS): the system font of this PostScript name ("ArialMT", "HiraKakuProN-W6",
 // "PingFangSC-Regular") - its file from CoreText, its face in a collection - into `font`; nothing
 // done if it is the face loaded already. False elsewhere, or when the system has no such font
