@@ -203,8 +203,13 @@ jobs:
   # iOS (iPhone, iPad): Vulkan through MoltenVK linked in (MetalFX from iOS 16), OpenGL ES 3 the fallback. Built
   # unsigned: the .ipa is signed by whoever sideloads it (AltStore, Sideloadly, ...)
   ios:
-    runs-on: macos-15
+    # (Xcode 27.1, the iOS 27.1 SDK: an app linked against an older SDK runs letterboxed - a compatibility
+    # box - on a screen newer than its SDK, the iPhone Duo's folded and unfolded both; macos-15's Xcode 16.4
+    # and iOS 18 SDK did that to every .ipa until now, whatever the Info.plist said)
+    runs-on: xcode-27
     name: ios
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v5
       - name: Vulkan SDK (glslc, to compile the shaders)
@@ -218,6 +223,8 @@ jobs:
           tar -xf "$RUNNER_TEMP/mvk.tar" -C "$RUNNER_TEMP"
       - name: Configure
         run: |
+          xcodebuild -version
+          echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
           ver=0.5.0
           case "$GITHUB_REF_NAME" in v[0-9]*) ver="${GITHUB_REF_NAME#v}" ;; esac
           cmake -S engine -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
