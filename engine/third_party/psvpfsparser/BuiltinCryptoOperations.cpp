@@ -39,7 +39,9 @@ struct Tables {
          const uint32_t e = uint32_t(s2) << 24 | uint32_t(s) << 16 | uint32_t(s) << 8 | s3;
          const uint8_t v = inv[i];
          const uint32_t d = uint32_t(gmul(v, 14)) << 24 | uint32_t(gmul(v, 9)) << 16 | uint32_t(gmul(v, 13)) << 8 | gmul(v, 11);
-         for (int k = 0; k < 4; ++k) te[k][i] = e >> (8 * k) | e << (32 - 8 * k), td[k][i] = d >> (8 * k) | d << (32 - 8 * k);
+         // (rotated with masked counts: "x << (32 - 8k)" for k = 0 shifts by 32 - undefined; Apple's Clang folded
+         // it so every AES result was wrong on macOS / iOS / ARM - CR3-U 17087fe)
+         for (int k = 0; k < 4; ++k) te[k][i] = e >> ((8 * k) & 31) | e << ((32 - 8 * k) & 31), td[k][i] = d >> ((8 * k) & 31) | d << ((32 - 8 * k) & 31);
       }
    }
 };
@@ -121,8 +123,8 @@ struct Aes {
 
 // ---- SHA-1 and SHA-256 (FIPS 180-4)
 
-uint32_t rol(uint32_t x, int n) { return x << n | x >> (32 - n); }
-uint32_t ror(uint32_t x, int n) { return x >> n | x << (32 - n); }
+uint32_t rol(uint32_t x, int n) { return x << (n & 31) | x >> ((32 - n) & 31); }
+uint32_t ror(uint32_t x, int n) { return x >> (n & 31) | x << ((32 - n) & 31); }
 
 // the message padded: its bits' count, big-endian, at the end of the last 64-byte block
 std::vector<uint8_t> padded(const uint8_t* src, size_t size) {
