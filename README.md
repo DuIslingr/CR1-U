@@ -63,7 +63,8 @@ release is.
   the `.ipa` itself - unpacked when the game starts), `android/` or `vita/`, then *Look again*. It runs at
   the display's rate (120 Hz on ProMotion screens), keeps the menus clear of the camera's notch or punch
   hole, and with Layout on *Auto* takes the iPhone layout on a small screen and the iPad layout on a large
-  one - on a foldable it changes as you fold or open it. So far built by CI only, not yet tried on a device.
+  one - on a foldable it changes as you fold or open it. Tried on an iPhone Duo (both screens). The first
+  start's setup offers a file picker too.
 - **Android:** install the APK. The first start's setup works on the phone too (it picks files;
   folders are copied in over USB). Or copy your files over USB into
   `Android/data/local.preservation.chaosrings/files/`, in an `ios/`, `android/` or `vita/` folder.
@@ -269,5 +270,5 @@ reverse-engineering output (`re/`, `extracted/`) is never committed or shared.
   affiliated with either. The engine's source holds facts read out of the original (file names,
   flag numbers, screen positions, formula constants) where the port needs them, but no game data.
 - Licence: GPL-2.0-or-later ([LICENSE](LICENSE)). The bundled libraries keep their own licences
-  ([THIRD_PARTY.md](THIRD_PARTY.md)); the macOS app is GPL-3.0 because of MoltenVK. A build with
+  ([THIRD_PARTY.md](THIRD_PARTY.md)); the macOS and iOS apps are GPL-3.0 because of MoltenVK. A build with
   DLSS links NVIDIA's proprietary library and is for your own use only.
