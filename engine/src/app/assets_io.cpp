@@ -881,7 +881,7 @@ void saveMix(const App& app) {
                               std::to_string(v.renderScale) + "\nmsaa=" + std::to_string(v.msaa) +
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
-                              std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) +
+                              std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) + "\navoid_cutout=" + std::to_string(int(v.avoidCutout)) +
                               "\nsmooth_models=" + std::to_string(v.smoothModels) + "\nhd_models=" + std::to_string(int(v.hdModels)) +
                               "\nanisotropy=" + std::to_string(v.anisotropy) + "\nsharp_textures=" + std::to_string(int(v.sharpTextures)) +
                               "\nlayout=" + std::to_string(v.layout) +

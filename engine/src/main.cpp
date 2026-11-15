@@ -456,7 +456,8 @@ using namespace crapp;
 // The desktop builds' log file (a WIN32 GUI build has no console, nor has a double-click launch elsewhere): SDL's log
 // teed into chaosrings.log in the profile folder (cr::saveDir), the previous start's kept as chaosrings.prev.log; not
 // for the tests, captures or exports (their output is their own). Chains to the output function before it.
-#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+// iOS's too: into the app's Documents (the game folder, seen in the Files app and over USB) - no console there
+#if !defined(SDL_PLATFORM_ANDROID)
 static FILE* gLogFile = nullptr;
 static SDL_LogOutputFunction gLogNext = nullptr;
 static void* gLogNextData = nullptr;
@@ -475,7 +476,13 @@ static void startLogFile(int argc, char** argv) {
     for (int i = 1; i < argc; ++i)
         for (const char* f : {"--capture", "--selftest", "--explore", "--export-textures", "--export-models"})
             if (SDL_strcmp(argv[i], f) == 0) return;
-    const std::string dir = cr::saveDir(), log = dir + "chaosrings.log", prev = dir + "chaosrings.prev.log";
+#ifdef SDL_PLATFORM_IOS
+    const std::vector<std::string> g = cr::gameFolders();
+    const std::string dir = g.empty() ? cr::saveDir() : g.front();
+#else
+    const std::string dir = cr::saveDir();
+#endif
+    const std::string log = dir + "chaosrings.log", prev = dir + "chaosrings.prev.log";
     std::remove(prev.c_str());
     std::rename(log.c_str(), prev.c_str());
     gLogFile = std::fopen(log.c_str(), "w");
@@ -533,6 +540,15 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
 
     auto* app = new App;
     *state = app;
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    { // the game folder's places made on every start - to be seen and filled over USB, an iPhone's in the Files app
+      // (Info.plist's UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace share its Documents; Files shows an
+      // app's folder only once there is something in it)
+        const std::vector<std::string> g = cr::gameFolders();
+        if (!g.empty())
+            for (const char* f : {"ios", "android", "vita", "font", "translation"}) SDL_CreateDirectory((g.front() + f).c_str());
+    }
+#endif
 
     // Your copy, found by itself (platform/paths.hpp): ios/, android/ and vita/ in the game folder
     // (beside the program, the .app or the AppImage; on Android its folder on the shared storage) -
@@ -680,10 +696,6 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     if (!app->modelsDir.empty() && app->modelsDir.back() != '/') app->modelsDir += '/';
     if (app->dataDir.empty()) {
         const std::vector<std::string> g = cr::gameFolders();
-#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
-        if (!g.empty()) // (the folders made, to be seen over USB - an iPhone's in the Files app)
-            for (const char* f : {"ios", "android", "vita"}) SDL_CreateDirectory((g.front() + f).c_str());
-#endif
         // The first start without a copy: where is it? (platform/setup.hpp - what's chosen copied into
         // the game folder's ios/, android/, vita/: found as on any start - a phone's too)
         static bool setupAsked = false;

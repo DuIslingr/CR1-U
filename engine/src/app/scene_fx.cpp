@@ -469,6 +469,7 @@ void loadVideo(App& app, const char* text) {
     v.upscaleMode = std::clamp(keyValue(text, "\nupscale_mode=", v.upscaleMode), 0, 4);
     v.sharpness = std::clamp(keyValue(text, "\nsharpness=", v.sharpness), 0, 100);
     v.hdTextures = keyValue(text, "\nhd_textures=", v.hdTextures) != 0;
+    v.avoidCutout = keyValue(text, "\navoid_cutout=", v.avoidCutout) != 0;
     v.smoothModels = keyValue(text, "\nsmooth_models=", v.smoothModels);
     v.hdModels = keyValue(text, "\nhd_models=", v.hdModels) != 0;
     if (v.smoothModels != 2 && v.smoothModels != 3) v.smoothModels = 0;
@@ -534,6 +535,11 @@ bool autoPhoneLayout(const App& app) { return app.phoneData || smallScreen(app);
 void applyVideo(App& app) {
     App::Video& v = app.video;
     cr::Renderer& r = app.renderer;
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+    // (a phone's or tablet's: no resolution, window or aspect choice - the whole screen at its own pixels,
+    // the picture widening to its shape; a settings file's other values, an older version's, set aside)
+    v.display = 0, v.widescreen = true;
+#endif
     r.setWidescreen(v.widescreen);
     r.setPhoneLayout(v.layout >= 2 || (v.layout == 0 && autoPhoneLayout(app))); // 2.2.0's screens (3:2)
     r.setAndroidScreen(v.layout == 3); // (the Android release's: docs/ANDROID.md)
@@ -967,6 +973,14 @@ std::vector<OptRow> optionRows(App& app, int page) {
         break;
     }
     case 2: { // Display
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+        // (a phone's or tablet's: the whole screen at its own resolution and shape, always - applyVideo)
+        pair("Camera Cutout", "Avoid", "Ignore", v.avoidCutout ? 0 : 1, [&app](int i) {
+            app.video.avoidCutout = i == 0;
+            saveMix(app);
+        });
+        rows.back().hint = "Avoid: the menus and the picture kept clear of the camera's notch or punch hole. Ignore: the picture to the screen's edges";
+#else
         static const char* const kDisplay[] = {"Window", "Fullscreen", "Borderless"};
         value("Resolution", v.display == 2 ? "Desktop" : std::to_string(v.width) + " x " + std::to_string(v.height),
               [&app](int dir) { adjustVideo(app, 0, dir ? dir : 1); });
@@ -974,6 +988,7 @@ std::vector<OptRow> optionRows(App& app, int page) {
         pair("Aspect", "4:3", "Wide", v.widescreen ? 1 : 0, [&app](int i) {
             if (app.video.widescreen != (i == 1)) adjustVideo(app, 2, 1);
         });
+#endif
         static const char* const kLayout[] = {"Auto", "iPad", "iPhone", "Android"};
         value("Layout", kLayout[std::clamp(v.layout, 0, 3)], [&app](int dir) { adjustVideo(app, 14, dir ? dir : 1); });
         rows.back().hint = "The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data";
@@ -2673,9 +2688,30 @@ void drawFrame(App& app, bool present) {
             const float sx = float(w) / float(ww), sy = float(h) / float(wh);
             l = float(safe.x) * sx, t = float(safe.y) * sy, rr = float(ww - safe.x - safe.w) * sx, b = float(wh - safe.y - safe.h) * sy;
         }
+        if (!app.video.avoidCutout) l = t = rr = b = 0; // (Options: the picture to the screen's edges, under a camera's cutout too)
         r.setSafeInsets(l, t, rr, b);
     }
     r.beginFrame(w, h);
+    { // what the system gives the game, and how the game fits itself in it - logged once, and when it changes
+      // (a phone's fold, a rotation, a window's resize: chaosrings.log - iOS's in the Files app)
+        int pw = 0, ph = 0, ww = 0, wh = 0;
+        SDL_GetWindowSize(app.window, &ww, &wh);
+        SDL_GetWindowSizeInPixels(app.window, &pw, &ph);
+        SDL_Rect safe{}, bounds{}, usable{};
+        SDL_GetWindowSafeArea(app.window, &safe);
+        const SDL_DisplayID d = SDL_GetDisplayForWindow(app.window);
+        SDL_GetDisplayBounds(d, &bounds);
+        SDL_GetDisplayUsableBounds(d, &usable);
+        char line[512];
+        SDL_snprintf(line, sizeof line,
+                     "window %dx%d pt, %dx%d px (density %.2f, scale %.2f), display %dx%d at %d,%d (usable %dx%d at %d,%d), safe area %dx%d at %d,%d; "
+                     "layout %s%s, %s, cutout %s: logical screen %.0f x %d at %.3f px per unit",
+                     ww, wh, pw, ph, SDL_GetWindowPixelDensity(app.window), SDL_GetWindowDisplayScale(app.window), bounds.w, bounds.h, bounds.x, bounds.y,
+                     usable.w, usable.h, usable.x, usable.y, safe.w, safe.h, safe.x, safe.y, r.phoneLayout() ? "iPhone" : "iPad",
+                     vitaLayout(app) ? " (Vita)" : "", app.video.widescreen ? "wide" : "fixed", app.video.avoidCutout ? "avoided" : "ignored", r.screenW(),
+                     int(cr::Renderer::kLogicalH), r.pixelScale());
+        if (app.screenLogged != line) app.screenLogged = line, SDL_Log("screen: %s", line);
+    }
     // the examine prompt ("!" over what can be checked): placed through the scene's camera, drawn
     // with the UI once the scene is done - not upscaled with it (FSR / DLSS / MetalFX)
     struct {

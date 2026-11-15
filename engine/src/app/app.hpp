@@ -305,6 +305,7 @@ struct App {
         int width = 1024, height = 768;    // window size (windowed) or display mode (fullscreen)
         int display = 0;                   // 0 windowed, 1 fullscreen (that mode), 2 borderless (the desktop's)
         int fullscreenKind = 2;            // F11 / Alt+Enter's fullscreen: the last one chosen (1 or 2)
+        bool avoidCutout = true;           // phones: the layout kept clear of a camera's notch / punch hole (Options, Display)
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
         bool widescreen = true;            // the screen widens to the window (up to 21:9); else 4:3 (a phone's: wide, filling it)
 #else
@@ -345,7 +346,8 @@ struct App {
     bool fanText = false;
     cr::PsarcArchive fanArchive;           // translation/<name>/ (its rePatch folder's cr1.psarc), not open: none
     std::string fanName;                   // its language ("Russian"; settings.ini's choice 8)
-    bool englishPatched = false;           // the copy's own English is a fan translation's (patched in place: named so)
+    bool englishPatched = false;
+    std::string screenLogged;              // the last "screen:" log line's values (logged again when they change)           // the copy's own English is a fan translation's (patched in place: named so)
     cr::Font font;                         // the game's text in the language's face (applyLanguage: one of these three)
     cr::Font fontLatin;                    // ArialMT's metrics (Arial / Liberation Sans): every language but Japanese
     cr::Font fontCjk;                      // a CJK system font: Chinese / Korean glyphs Arial lacks; the rest without a Latin face
