@@ -18,6 +18,10 @@
 #define STBTT_STATIC
 #include "stb/stb_truetype.h"
 
+#ifdef SDL_PLATFORM_APPLE
+#include <CoreText/CoreText.h>
+#endif
+
 namespace cr {
 
 struct Font::Face {
@@ -119,6 +123,24 @@ bool Font::selectRegion(const char* region) {
     return false;
 }
 
+bool Font::selectPostScript(const char* name) {
+    if (!loaded() || !name) return false;
+    const unsigned char* d = data_->data();
+    const int n = std::max(1, stbtt_GetNumberOfFonts(d));
+    for (int i = 0; i < n; ++i) {
+        stbtt_fontinfo info;
+        if (!stbtt_InitFont(&info, d, stbtt_GetFontOffsetForIndex(d, i))) continue;
+        std::string ps;
+        int len = 0; // PostScript name (id 6): the Windows table's UTF-16BE, else the Mac table's Roman
+        if (const char* u = stbtt_GetFontNameString(&info, &len, STBTT_PLATFORM_ID_MICROSOFT, STBTT_MS_EID_UNICODE_BMP, STBTT_MS_LANG_ENGLISH, 6))
+            for (int k = 1; k < len; k += 2) ps += u[k];
+        else if (const char* m = stbtt_GetFontNameString(&info, &len, STBTT_PLATFORM_ID_MAC, STBTT_MAC_EID_ROMAN, STBTT_MAC_LANG_ENGLISH, 6))
+            ps.assign(m, size_t(len));
+        if (ps == name) return i == faceIndex_ || openFace(i);
+    }
+    return false;
+}
+
 bool Font::covers(const std::string& utf8) const {
     if (!loaded()) return false;
     const stbtt_fontinfo* other = fallback_ && fallback_->loaded() ? &fallback_->face_->info : nullptr;
@@ -211,6 +233,36 @@ bool Font::rasterise(const std::vector<std::string>& lines, float em, float line
     }
     return true;
 }
+
+#ifdef SDL_PLATFORM_APPLE
+bool loadAppleFont(Font& font, const char* postScriptName) {
+    CFStringRef name = CFStringCreateWithCString(nullptr, postScriptName, kCFStringEncodingUTF8);
+    if (!name) return false;
+    std::string path, found;
+    if (CTFontDescriptorRef desc = CTFontDescriptorCreateWithNameAndSize(name, 0)) {
+        // (CoreText answers an unknown name with a stand-in: its own name checked)
+        if (CFStringRef got = static_cast<CFStringRef>(CTFontDescriptorCopyAttribute(desc, kCTFontNameAttribute))) {
+            char buf[256];
+            if (CFStringGetCString(got, buf, sizeof buf, kCFStringEncodingUTF8)) found = buf;
+            CFRelease(got);
+        }
+        if (CFURLRef url = static_cast<CFURLRef>(CTFontDescriptorCopyAttribute(desc, kCTFontURLAttribute))) {
+            char buf[1024];
+            if (CFURLGetFileSystemRepresentation(url, true, reinterpret_cast<UInt8*>(buf), sizeof buf)) path = buf;
+            CFRelease(url);
+        }
+        CFRelease(desc);
+    }
+    CFRelease(name);
+    if (path.empty() || found != postScriptName) return false;
+    if (font.loaded() && font.path() == path) return font.selectPostScript(postScriptName) || true;
+    if (!font.load(path)) return false;
+    font.selectPostScript(postScriptName); // (a collection's: that face)
+    return true;
+}
+#else
+bool loadAppleFont(Font&, const char*) { return false; }
+#endif
 
 namespace {
 // The first of `paths` that loads (an environment variable's file first; its value "none": none -,
@@ -329,6 +381,14 @@ bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold) {
                   // Android (ChromeOS-derived builds ship Arimo)
                   "/system/fonts/Arimo-Regular.ttf",
               });
+#ifdef SDL_PLATFORM_IOS
+    // iOS: none of the paths above (macOS's) - the system's own faces through CoreText, as 2.2.0 asks UIKit
+    // for them: ArialMT, Hiragino Kaku Gothic ProN W6 for Japanese, W3 the CJK fallback (applyLanguage
+    // puts PingFang SC / TC or Apple SD Gothic Neo there for Chinese and Korean)
+    if (!cjk.loaded() && !SDL_getenv("CR_FONT")) loadAppleFont(cjk, "HiraKakuProN-W3");
+    if (!cjkBold.loaded() && !SDL_getenv("CR_FONT_BOLD")) loadAppleFont(cjkBold, "HiraKakuProN-W6");
+    if (!latin.loaded() && !SDL_getenv("CR_LATIN_FONT")) loadAppleFont(latin, "ArialMT");
+#endif
     return latin.loaded() || cjk.loaded();
 }
 

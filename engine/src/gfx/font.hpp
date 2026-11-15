@@ -29,6 +29,8 @@ public:
     // In a collection, the face whose name ends with `region` ("JP", "KR", "SC", "TC");
     // keeps the current face when none does. True if the face changed.
     bool selectRegion(const char* region);
+    // In a collection, the face with this PostScript name ("HiraKakuProN-W6"); false if none has it
+    bool selectPostScript(const char* name);
     // The font for the characters this one has no glyph for - as iOS falls back from ArialMT to a
     // Chinese / Korean system face - drawn at the same em on this font's baseline; nullptr: none.
     // Not owned: it must outlive this one.
@@ -63,5 +65,9 @@ private:
 // overrides; CR_FONT=none: no font at all - the 8x8 one); `cjkBold` a bold weight for Japanese
 // (2.2.0's HiraKakuProN-W6; CR_FONT_BOLD overrides). True if `latin` or `cjk` loaded.
 bool loadSystemFonts(Font& latin, Font& cjk, Font& cjkBold);
+// Apple's (iOS, macOS): the system font of this PostScript name ("ArialMT", "HiraKakuProN-W6",
+// "PingFangSC-Regular") - its file from CoreText, its face in a collection - into `font`; nothing
+// done if it is the face loaded already. False elsewhere, or when the system has no such font
+bool loadAppleFont(Font& font, const char* postScriptName);
 
 } // namespace cr

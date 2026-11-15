@@ -64,6 +64,9 @@ add_library(crcore STATIC
     src/assets/hd_texture.cpp
     src/assets/gltf_model.cpp
 )
+if(APPLE) # (the game's gfx/font.cpp, through crcore: the system's fonts by name from CoreText - iOS has none at fixed paths)
+    target_link_libraries(crcore PUBLIC "-framework CoreText" "-framework CoreFoundation")
+endif()
 target_include_directories(crcore PUBLIC src)
 target_include_directories(crcore PRIVATE third_party/hevag) # the HE-VAG filter table (vgmstream's, ISC)
 target_link_libraries(crcore PUBLIC SDL3::SDL3)

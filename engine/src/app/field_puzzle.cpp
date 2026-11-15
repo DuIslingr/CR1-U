@@ -585,6 +585,14 @@ bool cjkTextLanguage(const App& app) {
 void applyLanguage(App& app) {
     if (!languageUsable(app, app.language)) app.language = 1;
     if (app.fanText && (app.language != 1 || !choiceUsable(app, cr::kLanguages))) app.fanText = false;
+#ifdef SDL_PLATFORM_IOS
+    // (iOS: no one system face has every CJK script, as Noto Sans CJK's regions do - the language's own as the
+    // fallback, as iOS's own font fallback would take it; a font from font/ or CR_FONT left as it is)
+    static const char* const kIosCjk[cr::kLanguages] = {"HiraKakuProN-W3", "HiraKakuProN-W3", "HiraKakuProN-W3", "HiraKakuProN-W3",
+                                                       "HiraKakuProN-W3", "PingFangSC-Regular", "PingFangTC-Regular", "AppleSDGothicNeo-Regular"};
+    if (app.fontCjk.loaded() && !SDL_getenv("CR_FONT") && app.fontCjk.path().find("/font/") == std::string::npos) // (a system face: CoreText's)
+        cr::loadAppleFont(app.fontCjk, kIosCjk[app.language]);
+#endif
     static const char* const kRegion[cr::kLanguages] = {"JP", "JP", "JP", "JP", "JP", "SC", "TC", "KR"};
     app.fontCjk.selectRegion(kRegion[app.language]);
     app.fontCjkBold.selectRegion(kRegion[app.language]);

@@ -3,7 +3,11 @@
 <!-- The iOS app (iPhone and iPad; engine/CMakeLists.txt): CMake fills in the MACOSX_BUNDLE values.
      UIFileSharingEnabled / LSSupportsOpeningDocumentsInPlace: the app's Documents folder - its game
      folder (ios/, android/, vita/, font/ ...) - shows in the Files app and in Finder, so a copy can be
-     put in. CADisableMinimumFrameDurationOnPhone: an iPhone's ProMotion at 120 Hz (else 60). -->
+     put in. CADisableMinimumFrameDurationOnPhone: an iPhone's ProMotion at 120 Hz (else 60).
+     UIApplicationSceneManifest: SDL's own scene delegate (SDL 3.4 runs the UIScene life cycle) stated, and
+     no UIRequiresFullScreen - deprecated, and with it a screen iOS doesn't know the app on (a foldable's
+     inner screen) showed it in a box of an older iPhone's size: the window is the screen's, resized as
+     the device folds (the game redraws to any size). -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -32,8 +36,23 @@
 	<true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	<key>UIRequiresFullScreen</key>
-	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>SDLSceneConfiguration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>SDLUIKitSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIStatusBarHidden</key>
 	<true/>
 	<key>UILaunchScreen</key>
