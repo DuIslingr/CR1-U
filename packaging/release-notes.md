@@ -90,9 +90,16 @@ A new Options page, all off until you turn them on:
 
 ## Thanks to metastigma
 
-Thanks to [metastigma](https://github.com/metastigma) for the Russian translation and for a fork
-that keeps finding things. From it: controller hot-plug, F11 / Alt+Enter, SDL 3.4.20, the `font/`
-folder, NPC shadows read by the scripts, and the Camp's worn-gear list.
+Thanks to [metastigma](https://github.com/metastigma), whose work runs through this release:
+
+- **Their Russian translation**
+  ([the ZoG thread](https://forum.zoneofgames.ru/topic/72457-chaos-rings/)) is now a language of its
+  own: [bfbdfbf](https://github.com/DuIslingr/CR1-U/commit/bfbdfbf). Their redrawn art is read too,
+  stored in Vita texture formats the port couldn't decode before:
+  [dc8e8fe](https://github.com/DuIslingr/CR1-U/commit/dc8e8fe).
+- **From reviewing their CRO-U fork** ([CRO-U-metastigma](https://github.com/metastigma/CRO-U-metastigma)):
+  the controller hot-plug, after their Windows XInput work, and F11 / Alt+Enter, which their fork
+  had first. Both came here with [7ffec48](https://github.com/DuIslingr/CR1-U/commit/7ffec48).
 
 ## Downloads
 
