@@ -9447,8 +9447,8 @@ int runCapture(App& app, const char* mapName, const char* outPath) {
         if (SDL_getenv("CR_CAPTURE_NPCS")) // (debugging) the room's NPCs as the scripts left them
             for (size_t i = 0; i < app.npcs.size(); ++i) {
                 const cr::FieldNpc& n = app.npcs[i];
-                std::printf("npc %d kind %#x link %d show %d hide %d at (%.1f %.1f %.1f) active %d visible %d\n", n.id, n.kind, n.link[0], n.flagShow, n.flagHide, n.pos[0], n.pos[1], n.pos[2],
-                            int(npcActive(app, n)), int(npcVisible(app, i)));
+                std::printf("npc %d kind %#x link %d show %d hide %d at (%.1f %.1f %.1f) active %d visible %d model %d (%s)\n", n.id, n.kind, n.link[0], n.flagShow, n.flagHide, n.pos[0], n.pos[1], n.pos[2],
+                            int(npcActive(app, n)), int(npcVisible(app, i)), n.model, n.model >= 0 && n.model < cr::kNumNpcModels ? cr::kNpcModelFile[n.model] : "-");
             }
         if (SDL_getenv("CR_CAPTURE_TRACE")) {
             const cr::StageCamera& sc = app.stageCam;

@@ -1796,8 +1796,12 @@ void drawVitaLogo(App& app) {
         const float sw = float(t.width);
         const float pw = l.warning[s] ? sw : l.fromVita[s] ? sw * 15 / 16 : sw;
         const float ph = l.warning[s] ? float(t.height) : l.fromVita[s] ? sw * 10 / 16 : sw * 3 / 4;
-        const float k = std::min(r.screenW() / pw, float(cr::Renderer::kLogicalH) / ph), w = pw * k, h = ph * k;
-        r.drawQuadUV(t, (r.screenW() - w) / 2, (cr::Renderer::kLogicalH - h) / 2, w, h, 0, 0, pw, ph, 1, 1, 1, a);
+        const float k = std::min(r.screenW() / pw, float(cr::Renderer::kLogicalH) / ph);
+        float x = (r.screenW() - pw * k) / 2, y = (cr::Renderer::kLogicalH - ph * k) / 2, w = pw * k, h = ph * k;
+        // (the screen's rect: the iPhone layout's own scaling not laid over it - else the warning and the logos
+        // came out 1.2 times the screen, cut at its edges, on a phone with the Vita copy alone)
+        if (r.phoneLayout()) r.screenToLayout(x, y), w /= r.layoutScale(), h /= r.layoutScale();
+        r.drawQuadUV(t, x, y, w, h, 0, 0, pw, ph, 1, 1, 1, a);
     }
     r.setOrigin(r.uiX());
 }
@@ -1818,8 +1822,9 @@ void drawTexDisp(App& app) {
         // its 960 x 544 screen, 2w x 2h of the sheet from (2u, 2v) - the screen centred on ours, its pixels 768 / 544 of it
         const float s = 768.0f / 544.0f, w = 2.0f * float(t.g[5]), h = 2.0f * float(t.g[6]);
         const float x = 2.0f * float(t.g[1]) - 480.0f, y = 2.0f * float(t.g[2]) - 60.0f - 272.0f;
-        r.drawQuadUV(tex, r.screenW() / 2 + x * s, cr::Renderer::kLogicalH / 2.0f + y * s, w * s, h * s, 2.0f * float(t.g[3]) * k,
-                     2.0f * float(t.g[4]) * k, w * k, h * k, 1, 1, 1, a);
+        float px = r.screenW() / 2 + x * s, py = cr::Renderer::kLogicalH / 2.0f + y * s, pw = w * s, ph = h * s;
+        if (r.phoneLayout()) r.screenToLayout(px, py), pw /= r.layoutScale(), ph /= r.layoutScale(); // (a screen rect: not scaled again)
+        r.drawQuadUV(tex, px, py, pw, ph, 2.0f * float(t.g[3]) * k, 2.0f * float(t.g[4]) * k, w * k, h * k, 1, 1, 1, a);
     } else if (t.g[5] == 480 && t.g[6] == 96)
         r.drawQuadUV(tex, ox + 2.0f * float(t.g[1]), 288, 1024, 192, 2.0f * float(t.g[3]) * k, 2.0f * float(t.g[4]) * k, 1024 * k,
                      192 * k, 1, 1, 1, a);
@@ -2828,7 +2833,25 @@ void drawFrame(App& app, bool present) {
         // (the tower's scrolling backdrop - ScnEffect set 4, z -1998 - behind the painting, whose sky is see-through
         // there (d05xx-f00a00): ScnEffect's tex2d_prc_3d first, FUN_0001d6f8's slots 0 / 1, then the 3D)
         drawSpaceBackdrop(app, false);
+        // (the painting at the screen's own origin, as the 3D view below is placed - not the 2D layout's: in
+        // widescreen that left it uiX to the right of the 3D, the Ark hall's door model off its arch)
+        r.setOrigin(0);
         if (app.background.id && !hidden) drawLayer(app.background);
+        { // (chaosrings.log: the field's view when it changes - the painting's scroll, zoom and place, and the 3D view's
+          // camera - to place a picture / 3D mismatch seen on a device: the iPhone Duo's Ark door)
+            float ssx = 0, ssy = 0;
+            if (scrollingField(app)) shownScroll(app, ssx, ssy);
+            char line[400];
+            SDL_snprintf(line, sizeof line,
+                         "map %d: view %.0f,%.0f %.0fx%.0f on screen %.0fx%.0f (origin %.0f), scroll %.0f,%.0f, fill %.2f, stage %d (rect %d,%d %dx%d), "
+                         "camera %s%s, layout %s%s, interface shrink %.3f",
+                         app.mapNumber, vx, vy, vw, vh, SW, H, r.origin(), ssx, ssy, scrollingField(app) ? fieldFillZoom(app) : 1.0f, int(viewSize),
+                         app.stageCam.rect[0], app.stageCam.rect[1], app.stageCam.rect[2], app.stageCam.rect[3],
+                         app.cam.free ? "free" : app.cam.set ? "scripted" : "stage", app.scroll.scripted ? ", scroll scripted" : "",
+                         r.phoneLayout() ? "iPhone" : "iPad", vitaLayout(app) ? " (Vita)" : "", r.interfaceShrink());
+            static std::string last;
+            if (last != line) last = line, SDL_Log("field view: %s", line);
+        }
         r.setOrigin(0);
         if (have3D) {
             if (scriptCam) {
@@ -2869,6 +2892,7 @@ void drawFrame(App& app, bool present) {
             if (scriptCam) promptLater(mvp, 0, 0, SW, H);
             else promptLater(mvp, vx, vy, vw, vh);
         }
+        r.setOrigin(0); // (the foreground with the painting and the 3D: the screen's origin)
         if (app.foreground.id && !hidden) drawLayer(app.foreground);
         drawSceneEffects(app);
         r.setOrigin(0);
