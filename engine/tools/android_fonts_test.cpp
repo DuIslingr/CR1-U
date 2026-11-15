@@ -92,6 +92,7 @@ int main() {
     {
         const std::string r = base + "/oem";
         put(r + "/system/etc/fonts.xml", R"(<familyset version="23">
+<!-- <family lang="ja"><font weight="400" style="normal">Disabled.ttf</font></family> -->
 <family name="sans-serif"><font weight="400" style="normal">MiSansVF.ttf</font></family>
 <family lang="ko"><font weight="400" style="normal">OemKorean.ttf</font></family>
 <family lang="zh-Hans zh-Hant"><font weight="400" style="normal">MiSansFallback.ttf</font></family>
@@ -100,6 +101,7 @@ int main() {
 </familyset>
 )");
         put(r + "/system/fonts/MiSansVF.ttf");
+        put(r + "/system/fonts/Disabled.ttf"); // (named only in a comment: from the folder scan, last)
         put(r + "/system/fonts/OemKorean.ttf");
         put(r + "/system/fonts/OemGothic.ttf");
         put(r + "/system/fonts/OemGothic-Bold.ttf");
@@ -111,6 +113,7 @@ int main() {
         check(at(list, r, "/product/fonts/MiSansFallback.ttf") == 2, "OEM: Chinese on the product partition, found");
         check(at(list, r, "/system/fonts/OemKorean.ttf") == 3, "OEM: Korean after Chinese");
         check(at(list, r, "/system/fonts/MiSansVF.ttf") == 4, "OEM: the default family after the CJK ones");
+        check(at(list, r, "/system/fonts/Disabled.ttf") == 5, "OEM: a family commented out isn't read");
     }
 
     // No font list at all: the folders' files, CJK-named first, sans faces next, no emoji or italics

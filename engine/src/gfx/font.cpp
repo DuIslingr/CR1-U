@@ -308,8 +308,14 @@ std::vector<std::string> androidFonts(const std::string& root) {
                             "/vendor/etc/fonts.xml", "/system/etc/fallback_fonts.xml", "/system/etc/system_fonts.xml"}) {
         std::vector<uint8_t> data;
         if (!readFile(root + xml, data)) continue;
-        const std::string s(data.begin(), data.end());
+        std::string s(data.begin(), data.end());
+        // (comments out: a maker's list keeps families it turned off in them)
+        for (size_t c = s.find("<!--"); c != std::string::npos; c = s.find("<!--", c)) {
+            const size_t e = s.find("-->", c + 4);
+            s.erase(c, e == std::string::npos ? std::string::npos : e + 3 - c);
+        }
         for (size_t f = s.find("<family"); f != std::string::npos; f = s.find("<family", f + 1)) {
+            if (s.compare(f, 10, "<familyset") == 0) continue;
             const size_t tagEnd = s.find('>', f), end = s.find("</family>", f);
             if (tagEnd == std::string::npos || end == std::string::npos) break;
             const std::string tag = s.substr(f, tagEnd - f);
@@ -367,6 +373,7 @@ std::vector<std::string> androidFonts(const std::string& root) {
         SDL_free(names);
     }
     for (auto* list : {&cjk, &sans, &rest}) {
+        std::sort(list->begin(), list->end()); // (the folders' own order is the file system's)
         std::stable_sort(list->begin(), list->end(), [](const std::string& a, const std::string& b) {
             return a.find("Regular") != std::string::npos && b.find("Regular") == std::string::npos;
         });
