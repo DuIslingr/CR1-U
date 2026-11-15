@@ -19,10 +19,9 @@
 #include <filesystem>
 #include <memory>
 #include <sstream>
-#ifdef CR_HAVE_PSVPFS
-#include "BuiltinCryptoOperations.h"
-#include "F00DNativeKeyEncryptor.h"
-#include "PfsFilesystem.h"
+#ifdef CR_HAVE_VITA_DECRYPT
+#include "assets/vita_pfs.hpp"
+#include "crypto/crypto.hpp"
 #endif
 #ifdef CR_HAVE_LIBARCHIVE
 #include <archive.h>
@@ -609,7 +608,7 @@ namespace {
 // ---- the Vita release: as Vita3K installs it (ux0/app/<id>/, the Prequel Trilogy's add-ons in
 // ux0/addcont/PCSG00457/), or a NoNpDrm dump of it - its files in the Vita's PFS, encrypted, their
 // key in sce_sys/package/work.bin (+0x50: the klicensee) - decrypted as Vita3K's install does
-// (psvpfsparser), or such a dump packed in an archive (libarchive)
+// (assets/vita_pfs), or such a dump packed in an archive (libarchive)
 
 
 // the fan translation's own folder - rePatch's <id>/ - wherever it is in what was chosen (a download's
@@ -631,23 +630,23 @@ std::string patchFolder(const std::string& from, const std::string& id) {
 bool encryptedVita(const std::string& dir) { return exists(withSlash(dir) + "sce_sys/package/work.bin") && isDir(withSlash(dir) + "sce_pfs"); }
 
 bool decryptVita(const std::string& from, const std::string& to, std::string* error, const std::function<void(double)>& progress) {
-#ifdef CR_HAVE_PSVPFS
+#ifdef CR_HAVE_VITA_DECRYPT
     uint8_t key[16];
     SDL_IOStream* w = SDL_IOFromFile((withSlash(from) + "sce_sys/package/work.bin").c_str(), "rb");
     const bool read = w && SDL_SeekIO(w, 0x50, SDL_IO_SEEK_SET) == 0x50 && SDL_ReadIO(w, key, 16) == 16;
     if (w) SDL_CloseIO(w);
     if (!read) return fail(error, "no work.bin (its licence) to decrypt it with");
-    const std::filesystem::path src = fsPath(from), dst = fsPath(to);
-    const auto crypto = std::make_shared<BuiltinCryptoOperations>();
-    const auto f00d = std::make_shared<F00DNativeKeyEncryptor>(crypto);
-    std::ostringstream log;
-    PfsFilesystem pfs(crypto, f00d, log, key, src);
-    if (pfs.mount() < 0) return fail(error, "its files can't be read with its own work.bin - not a whole NoNpDrm dump");
-    if (pfs.decrypt_files(dst, [&](std::uint64_t done, std::uint64_t total, const std::string&) {
+    vitapfs::Image image;
+    vitapfs::Failure f = image.mount(fsPath(from), key);
+    if (f == vitapfs::Failure::None)
+        f = image.decryptAll(fsPath(to), [&](uint64_t done, uint64_t total, const std::string&) {
             if (progress && total) progress(double(done) / double(total));
-        }) < 0)
-        return fail(error, "its files don't decrypt (a part of the dump missing or damaged?)");
-    return true;
+        });
+    if (f == vitapfs::Failure::None) return true;
+    SDL_Log("setup: %s: %s - %s", from.c_str(), vitapfs::failureName(f), image.detail().c_str());
+    // (a damaged file, or one that can't be read or written: the files; else the image itself - a wrong key, a part of it missing)
+    if (f == vitapfs::Failure::Damaged || f == vitapfs::Failure::IoError) return fail(error, "its files don't decrypt (a part of the dump missing or damaged?)");
+    return fail(error, "its files can't be read with its own work.bin - not a whole NoNpDrm dump");
 #else
     (void)from, (void)to, (void)progress;
     return fail(error, "this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder");
@@ -809,7 +808,7 @@ bool selfEncrypted(const std::vector<uint8_t>& f) {
 }
 
 bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector<uint8_t>& elf, std::string* error) {
-#ifdef CR_HAVE_PSVPFS
+#ifdef CR_HAVE_VITA_DECRYPT
     if (f.size() < 0x80 || std::memcmp(f.data(), "SCE\0", 4) != 0 || (f[10] | f[11] << 8) != 1) return fail(error, "not a SELF");
     const int keyRevision = f[9];
     const uint64_t metadataAt = le32At(f, 12), headerLength = le64At(f, 16);
@@ -831,7 +830,6 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
         any = any || segs.back().encrypted;
         if (segs.back().offset + segs.back().size > f.size()) return fail(error, "a broken SELF (a segment past its end)");
     }
-    BuiltinCryptoOperations crypto;
     struct Keyed {
         int idx;
         std::vector<uint8_t> key, iv;
@@ -849,18 +847,18 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
             const std::vector<uint8_t> np = hexBytes(kNpdrmKeys[keyRevision >= 2 ? 1 : 0]);
             uint8_t klicKey[16];
             std::memcpy(iv, zero, 16);
-            crypto.aes_cbc_decrypt(klic, klicKey, 16, np.data(), 128, iv);
+            crypto::aesCbcDecrypt(klic, klicKey, 16, np.data(), 128, iv);
             std::memcpy(iv, zero, 16);
-            crypto.aes_cbc_decrypt(dat.data(), in, 64, klicKey, 128, iv);
+            crypto::aesCbcDecrypt(dat.data(), in, 64, klicKey, 128, iv);
         }
         const std::vector<uint8_t> key = hexBytes(mk->key), kiv = hexBytes(mk->iv);
         std::memcpy(iv, kiv.data(), 16);
-        crypto.aes_cbc_decrypt(in, info, 64, key.data(), 256, iv);
+        crypto::aesCbcDecrypt(in, info, 64, key.data(), 256, iv);
         for (int k = 16; k < 32; ++k)
             if (info[k] || info[k + 32]) return fail(error, "its key doesn't open it (its licence isn't its own?)");
         std::vector<uint8_t> meta((dat.size() - 64) / 16 * 16);
         std::memcpy(iv, info + 32, 16);
-        crypto.aes_cbc_decrypt(dat.data() + 64, meta.data(), int(meta.size()), info, 128, iv);
+        crypto::aesCbcDecrypt(dat.data() + 64, meta.data(), meta.size(), info, 128, iv);
         if (meta.size() < 32) return fail(error, "a broken SELF (no metadata)");
         const uint32_t sections = le32At(meta, 12), keys = le32At(meta, 16);
         const uint64_t vault = 32 + uint64_t(sections) * 48;
@@ -889,7 +887,7 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
             if (keyed.empty()) return fail(error, "a broken SELF (an encrypted segment without its key)");
             std::vector<uint8_t> iv = keyed[size_t(i)].iv;
             std::vector<uint8_t> plain(data.size());
-            crypto.aes_ctr_decrypt(data.data(), plain.data(), int(data.size()), keyed[size_t(i)].key.data(), 128, iv.data());
+            crypto::aesCtr(data.data(), plain.data(), data.size(), keyed[size_t(i)].key.data(), 128, iv.data());
             data.swap(plain);
         }
         if (s.compressed) {

@@ -29,6 +29,8 @@ endif()
 
 # Core library: everything that is not the app entry point, so tools can reuse it.
 add_library(crcore STATIC
+    src/assets/vita_pfs.cpp
+    src/crypto/crypto.cpp
     src/core/lzw.cpp
     src/core/file.cpp
     src/core/text.cpp
@@ -385,19 +387,11 @@ else()
     endif()
 endif()
 # The setup (platform/setup.cpp) - the first start's, a phone's too, a dump copied into vita/ on any start:
-# a Vita NoNpDrm dump's files decrypted (third_party/psvpfsparser - Vita3K's, GPL-2.0) and a dump's
-# archive - .rar, .7z, .zip, .vpk - unpacked (libarchive: the system's, else built here - CR_FETCH_DEPS
-# - with xz's liblzma for 7z where the system has none; without it, a folder only). iOS too: a dump copied
-# into the Files app's vita/ is decrypted there as on a desktop or a phone
-file(GLOB CR_PSVPFS_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser/*.cpp)
-add_library(psvpfs STATIC ${CR_PSVPFS_SOURCES})
-target_include_directories(psvpfs SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/psvpfsparser)
-target_compile_features(psvpfs PUBLIC cxx_std_17)
-if(NOT MSVC)
-    target_compile_options(psvpfs PRIVATE -w)
-endif()
-target_link_libraries(${GAME_TARGET} PRIVATE psvpfs)
-target_compile_definitions(${GAME_TARGET} PRIVATE CR_HAVE_PSVPFS=1)
+# a Vita NoNpDrm dump's files decrypted (assets/vita_pfs, on crypto/ - the project's own, in crcore) and
+# a dump's archive - .rar, .7z, .zip, .vpk - unpacked (libarchive: the system's, else built here -
+# CR_FETCH_DEPS - with xz's liblzma for 7z where the system has none; without it, a folder only). iOS
+# too: a dump copied into the Files app's vita/ is decrypted there as on a desktop or a phone
+target_compile_definitions(${GAME_TARGET} PRIVATE CR_HAVE_VITA_DECRYPT=1)
 find_package(LibArchive QUIET)
 if(NOT LibArchive_FOUND AND CR_FETCH_DEPS)
     include(FetchContent)
@@ -459,6 +453,10 @@ if(NOT ANDROID AND NOT IOS)
     target_include_directories(hd-texture-tests PRIVATE src third_party)
     target_link_libraries(hd-texture-tests PRIVATE crcore)
     add_test(NAME hd-texture COMMAND hd-texture-tests)
+    add_executable(vita-pfs-tests tools/vita_pfs_test.cpp)
+    target_include_directories(vita-pfs-tests PRIVATE src)
+    target_link_libraries(vita-pfs-tests PRIVATE crcore)
+    add_test(NAME vita-pfs COMMAND vita-pfs-tests)
     add_executable(gxt-tests tools/gxt_test.cpp)
     target_include_directories(gxt-tests PRIVATE src third_party)
     target_link_libraries(gxt-tests PRIVATE crcore)

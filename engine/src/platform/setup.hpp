@@ -14,7 +14,7 @@
 // - where the game folder can't be written, the same in the profile folder. Every start finds them
 // there as it would files put there by hand; nothing is read where it was chosen. A NoNpDrm dump
 // (its files encrypted, sce_sys/package/work.bin its licence) is decrypted as Vita3K's install does
-// (third_party/psvpfsparser); one packed in a .rar, .7z, .zip or .vpk is unpacked first (libarchive),
+// (assets/vita_pfs); one packed in a .rar, .7z, .zip or .vpk is unpacked first (libarchive),
 // this game's parts alone.
 //
 // Tests: CRU_SETUP_ANSWERS answers it without windows - ';' between the answers, each a button's id

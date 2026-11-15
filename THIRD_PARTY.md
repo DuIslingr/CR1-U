@@ -14,16 +14,29 @@ licences, kept beside them in `engine/third_party/`:
 | `stb/` | stb_truetype and stb_vorbis 1.22 (commit 1ee679c; the Android release's Ogg Vorbis music) by Sean Barrett | MIT / public domain (in the files) |
 | `cgltf/` | cgltf 1.13 by Johannes Kuhlmann - reads the HD models (glTF 2.0) | MIT (in the file) |
 | `stb/stb_image.h`, `stb/stb_image_write.h` | stb_image 2.30 (PNG and JPEG only) and stb_image_write 1.16 by Sean Barrett - the HD models' pictures, read and written (`gltf_libs.c` builds them with cgltf) | public domain / MIT (in the files) |
-| `psvpfsparser/` | Vita3K's psvpfsparser, commit 05d43a06 (github.com/Vita3K/psvpfsparser; from motoharu-gosuto's psvpfstools), trimmed, with its own crypto in place of OpenSSL (`README.md` there) - the first start's setup decrypts a Vita NoNpDrm dump with it, as Vita3K's install does. The setup's SELF decryption follows Vita3K's `packages/sce_utils.cpp` and uses its retail app keys | GPL-2.0, as Vita3K (with it, builds of the port are GPL-2.0) |
+
+The first start's setup decrypts a PS Vita NoNpDrm dump itself. Its PFS decryption (the dump's
+files, `engine/src/assets/vita_pfs.cpp`) is the project's own code, written from a functional
+description of the format (CR3-U's clean-room rewrite: psvpfstools and Vita3K's psvpfsparser carry
+no licence), on the project's own crypto (`engine/src/crypto/`: AES, SHA-1, SHA-256, HMAC). Its
+SELF decryption (`engine/src/platform/setup.cpp`) follows Vita3K's `packages/sce_utils.cpp`
+(github.com/Vita3K/Vita3K) and uses its retail app keys - GPL-2.0-or-later, as the port.
+
+Both embed PS Vita console keys: the SELF decryption's retail app keys, and the PFS decryption's
+fixed unwrap key (the F00D security processor's `key_id` 0 key, which turns a dump's klicensee
+into its data key). They are not the project's work and not secrets it holds: the Vita scene
+extracted them from the console's F00D processor years ago, and they are published in many
+emulators and tools (Vita3K, VitaSharp, vitaslop, rom-converto and others). They are facts, used
+only to read a copy of the game its owner supplies; the port ships no game data.
 
 Built from source by CMake when the system has none (fetched at build time, not in the
 repository; in the CI artifacts):
 
 | What | Licence |
 |---|---|
-| [SDL 3.2.0](https://github.com/libsdl-org/SDL) (linked in statically) | zlib |
+| [SDL 3.4.20](https://github.com/libsdl-org/SDL) (linked in statically) | zlib |
 | [zlib 1.3.1](https://github.com/madler/zlib) (Windows, Android) | zlib |
-| [libarchive 3.7.7](https://github.com/libarchive/libarchive) (Windows, macOS: the setup reads a Vita dump's .rar, .7z, .zip, .vpk) | BSD-2-Clause |
+| [libarchive 3.8.11](https://github.com/libarchive/libarchive) (Windows, macOS: the setup reads a Vita dump's .rar, .7z, .zip, .vpk) | BSD-2-Clause |
 
 Carried by the macOS `.app` (Contents/Frameworks, from the LunarG Vulkan SDK; their licence texts in
 Contents/Resources/licenses): the [Vulkan loader](https://github.com/KhronosGroup/Vulkan-Loader) and

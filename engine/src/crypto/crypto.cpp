@@ -1,13 +1,19 @@
-#include "BuiltinCryptoOperations.h"
+#include "crypto/crypto.hpp"
 
 #include <cstring>
 #include <vector>
+
+namespace cr::crypto {
 
 namespace {
 
 // ---- AES-128 (FIPS-197), the tables built once: the S-box from GF(2^8)'s inverses, the
 // round's four T tables (SubBytes + MixColumns) and their inverses
 
+// (a rotate right by 0 .. 31 - "x << (32 - n)" for n = 0 shifts by 32: undefined, and Apple's Clang folds
+// it so the T tables come out wrong - every AES result on macOS, iOS and ARM Android)
+uint32_t rol(uint32_t x, int n) { return x << (n & 31) | x >> ((32 - n) & 31); }
+uint32_t ror(uint32_t x, int n) { return x >> (n & 31) | x << ((32 - n) & 31); }
 uint8_t xtime(uint8_t x) { return uint8_t((x << 1) ^ ((x & 0x80) ? 0x1b : 0)); }
 uint8_t gmul(uint8_t a, uint8_t b) {
    uint8_t p = 0;
@@ -39,9 +45,7 @@ struct Tables {
          const uint32_t e = uint32_t(s2) << 24 | uint32_t(s) << 16 | uint32_t(s) << 8 | s3;
          const uint8_t v = inv[i];
          const uint32_t d = uint32_t(gmul(v, 14)) << 24 | uint32_t(gmul(v, 9)) << 16 | uint32_t(gmul(v, 13)) << 8 | gmul(v, 11);
-         // (rotated with masked counts: "x << (32 - 8k)" for k = 0 shifts by 32 - undefined; Apple's Clang folded
-         // it so every AES result was wrong on macOS / iOS / ARM - CR3-U 17087fe)
-         for (int k = 0; k < 4; ++k) te[k][i] = e >> ((8 * k) & 31) | e << ((32 - 8 * k) & 31), td[k][i] = d >> ((8 * k) & 31) | d << ((32 - 8 * k) & 31);
+         for (int k = 0; k < 4; ++k) te[k][i] = ror(e, 8 * k), td[k][i] = ror(d, 8 * k);
       }
    }
 };
@@ -123,8 +127,6 @@ struct Aes {
 
 // ---- SHA-1 and SHA-256 (FIPS 180-4)
 
-uint32_t rol(uint32_t x, int n) { return x << (n & 31) | x >> ((32 - n) & 31); }
-uint32_t ror(uint32_t x, int n) { return x >> (n & 31) | x << ((32 - n) & 31); }
 
 // the message padded: its bits' count, big-endian, at the end of the last 64-byte block
 std::vector<uint8_t> padded(const uint8_t* src, size_t size) {
@@ -198,27 +200,27 @@ void hmacOf(Hash hash, size_t outLen, const uint8_t* src, size_t size, const uin
 
 } // namespace
 
-int BuiltinCryptoOperations::aes_cbc_encrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size, unsigned char* iv) const {
-   if ((key_size != 128 && key_size != 256) || size % 16) return -1; // (256: a SELF's metadata)
-   const Aes aes(key, key_size);
+bool aesCbcEncrypt(const uint8_t* src, uint8_t* dst, size_t size, const uint8_t* key, int keyBits, uint8_t* iv) {
+   if ((keyBits != 128 && keyBits != 256) || size % 16) return false; // (256: a SELF's metadata)
+   const Aes aes(key, keyBits);
    uint8_t chain[16];
    std::memcpy(chain, iv, 16);
-   for (int b = 0; b < size; b += 16) {
+   for (size_t b = 0; b < size; b += 16) {
       uint8_t x[16];
       for (int i = 0; i < 16; ++i) x[i] = src[b + i] ^ chain[i];
       aes.encrypt(x, dst + b);
       std::memcpy(chain, dst + b, 16);
    }
    if (size) std::memcpy(iv, chain, 16); // (the new IV: the last block out)
-   return 0;
+   return true;
 }
 
-int BuiltinCryptoOperations::aes_cbc_decrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size, unsigned char* iv) const {
-   if ((key_size != 128 && key_size != 256) || size % 16) return -1; // (256: a SELF's metadata)
-   const Aes aes(key, key_size);
+bool aesCbcDecrypt(const uint8_t* src, uint8_t* dst, size_t size, const uint8_t* key, int keyBits, uint8_t* iv) {
+   if ((keyBits != 128 && keyBits != 256) || size % 16) return false; // (256: a SELF's metadata)
+   const Aes aes(key, keyBits);
    uint8_t chain[16];
    std::memcpy(chain, iv, 16);
-   for (int b = 0; b < size; b += 16) {
+   for (size_t b = 0; b < size; b += 16) {
       uint8_t in[16], x[16];
       std::memcpy(in, src + b, 16); // (src and dst may be one buffer)
       aes.decrypt(in, x);
@@ -226,58 +228,54 @@ int BuiltinCryptoOperations::aes_cbc_decrypt(const unsigned char* src, unsigned 
       std::memcpy(chain, in, 16);
    }
    if (size) std::memcpy(iv, chain, 16); // (the new IV: the last block in)
-   return 0;
+   return true;
 }
 
-int BuiltinCryptoOperations::aes_ctr_encrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size, unsigned char* iv) {
-   if (key_size != 128) return -1;
+bool aesCtr(const uint8_t* src, uint8_t* dst, size_t size, const uint8_t* key, int keyBits, uint8_t* iv) {
+   if (keyBits != 128) return false;
    const Aes aes(key);
    uint8_t counter[16], stream[16];
    std::memcpy(counter, iv, 16);
-   for (int b = 0; b < size; b += 16) {
+   for (size_t b = 0; b < size; b += 16) {
       aes.encrypt(counter, stream);
-      for (int i = 0; i < 16 && b + i < size; ++i) dst[b + i] = src[b + i] ^ stream[i];
+      for (size_t i = 0; i < 16 && b + i < size; ++i) dst[b + i] = src[b + i] ^ stream[i];
       for (int i = 15; i >= 0 && ++counter[i] == 0; --i) {} // (128-bit big-endian increment)
    }
-   // (the IV moved on by the whole blocks done, as OpenSSLCryptoOperations::aes_ctr)
+   // (the IV moved on by the whole blocks done)
    uint64_t add = uint64_t(size / 16);
    for (int i = 15; i >= 0; --i) {
       add += iv[i];
       iv[i] = uint8_t(add);
       add >>= 8;
    }
-   return 0;
+   return true;
 }
 
-int BuiltinCryptoOperations::aes_ctr_decrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size, unsigned char* iv) {
-   return aes_ctr_encrypt(src, dst, size, key, key_size, iv);
-}
-
-int BuiltinCryptoOperations::aes_ecb_encrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size) const {
-   if (key_size != 128 || size % 16) return -1;
+bool aesEcbEncrypt(const uint8_t* src, uint8_t* dst, size_t size, const uint8_t* key, int keyBits) {
+   if (keyBits != 128 || size % 16) return false;
    const Aes aes(key);
-   for (int b = 0; b < size; b += 16) {
+   for (size_t b = 0; b < size; b += 16) {
       uint8_t in[16];
       std::memcpy(in, src + b, 16);
       aes.encrypt(in, dst + b);
    }
-   return 0;
+   return true;
 }
 
-int BuiltinCryptoOperations::aes_ecb_decrypt(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size) const {
-   if (key_size != 128 || size % 16) return -1;
+bool aesEcbDecrypt(const uint8_t* src, uint8_t* dst, size_t size, const uint8_t* key, int keyBits) {
+   if (keyBits != 128 || size % 16) return false;
    const Aes aes(key);
-   for (int b = 0; b < size; b += 16) {
+   for (size_t b = 0; b < size; b += 16) {
       uint8_t in[16];
       std::memcpy(in, src + b, 16);
       aes.decrypt(in, dst + b);
    }
-   return 0;
+   return true;
 }
 
 // AES-CMAC (RFC 4493)
-int BuiltinCryptoOperations::aes_cmac(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size) const {
-   if (key_size != 128) return -1;
+bool aesCmac(const uint8_t* src, size_t size, const uint8_t* key, int keyBits, uint8_t* mac16) {
+   if (keyBits != 128) return false;
    const Aes aes(key);
    uint8_t l[16] = {}, k1[16], k2[16];
    aes.encrypt(l, l);
@@ -287,39 +285,33 @@ int BuiltinCryptoOperations::aes_cmac(const unsigned char* src, unsigned char* d
    };
    dbl(l, k1);
    dbl(k1, k2);
-   const int n = size == 0 ? 1 : (size + 15) / 16;
+   const size_t n = size == 0 ? 1 : (size + 15) / 16;
    const bool whole = size > 0 && size % 16 == 0;
    uint8_t x[16] = {}, last[16] = {};
-   for (int i = 0; i < 16; ++i) {
-      const int at = (n - 1) * 16 + i;
+   for (size_t i = 0; i < 16; ++i) {
+      const size_t at = (n - 1) * 16 + i;
       if (whole) last[i] = src[at] ^ k1[i];
       else last[i] = uint8_t((at < size ? src[at] : at == size ? 0x80 : 0) ^ k2[i]);
    }
-   for (int b = 0; b < n - 1; ++b) {
-      for (int i = 0; i < 16; ++i) x[i] ^= src[b * 16 + i];
+   for (size_t b = 0; b + 1 < n; ++b) {
+      for (size_t i = 0; i < 16; ++i) x[i] ^= src[b * 16 + i];
       aes.encrypt(x, x);
    }
    for (int i = 0; i < 16; ++i) x[i] ^= last[i];
-   aes.encrypt(x, dst);
-   return 0;
+   aes.encrypt(x, mac16);
+   return true;
 }
 
-int BuiltinCryptoOperations::sha1(const unsigned char* src, unsigned char* dst, int size) const {
-   sha1Of(src, size_t(size), dst);
-   return 0;
+void sha1(const uint8_t* src, size_t size, uint8_t* digest20) { sha1Of(src, size, digest20); }
+
+void sha256(const uint8_t* src, size_t size, uint8_t* digest32) { sha256Of(src, size, digest32); }
+
+void hmacSha1(const uint8_t* src, size_t size, const uint8_t* key, size_t keyBytes, uint8_t* mac20) {
+   hmacOf(sha1Of, 20, src, size, key, keyBytes, mac20);
 }
 
-int BuiltinCryptoOperations::sha256(const unsigned char* src, unsigned char* dst, int size) const {
-   sha256Of(src, size_t(size), dst);
-   return 0;
+void hmacSha256(const uint8_t* src, size_t size, const uint8_t* key, size_t keyBytes, uint8_t* mac32) {
+   hmacOf(sha256Of, 32, src, size, key, keyBytes, mac32);
 }
 
-int BuiltinCryptoOperations::hmac_sha1(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size) const {
-   hmacOf(sha1Of, 20, src, size_t(size), key, size_t(key_size), dst);
-   return 0;
-}
-
-int BuiltinCryptoOperations::hmac_sha256(const unsigned char* src, unsigned char* dst, int size, const unsigned char* key, int key_size) const {
-   hmacOf(sha256Of, 32, src, size_t(size), key, size_t(key_size), dst);
-   return 0;
-}
+} // namespace cr::crypto
