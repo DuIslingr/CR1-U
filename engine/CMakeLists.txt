@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(ChaosRings LANGUAGES C CXX)
 # (the iOS bundle's version - numbers alone, as Apple asks: CI passes the tag's)
-set(CR_VERSION "0.7.1" CACHE STRING "The app's version (x.y.z)")
+set(CR_VERSION "0.7.2" CACHE STRING "The app's version (x.y.z)")
 if(WIN32)
     enable_language(RC) # (the .exe's icon: cmake/app-icon.cmake)
 endif()

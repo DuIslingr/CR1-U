@@ -1,27 +1,31 @@
-# CR1-U v0.7.1
+# CR1-U v0.7.2
 
-A fix release for [v0.7.0](https://github.com/DuIslingr/CR1-U/releases/tag/v0.7.0): missing text on
-some Android phones, and a controller Windows stopped finding. Everything in v0.7.0's notes still
-applies.
+A fix release for [v0.7.1](https://github.com/DuIslingr/CR1-U/releases/tag/v0.7.1): Flydigi controllers on
+Windows, take two, and battle models that could look speckled on some graphics cards. Everything in
+v0.7.0's and v0.7.1's notes still applies.
 
 ## Fixed
 
-- **No text on some Android phones:** phones whose maker ships its own fonts, without Android's usual
-  Noto fonts where CR1-U looked, showed no text at all. CR1-U now reads the phone's own font list and
-  uses the fonts it names for Japanese, Chinese and Korean, then the phone's default font.
-- **Flydigi controllers on Windows:** a Vader 4 Pro, wired or through its receiver, wasn't found
-  since v0.7.0's SDL update. SDL 3.4 added its own Flydigi driver, which takes the controller and then
-  gets no input from it. CR1-U now leaves that driver off on Windows, so the controller is read
-  through XInput as before. Setting the environment variable `SDL_JOYSTICK_HIDAPI_FLYDIGI=1` turns
-  SDL's driver back on. Every controller SDL finds is now written to `chaosrings.log`, so if one still
-  isn't picked up, the log shows why.
+- **Flydigi controllers on Windows, take two:** v0.7.1's fix didn't bring the Vader 4 Pro back. The
+  Windows build now uses SDL's development version from 2026-11-14, which has SDL's later Flydigi
+  fixes. That's the setup metastigma's fork uses, and its user confirmed it works with this
+  controller, wired and through its receiver. v0.7.1's workaround is gone. Other platforms keep
+  SDL 3.4.20.
+- **Battle models no longer turn speckled and see-through on some graphics cards.** A battle model
+  draws parts of itself twice, and the second copy only keeps pixels that are fully opaque. CR1-U
+  checked that with an exact comparison, while the original allows for rounding. On GPUs that land
+  a hair short, scattered pixels were dropped and the sky showed through. The check now matches the
+  original's, in both the Vulkan and the OpenGL renderer. (Found in the Omega port, CRO-U #5; CR1-U
+  had the same check.)
+- **Android fonts:** when CR1-U reads the phone's own font list (new in v0.7.1), a font family the
+  phone maker commented out is no longer used, and the font folders are searched in name order, so
+  the same phone always picks the same font.
 
 ### Thanks to metastigma
 
-[metastigma](https://github.com/metastigma) reported the Flydigi problem and investigated it in their
-fork ([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42),
-[#43](https://github.com/metastigma/CRO-U-metastigma/pull/43)). This release takes a narrower fix
-than their development build of SDL.
+[metastigma](https://github.com/metastigma) worked out the Windows SDL setup in their fork
+([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42)) and reported the
+speckled battle models in the Omega port.
 
 ## Downloads
 
