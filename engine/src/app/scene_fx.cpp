@@ -521,6 +521,7 @@ void applyOrientation(App& app, bool captureDirection) {
 // unfolded 626) the iPad's - the original's two releases' screens; a foldable changes it as it folds
 // (SDL_AppEvent: the window resized)
 bool smallScreen(const App& app) {
+    if (const char* e = SDL_getenv("CR_SMALL_SCREEN"); e && *e) return SDL_atoi(e) != 0; // (tests: a phone's small screen on a desktop)
 #ifdef SDL_PLATFORM_IOS
     int w = 0, h = 0;
     return app.window && SDL_GetWindowSize(app.window, &w, &h) && w > 0 && h > 0 && std::min(w, h) < 540;
@@ -529,7 +530,9 @@ bool smallScreen(const App& app) {
     return false;
 #endif
 }
-bool autoPhoneLayout(const App& app) { return app.phoneData || smallScreen(app); }
+// (the Vita copy alone has its own layout - vitaLayout -, made for the Vita's small screen: never both - the
+// iPhone layout's scaling over the Vita layout's placements put the iPhone Duo's script pictures off the painting)
+bool autoPhoneLayout(const App& app) { return app.phoneData || (smallScreen(app) && !app.vitaOnly); }
 
 // Window size / fullscreen mode and the renderer's options from app.video
 void applyVideo(App& app) {
@@ -539,6 +542,9 @@ void applyVideo(App& app) {
     // (a phone's or tablet's: no resolution, window or aspect choice - the whole screen at its own pixels,
     // the picture widening to its shape; a settings file's other values, an older version's, set aside)
     v.display = 0, v.widescreen = true;
+    r.setFillScreen(true);
+#else
+    r.setFillScreen(SDL_getenv("CR_PHONE_FILL") != nullptr); // (tests: a phone's fill on a desktop)
 #endif
     r.setWidescreen(v.widescreen);
     r.setPhoneLayout(v.layout >= 2 || (v.layout == 0 && autoPhoneLayout(app))); // 2.2.0's screens (3:2)
@@ -2694,6 +2700,7 @@ void drawFrame(App& app, bool present) {
         r.setSafeInsets(l, t, rr, b);
     }
     r.beginFrame(w, h);
+    r.setPictureLayer(true); // (the scene - its painting, 3D view, effects, the bubbles over its people -: the picture's, never the interface's shrink)
     { // what the system gives the game, and how the game fits itself in it - logged once, and when it changes
       // (a phone's fold, a rotation, a window's resize: chaosrings.log - iOS's in the Files app)
         int pw = 0, ph = 0, ww = 0, wh = 0;
@@ -2940,6 +2947,7 @@ void drawFrame(App& app, bool present) {
             r.fillRect(0, 0, SW, H, app.backFade.grey, app.backFade.grey, app.backFade.grey, ba);
         drawMenuMask(app);
     }
+    r.setPictureLayer(false); // (the interface from here: kept clear of a camera's cutout - the pictures among it marked as they come)
     r.setOrigin(r.uiX()); // the game's 2D from here on: its 1024 x 768 layout, centred
     app.order2d = App::Order2D();
     // A message window this frame (the calls of drawMessageBox below): the front fade waits for its
@@ -2956,6 +2964,9 @@ void drawFrame(App& app, bool present) {
         }
         for (const App::Portrait& p : app.portraits) // Tex2d: portraits and title cards (over a battle in its talks)
             if (p.tex.id && p.alpha > 0.001f && (!app.battle.active || battletalk::on(app))) {
+                // (a full-screen card or a picture in the middle - a title card, a door laid over the painting -: the
+                // picture's; a side portrait, with the speakers' window: the interface's)
+                r.setPictureLayer((p.flags & 0x8000) != 0 || p.side == 0);
                 if (p.flags & 0x8000) { // a full-screen card (tex2d_img_prc): the iPad's sheets hold a
                     // 1024 x 768 picture for the screen (tex2d (-32, -64)), 2.2.0's and the Vita's a 960 x
                     // 640 one for tex2d (0, 0) 480 x 320. Scaled to cover the screen - the whole width in
@@ -2982,6 +2993,7 @@ void drawFrame(App& app, bool present) {
                              p.shade, p.shade, p.alpha); // right-hand portraits are mirrored (slot +0xe)
                 app.order2d.portrait = ++app.order2d.seq;
             }
+        r.setPictureLayer(false);
         if (app.itemWindowOpen) drawItemBand(app); // Uty_GetItem
         if (!messageNow && !(app.mode == Mode::Maps && app.battle.active)) drawFrontFade(app); // (a battle's: over its 2D, below)
     }
@@ -3002,8 +3014,10 @@ void drawFrame(App& app, bool present) {
         drawPuzzleBanner(app);
         r.setOrigin(r.uiX());
     }
+    r.setPictureLayer(true); // (script pictures and logos: the picture's - a door laid over the painting stays on it)
     if (app.mode == Mode::Maps && app.texDisp.on) drawTexDisp(app);
     if (app.mode == Mode::Maps && app.vitaLogo.phase) drawVitaLogo(app);
+    r.setPictureLayer(false);
     if (app.mode == Mode::Maps && app.tutoTex.on) drawTutoTex(app);
     if (app.mode == Mode::Maps && app.exclamation) drawExclamation(app);
     if (app.mode == Mode::Maps && app.padArt) drawPadArt(app);

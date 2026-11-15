@@ -5410,6 +5410,12 @@ bool titleChoiceReady(int) { return true; }
 // 768, 1024 x 80) at (-32, 624) - the iPad screen's (0, 496), (0, 0), (0, 688)
 void drawTitleArt(App& app, float logo, float strip) {
     cr::Renderer& r = app.renderer;
+    struct Picture { // (the title's art: the picture's, filling the screen - not the interface's shrink)
+        cr::Renderer& r;
+        bool was;
+        ~Picture() { r.setPictureLayer(was); }
+    } picture{r, r.pictureLayer()};
+    r.setPictureLayer(true);
     static const char* const kSheet[2] = {"title1_hd.mct", "chaos_hd.mct"};
     for (int k = 0; k < 2; ++k)
         if (!app.titleArt[k].id) {

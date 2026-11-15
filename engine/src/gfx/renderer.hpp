@@ -56,6 +56,7 @@ public:
     // Begin a frame for a drawable of the given pixel size; endFrame shows it when `present`.
     void beginFrame(int drawableW, int drawableH);
     void endFrame(bool present);
+    void surfaceChanged() { if (dev_) dev_->surfaceChanged(); } // (back from the background: the swapchain, and its surface, anew)
     // The last frame, RGBA, top row first
     bool readPixels(std::vector<uint8_t>& rgba, int& w, int& h);
     int takeErrors();
@@ -156,6 +157,14 @@ public:
     // Window pixels per logical pixel (text is rasterised at this density).
     float pixelScale() const { return phone_ ? scale_ * layoutScale() : scale_; }
     float interfaceShrink() const { return uiShrink_; } // (1 unless a camera's cutout reaches into the interface)
+    // Draws that are the picture's - the scene's painting and 3D view, its effects and the bubbles over its
+    // people, script pictures, logos, full-screen cards -: never shrunk with the interface (PictureLayer)
+    void setPictureLayer(bool on) { pictureLayer_ = on; }
+    bool pictureLayer() const { return pictureLayer_; }
+    // A phone's or tablet's: the screen filled whatever its shape - widescreen down to 4:3 in the iPhone
+    // layout too (the iPhone Duo's 1.46 / 1.42 screens), the interface drawn a little smaller where it
+    // doesn't fit (applyVideo; CR_PHONE_FILL on a desktop)
+    void setFillScreen(bool on) { fillScreen_ = on; }
 
 private:
     bool clipV(float& y, float& h, float& t0, float& t1) const;
@@ -164,6 +173,7 @@ private:
     // The interface's shrink about the screen's centre, clear of a camera's cutout (1: none - mapScreen);
     // a quad as wide as the screen (art, backgrounds, fades) keeps its place: the picture fills the screen
     float uiShrink_ = 1;
+    bool pictureLayer_ = false, fillScreen_ = false;
     void interfaceRect(float& x, float& y, float& w, float& h) const;
 
     std::unique_ptr<RenderDevice> dev_;

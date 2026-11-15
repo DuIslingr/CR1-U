@@ -121,6 +121,7 @@ void Renderer::begin3DRect(float x, float y, float w, float h) {
         layoutToScreen(x, y);
         w *= layoutScale(), h *= layoutScale();
     }
+    interfaceRect(x, y, w, h); // (an interface's 3D - the Camp's models - with it; the scene's is the picture's)
     dev_->setViewport(offX_ + x * scaleX_, offY_ + y * scaleY_, w * scaleX_, h * scaleY_);
 }
 
@@ -206,7 +207,8 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
     // inside the frame and centred
     const float least = phone_ ? 1.5f : 4.0f / 3.0f; // the iPhone's 3:2, the iPad's 4:3
     const float fixed = androidScreen() ? 16.0f / 9.0f : least; // (Android: a 1280 x 720 phone's)
-    const float aspect = widescreen_ ? std::clamp(windowAspect_, least, 21.0f / 9.0f) : fixed;
+    const float narrowest = fillScreen_ ? std::min(least, 4.0f / 3.0f) : least; // (a phone's: its own shape - setFillScreen)
+    const float aspect = widescreen_ ? std::clamp(windowAspect_, narrowest, 21.0f / 9.0f) : fixed;
     screenW_ = kLogicalH * aspect;
     const float sx = float(frameW_) / screenW_, sy = float(frameH_) / kLogicalH;
     scale_ = sx < sy ? sx : sy;
@@ -221,7 +223,7 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
         const float bar = (float(frameW_) - screenW_ * scale_) * 0.5f;
         const float cut = scale_ > 0 ? std::max(0.0f, (std::max(safeL_, safeR_) * k - bar) / scale_) : 0.0f; // (logical units in)
         const float need = phone_ ? kLogicalH * 1.5f : float(kLogicalW);
-        if (cut > 0 && screenW_ - 2 * cut < need) uiShrink_ = std::clamp((screenW_ - 2 * cut) / need, 0.5f, 1.0f);
+        if (screenW_ - 2 * cut < need) uiShrink_ = std::clamp((screenW_ - 2 * cut) / need, 0.5f, 1.0f); // (or a screen narrower than it)
     }
     // ... and a smaller scene (upscaling) is exactly the frame scaled down per axis, so its pixels
     // land where the upscaler puts them
@@ -311,7 +313,7 @@ bool Renderer::clipV(float& y, float& h, float& t0, float& t1) const {
 }
 
 void Renderer::interfaceRect(float& x, float& y, float& w, float& h) const {
-    if (uiShrink_ >= 1 || std::fabs(w) >= screenW_ * 0.98f) return; // (none, or the screen's whole width: art)
+    if (uiShrink_ >= 1 || pictureLayer_ || std::fabs(w) >= screenW_ * 0.98f) return; // (none, the picture's, or the screen's whole width: art)
     const float cx = screenW_ * 0.5f, cy = kLogicalH * 0.5f;
     x = cx + (x - cx) * uiShrink_, y = cy + (y - cy) * uiShrink_;
     w *= uiShrink_, h *= uiShrink_;
@@ -381,7 +383,7 @@ void Renderer::fillQuad(const float xy[8], float r, float g, float b, float a) {
         p[2 * k] = xy[2 * k] + originX_, p[2 * k + 1] = std::clamp(xy[2 * k + 1], clipY0_, clipY1_); // (axis-aligned edges)
         if (phone_) layoutToScreen(p[2 * k], p[2 * k + 1]);
     }
-    if (uiShrink_ < 1 && std::max({p[0], p[2], p[4], p[6]}) - std::min({p[0], p[2], p[4], p[6]}) < screenW_ * 0.98f) // (interfaceRect's)
+    if (uiShrink_ < 1 && !pictureLayer_ && std::max({p[0], p[2], p[4], p[6]}) - std::min({p[0], p[2], p[4], p[6]}) < screenW_ * 0.98f) // (interfaceRect's)
         for (int k = 0; k < 4; ++k)
             p[2 * k] = screenW_ * 0.5f + (p[2 * k] - screenW_ * 0.5f) * uiShrink_,
             p[2 * k + 1] = kLogicalH * 0.5f + (p[2 * k + 1] - kLogicalH * 0.5f) * uiShrink_;
