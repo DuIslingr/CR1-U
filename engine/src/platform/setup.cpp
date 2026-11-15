@@ -677,10 +677,12 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
     bool ok = true;
     std::vector<char> buf(1 << 20);
     int r;
+    std::string lastName; // (the entry before one it can't read: the message)
     while (ok && (r = archive_read_next_header(a, &e)) == ARCHIVE_OK) {
         const char* n = archive_entry_pathname_utf8(e);
         if (!n) n = archive_entry_pathname(e);
         std::string name = n ? n : "";
+        lastName = name;
         std::replace(name.begin(), name.end(), '\\', '/');
         const bool unsafe = name.empty() || name[0] == '/' || name.find(':') != std::string::npos || ("/" + name + "/").find("/../") != std::string::npos;
         if (unsafe || !want(name)) {
@@ -711,7 +713,9 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
         }
         if (!SDL_CloseIO(f)) ok = false;
     }
-    if (ok && r != ARCHIVE_EOF) ok = false, fail(error, archive_error_string(a) ? archive_error_string(a) : "a broken entry");
+    if (ok && r != ARCHIVE_EOF)
+        ok = false, fail(error, archive_error_string(a) ? std::string(archive_error_string(a))
+                                                        : "an entry it can't read (after " + (lastName.empty() ? std::string("the start") : lastName) + ")");
     archive_read_free(a);
     return ok;
 #else
@@ -1541,7 +1545,7 @@ namespace {
 // A dump's archive copied into vita/ (.zip, .rar, .7z, .vpk - an iPhone has no setup to pick one, a phone's
 // copied over USB): the first not yet unpacked - vita/.unpacked lists those done (name and size) - unpacked
 // into vita/.unpack/, this game's parts alone; that folder ("" none). `archive` its name
-std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, std::string& archive) {
+std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, std::string& archive, bool quiet) {
     if (!kArchives) return {};
     std::string list;
     if (std::FILE* f = std::fopen((v + ".unpacked").c_str(), "rb")) {
@@ -1564,7 +1568,6 @@ std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, s
     }
     SDL_free(names);
     if (pick.empty()) return {};
-    if (std::FILE* f = std::fopen((v + ".unpacked").c_str(), "ab")) std::fputs(line.c_str(), f), std::fclose(f); // (once, whatever comes of it)
     const std::string id = g.vitaId, addon = g.trilogyAddon, u = v + ".unpack/";
     auto want = [&](const std::string& n) { // (this game's parts alone: as the setup's pick takes them)
         const std::string s = "/" + n + "/";
@@ -1582,11 +1585,13 @@ std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, s
         Progress bar(g.title, "Unpacking " + archive + " ...");
         ok = unpackArchive(pick, u, want, &why, [&](double x) { bar.show(x); });
     }
-    if (!ok) {
+    if (!ok) { // (not listed: tried again next start - by a build that reads it, or after it's replaced)
         SDL_Log("setup: %s can't be unpacked: %s", archive.c_str(), why.c_str());
+        note(g, archive + " can't be unpacked: " + why, quiet);
         removeTree(u);
         return {};
     }
+    if (std::FILE* f = std::fopen((v + ".unpacked").c_str(), "ab")) std::fputs(line.c_str(), f), std::fclose(f); // (once)
     return u;
 }
 } // namespace
@@ -1598,7 +1603,7 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     std::string unpacked, archive; // (a dump's archive copied in: unpacked first, gone after)
     if (!findVitaInstall(v, g, in)) { // (none; the trilogy without this game's add-on: the message where no copy is found)
         const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO); // (the progress window)
-        unpacked = unpackDroppedVitaArchive(g, v, archive);
+        unpacked = unpackDroppedVitaArchive(g, v, archive, quiet);
         if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
         if (unpacked.empty()) return false;
         if (!findVitaInstall(unpacked, g, in)) {
