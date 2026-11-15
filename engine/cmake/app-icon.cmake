@@ -1,6 +1,6 @@
 # The port's own icon (packaging/: two rings, not the game's art - packaging/make_icons.py makes
 # the .ico and .icns from packaging/linux/<id>.svg): the .exe's (a resource script, MSVC's rc or
-# MinGW's windres) and the .app's (Contents/Resources, CFBundleIconFile).
+# MinGW's windres), the .app's (Contents/Resources, CFBundleIconFile) and the iOS app's (an asset catalog).
 #
 # On Windows the .exe also carries packaging/windows/utf8.manifest: UTF-8 as the process's ANSI code
 # page (Windows 10 1903 on; older ones ignore it), so the narrow file calls - fopen, ifstream,
@@ -27,6 +27,13 @@ function(cr_app_icon target id)
             file(WRITE ${rc} "${rcText}")
             target_sources(${target} PRIVATE ${rc})
         endif()
+    elseif(IOS AND EXISTS ${packaging}/ios/Assets.xcassets)
+        # iOS: the asset catalog's AppIcon (packaging/make_icons.py: one opaque 1024 x 1024), compiled by
+        # Xcode's actool into the app's Assets.car; Info.plist names it (CFBundleIcons)
+        set(assets ${packaging}/ios/Assets.xcassets)
+        set_source_files_properties(${assets} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        target_sources(${target} PRIVATE ${assets})
+        set_target_properties(${target} PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon)
     elseif(APPLE AND EXISTS ${packaging}/macos/${id}.icns)
         set(icns ${packaging}/macos/${id}.icns)
         set_source_files_properties(${icns} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)

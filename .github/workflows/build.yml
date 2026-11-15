@@ -228,7 +228,9 @@ jobs:
         run: |
           app=$(find build -path '*Release-iphoneos/chaosrings.app' -maxdepth 4 | head -1)
           test -n "$app"
-          plutil -p "$app/Info.plist" | grep -E 'CFBundleIdentifier|UIFileSharingEnabled|CADisableMinimumFrameDurationOnPhone'
+          plutil -p "$app/Info.plist" | grep -E 'CFBundleIdentifier|UIFileSharingEnabled|CADisableMinimumFrameDurationOnPhone|CFBundleIconName|AppIcon'
+          ls "$app" | grep -iE 'Assets.car|AppIcon' # (the icon: actool's catalog, its PNGs)
+          test -f "$app/Assets.car"
           lipo -info "$app/chaosrings"
           otool -L "$app/chaosrings" | grep -E 'Metal|OpenGLES'
           mkdir -p upload Payload

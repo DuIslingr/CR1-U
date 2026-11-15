@@ -3,8 +3,13 @@
 not the game's art), with ImageMagick's `magick` for the pictures:
 
   packaging/make_icons.py <id>      -> packaging/windows/<id>.ico, packaging/macos/<id>.icns,
-                                       packaging/linux/<id>.png
+                                       packaging/linux/<id>.png, packaging/ios/Assets.xcassets (AppIcon)
+
+iOS's is square and opaque - the system rounds its corners and shows transparency black - so the
+SVG's rounded backdrop is drawn to the edges there, the picture flattened onto it.
 """
+import json
+import re
 import os
 import struct
 import subprocess
@@ -44,6 +49,23 @@ def main():
             chunks += kind.encode() + struct.pack('>I', 8 + len(data)) + data
         with open(os.path.join(here, 'macos', ident + '.icns'), 'wb') as f:
             f.write(b'icns' + struct.pack('>I', 8 + len(chunks)) + chunks)
+        # iOS: one 1024 x 1024 icon (Xcode 14's single size) in an asset catalog, its backdrop square
+        with open(svg) as f:
+            square = re.sub(r'(<rect [^>]*?)\s+rx="[^"]*"', r'\1', f.read(), count=1)
+        backdrop = re.search(r'<rect [^>]*fill="(#[0-9a-fA-F]+)"', square).group(1)
+        flat_svg = os.path.join(tmp, 'ios.svg')
+        with open(flat_svg, 'w') as f:
+            f.write(square)
+        icon_set = os.path.join(here, 'ios', 'Assets.xcassets', 'AppIcon.appiconset')
+        os.makedirs(icon_set, exist_ok=True)
+        subprocess.run(['magick', '-background', 'none', '-density', '1536', flat_svg, '-resize', '1024x1024',
+                        '-background', backdrop, '-alpha', 'remove', '-alpha', 'off', os.path.join(icon_set, 'icon-1024.png')], check=True)
+        info = {'author': 'xcode', 'version': 1}
+        with open(os.path.join(here, 'ios', 'Assets.xcassets', 'Contents.json'), 'w') as f:
+            json.dump({'info': info}, f, indent=2)
+        with open(os.path.join(icon_set, 'Contents.json'), 'w') as f:
+            json.dump({'images': [{'filename': 'icon-1024.png', 'idiom': 'universal', 'platform': 'ios', 'size': '1024x1024'}],
+                       'info': info}, f, indent=2)
 
 
 if __name__ == '__main__':
