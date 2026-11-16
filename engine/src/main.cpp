@@ -1089,6 +1089,20 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     return SDL_APP_CONTINUE;
 }
 
+// A pad among morePads pressed or moved: it becomes the one in use, the one before kept open with the others
+static void takePad(App& app, SDL_JoystickID which) {
+    if (app.pad && SDL_GetGamepadID(app.pad) == which) return;
+    for (size_t k = 0; k < app.morePads.size(); ++k)
+        if (SDL_GetGamepadID(app.morePads[k]) == which) {
+            SDL_Gamepad* now = app.morePads[k];
+            app.morePads.erase(app.morePads.begin() + std::ptrdiff_t(k));
+            if (app.pad) holdSkip(app, kSkipPad, false), stickPointerButton(app, false), app.morePads.push_back(app.pad);
+            app.pad = now;
+            SDL_Log("controller: %s in use", SDL_GetGamepadName(app.pad));
+            return;
+        }
+}
+
 SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     auto& app = *static_cast<App*>(state);
     if (event->type == SDL_EVENT_RENDER_DEVICE_RESET) {
@@ -1113,30 +1127,49 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
                 unsigned(SDL_GetJoystickProductForID(id)), int(SDL_GetJoystickTypeForID(id)), SDL_IsGamepad(id) ? "" : " - not a gamepad to SDL");
         break;
     }
-    case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead handle)
-        if (!app.pad || !SDL_GamepadConnected(app.pad))
+    case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead
+        // handle); any other opened as well, for its input to come (morePads)
+        if (!app.pad || !SDL_GamepadConnected(app.pad)) {
             if (SDL_Gamepad* pad = SDL_OpenGamepad(event->gdevice.which)) {
                 if (app.pad) holdSkip(app, kSkipPad, false), stickPointerButton(app, false), SDL_CloseGamepad(app.pad);
                 app.pad = pad;
                 SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));
             }
+        } else if (SDL_GetGamepadID(app.pad) != event->gdevice.which &&
+                   std::none_of(app.morePads.begin(), app.morePads.end(), [&](SDL_Gamepad* g) { return SDL_GetGamepadID(g) == event->gdevice.which; }))
+            if (SDL_Gamepad* pad = SDL_OpenGamepad(event->gdevice.which)) {
+                app.morePads.push_back(pad);
+                SDL_Log("controller: %s (also open: it takes over once it's pressed)", SDL_GetGamepadName(pad));
+            }
         break;
     case SDL_EVENT_GAMEPAD_REMOVED:
+        for (size_t k = 0; k < app.morePads.size(); ++k)
+            if (SDL_GetGamepadID(app.morePads[k]) == event->gdevice.which) {
+                SDL_CloseGamepad(app.morePads[k]);
+                app.morePads.erase(app.morePads.begin() + std::ptrdiff_t(k));
+                break;
+            }
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gdevice.which) {
             holdSkip(app, kSkipPad, false);
             stickPointerButton(app, false); // (R3 held as it went: a puzzle room's finger lifted, not left pressed)
             SDL_CloseGamepad(app.pad), app.pad = nullptr;
+            if (!app.morePads.empty()) app.pad = app.morePads.front(), app.morePads.erase(app.morePads.begin());
             int count = 0; // (another still connected: that one, not none until a new one comes)
-            if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
-                for (int k = 0; k < count && !app.pad; ++k)
-                    if (ids[k] != event->gdevice.which) app.pad = SDL_OpenGamepad(ids[k]);
-                SDL_free(ids);
-            }
+            if (!app.pad)
+                if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+                    for (int k = 0; k < count && !app.pad; ++k)
+                        if (ids[k] != event->gdevice.which) app.pad = SDL_OpenGamepad(ids[k]);
+                    SDL_free(ids);
+                }
             if (app.pad) SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));
         }
         break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION: // (a stick or trigger well off its rest on another pad: that one in use now)
+        if (std::abs(int(event->gaxis.value)) > 16000) takePad(app, event->gaxis.which);
+        break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         app.pointerLast = false;
+        takePad(app, event->gbutton.which); // (a button on another pad: that one in use now)
         if (app.pad && SDL_GetGamepadID(app.pad) == event->gbutton.which) {
             if (event->gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_STICK) stickPointerButton(app, true); // R3: a puzzle room's finger
             else padButton(app, event->gbutton.button);

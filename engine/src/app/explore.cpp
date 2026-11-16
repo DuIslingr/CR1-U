@@ -7774,6 +7774,40 @@ int runSelfTest(App& app) {
                         handedOver ? "yes" : "NO", takenOver ? "yes" : "NO");
             if (app.pad) SDL_CloseGamepad(app.pad);
             if (second) SDL_DetachVirtualJoystick(second);
+            app.pad = nullptr;
+            { // one pad as two (CRO-U #4): both opened as they come; a button on the second makes it the one in use,
+              // a stick pushed on the first takes it back, and with the one in use taken out the other goes on
+                const SDL_JoystickID a = SDL_AttachVirtualJoystick(&desc), b = SDL_AttachVirtualJoystick(&desc);
+                SDL_Event e{};
+                e.type = SDL_EVENT_GAMEPAD_ADDED, e.gdevice.which = a;
+                SDL_AppEvent(&app, &e);
+                e.gdevice.which = b;
+                SDL_AppEvent(&app, &e);
+                const bool bothOpen = app.pad && SDL_GetGamepadID(app.pad) == a && app.morePads.size() == 1 && SDL_GetGamepadID(app.morePads[0]) == b;
+                e = SDL_Event{};
+                e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN, e.gbutton.which = b, e.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_DOWN, e.gbutton.down = true;
+                SDL_AppEvent(&app, &e);
+                const bool pressedTakes = app.pad && SDL_GetGamepadID(app.pad) == b;
+                e = SDL_Event{};
+                e.type = SDL_EVENT_GAMEPAD_AXIS_MOTION, e.gaxis.which = a, e.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTX, e.gaxis.value = 3000;
+                SDL_AppEvent(&app, &e);
+                const bool nudgeKeeps = app.pad && SDL_GetGamepadID(app.pad) == b;
+                e.gaxis.value = 30000;
+                SDL_AppEvent(&app, &e);
+                const bool pushedTakes = app.pad && SDL_GetGamepadID(app.pad) == a;
+                e = SDL_Event{};
+                e.type = SDL_EVENT_GAMEPAD_REMOVED, e.gdevice.which = a;
+                SDL_AppEvent(&app, &e);
+                const bool otherGoesOn = app.pad && SDL_GetGamepadID(app.pad) == b && app.morePads.empty();
+                problems += !bothOpen + !pressedTakes + !nudgeKeeps + !pushedTakes + !otherGoesOn;
+                std::printf("controller: one pad as two - both open %s, a button on the second takes it %s (a nudge doesn't %s), a stick "
+                            "pushed on the first takes it back %s, the one in use taken out: the other goes on %s\n", bothOpen ? "yes" : "NO",
+                            pressedTakes ? "yes" : "NO", nudgeKeeps ? "yes" : "NO", pushedTakes ? "yes" : "NO", otherGoesOn ? "yes" : "NO");
+                if (app.pad) SDL_CloseGamepad(app.pad);
+                for (SDL_Gamepad* g : app.morePads) SDL_CloseGamepad(g);
+                app.morePads.clear();
+                SDL_DetachVirtualJoystick(a), SDL_DetachVirtualJoystick(b);
+            }
             app.pad = keepPad;
             app.game = keepGame;
             if (pad) SDL_CloseGamepad(pad);

@@ -677,6 +677,10 @@ struct App {
     // opens / closes the menu, □ skips text, L / R turn pages; in puzzle rooms START restarts,
     // SELECT shows the help, and □ (no text to skip) uses the ability, which the Vita leaves to touch
     SDL_Gamepad* pad = nullptr;
+    // The other controllers connected, open too: SDL sends a controller's buttons and sticks only once it's open,
+    // and one pad can come as two (CRO-U #4: a Flydigi Vader 4 Pro listed twice as "Xbox 360 Controller", its
+    // input on the second while the first was taken). The one pressed or moved last becomes `pad` (takePad)
+    std::vector<SDL_Gamepad*> morePads;
     bool padConfirmEast = true;
     // CR1:U's own (Options, Game: Field Speed, Battle Speed): the field - while the player walks it,
     // nothing over it - and the battles run this many times as fast (1, or 2 .. 5)
