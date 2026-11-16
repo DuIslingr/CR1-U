@@ -1,31 +1,20 @@
-# CR1-U v0.7.2
+# CR1-U v0.7.3
 
-A fix release for [v0.7.1](https://github.com/DuIslingr/CR1-U/releases/tag/v0.7.1): Flydigi controllers on
-Windows, take two, and battle models that could look speckled on some graphics cards. Everything in
-v0.7.0's and v0.7.1's notes still applies.
+A fix release for [v0.7.2](https://github.com/DuIslingr/CR1-U/releases/tag/v0.7.2): Flydigi controllers,
+take three. Everything in v0.7.0's, v0.7.1's and v0.7.2's notes still applies.
 
 ## Fixed
 
-- **Flydigi controllers on Windows, take two:** v0.7.1's fix didn't bring the Vader 4 Pro back. The
-  Windows build now uses SDL's development version from 2026-11-14, which has SDL's later Flydigi
-  fixes. That's the setup metastigma's fork uses, and its user confirmed it works with this
-  controller, wired and through its receiver. v0.7.1's workaround is gone. Other platforms keep
-  SDL 3.4.20.
-- **Battle models no longer turn speckled and see-through on some graphics cards.** A battle model
-  draws parts of itself twice, and the second copy only keeps pixels that are fully opaque. CR1-U
-  checked that with an exact comparison, while the original allows for rounding. On GPUs that land
-  a hair short, scattered pixels were dropped and the sky showed through. The check now matches the
-  original's, in both the Vulkan and the OpenGL renderer. (Found in the Omega port, CRO-U #5; CR1-U
-  had the same check.)
-- **Android fonts:** when CR1-U reads the phone's own font list (new in v0.7.1), a font family the
-  phone maker commented out is no longer used, and the font folders are searched in name order, so
-  the same phone always picks the same font.
+- **Flydigi controllers, take three:** with v0.7.2's SDL update the Vader 4 Pro was found, but it
+  shows up as two "Xbox 360 Controller" devices, and its input comes on the second one, which
+  CR1-U never opened. Now every connected controller is opened, and the one you press a button on
+  or move a stick on takes over. This also helps any other controller that shows up twice, and
+  lets you switch between two controllers just by picking one up.
 
 ### Thanks to metastigma
 
-[metastigma](https://github.com/metastigma) worked out the Windows SDL setup in their fork
-([CRO-U-metastigma#42](https://github.com/metastigma/CRO-U-metastigma/pull/42)) and reported the
-speckled battle models in the Omega port.
+[metastigma](https://github.com/metastigma) sent the log that showed the controller listed twice
+([CRO-U #4](https://github.com/DuIslingr/CRO-U/issues/4)).
 
 ## Downloads
 

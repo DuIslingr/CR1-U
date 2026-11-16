@@ -225,7 +225,7 @@ jobs:
         run: |
           xcodebuild -version
           echo "iOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
-          ver=0.7.2
+          ver=0.7.3
           case "$GITHUB_REF_NAME" in v[0-9]*) ver="${GITHUB_REF_NAME#v}" ;; esac
           cmake -S engine -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_DISABLE_FIND_PACKAGE_PkgConfig=ON -DCMAKE_DISABLE_FIND_PACKAGE_Freetype=ON "-DCR_MOLTENVK=$RUNNER_TEMP/MoltenVK" "-DCR_VERSION=$ver"
