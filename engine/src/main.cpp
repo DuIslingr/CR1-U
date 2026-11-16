@@ -1089,9 +1089,14 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     return SDL_APP_CONTINUE;
 }
 
+static bool padAllowed(const App& app, SDL_JoystickID id) {
+    return app.padAllow.empty() || std::find(app.padAllow.begin(), app.padAllow.end(), id) != app.padAllow.end();
+}
+
 // A pad among morePads pressed or moved: it becomes the one in use, the one before kept open with the others
 static void takePad(App& app, SDL_JoystickID which) {
     if (app.pad && SDL_GetGamepadID(app.pad) == which) return;
+    if (!padAllowed(app, which)) return;
     for (size_t k = 0; k < app.morePads.size(); ++k)
         if (SDL_GetGamepadID(app.morePads[k]) == which) {
             SDL_Gamepad* now = app.morePads[k];
@@ -1129,6 +1134,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
     }
     case SDL_EVENT_GAMEPAD_ADDED: // (taken while none is in use - or the one held went quiet: a wireless pad's receiver keeps a dead
         // handle); any other opened as well, for its input to come (morePads)
+        if (!padAllowed(app, event->gdevice.which)) break;
         if (!app.pad || !SDL_GamepadConnected(app.pad)) {
             if (SDL_Gamepad* pad = SDL_OpenGamepad(event->gdevice.which)) {
                 if (app.pad) holdSkip(app, kSkipPad, false), stickPointerButton(app, false), SDL_CloseGamepad(app.pad);
@@ -1158,7 +1164,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             if (!app.pad)
                 if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
                     for (int k = 0; k < count && !app.pad; ++k)
-                        if (ids[k] != event->gdevice.which) app.pad = SDL_OpenGamepad(ids[k]);
+                        if (ids[k] != event->gdevice.which && padAllowed(app, ids[k])) app.pad = SDL_OpenGamepad(ids[k]);
                     SDL_free(ids);
                 }
             if (app.pad) SDL_Log("controller: %s", SDL_GetGamepadName(app.pad));

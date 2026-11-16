@@ -681,6 +681,10 @@ struct App {
     // and one pad can come as two (CRO-U #4: a Flydigi Vader 4 Pro listed twice as "Xbox 360 Controller", its
     // input on the second while the first was taken). The one pressed or moved last becomes `pad` (takePad)
     std::vector<SDL_Gamepad*> morePads;
+    // The self-test's own controllers (its virtual pads, by joystick id): while it runs, no other is opened or taken -
+    // another program's virtual "Xbox 360 Controller" (a session driving an emulator, say) can't take a case over.
+    // Empty: every pad
+    std::vector<SDL_JoystickID> padAllow;
     bool padConfirmEast = true;
     // CR1:U's own (Options, Game: Field Speed, Battle Speed): the field - while the player walks it,
     // nothing over it - and the battles run this many times as fast (1, or 2 .. 5)
