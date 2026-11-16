@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -1020,6 +1021,13 @@ private:
         // (MoltenVK: each vkQueueSubmit committed to its Metal queue before it returns - the order
         // MetalFX's scaler, committed between two, relies on)
         setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "1", 1);
+#endif
+#if defined(__linux__) && !defined(__ANDROID__)
+        // (RADV, Mesa's AMD driver: no DCC compression on storage images, a driconf option read at
+        // vkCreateInstance. FSR 4's compressed storage writes cost ~0.3 ms a frame at 4K on an RX
+        // 7900 XTX - 2.60 -> 2.28 ms; FSR 3.1 and the game's own drawing measured the same either
+        // way. A value already set stays; CR_KEEP_DCC_STORES=1 keeps them. Other drivers ignore it.)
+        if (!std::getenv("radv_disable_dcc_stores") && !std::getenv("CR_KEEP_DCC_STORES")) setenv("radv_disable_dcc_stores", "true", 0);
 #endif
         if (!ok(vkCreateInstance(&ci, nullptr, &instance_))) return false;
         if (!SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface_)) {
