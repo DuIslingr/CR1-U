@@ -9,9 +9,12 @@ import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
 import android.util.TypedValue;
+import android.view.DisplayCutout;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -19,6 +22,31 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 public class GameActivity extends SDLActivity {
+    // The game under a camera's notch or punch hole on every Android from 9 (SDL sets it from 11 only): the
+    // native side keeps its interface clear of it, or boxes the picture (Options, Camera Cutout)
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        if (android.os.Build.VERSION.SDK_INT >= 28 && getWindow() != null) {
+            WindowManager.LayoutParams attrs = getWindow().getAttributes();
+            attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(attrs);
+        }
+    }
+
+    // Called by the native side: the camera cutout's safe insets in the window's pixels (left, top, right,
+    // bottom), straight from Android's DisplayCutout - SDL's safe area can stay zero on some phones (SDL 3.4
+    // zeroes it on Android 11 - 14 as it goes fullscreen and waits for insets that may not come again), and
+    // it is none before Android 11. Null: not known (before Android 9, or no window yet)
+    public int[] cutoutInsets() {
+        if (android.os.Build.VERSION.SDK_INT < 28 || getWindow() == null) return null;
+        WindowInsets insets = getWindow().getDecorView().getRootWindowInsets();
+        if (insets == null) return null;
+        DisplayCutout cut = insets.getDisplayCutout();
+        if (cut == null) return new int[] {0, 0, 0, 0};
+        return new int[] {cut.getSafeInsetLeft(), cut.getSafeInsetTop(), cut.getSafeInsetRight(), cut.getSafeInsetBottom()};
+    }
+
     // Called by the native Options screen after restoring or changing its lock.
     public void setOrientationLock(boolean locked, boolean flipped) {
         final int orientation = locked

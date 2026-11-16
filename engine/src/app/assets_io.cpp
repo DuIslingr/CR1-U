@@ -890,7 +890,7 @@ void saveMix(const App& app) {
                               std::to_string(v.renderScale) + "\nmsaa=" + std::to_string(v.msaa) +
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
                               "\nupscale_mode=" + std::to_string(v.upscaleMode) + "\nsharpness=" +
-                              std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) + "\navoid_cutout=" + std::to_string(int(v.avoidCutout)) +
+                              std::to_string(v.sharpness) + "\nhd_textures=" + std::to_string(int(v.hdTextures)) + "\navoid_cutout=" + std::to_string(int(v.avoidCutout)) + "\ncutout_bars=" + std::to_string(int(v.cutoutBars)) +
                               "\ncheats=" + std::to_string(int(app.cheats.hp)) + "," + std::to_string(int(app.cheats.mp)) + "," +
                               std::to_string(int(app.cheats.oz)) + "," + std::to_string(int(app.cheats.firstStrike)) + "," +
                               std::to_string(int(app.cheats.noEncounters)) + "," + std::to_string(int(app.cheats.oneHit)) + "," +

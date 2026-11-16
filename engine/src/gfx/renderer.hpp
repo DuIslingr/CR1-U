@@ -168,6 +168,8 @@ public:
     // layout too (the iPhone Duo's 1.46 / 1.42 screens), the interface drawn a little smaller where it
     // doesn't fit (applyVideo; CR_PHONE_FILL on a desktop)
     void setFillScreen(bool on) { fillScreen_ = on; }
+    // Options' Camera Cutout, Black Bars: the whole logical screen inside the safe area (bars beside it), not only the interface
+    void setCutoutBars(bool on) { cutoutBars_ = on; }
 
 private:
     bool clipV(float& y, float& h, float& t0, float& t1) const;
@@ -176,7 +178,7 @@ private:
     // The interface's shrink about the screen's centre, clear of a camera's cutout (1: none - mapScreen);
     // a quad as wide as the screen (art, backgrounds, fades) keeps its place: the picture fills the screen
     float uiShrink_ = 1;
-    bool pictureLayer_ = false, fillScreen_ = false;
+    bool pictureLayer_ = false, fillScreen_ = false, cutoutBars_ = false;
     void interfaceRect(float& x, float& y, float& w, float& h) const;
 
     std::unique_ptr<RenderDevice> dev_;

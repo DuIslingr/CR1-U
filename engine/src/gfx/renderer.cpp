@@ -208,9 +208,18 @@ void Renderer::mapScreen(int drawableW, int drawableH) {
     const float least = phone_ ? 1.5f : 4.0f / 3.0f; // the iPhone's 3:2, the iPad's 4:3
     const float fixed = androidScreen() ? 16.0f / 9.0f : least; // (Android: a 1280 x 720 phone's)
     const float narrowest = fillScreen_ ? std::min(least, 4.0f / 3.0f) : least; // (a phone's: its own shape - setFillScreen)
-    const float aspect = widescreen_ ? std::clamp(windowAspect_, narrowest, 21.0f / 9.0f) : fixed;
+    // (Camera Cutout's Black Bars: the frame less the cutout's side and top insets, as wide again on the other side -
+    // the picture centred and boxed clear of it; the bottom's home indicator is no camera)
+    float fitW = float(frameW_), fitH = float(frameH_);
+    if (cutoutBars_) {
+        const float k = float(frameW_) / float(windowW_);
+        const float side = std::max(safeL_, safeR_) * k, top = safeT_ * k;
+        if (fitW > 4 * side) fitW -= 2 * side;
+        if (fitH > 4 * top) fitH -= 2 * top;
+    }
+    const float aspect = widescreen_ ? std::clamp(cutoutBars_ ? fitW / fitH : windowAspect_, narrowest, 21.0f / 9.0f) : fixed;
     screenW_ = kLogicalH * aspect;
-    const float sx = float(frameW_) / screenW_, sy = float(frameH_) / kLogicalH;
+    const float sx = fitW / screenW_, sy = fitH / kLogicalH;
     scale_ = sx < sy ? sx : sy;
     // The display's safe area (a camera's notch or punch hole) leaves the picture alone: the scene, the
     // backgrounds and the full-screen art fill the screen. The interface keeps off it: where the cutout

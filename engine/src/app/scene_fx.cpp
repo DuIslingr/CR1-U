@@ -470,6 +470,7 @@ void loadVideo(App& app, const char* text) {
     v.sharpness = std::clamp(keyValue(text, "\nsharpness=", v.sharpness), 0, 100);
     v.hdTextures = keyValue(text, "\nhd_textures=", v.hdTextures) != 0;
     v.avoidCutout = keyValue(text, "\navoid_cutout=", v.avoidCutout) != 0;
+    v.cutoutBars = keyValue(text, "\ncutout_bars=", v.cutoutBars) != 0;
     v.smoothModels = keyValue(text, "\nsmooth_models=", v.smoothModels);
     v.hdModels = keyValue(text, "\nhd_models=", v.hdModels) != 0;
     if (v.smoothModels != 2 && v.smoothModels != 3) v.smoothModels = 0;
@@ -515,6 +516,43 @@ void applyOrientation(App& app, bool captureDirection) {
     env->DeleteLocalRef(activity);
 #endif
 }
+
+#ifdef SDL_PLATFORM_ANDROID
+// The camera cutout's safe insets from Android's DisplayCutout (GameActivity.cutoutInsets), the window's pixels;
+// asked twice a second, kept between (false: not known)
+static bool androidCutout(App&, float out[4]) {
+    static float last[4] = {0, 0, 0, 0};
+    static bool known = false;
+    static Uint64 asked = 0;
+    const Uint64 now = SDL_GetTicks();
+    if (asked == 0 || now - asked >= 500) {
+        asked = now;
+        auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+        auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+        if (env && activity) {
+            jclass cls = env->GetObjectClass(activity);
+            jmethodID method = cls ? env->GetMethodID(cls, "cutoutInsets", "()[I") : nullptr;
+            auto arr = method ? static_cast<jintArray>(env->CallObjectMethod(activity, method)) : nullptr;
+            if (env->ExceptionCheck()) env->ExceptionClear(), arr = nullptr;
+            const bool wasKnown = known;
+            known = false;
+            if (arr && env->GetArrayLength(arr) == 4) {
+                jint v[4];
+                env->GetIntArrayRegion(arr, 0, 4, v);
+                if (!wasKnown || v[0] != jint(last[0]) || v[1] != jint(last[1]) || v[2] != jint(last[2]) || v[3] != jint(last[3]))
+                    SDL_Log("screen: Android's camera cutout %d,%d,%d,%d px (left, top, right, bottom)", int(v[0]), int(v[1]), int(v[2]), int(v[3]));
+                for (int k = 0; k < 4; ++k) last[k] = float(v[k]);
+                known = true;
+            }
+            if (arr) env->DeleteLocalRef(arr);
+            if (cls) env->DeleteLocalRef(cls);
+            env->DeleteLocalRef(activity);
+        }
+    }
+    for (int k = 0; k < 4; ++k) out[k] = last[k];
+    return known;
+}
+#endif
 
 // Auto's layout on an iPhone or iPad: the screen in use - its short side under 540 points (an iPhone's
 // 375..440, the iPhone Duo's cover screen 466) the iPhone layout, else (an iPad's 744 on, the Duo
@@ -981,11 +1019,17 @@ std::vector<OptRow> optionRows(App& app, int page) {
     case 2: { // Display
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
         // (a phone's or tablet's: the whole screen at its own resolution and shape, always - applyVideo)
-        pair("Camera Cutout", "Avoid", "Ignore", v.avoidCutout ? 0 : 1, [&app](int i) {
-            app.video.avoidCutout = i == 0;
-            saveMix(app);
-        });
-        rows.back().hint = "Avoid: the menus and buttons kept clear of the camera's notch or punch hole (the picture fills the screen either way). Ignore: they reach the edges too";
+        { // Avoid (the interface clear, the picture full), Black Bars (the picture boxed clear too), Ignore
+            static const char* const kCutout[] = {"Avoid", "Black Bars", "Ignore"};
+            const int at = !v.avoidCutout ? 2 : v.cutoutBars ? 1 : 0;
+            value("Camera Cutout", kCutout[at], [&app, at](int dir) {
+                const int to = ((at + (dir ? dir : 1)) % 3 + 3) % 3;
+                app.video.avoidCutout = to != 2, app.video.cutoutBars = to == 1;
+                saveMix(app);
+            });
+        }
+        rows.back().hint = "Avoid: the menus and buttons kept clear of the camera's notch or punch hole, the picture filling the screen. "
+                           "Black Bars: the whole picture kept clear of it, black beside it. Ignore: everything to the edges";
 #else
         static const char* const kDisplay[] = {"Window", "Fullscreen", "Borderless"};
         value("Resolution", v.display == 2 ? "Desktop" : std::to_string(v.width) + " x " + std::to_string(v.height),
@@ -2752,8 +2796,18 @@ void drawFrame(App& app, bool present) {
             const float sx = float(w) / float(ww), sy = float(h) / float(wh);
             l = float(safe.x) * sx, t = float(safe.y) * sy, rr = float(ww - safe.x - safe.w) * sx, b = float(wh - safe.y - safe.h) * sy;
         }
-        if (!app.video.avoidCutout) l = t = rr = b = 0; // (Options: the picture to the screen's edges, under a camera's cutout too)
+#ifdef SDL_PLATFORM_ANDROID
+        { // (and Android's own DisplayCutout - SDL's safe area can stay zero on some phones: GameActivity.cutoutInsets)
+            float c[4];
+            if (androidCutout(app, c)) l = std::max(l, c[0]), t = std::max(t, c[1]), rr = std::max(rr, c[2]), b = std::max(b, c[3]);
+        }
+#endif
+        bool avoid = app.video.avoidCutout, bars = app.video.cutoutBars;
+        if (const char* e = SDL_getenv("CR_CUTOUT"); e && *e) // (tests: avoid | bars | ignore, over Options)
+            avoid = SDL_strcmp(e, "ignore") != 0, bars = SDL_strcmp(e, "bars") == 0;
+        if (!avoid) l = t = rr = b = 0; // (Options: the picture to the screen's edges, under a camera's cutout too)
         r.setSafeInsets(l, t, rr, b);
+        r.setCutoutBars(avoid && bars); // (Black Bars: the whole picture boxed clear of it)
     }
     r.beginFrame(w, h);
     r.setPictureLayer(true); // (the scene - its painting, 3D view, effects, the bubbles over its people -: the picture's, never the interface's shrink)
@@ -2773,7 +2827,7 @@ void drawFrame(App& app, bool present) {
                      "layout %s%s, %s, cutout %s: logical screen %.0f x %d at %.3f px per unit",
                      ww, wh, pw, ph, SDL_GetWindowPixelDensity(app.window), SDL_GetWindowDisplayScale(app.window), bounds.w, bounds.h, bounds.x, bounds.y,
                      usable.w, usable.h, usable.x, usable.y, safe.w, safe.h, safe.x, safe.y, r.phoneLayout() ? "iPhone" : "iPad",
-                     vitaLayout(app) ? " (Vita)" : "", app.video.widescreen ? "wide" : "fixed", app.video.avoidCutout ? "avoided" : "ignored", r.screenW(),
+                     vitaLayout(app) ? " (Vita)" : "", app.video.widescreen ? "wide" : "fixed", !app.video.avoidCutout ? "ignored" : app.video.cutoutBars ? "black bars" : "avoided", r.screenW(),
                      int(cr::Renderer::kLogicalH), r.pixelScale());
         if (app.screenLogged != line) app.screenLogged = line, SDL_Log("screen: %s", line);
     }

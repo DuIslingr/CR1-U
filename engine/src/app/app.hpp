@@ -307,6 +307,7 @@ struct App {
         int display = 0;                   // 0 windowed, 1 fullscreen (that mode), 2 borderless (the desktop's)
         int fullscreenKind = 2;            // F11 / Alt+Enter's fullscreen: the last one chosen (1 or 2)
         bool avoidCutout = true;           // phones: the layout kept clear of a camera's notch / punch hole (Options, Display)
+        bool cutoutBars = false;           // ... and the picture too: boxed inside the safe area, black bars over the cutout
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
         bool widescreen = true;            // the screen widens to the window (up to 21:9); else 4:3 (a phone's: wide, filling it)
 #else
