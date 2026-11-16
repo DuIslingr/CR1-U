@@ -6737,6 +6737,41 @@ int runSelfTest(App& app) {
                 tapped = pz.tpState == 1 && app.padLock == 12;
                 settle(3000);
             }
+            bool realTap = false, realHold = false;
+            { // the same through SDL's mouse events, as a finger's (CR1-U on Android: a tap on a block never took - the pad
+              // under the finger refused it on any touch, not only while drawn): a quick tap teleports, a long hold doesn't
+                auto send = [&](SDL_EventType type, float tx, float ty) { // (tex2d -> the window's points: toPicture's inverse)
+                    float x0, y0, x1, y1;
+                    app.renderer.toPicture(0, 0, x0, y0);
+                    app.renderer.toPicture(1000, 1000, x1, y1);
+                    const float lx = (tx + 16) * 2 + app.renderer.uiX(), ly = (ty + 32) * 2;
+                    int ww = 0, wh = 0;
+                    SDL_GetWindowSize(app.window, &ww, &wh);
+                    SDL_Event e{};
+                    e.type = type;
+                    e.button.x = (lx - x0) * 1000 / (x1 - x0) * float(ww) / float(app.renderer.frameWidth());
+                    e.button.y = (ly - y0) * 1000 / (y1 - y0) * float(wh) / float(app.renderer.frameHeight());
+                    e.button.button = SDL_BUTTON_LEFT, e.button.which = SDL_TOUCH_MOUSEID;
+                    SDL_AppEvent(&app, &e);
+                };
+                for (int hold : {2, 9}) {
+                    room(0);
+                    settle(3000);
+                    setActor(app, 0, puzzle::centre(app, 0, 2), nullptr, false);
+                    pz.esp = 3;
+                    steps(2);
+                    const int t = puzzle::objectAt(app, 1, 2, 1);
+                    if (t < 0) break;
+                    float tx = 0, ty = 0;
+                    pointOf(t, app.npcs[size_t(pz.objs[size_t(t)].npc)].box[1], tx, ty);
+                    send(SDL_EVENT_MOUSE_BUTTON_DOWN, tx, ty + 10);
+                    steps(hold);
+                    send(SDL_EVENT_MOUSE_BUTTON_UP, tx, ty + 10);
+                    steps(2);
+                    (hold == 2 ? realTap : realHold) = hold == 2 ? pz.tpState == 1 : pz.tpState == 0;
+                    settle(3000);
+                }
+            }
             for (size_t i = 0; i < pz.objs.size(); ++i) // a gem's window: 7..33 below its point, |dx| <= 17
                 if (pz.objs[i].type == cr::kTypeGem && puzzle::target(app, pz.objs[i])) {
                     float gx, gy;
@@ -6797,6 +6832,9 @@ int runSelfTest(App& app) {
                 clearedOk -= have && !shown; // (the way on: a crystal the map shows)
                 if (have && !shown) std::printf("puzzle touches: cleared stage %d - %d crystal NPCs, none shown by the map\n", st, have);
             }
+            tp += !realTap + !realHold;
+            std::printf("puzzle touches: a block tapped through SDL's mouse events (a finger's) - a quick tap teleports %s, a 9-frame hold doesn't %s\n",
+                        realTap ? "yes" : "NO", realHold ? "yes" : "NO");
             tp += !longNo || !movingWaits || !tapped || !gemWindow || !lockRefuses || !scrolled || !paused || !back || !retry || clearedOk != cr::kPuzzleStages;
             std::printf("puzzle touches: CheckTap - held 7 frames %s, the leader moving %s, a tap %s; gem window %s; pad lock %s; "
                         "ScrollCamera %s, the ability %s, %s; Retry %s; cleared rooms bare %d/%d (a crystal shown in %d); %d problems\n",
