@@ -184,6 +184,7 @@ struct App {
     cr::PsarcArchive vita;
     cr::PsarcArchive vitaBgm, vitaVoice[2];
     int vitaTextures = 0;                // how many images / model packages came from it
+    int fanTextures = 0;                 // how many images came from the fan translation's archive (Vita sheets too)
     // The Android release (Google Play) as a source of assets (--android, CR_ANDROID or
     // settings.ini's android=): its expansion file's textures (8-bit palettes where the iPad's
     // are PVRTC) and the art only it has (docs/ANDROID.md), its table read from the APK beside it

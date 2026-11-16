@@ -208,7 +208,7 @@ bool loadOriginalImage(App& app, const std::string& mct, cr::Image& img, bool* f
     // the Vita copy's - those redrawn for the Vita's screen alone with the Vita copy as the game)
     if (app.fanText && app.fanArchive.isOpen() && mct.size() > 4 && (!redrawn || app.vitaOnly)) {
         std::vector<uint8_t> g;
-        if (app.fanArchive.read(mct.substr(0, mct.size() - 4) + ".gxt", g) && cr::decodeGxt(g, img)) return true;
+        if (app.fanArchive.read(mct.substr(0, mct.size() - 4) + ".gxt", g) && cr::decodeGxt(g, img)) { ++app.fanTextures; return true; }
     }
     if (app.vita.isOpen() && mct.size() > 4 && (!redrawn || app.vitaOnly)) { // (alone: its own screens too)
         std::vector<uint8_t> g;

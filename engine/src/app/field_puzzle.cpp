@@ -1501,9 +1501,10 @@ void ViewerHost::vitaLogo(int slot, int picture) { // read_img_set(the table at 
     const int k = std::clamp(std::abs(slot), 0, 1);
     app.renderer.destroy(l.tex[k]);
     cr::Image img;
-    const int vitaBefore = app.vitaTextures;
+    const int vitaBefore = app.vitaTextures, fanBefore = app.fanTextures;
     if (name && loadImage(app, std::string(name) + "_hd.mct", img)) l.tex[k] = app.renderer.upload(img);
-    l.fromVita[k] = app.vitaTextures > vitaBefore;
+    // (the fan translation's copy is a Vita sheet too - framed as the Vita's 960x640, CR1-U #5)
+    l.fromVita[k] = app.vitaTextures > vitaBefore || app.fanTextures > fanBefore;
     l.warning[k] = picture == 254;
 }
 void ViewerHost::vitaLogoShow(int slot, int in, int hold, int out) {
