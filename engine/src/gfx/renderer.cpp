@@ -283,7 +283,7 @@ void Renderer::resetHistory() {
 
 void Renderer::endFrame(bool present) {
     endScene();
-    if (phone_) { // the iPad layout's margins land outside the 3:2 screen: keep the bars black
+    if (phone_ || cutoutBars_) { // (Black Bars too: a painted room reaches past the boxed screen) the iPad layout's margins land outside the 3:2 screen: keep the bars black
         const float l = -offX_ / scaleX_, r = (drawableW_ - offX_) / scaleX_;
         const float t = -offY_ / scaleY_, b = (drawableH_ - offY_) / scaleY_;
         auto bar = [&](float x0, float y0, float x1, float y1) {
