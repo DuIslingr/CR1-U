@@ -1,8 +1,8 @@
-# CR1-U v0.8.0
+# CR1-U v0.7.4
 
 The port's own menus in nine languages, the fan translation as plain files, a camera cutout fix for
-Android, and fixes for the crystal puzzle rooms and the boot logos. Everything in v0.7.x's notes
-still applies.
+Android, and fixes for the crystal puzzle rooms and the boot logos. Everything in the v0.7.0 to
+v0.7.3 notes still applies.
 
 ## What's new
 
