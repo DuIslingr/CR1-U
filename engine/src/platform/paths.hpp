@@ -18,7 +18,7 @@ namespace cr {
 //   textures/export/ where --export-textures writes the pictures to upscale (<hash>.crraw)
 //   textures/hd/     where the upscaled ones are read from (<hash>.crhd: tools/hd_textures.py)
 //   font/            your own .ttf / .otf / .ttc, in place of the system's (gfx/font.cpp ownFonts)
-//   translation/     a fan translation (the Russian rePatch's cr1.psarc): a language of its own (openFanTranslation)
+//   translation/     a fan translation: its files (sys.evt, the areas' .evt, .gxt art) or its rePatch's cr1.psarc - a language of its own (openFanTranslation)
 // A release's folder may hold it one or two folders down (ios/Payload/ChaosRingsHD.app,
 // vita/PCSG00497). The older places still work: dataHD/, data/, the .app or Payload/ in the game
 // folder, hd-textures/ beside the program or in the profile folder.

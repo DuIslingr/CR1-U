@@ -516,13 +516,23 @@ static cr::SetupGame crSetupGame() {
     // A fan translation (the Russian one: a rePatch PCSG00497/ with the whole cr1.psarc, its English
     // text replaced): a language of its own beside the release's (openFanTranslation), never asked
     // for in the setup - a .7z / .rar / .zip dropped into translation/ unpacked there (translation/ru/)
-    setup.patchOk = setup.vitaOk;
+    // (or the translated files themselves, loose: sys.evt and the areas' .evt - CRO-U #11)
+    static const char* const kFanFiles[] = {"CR1/resources/cr1.psarc", "resources/cr1.psarc", "cr1.psarc", "sys.evt",
+                                           "CR1/resources/sys.evt", "resources/sys.evt"};
+    setup.patchOk = [](const std::string& p) {
+        for (const char* rel : kFanFiles)
+            if (SDL_GetPathInfo((p + rel).c_str(), nullptr)) return true;
+        return false;
+    };
     setup.untranslated = [](const std::string&) { return false; };
     setup.patchName = [](const std::string& p) {
-        for (const char* rel : {"CR1/resources/cr1.psarc", "resources/cr1.psarc", "cr1.psarc"}) {
-            cr::PsarcArchive a;
+        for (const char* rel : kFanFiles) {
             std::vector<uint8_t> sys;
-            if (a.open(p + rel) && a.read("sys.evt", sys)) return std::string(cr::fanLanguageName(sys) == "Russian" ? "ru" : "");
+            if (SDL_strstr(rel, ".psarc")) {
+                cr::PsarcArchive a;
+                if (!a.open(p + rel) || !a.read("sys.evt", sys)) continue;
+            } else if (!cr::readFile(p + rel, sys)) continue;
+            return std::string(cr::fanLanguageName(sys) == "Russian" ? "ru" : "");
         }
         return std::string();
     };

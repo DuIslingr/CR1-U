@@ -425,15 +425,20 @@ bool EventFile::message(int id, int language, const std::function<int(int)>& var
     // +0x28: one text section per language (0 Japanese, 1 English, 2 French, 3 German, 4 Spanish,
     // 5 / 6 Chinese simplified / traditional, 7 Korean); 1.0.1 has only the first two
     // (the fan translation's: its file's English; the release's own English where it has no copy)
-    const bool fan = language == kFanLanguage && fan_.size() >= 0x30;
-    const std::vector<uint8_t>& d = fan ? fan_ : data_;
-    if (language == kFanLanguage) language = 1;
+    // (a message the copy lacks - the Vita's files and 2.2.0's differ in a few - is the release's own English)
+    if (language == kFanLanguage) {
+        if (fan_.size() >= 0x30 && id >= 1000 && id < 51000 && rd(fan_, 0x28 + 4, table) && table &&
+            lookupMessage(fan_, table, id - 1000, 300, msg) && decodeMessage(fan_, msg, var, pages, info))
+            return true;
+        pages.clear();
+        language = 1;
+    }
     if (!loaded() || id < 1000 || id >= 51000 || language < 0 || language >= kLanguages ||
-        !rd(d, 0x28 + 4 * size_t(language), table))
+        !rd(data_, 0x28 + 4 * size_t(language), table))
         return false;
     if (table == 0 && language != 1) return message(id, 1, var, pages, info);
-    if (!lookupMessage(d, table, id - 1000, 300, msg)) return false;
-    return decodeMessage(d, msg, var, pages, info);
+    if (!lookupMessage(data_, table, id - 1000, 300, msg)) return false;
+    return decodeMessage(data_, msg, var, pages, info);
 }
 
 const char* const kLanguageName[kLanguages] = {"Japanese", "English", "French", "German", "Spanish",
@@ -456,14 +461,18 @@ bool SystemText::message(int id, int language, const std::function<int(int)>& va
                          const std::function<std::string(int)>& text) const {
     pages.clear();
     uint32_t table = 0, msg = 0;
-    const bool fan = language == kFanLanguage && fan_.size() > 8;
-    const std::vector<uint8_t>& d = fan ? fan_ : data_;
-    if (language == kFanLanguage) language = 1;
-    if (data_.empty() || id < 51000 || language < 0 || language >= kLanguages || !rd(d, 4 * size_t(language), table))
+    if (language == kFanLanguage) { // (the translation's English, else the release's own)
+        if (id >= 51000 && fan_.size() > 8 && rd(fan_, 4, table) && table && lookupMessage(fan_, table, id - 51000, 1000, msg) &&
+            decodeMessage(fan_, msg, var, pages, info, text))
+            return true;
+        pages.clear();
+        language = 1;
+    }
+    if (data_.empty() || id < 51000 || language < 0 || language >= kLanguages || !rd(data_, 4 * size_t(language), table))
         return false;
     if (table == 0 && language != 1) return message(id, 1, var, pages, info, text);
-    if (!lookupMessage(d, table, id - 51000, 1000, msg)) return false;
-    return decodeMessage(d, msg, var, pages, info, text);
+    if (!lookupMessage(data_, table, id - 51000, 1000, msg)) return false;
+    return decodeMessage(data_, msg, var, pages, info, text);
 }
 
 std::vector<WarpEntry> EventFile::warps() const {

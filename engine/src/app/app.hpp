@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "assets/hd_texture.hpp"
@@ -346,7 +347,14 @@ struct App {
     // A fan translation as a language of its own (cr::kFanLanguage): `language` stays English's (its
     // layout, its font), the messages the translation's own files' and its art over the game's
     bool fanText = false;
-    cr::PsarcArchive fanArchive;           // translation/<name>/ (its rePatch folder's cr1.psarc), not open: none
+    struct FanSource {                     // translation/<code>/: its rePatch's cr1.psarc, or the files themselves loose
+        cr::PsarcArchive archive;
+        std::unordered_map<std::string, std::string> files; // base name (lower case) -> path
+        std::string where, code;           // where it was found; its language ("ru": the folder's name, else its text's)
+        bool isOpen() const { return archive.isOpen() || !files.empty(); }
+        bool read(const std::string& name, std::vector<uint8_t>& out) const;
+    };
+    FanSource fanArchive;                  // not open: none
     std::string fanName;                   // its language ("Russian"; settings.ini's choice 8)
     bool englishPatched = false;
     // Options' Cheats page (the port's own; settings.ini's cheats=): the party's HP and MP never run down (in battle

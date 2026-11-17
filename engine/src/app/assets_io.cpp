@@ -1,4 +1,6 @@
 #include "app/app.hpp"
+#include <tuple>
+#include <cctype>
 #include "platform/dialogs.hpp"
 
 #include <filesystem>
@@ -247,12 +249,33 @@ std::vector<std::string> vitaNames(const std::string& name) {
 // Opens the Vita copy at `path` (its PCSG00497 folder, CR1, resources or cr1.psarc itself): the
 // textures and models (loadOriginalImage, loadModelFile), the scripts through the data folder's
 // overlay, and the sound folder's archives (hooked up by vitaAudio once the sound starts)
-// A fan translation: the first cr1.psarc in translation/ (each game folder's, then the profile folder's)
-// up to five folders down - translation/ru/CR1/resources/ as the setup unpacks one, a rePatch/PCSG00497/
-// copied in as it is -, or `path` (its folder or the file). Its language a choice of its own (8, after
-// the release's): the scripts' text and the art it redrew read from it while that is chosen
+bool App::FanSource::read(const std::string& name, std::vector<uint8_t>& out) const {
+    if (archive.isOpen()) return archive.read(name, out);
+    std::string key = name;
+    for (char& c : key) c = char(std::tolower(static_cast<unsigned char>(c)));
+    const auto it = files.find(key);
+    return it != files.end() && cr::readFile(it->second, out);
+}
+
+namespace {
+// a language code a translation's folder is named by (translation/ru/, translation/pt-BR/), else ""
+std::string fanFolderCode(const std::filesystem::path& p) {
+    const std::string n = p.filename().u8string();
+    if (n.size() < 2 || n.size() > 7 || !std::islower(static_cast<unsigned char>(n[0])) || !std::islower(static_cast<unsigned char>(n[1]))) return {};
+    for (char c : n)
+        if (!std::isalpha(static_cast<unsigned char>(c)) && c != '-' && c != '_') return {};
+    return n.size() == 2 || n[2] == '-' || n[2] == '_' ? n : std::string();
+}
+} // namespace
+
+// A fan translation (CRO-U #11's loose form too): in translation/ (each game folder's, then the profile
+// folder's) up to five folders down, the shallowest sys.evt - a folder of the translated files themselves
+// (sys.evt, the areas' .evt, its .gxt art: translation/ru/sys.evt ...) - or cr1.psarc (a rePatch's whole
+// archive, translation/ru/CR1/resources/ as the setup unpacks one), files before an archive at the same
+// depth; or `path` (its folder or the file). Its language a choice of its own (8, after the release's):
+// the scripts' text and the art it redrew read from it while that is chosen
 bool openFanTranslation(App& app, const std::string& path) {
-    app.fanArchive = cr::PsarcArchive();
+    app.fanArchive = App::FanSource();
     app.fanName.clear();
     cr::setFanText(nullptr);
     std::vector<std::string> roots;
@@ -262,37 +285,65 @@ bool openFanTranslation(App& app, const std::string& path) {
         roots.push_back(cr::saveDir() + "/translation");
     }
     std::string found;
+    bool loose = false;
     for (const std::string& root : roots) {
         std::error_code ec;
         const std::filesystem::path r = std::filesystem::u8path(root);
         if (std::filesystem::is_regular_file(r, ec)) {
-            found = root;
+            found = root, loose = r.filename() == "sys.evt";
             break;
         }
-        std::vector<std::pair<int, std::string>> hits; // (depth, path): the shallowest, then by name
+        std::vector<std::tuple<int, int, std::string>> hits; // (depth, archive?, path): the shallowest, files first, then by name
         std::filesystem::recursive_directory_iterator it(r, std::filesystem::directory_options::skip_permission_denied, ec), end;
         for (; it != end && !ec; it.increment(ec)) {
             if (it.depth() >= 5) it.disable_recursion_pending();
-            if (it->path().filename() == "cr1.psarc" && it->is_regular_file(ec)) hits.push_back({it.depth(), it->path().u8string()});
+            const std::string f = it->path().filename().u8string();
+            if ((f == "sys.evt" || f == "cr1.psarc") && it->is_regular_file(ec)) hits.push_back({it.depth(), f == "cr1.psarc", it->path().u8string()});
         }
         std::sort(hits.begin(), hits.end());
         if (!hits.empty()) {
-            found = hits.front().second;
+            found = std::get<2>(hits.front()), loose = !std::get<1>(hits.front());
             break;
         }
     }
     if (found.empty()) return false;
+    App::FanSource& f = app.fanArchive;
+    std::error_code ec;
     std::string error;
-    std::vector<uint8_t> sys;
-    if (!app.fanArchive.open(found, &error) || !app.fanArchive.read("sys.evt", sys)) {
-        SDL_Log("translation: %s can't be read (%s)", found.c_str(), error.empty() ? "no sys.evt" : error.c_str());
-        app.fanArchive = cr::PsarcArchive();
+    if (loose) { // every file of the folder sys.evt is in (and below it): its .evt, its .gxt art
+        const std::filesystem::path dir = std::filesystem::u8path(found).parent_path();
+        std::filesystem::recursive_directory_iterator it(dir, std::filesystem::directory_options::skip_permission_denied, ec), end;
+        for (; it != end && !ec; it.increment(ec)) {
+            if (it.depth() >= 4) it.disable_recursion_pending();
+            if (!it->is_regular_file(ec)) continue;
+            std::string key = it->path().filename().u8string();
+            for (char& c : key) c = char(std::tolower(static_cast<unsigned char>(c)));
+            f.files.emplace(key, it->path().u8string());
+        }
+    } else if (!f.archive.open(found, &error)) {
+        SDL_Log("translation: %s can't be read (%s)", found.c_str(), error.c_str());
+        app.fanArchive = App::FanSource();
         return false;
     }
-    app.fanName = cr::fanLanguageName(sys);
-    const cr::PsarcArchive* fan = &app.fanArchive;
-    cr::setFanText([fan](const std::string& name, std::vector<uint8_t>& out) { return fan->read(name, out); });
-    SDL_Log("translation: %s in %s - Options, Language (English stays)", app.fanName.c_str(), found.c_str());
+    std::vector<uint8_t> sys;
+    if (!f.read("sys.evt", sys) || sys.size() <= 8) {
+        SDL_Log("translation: %s has no sys.evt", found.c_str());
+        app.fanArchive = App::FanSource();
+        return false;
+    }
+    f.where = found;
+    // its language: the folder it is in (translation/<code>/...), else its text's (Cyrillic: Russian)
+    for (std::filesystem::path p = std::filesystem::u8path(found).parent_path(); !p.empty() && p.has_filename(); p = p.parent_path()) {
+        if (p.filename() == "translation") break;
+        if (const std::string c = fanFolderCode(p); !c.empty()) f.code = c;
+    }
+    const std::string byText = cr::fanLanguageName(sys);
+    if (f.code.empty() && byText == "Russian") f.code = "ru";
+    app.fanName = f.code == "ru" ? "Russian" : !f.code.empty() ? f.code : byText;
+    const App::FanSource* src = &app.fanArchive;
+    cr::setFanText([src](const std::string& name, std::vector<uint8_t>& out) { return src->read(name, out); });
+    SDL_Log("translation: %s - %s in %s; Options, Language (English stays)", app.fanName.c_str(), loose ? "its files" : "a cr1.psarc",
+            found.c_str());
     return true;
 }
 
