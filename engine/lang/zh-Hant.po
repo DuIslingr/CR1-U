@@ -1,0 +1,1106 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: zh-Hant\n"
+"X-Language-Name: 繁體中文\n"
+"Last-Translator: Claude (machine translation, unreviewed)\n"
+
+#: src/app/app.hpp
+msgid "Native AA"
+msgstr "原生AA"
+
+#: src/app/app.hpp
+msgid "Quality"
+msgstr "品質"
+
+#: src/app/app.hpp
+msgid "Balanced"
+msgstr "平衡"
+
+#: src/app/app.hpp
+msgid "Performance"
+msgstr "效能"
+
+#: src/app/app.hpp
+msgid "Ultra Perf."
+msgstr "極致效能"
+
+#: src/app/app.hpp src/app/scene_fx.cpp
+msgid "Off"
+msgstr "關閉"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Menu Language"
+msgstr "介面語言"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (fan translation)"
+msgstr "{0}（非官方翻譯）"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (patched over English)"
+msgstr "{0}（覆蓋英文）"
+
+#: src/app/scene_fx.cpp
+msgid "Game"
+msgstr "遊戲"
+
+#: src/app/scene_fx.cpp
+msgid "Sound"
+msgstr "聲音"
+
+#: src/app/scene_fx.cpp
+msgid "Display"
+msgstr "顯示"
+
+#: src/app/scene_fx.cpp
+msgid "Detail"
+msgstr "細節"
+
+#: src/app/scene_fx.cpp
+msgid "Graphics"
+msgstr "圖形"
+
+#: src/app/scene_fx.cpp
+msgid "Cheats"
+msgstr "作弊"
+
+#: src/app/scene_fx.cpp
+msgid "Text Language"
+msgstr "文字語言"
+
+#: src/app/scene_fx.cpp
+msgid "Auto ({0})"
+msgstr "自動（{0}）"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The language of the port's own text - these options and its messages; Auto: the text language's"
+msgstr "移植版本身文字（這些選項及提示訊息）的語言；自動：與文字語言相同"
+
+#: src/app/scene_fx.cpp
+msgid "Control Hints"
+msgstr "操作提示"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut."
+msgstr "顯示操作提示與狀態資訊。關閉後隱藏WASD說明；快速鍵為F3。"
+
+#: src/app/scene_fx.cpp
+msgid "Import Vita Saves"
+msgstr "匯入Vita存檔"
+
+#: src/app/scene_fx.cpp
+msgid "Choose Folder"
+msgstr "選擇資料夾"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Choose your decrypted Vita save export. Existing saves will be backed up."
+msgstr "選擇已解密匯出的Vita存檔。現有存檔將會備份。"
+
+#: src/app/scene_fx.cpp
+msgid "Import saves from the title screen's Options."
+msgstr "請在標題畫面的選項中匯入存檔。"
+
+#: src/app/scene_fx.cpp
+msgid "None"
+msgstr "無"
+
+#: src/app/scene_fx.cpp
+msgid "The game's data"
+msgstr "遊戲資料"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (next start)"
+msgstr "{0}（下次啟動）"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (not found)"
+msgstr "{0}（找不到）"
+
+#: src/app/scene_fx.cpp
+msgid "Vita Assets"
+msgstr "Vita素材"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Vita copy alone: {0}"
+msgstr "僅使用Vita版執行：{0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none"
+msgstr "確定：選擇Vita版的PCSG00497資料夾（使用其材質、語音、音樂與腳本）；左/右：無"
+
+#: src/app/scene_fx.cpp
+msgid "Android Assets"
+msgstr "Android素材"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Android release alone: {0}"
+msgstr "僅使用Android版執行：{0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art only it has; Left / Right: none"
+msgstr "確定：選擇含Android版main.*.obb與APK的資料夾（使用其材質與獨有美術）；左/右：無"
+
+#: src/app/scene_fx.cpp
+msgid "Field Speed"
+msgstr "地圖速度"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - the scenes, talk and menus as they are"
+msgstr "在地圖上行走加快2～5倍；過場、對話與選單速度不變"
+
+#: src/app/scene_fx.cpp
+msgid "Battle Speed"
+msgstr "戰鬥速度"
+
+#: src/app/scene_fx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "戰鬥加快2～5倍"
+
+#: src/app/scene_fx.cpp
+msgid "Swap ○ and ×"
+msgstr "交換○與×"
+
+#: src/app/scene_fx.cpp
+msgid "Controller: {0}."
+msgstr "控制器：{0}。"
+
+#: src/app/scene_fx.cpp
+msgid "With a controller:"
+msgstr "使用控制器時："
+
+#: src/app/scene_fx.cpp
+msgid ""
+"○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr "○（右側鍵）確定，×（下方鍵）返回，與Vita相同"
+
+#: src/app/scene_fx.cpp
+msgid "× (the bottom button) confirms, ○ (the right one) goes back"
+msgstr "×（下方鍵）確定，○（右側鍵）返回"
+
+#: src/app/scene_fx.cpp
+msgid "Master Volume"
+msgstr "主音量"
+
+#: src/app/scene_fx.cpp
+msgid "Sound Test"
+msgstr "聲音測試"
+
+#: src/app/scene_fx.cpp
+msgid "Avoid"
+msgstr "避開"
+
+#: src/app/scene_fx.cpp
+msgid "Black Bars"
+msgstr "黑邊"
+
+#: src/app/scene_fx.cpp
+msgid "Ignore"
+msgstr "忽略"
+
+#: src/app/scene_fx.cpp
+msgid "Camera Cutout"
+msgstr "相機挖孔"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Avoid: the menus and buttons clear of the camera's notch or punch hole, the picture full. Black Bars: the whole picture clear of it. Ignore: everything to the edges"
+msgstr "避開：選單和按鈕避開瀏海或挖孔，畫面填滿。黑邊：整個畫面都避開。忽略：一切延伸到邊緣"
+
+#: src/app/scene_fx.cpp
+msgid "Window"
+msgstr "視窗"
+
+#: src/app/scene_fx.cpp
+msgid "Fullscreen"
+msgstr "全螢幕"
+
+#: src/app/scene_fx.cpp
+msgid "Borderless"
+msgstr "無邊框"
+
+#: src/app/scene_fx.cpp
+msgid "Resolution"
+msgstr "解析度"
+
+#: src/app/scene_fx.cpp
+msgid "Desktop"
+msgstr "桌面"
+
+#: src/app/scene_fx.cpp
+msgid "Aspect"
+msgstr "長寬比"
+
+#: src/app/scene_fx.cpp
+msgid "Wide"
+msgstr "寬螢幕"
+
+#: src/app/scene_fx.cpp
+msgid "Auto"
+msgstr "自動"
+
+#: src/app/scene_fx.cpp
+msgid "Layout"
+msgstr "版面配置"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data"
+msgstr "畫面版面：iPad版（4:3）、iPhone 2.2.0版（3:2）或Android版（16:9）；自動：依資料而定"
+
+#: src/app/scene_fx.cpp
+msgid "Original"
+msgstr "原版"
+
+#: src/app/scene_fx.cpp
+msgid "Fill"
+msgstr "填滿"
+
+#: src/app/scene_fx.cpp
+msgid "Painted Rooms"
+msgstr "手繪場景"
+
+#: src/app/scene_fx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/app/scene_fx.cpp
+msgid "Frame Rate"
+msgstr "影格率"
+
+#: src/app/scene_fx.cpp
+msgid "Unlimited"
+msgstr "無限制"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Frames drawn a second at most; the game runs at its own 20 a second, shown moving between them"
+msgstr "每秒最多繪製的影格數；遊戲本身每秒執行20次，其間的移動以內插顯示"
+
+#: src/app/scene_fx.cpp
+msgid "Original Presentation"
+msgstr "還原原版顯示"
+
+#: src/app/scene_fx.cpp
+msgid "Every display and graphics option back to the original's"
+msgstr "將所有顯示與圖形選項還原為原版設定"
+
+#: src/app/scene_fx.cpp
+msgid "HD Textures"
+msgstr "高解析材質"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
+msgstr ""
+"使用textures/hd中waifu2x / Real-ESRGAN放大的材質（tools/hd_textures.py）；從下一個房間起生效"
+
+#: src/app/scene_fx.cpp
+msgid "None in textures/hd yet: --export-textures, then tools/hd_textures.py"
+msgstr "textures/hd中尚無材質：先用--export-textures匯出，再執行tools/hd_textures.py"
+
+#: src/app/scene_fx.cpp
+msgid "HD Models"
+msgstr "高解析模型"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Replacement models (glTF) from models/hd, in place of the game's; from the next room on"
+msgstr "用models/hd中的替換模型（glTF）取代遊戲原有模型；從下一個房間起生效"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"None in models/hd yet: --export-models, edit in Blender, save as models/hd/<name>.glb"
+msgstr "models/hd中尚無模型：用--export-models匯出，在Blender中編輯，另存為models/hd/<name>.glb"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth"
+msgstr "平滑"
+
+#: src/app/scene_fx.cpp
+msgid "Smoother"
+msgstr "更平滑"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth Models"
+msgstr "模型平滑"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept; from the next room on"
+msgstr "模型更圓潤（4倍/9倍三角形），保留硬邊；從下一個房間起生效"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounds the models' silhouettes - characters, monsters, props, stages (PN triangles)"
+msgstr "使模型輪廓更圓潤：角色、怪物、道具、場景（PN三角形）"
+
+#: src/app/scene_fx.cpp
+msgid "Anisotropic Filtering"
+msgstr "異向性過濾"
+
+#: src/app/scene_fx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "斜看地面與牆壁時材質依然清晰"
+
+#: src/app/scene_fx.cpp
+msgid "Not on this GPU"
+msgstr "此GPU不支援"
+
+#: src/app/scene_fx.cpp
+msgid "Texture Filtering"
+msgstr "材質過濾"
+
+#: src/app/scene_fx.cpp
+msgid "Sharp"
+msgstr "銳利"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close)"
+msgstr "銳利：場景材質放大時取最近的紋素（近看呈方塊像素）"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite HP"
+msgstr "無限HP"
+
+#: src/app/scene_fx.cpp
+msgid "The pair's HP never drops: the damage still shows, nobody falls"
+msgstr "我方兩人的HP不會減少：仍顯示傷害，但無人倒下"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite MP"
+msgstr "無限MP"
+
+#: src/app/scene_fx.cpp
+msgid "Genes cost no MP; the pair's MP stays full"
+msgstr "基因不消耗MP；我方兩人的MP保持全滿"
+
+#: src/app/scene_fx.cpp
+msgid "Max Oz"
+msgstr "最大Oz"
+
+#: src/app/scene_fx.cpp
+msgid "The Oz held at the most (9,999,999)"
+msgstr "持有的Oz維持在最大值（9,999,999）"
+
+#: src/app/scene_fx.cpp
+msgid "EXP Multiplier"
+msgstr "EXP倍率"
+
+#: src/app/scene_fx.cpp
+msgid "The EXP a won battle gives, multiplied"
+msgstr "戰鬥勝利獲得的EXP按倍率增加"
+
+#: src/app/scene_fx.cpp
+msgid "Always First Strike"
+msgstr "必定先制"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Every random encounter starts with the party's first strike - never an ambush"
+msgstr "每次隨機遇敵都由我方先制攻擊，絕不會被偷襲"
+
+#: src/app/scene_fx.cpp
+msgid "No Random Battles"
+msgstr "無隨機遇敵"
+
+#: src/app/scene_fx.cpp
+msgid "No random encounters on the field (the story's battles still come)"
+msgstr "地圖上不會隨機遇敵（劇情戰鬥照常發生）"
+
+#: src/app/scene_fx.cpp
+msgid "One-Hit Kills"
+msgstr "一擊必殺"
+
+#: src/app/scene_fx.cpp
+msgid "Any blow, gene or ability of the pair's that hurts an enemy fells it"
+msgstr "我方兩人的攻擊、基因或能力只要傷到敵人，即可將其擊倒"
+
+#: src/app/scene_fx.cpp
+msgid "Full Break Gauge"
+msgstr "破壞槽全滿"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The Break gauge the pair's and full from the first turn - it never changes hands"
+msgstr "破壞槽從第一回合起即屬於我方且全滿，優勢始終不會易手"
+
+#: src/app/scene_fx.cpp
+msgid "{0} is off here: {1}"
+msgstr "{0}在此無法使用：{1}"
+
+#: src/app/scene_fx.cpp
+msgid "Render Scale"
+msgstr "渲染比例"
+
+#: src/app/scene_fx.cpp
+msgid "The frame at this size, then scaled to the window"
+msgstr "以此尺寸渲染畫面，再縮放至視窗"
+
+#: src/app/scene_fx.cpp
+msgid "Needs the Vulkan renderer"
+msgstr "需要Vulkan渲染器"
+
+#: src/app/scene_fx.cpp
+msgid "n/a"
+msgstr "不可用"
+
+#: src/app/scene_fx.cpp
+msgid "Anti-aliasing"
+msgstr "反鋸齒"
+
+#: src/app/scene_fx.cpp
+msgid "Temporal: jittered frames accumulated (MSAA is off meanwhile)"
+msgstr "時間性：累積抖動的多個影格（此時MSAA關閉）"
+
+#: src/app/scene_fx.cpp
+msgid "MSAA, or FSR Native AA / DLAA at full resolution"
+msgstr "MSAA，或全解析度下的FSR原生AA / DLAA"
+
+#: src/app/scene_fx.cpp
+msgid "Upscaler"
+msgstr "超解析度"
+
+#: src/app/scene_fx.cpp
+msgid "The scene renders smaller and is reconstructed; the menus stay sharp"
+msgstr "以較低解析度渲染場景再重建；選單保持清晰"
+
+#: src/app/scene_fx.cpp
+msgid "Upscale Mode"
+msgstr "超解析度模式"
+
+#: src/app/scene_fx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "場景為畫面每邊的{0}%"
+
+#: src/app/scene_fx.cpp
+msgid "Sharpness"
+msgstr "銳利度"
+
+#: src/app/scene_fx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS has none"
+msgstr "FSR的銳化處理（RCAS）；DLSS沒有此項"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "需要Vulkan渲染器"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr "此GPU不具備時間性超解析度所需的功能"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "此GPU無法執行FSR 3.1"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFX是Apple的技術，僅限macOS"
+
+#: src/platform/setup.cpp
+msgid "Any file"
+msgstr "任意檔案"
+
+#: src/platform/setup.cpp
+msgid "can't be read"
+msgstr "無法讀取"
+
+#: src/platform/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "不是zip檔（沒有中央目錄），而.ipa應為zip"
+
+#: src/platform/setup.cpp
+msgid "its directory is past its end"
+msgstr "目錄位於檔案結尾之外"
+
+#: src/platform/setup.cpp
+msgid "a broken directory entry"
+msgstr "目錄項目已損毀"
+
+#: src/platform/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}：沒有本機檔頭"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}：無法寫入"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}：無法解壓縮"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "所選檔案無法讀取（{0}）。"
+
+#: src/platform/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr "所選檔案（{0} GB）需要{2}中約有{1} GB可用空間（用於副本及其解壓縮內容），但只有{3} GB。"
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "正在複製所選檔案（{0}/{1}）……"
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "正在複製所選檔案……"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "所選檔案無法複製到{0}"
+
+#: src/platform/setup.cpp
+msgid "can't be opened"
+msgstr "無法開啟"
+
+#: src/platform/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "其中沒有Payload/<name>.app，不是iOS App"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}：無法建立"
+
+#: src/platform/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "沒有用於解密的work.bin（其授權）"
+
+#: src/platform/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr "其檔案無法解密（傾印可能有部分缺失或損毀？）"
+
+#: src/platform/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr "無法用其本身的work.bin讀取其檔案，不是完整的NoNpDrm傾印"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr "此版本無法解密Vita的檔案。請將傾印安裝到Vita3K，然後選擇Vita3K的資料夾"
+
+#: src/platform/setup.cpp
+msgid "{0}: {1}"
+msgstr "{0}：{1}"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "有無法讀取的項目（位於開頭之後）"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "有無法讀取的項目（位於{0}之後）"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr "此版本無法開啟壓縮檔，請先解壓縮，再選擇解壓縮出的資料夾"
+
+#: src/platform/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "其中沒有非官方翻譯（rePatch/{0}/）"
+
+#: src/platform/setup.cpp
+msgid "not a SELF"
+msgstr "不是SELF"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF"
+msgstr "SELF已損毀"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "SELF已損毀（有區段超出檔案結尾）"
+
+#: src/platform/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr "本移植版沒有此類SELF（或此金鑰版本）的金鑰"
+
+#: src/platform/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "其金鑰無法解開它（授權可能不屬於它？）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "SELF已損毀（沒有中繼資料）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "SELF已損毀（中繼資料）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "SELF已損毀（金鑰）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "SELF已損毀（加密區段缺少金鑰）"
+
+#: src/platform/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "有區段無法解壓縮"
+
+#: src/platform/setup.cpp
+msgid "built without zlib"
+msgstr "建置時未包含zlib"
+
+#: src/platform/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "此版本無法解密Vita的程式"
+
+#: src/platform/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "需要{1}中約有{0} GB可用空間，但只有{2} GB"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "正在解密Vita版……"
+
+#: src/platform/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "正在複製Vita版……"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "正在解密遊戲的追加內容……"
+
+#: src/platform/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "正在複製遊戲的追加內容……"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr "{0}：沒有可用於解密的授權（傾印中的work.bin或Vita3K的ux0/license）"
+
+#: src/platform/setup.cpp
+msgid "neither {0}'s APK nor its OBB is in it"
+msgstr "其中既沒有{0}的APK，也沒有它的OBB"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr "{0}執行的是你自己擁有的{1}。請選擇遊戲所在位置（以下任選其一）；所需檔案將複製到{0}的資料夾中："
+
+#: src/platform/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android：APK及其{0}（兩者同時選擇）"
+
+#: src/platform/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr "Android：.apks（或APK及其資源包，全部同時選擇）"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS：.ipa（已解開的.app：請透過USB複製到ios/）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr "Vita：NoNpDrm傾印，可以是壓縮檔（.zip、.rar、.vpk），或透過USB複製進來的資料夾"
+
+#: src/platform/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr "透過USB複製到其資料夾中的內容，可用「重新尋找」找到。"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS：.ipa（或已解開的.app中的任一檔案）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr "Vita：已安裝遊戲的Vita3K資料夾（或遊戲的{0}資料夾）"
+
+#: src/platform/setup.cpp
+msgid "Its folder: {0}"
+msgstr "其資料夾：{0}"
+
+#: src/platform/setup.cpp
+msgid "In place:"
+msgstr "已就緒："
+
+#: src/platform/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS：{0}"
+
+#: src/platform/setup.cpp
+msgid "Android: {0}"
+msgstr "Android：{0}"
+
+#: src/platform/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita：{0}"
+
+#: src/platform/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "非官方翻譯：{0}"
+
+#: src/platform/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr "再加入其他版本可補充內容（Vita版的語音與音樂、Android版的美術）；或直接按「開始」。"
+
+#: src/platform/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS（.ipa）..."
+
+#: src/platform/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android（APK + OBB）..."
+
+#: src/platform/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android（.apks）..."
+
+#: src/platform/setup.cpp
+msgid "Vita..."
+msgstr "Vita..."
+
+#: src/platform/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K..."
+
+#: src/platform/setup.cpp
+msgid "Start"
+msgstr "開始"
+
+#: src/platform/setup.cpp
+msgid "Look again"
+msgstr "重新尋找"
+
+#: src/platform/setup.cpp
+msgid "Quit"
+msgstr "結束"
+
+#: src/platform/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "iOS App（.ipa）"
+
+#: src/platform/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "任意檔案（已解開的.app中的檔案）"
+
+#: src/platform/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr "這不是.ipa檔案。請選擇.ipa，或透過USB將已解開的.app複製到{0}，然後按「重新尋找」。"
+
+#: src/platform/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "正在解壓縮{0}……"
+
+#: src/platform/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "{1}中沒有{0}的資料"
+
+#: src/platform/setup.cpp
+msgid "Copying {0} ..."
+msgstr "正在複製{0}……"
+
+#: src/platform/setup.cpp
+msgid "can't be written"
+msgstr "無法寫入"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0}不是{1}的iOS版。"
+
+#: src/platform/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android（.apk、.obb、.apks）"
+
+#: src/platform/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr "請選擇{0}的Android版：同時選擇APK及其{1}。"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the Android release ..."
+msgstr "正在解壓縮Android版……"
+
+#: src/platform/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "正在複製Android版……"
+
+#: src/platform/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "不是{0}的Android版（或不完整）："
+
+#: src/platform/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "請同時選擇APK及其{0}。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr "無法將Android版複製到{0}（也無法複製到使用者資料夾）。"
+
+#: src/platform/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Vita版在哪裡？"
+
+#: src/platform/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"資料夾：透過USB複製到{0}，可以是原樣的NoNpDrm傾印（其app/；前傳三部曲另需addcont/）、Vita3K的ux0，或遊戲本身的資料夾"
+
+#: src/platform/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr "壓縮檔：打包為.zip、.rar或.vpk的NoNpDrm傾印（.7z請先在電腦上解壓縮）"
+
+#: src/platform/setup.cpp
+msgid "Copied in..."
+msgstr "已複製進來..."
+
+#: src/platform/setup.cpp
+msgid "An archive..."
+msgstr "壓縮檔..."
+
+#: src/platform/setup.cpp
+msgid "Back"
+msgstr "返回"
+
+#: src/platform/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr "資料夾：Vita3K的（或其ux0）、遊戲本身的，或NoNpDrm傾印的資料夾"
+
+#: src/platform/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "壓縮檔：打包為.rar、.7z、.zip或.vpk的NoNpDrm傾印"
+
+#: src/platform/setup.cpp
+msgid "A folder..."
+msgstr "資料夾..."
+
+#: src/platform/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Vita傾印（.rar、.7z、.zip、.vpk）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"請從電腦透過USB將Vita版的資料夾複製到\n"
+"  {0}\n"
+"中，可以是原樣的NoNpDrm傾印（其app/；前傳三部曲另需addcont/）、Vita3K的ux0，或遊戲本身的資料夾，然後按「繼續」。"
+
+#: src/platform/setup.cpp
+msgid "Continue"
+msgstr "繼續"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"前傳三部曲將{0}的資料存放在其追加內容中（addcont/PCSG00457/{1}），而{2}旁邊沒有它。請同樣在Vita3K中安裝該追加內容，或選擇包含它的傾印。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr "{2}中沒有{0}（{1}）。請選擇Vita3K的資料夾、其ux0、遊戲本身的資料夾或遊戲的NoNpDrm傾印。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr "壓縮檔中沒有{0}（{1}）。請選擇Vita3K的資料夾、其ux0、遊戲本身的資料夾或遊戲的NoNpDrm傾印。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "{0}中的Vita版：{1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"前傳三部曲將{0}的資料存放在其追加內容中（addcont/PCSG00457/{1}），而{2}旁邊沒有它。請同樣在Vita3K中安裝它，或選擇包含它的傾印。"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0}不是本移植版可讀取的{1} Vita版。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr "無法將{0}中的Vita版複製到{1}（也無法複製到使用者資料夾）。"
+
+#: src/platform/setup.cpp
+msgid "Choose its folder..."
+msgstr "選擇其資料夾..."
+
+#: src/platform/setup.cpp
+msgid "Its archive..."
+msgstr "其壓縮檔..."
+
+#: src/platform/setup.cpp
+msgid "Without it"
+msgstr "不使用"
+
+#: src/platform/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"此Vita版為日文版。非官方翻譯可替換其中的文字，例如gbatemp的英文版或Joseas的西班牙文版：選擇其rePatch資料夾（{0}），或其所附的.rar / .zip。是否也有非官方翻譯？"
+
+#: src/platform/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "非官方翻譯（.rar、.zip、.7z）"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "正在解壓縮非官方翻譯……"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"請從電腦透過USB將非官方翻譯的rePatch資料夾（或其中的{0}）複製到\n"
+"  {1}\n"
+"中，然後按「繼續」。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr "{0}中沒有非官方翻譯。請複製其rePatch資料夾（或其中的{1}）。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr "{0}中沒有非官方翻譯。請選擇其rePatch資料夾（或其中的{1}）。"
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "無法將非官方翻譯移動到{0}"
+
+#: src/platform/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "正在複製非官方翻譯……"
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "無法將非官方翻譯複製到{0}"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "無法解壓縮{0}：{1}"
+
+#: src/platform/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "{0}中沒有本移植版可讀取的{1}（{2}）。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Vita版已解壓縮並解密到{0}。"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "已不再需要{0}，可將其刪除以釋放空間。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Vita版已解密到{0}。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr "已不再需要你複製進來的傾印（{0}），可將其刪除以釋放空間。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr "已不再需要你複製進來的傾印（{0}與{1}），可將其刪除以釋放空間。"
+
+#: src/platform/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "無法解密{0}中的Vita傾印：{1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"前傳三部曲將{0}的資料存放在其追加內容中（addcont/PCSG00457/{1}），而{2}旁邊沒有它。請將傾印的addcont資料夾也複製進來，放在其app資料夾旁邊。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr "無法將Vita傾印解密到{0}：該位置無法寫入。"
+
+#: src/platform/setup.cpp
+msgid "it isn't {0}'s iOS release"
+msgstr "不是{0}的iOS版"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr "{0}已解壓縮到{1}。已不再需要.ipa，可將其刪除以釋放空間。"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the {0} isn't needed any more: delete it to get the space back."
+msgstr "{0}已解壓縮到{1}。已不再需要{0}，可將其刪除以釋放空間。"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1}, but {2}'s {3} isn't there - put it in {1} too."
+msgstr "{0}已解壓縮到{1}，但其中沒有{2}的{3}，請將它也放入{1}。"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr "此版本無法開啟{0}，請先將其解壓縮到{1}。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr "非官方翻譯已解壓縮到{0}。已不再需要{1}，可將其刪除以釋放空間。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "找到{0}個存檔欄位。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "現有存檔將會備份。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "已略過無效的中斷存檔。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "現在匯入嗎？"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "匯入失敗：{0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "無法開啟資料夾選擇器：{0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "已匯入{0}個存檔欄位。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "原有存檔已備份。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "請在標題畫面讀取。"

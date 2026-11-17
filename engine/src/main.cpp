@@ -704,6 +704,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     if (const char* hm = SDL_getenv("CR_HD_MODELS")) app->modelsDir = hm;
     else app->modelsDir = cr::modelsFolder("hd");
     if (!app->modelsDir.empty() && app->modelsDir.back() != '/') app->modelsDir += '/';
+    startUiText(*app); // (the setup's dialogs in the player's language)
     if (app->dataDir.empty()) {
         const std::vector<std::string> g = cr::gameFolders();
         // The first start without a copy: where is it? (platform/setup.hpp - what's chosen copied into

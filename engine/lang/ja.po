@@ -1,0 +1,1108 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ja\n"
+"X-Language-Name: 日本語\n"
+"Last-Translator: Claude (machine translation, unreviewed)\n"
+
+#: src/app/app.hpp
+msgid "Native AA"
+msgstr "ネイティブAA"
+
+#: src/app/app.hpp
+msgid "Quality"
+msgstr "品質"
+
+#: src/app/app.hpp
+msgid "Balanced"
+msgstr "バランス"
+
+#: src/app/app.hpp
+msgid "Performance"
+msgstr "パフォーマンス"
+
+#: src/app/app.hpp
+msgid "Ultra Perf."
+msgstr "ウルトラ性能"
+
+#: src/app/app.hpp src/app/scene_fx.cpp
+msgid "Off"
+msgstr "オフ"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Menu Language"
+msgstr "メニュー言語"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (fan translation)"
+msgstr "{0}（ファン翻訳）"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (patched over English)"
+msgstr "{0}（英語に上書き）"
+
+#: src/app/scene_fx.cpp
+msgid "Game"
+msgstr "ゲーム"
+
+#: src/app/scene_fx.cpp
+msgid "Sound"
+msgstr "サウンド"
+
+#: src/app/scene_fx.cpp
+msgid "Display"
+msgstr "画面"
+
+#: src/app/scene_fx.cpp
+msgid "Detail"
+msgstr "ディテール"
+
+#: src/app/scene_fx.cpp
+msgid "Graphics"
+msgstr "グラフィック"
+
+#: src/app/scene_fx.cpp
+msgid "Cheats"
+msgstr "チート"
+
+#: src/app/scene_fx.cpp
+msgid "Text Language"
+msgstr "テキスト言語"
+
+#: src/app/scene_fx.cpp
+msgid "Auto ({0})"
+msgstr "自動（{0}）"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The language of the port's own text - these options and its messages; Auto: the text language's"
+msgstr "移植版独自のテキスト（このオプションやメッセージ）の言語。自動：テキスト言語に合わせる"
+
+#: src/app/scene_fx.cpp
+msgid "Control Hints"
+msgstr "操作ヒント"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut."
+msgstr "操作ヒントとステータス表示を出す。オフでWASDの説明を隠す。F3で切り替え"
+
+#: src/app/scene_fx.cpp
+msgid "Import Vita Saves"
+msgstr "Vitaセーブ取り込み"
+
+#: src/app/scene_fx.cpp
+msgid "Choose Folder"
+msgstr "フォルダを選択"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Choose your decrypted Vita save export. Existing saves will be backed up."
+msgstr "復号済みのVitaセーブデータのフォルダを選択。既存のセーブはバックアップされます"
+
+#: src/app/scene_fx.cpp
+msgid "Import saves from the title screen's Options."
+msgstr "セーブの取り込みはタイトル画面のオプションから"
+
+#: src/app/scene_fx.cpp
+msgid "None"
+msgstr "なし"
+
+#: src/app/scene_fx.cpp
+msgid "The game's data"
+msgstr "ゲームデータ"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (next start)"
+msgstr "{0}（次回起動時）"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (not found)"
+msgstr "{0}（見つかりません）"
+
+#: src/app/scene_fx.cpp
+msgid "Vita Assets"
+msgstr "Vita素材"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Vita copy alone: {0}"
+msgstr "Vita版のみで動作中：{0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none"
+msgstr "決定：Vita版のPCSG00497フォルダ（テクスチャ・ボイス・音楽・スクリプト）。左右：なし"
+
+#: src/app/scene_fx.cpp
+msgid "Android Assets"
+msgstr "Android素材"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Android release alone: {0}"
+msgstr "Android版のみで動作中：{0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art only it has; Left / Right: none"
+msgstr "決定：Android版のmain.*.obbとAPKのあるフォルダ（テクスチャと専用イラスト）。左右：なし"
+
+#: src/app/scene_fx.cpp
+msgid "Field Speed"
+msgstr "フィールド速度"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - the scenes, talk and menus as they are"
+msgstr "フィールド移動を2～5倍速に。イベント・会話・メニューはそのまま"
+
+#: src/app/scene_fx.cpp
+msgid "Battle Speed"
+msgstr "戦闘速度"
+
+#: src/app/scene_fx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "戦闘を2～5倍速に"
+
+#: src/app/scene_fx.cpp
+msgid "Swap ○ and ×"
+msgstr "○と×を入れ替え"
+
+#: src/app/scene_fx.cpp
+msgid "Controller: {0}."
+msgstr "コントローラー：{0}。"
+
+#: src/app/scene_fx.cpp
+msgid "With a controller:"
+msgstr "コントローラー使用時："
+
+#: src/app/scene_fx.cpp
+msgid ""
+"○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr "○（右ボタン）で決定、×（下ボタン）で戻る（Vitaと同じ）"
+
+#: src/app/scene_fx.cpp
+msgid "× (the bottom button) confirms, ○ (the right one) goes back"
+msgstr "×（下ボタン）で決定、○（右ボタン）で戻る"
+
+#: src/app/scene_fx.cpp
+msgid "Master Volume"
+msgstr "マスター音量"
+
+#: src/app/scene_fx.cpp
+msgid "Sound Test"
+msgstr "サウンドテスト"
+
+#: src/app/scene_fx.cpp
+msgid "Avoid"
+msgstr "避ける"
+
+#: src/app/scene_fx.cpp
+msgid "Black Bars"
+msgstr "黒帯"
+
+#: src/app/scene_fx.cpp
+msgid "Ignore"
+msgstr "無視"
+
+#: src/app/scene_fx.cpp
+msgid "Camera Cutout"
+msgstr "カメラの切り欠き"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Avoid: the menus and buttons clear of the camera's notch or punch hole, the picture full. Black Bars: the whole picture clear of it. Ignore: everything to the edges"
+msgstr "避ける：メニューとボタンをノッチやパンチホールから離す（画面は全体表示）。黒帯：画面全体を避ける。無視：すべて端まで"
+
+#: src/app/scene_fx.cpp
+msgid "Window"
+msgstr "ウィンドウ"
+
+#: src/app/scene_fx.cpp
+msgid "Fullscreen"
+msgstr "フルスクリーン"
+
+#: src/app/scene_fx.cpp
+msgid "Borderless"
+msgstr "ボーダーレス"
+
+#: src/app/scene_fx.cpp
+msgid "Resolution"
+msgstr "解像度"
+
+#: src/app/scene_fx.cpp
+msgid "Desktop"
+msgstr "デスクトップ"
+
+#: src/app/scene_fx.cpp
+msgid "Aspect"
+msgstr "アスペクト比"
+
+#: src/app/scene_fx.cpp
+msgid "Wide"
+msgstr "ワイド"
+
+#: src/app/scene_fx.cpp
+msgid "Auto"
+msgstr "自動"
+
+#: src/app/scene_fx.cpp
+msgid "Layout"
+msgstr "レイアウト"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data"
+msgstr "画面レイアウト：iPad版（4:3）、iPhone 2.2.0版（3:2）、Android版（16:9）。自動はデータに従う"
+
+#: src/app/scene_fx.cpp
+msgid "Original"
+msgstr "オリジナル"
+
+#: src/app/scene_fx.cpp
+msgid "Fill"
+msgstr "拡大"
+
+#: src/app/scene_fx.cpp
+msgid "Painted Rooms"
+msgstr "背景画"
+
+#: src/app/scene_fx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/app/scene_fx.cpp
+msgid "Frame Rate"
+msgstr "フレームレート"
+
+#: src/app/scene_fx.cpp
+msgid "Unlimited"
+msgstr "無制限"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Frames drawn a second at most; the game runs at its own 20 a second, shown moving between them"
+msgstr "1秒あたりの最大描画フレーム数。ゲーム自体は毎秒20回で動き、その間を補間して表示"
+
+#: src/app/scene_fx.cpp
+msgid "Original Presentation"
+msgstr "オリジナル表示"
+
+#: src/app/scene_fx.cpp
+msgid "Every display and graphics option back to the original's"
+msgstr "画面とグラフィックの設定をすべてオリジナルに戻す"
+
+#: src/app/scene_fx.cpp
+msgid "HD Textures"
+msgstr "HDテクスチャ"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
+msgstr "textures/hdのwaifu2x / Real-ESRGAN高解像度版（tools/hd_textures.py）。次の部屋から反映"
+
+#: src/app/scene_fx.cpp
+msgid "None in textures/hd yet: --export-textures, then tools/hd_textures.py"
+msgstr "textures/hdにまだなし：--export-texturesの後tools/hd_textures.py"
+
+#: src/app/scene_fx.cpp
+msgid "HD Models"
+msgstr "HDモデル"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Replacement models (glTF) from models/hd, in place of the game's; from the next room on"
+msgstr "models/hdの差し替えモデル（glTF）をゲームのものの代わりに使用。次の部屋から反映"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"None in models/hd yet: --export-models, edit in Blender, save as models/hd/<name>.glb"
+msgstr "models/hdにまだなし：--export-modelsで出力、Blenderで編集、models/hd/<name>.glbに保存"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth"
+msgstr "なめらか"
+
+#: src/app/scene_fx.cpp
+msgid "Smoother"
+msgstr "よりなめらか"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth Models"
+msgstr "モデル平滑化"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept; from the next room on"
+msgstr "モデルを丸く（ポリゴン4倍/9倍）、鋭い角は維持。次の部屋から反映"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounds the models' silhouettes - characters, monsters, props, stages (PN triangles)"
+msgstr "キャラ・モンスター・小物・ステージのモデルの輪郭を丸める（PNトライアングル）"
+
+#: src/app/scene_fx.cpp
+msgid "Anisotropic Filtering"
+msgstr "異方性フィルタリング"
+
+#: src/app/scene_fx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "斜めから見た床や壁のテクスチャもくっきり表示"
+
+#: src/app/scene_fx.cpp
+msgid "Not on this GPU"
+msgstr "このGPUは非対応"
+
+#: src/app/scene_fx.cpp
+msgid "Texture Filtering"
+msgstr "テクスチャフィルタ"
+
+#: src/app/scene_fx.cpp
+msgid "Sharp"
+msgstr "シャープ"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close)"
+msgstr "シャープ：ワールドのテクスチャを最近傍テクセルで拡大（近くでは四角いドット）"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite HP"
+msgstr "HP無限"
+
+#: src/app/scene_fx.cpp
+msgid "The pair's HP never drops: the damage still shows, nobody falls"
+msgstr "ペアのHPが減らない。ダメージは表示されるが倒れない"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite MP"
+msgstr "MP無限"
+
+#: src/app/scene_fx.cpp
+msgid "Genes cost no MP; the pair's MP stays full"
+msgstr "ジーンの消費MPが0に。ペアのMPは常に満タン"
+
+#: src/app/scene_fx.cpp
+msgid "Max Oz"
+msgstr "Oz最大"
+
+#: src/app/scene_fx.cpp
+msgid "The Oz held at the most (9,999,999)"
+msgstr "所持Ozを最大（9,999,999）に"
+
+#: src/app/scene_fx.cpp
+msgid "EXP Multiplier"
+msgstr "EXP倍率"
+
+#: src/app/scene_fx.cpp
+msgid "The EXP a won battle gives, multiplied"
+msgstr "戦闘勝利で得るEXPを倍増"
+
+#: src/app/scene_fx.cpp
+msgid "Always First Strike"
+msgstr "常に先制攻撃"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Every random encounter starts with the party's first strike - never an ambush"
+msgstr "ランダムエンカウントは必ず先制攻撃で始まり、不意打ちされない"
+
+#: src/app/scene_fx.cpp
+msgid "No Random Battles"
+msgstr "エンカウントなし"
+
+#: src/app/scene_fx.cpp
+msgid "No random encounters on the field (the story's battles still come)"
+msgstr "フィールドでランダムエンカウントしない（ストーリー上の戦闘は発生）"
+
+#: src/app/scene_fx.cpp
+msgid "One-Hit Kills"
+msgstr "一撃必殺"
+
+#: src/app/scene_fx.cpp
+msgid "Any blow, gene or ability of the pair's that hurts an enemy fells it"
+msgstr "ペアの攻撃・ジーン・アビリティでダメージを与えた敵は即撃破"
+
+#: src/app/scene_fx.cpp
+msgid "Full Break Gauge"
+msgstr "ブレイクゲージ最大"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The Break gauge the pair's and full from the first turn - it never changes hands"
+msgstr "ブレイクゲージは最初のターンからペア側で満タン。相手に移らない"
+
+#: src/app/scene_fx.cpp
+msgid "{0} is off here: {1}"
+msgstr "{0}はこの環境では無効：{1}"
+
+#: src/app/scene_fx.cpp
+msgid "Render Scale"
+msgstr "描画スケール"
+
+#: src/app/scene_fx.cpp
+msgid "The frame at this size, then scaled to the window"
+msgstr "このサイズで描画し、ウィンドウに合わせて拡大縮小"
+
+#: src/app/scene_fx.cpp
+msgid "Needs the Vulkan renderer"
+msgstr "Vulkanレンダラーが必要"
+
+#: src/app/scene_fx.cpp
+msgid "n/a"
+msgstr "使用不可"
+
+#: src/app/scene_fx.cpp
+msgid "Anti-aliasing"
+msgstr "アンチエイリアス"
+
+#: src/app/scene_fx.cpp
+msgid "Temporal: jittered frames accumulated (MSAA is off meanwhile)"
+msgstr "テンポラル：ジッターしたフレームを蓄積（その間MSAAはオフ）"
+
+#: src/app/scene_fx.cpp
+msgid "MSAA, or FSR Native AA / DLAA at full resolution"
+msgstr "MSAA、またはフル解像度のFSRネイティブAA / DLAA"
+
+#: src/app/scene_fx.cpp
+msgid "Upscaler"
+msgstr "アップスケーラー"
+
+#: src/app/scene_fx.cpp
+msgid "The scene renders smaller and is reconstructed; the menus stay sharp"
+msgstr "シーンを小さく描画して再構成。メニューはくっきりのまま"
+
+#: src/app/scene_fx.cpp
+msgid "Upscale Mode"
+msgstr "アップスケールモード"
+
+#: src/app/scene_fx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "シーンは各辺でフレームの{0}%"
+
+#: src/app/scene_fx.cpp
+msgid "Sharpness"
+msgstr "シャープネス"
+
+#: src/app/scene_fx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS has none"
+msgstr "FSRのシャープ化処理（RCAS）。DLSSにはなし"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "Vulkanレンダラーが必要です"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr "このGPUにはテンポラルアップスケーリングに必要な機能がありません"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "このGPUではFSR 3.1を実行できません"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFXはApple製のためmacOS専用です"
+
+#: src/platform/setup.cpp
+msgid "Any file"
+msgstr "すべてのファイル"
+
+#: src/platform/setup.cpp
+msgid "can't be read"
+msgstr "読み込めません"
+
+#: src/platform/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "zipではありません（セントラルディレクトリなし）。.ipaはzip形式です"
+
+#: src/platform/setup.cpp
+msgid "its directory is past its end"
+msgstr "ディレクトリがファイル末尾を超えています"
+
+#: src/platform/setup.cpp
+msgid "a broken directory entry"
+msgstr "壊れたディレクトリエントリがあります"
+
+#: src/platform/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}：ローカルヘッダがありません"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}：書き込めません"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}：展開できません"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "選んだファイルを読み込めません（{0}）。"
+
+#: src/platform/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr "選んだファイル（{0} GB）には{2}に約{1} GBの空き（コピーと展開後のデータの分）が必要ですが、{3} GBしかありません。"
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "選んだファイルをコピーしています（{0}/{1}）…"
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "選んだファイルをコピーしています…"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "選んだファイルを{0}にコピーできません"
+
+#: src/platform/setup.cpp
+msgid "can't be opened"
+msgstr "開けません"
+
+#: src/platform/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "Payload/<name>.appがありません（iOSアプリではありません）"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}：作成できません"
+
+#: src/platform/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "復号に使うwork.bin（ライセンス）がありません"
+
+#: src/platform/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr "ファイルを復号できません（ダンプの一部が欠けているか壊れている可能性があります）"
+
+#: src/platform/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr "付属のwork.binでファイルを読めません。完全なNoNpDrmダンプではありません"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr "このビルドではVitaのファイルを復号できません。ダンプをVita3Kにインストールし、Vita3Kのフォルダを選んでください"
+
+#: src/platform/setup.cpp
+msgid "{0}: {1}"
+msgstr "{0}：{1}"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "読み込めないエントリがあります（先頭）"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "読み込めないエントリがあります（{0}の後）"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr "このビルドではアーカイブを開けません。先に展開してから、そのフォルダを選んでください"
+
+#: src/platform/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "ファン翻訳が含まれていません（rePatch/{0}/）"
+
+#: src/platform/setup.cpp
+msgid "not a SELF"
+msgstr "SELFではありません"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF"
+msgstr "壊れたSELFです"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "壊れたSELFです（セグメントが末尾を超えています）"
+
+#: src/platform/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr "この移植版が鍵を持たない種類（または鍵リビジョン）のSELFです"
+
+#: src/platform/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "鍵で復号できません（別のゲームのライセンスかもしれません）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "壊れたSELFです（メタデータなし）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "壊れたSELFです（メタデータ）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "壊れたSELFです（鍵）"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "壊れたSELFです（鍵のない暗号化セグメント）"
+
+#: src/platform/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "セグメントを解凍できません"
+
+#: src/platform/setup.cpp
+msgid "built without zlib"
+msgstr "zlibなしでビルドされています"
+
+#: src/platform/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "このビルドではVitaのプログラムを復号できません"
+
+#: src/platform/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "{1}に約{0} GBの空きが必要ですが、{2} GBしかありません"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "Vita版を復号しています…"
+
+#: src/platform/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "Vita版をコピーしています…"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "ゲームの追加コンテンツを復号しています…"
+
+#: src/platform/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "ゲームの追加コンテンツをコピーしています…"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr "{0}：復号に使うライセンスがありません（ダンプのwork.bin、Vita3Kのux0/license）"
+
+#: src/platform/setup.cpp
+msgid "neither {0}'s APK nor its OBB is in it"
+msgstr "{0}のAPKもOBBも含まれていません"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr ""
+"{0}は、お持ちの{1}を使ってプレイします。その場所を選んでください（下のどれか1つで構いません）。必要なファイルは{0}のフォルダにコピーされます："
+
+#: src/platform/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android - APKとその{0}（両方まとめて）"
+
+#: src/platform/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr "Android - .apks（またはAPKとアセットパックをすべてまとめて）"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS - .ipa（展開済みの.appはUSB経由でios/にコピー）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr "Vita - NoNpDrmダンプ：圧縮ファイル（.zip、.rar、.vpk）、またはUSB経由でコピーしたフォルダ"
+
+#: src/platform/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr "USB経由でフォルダにコピーしたものは「再検索」で見つかります。"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS - .ipa（または展開済みの.app内のファイル）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr "Vita - ゲームをインストールしたVita3Kのフォルダ（またはゲームの{0}フォルダ）"
+
+#: src/platform/setup.cpp
+msgid "Its folder: {0}"
+msgstr "コピー先のフォルダ：{0}"
+
+#: src/platform/setup.cpp
+msgid "In place:"
+msgstr "配置済み："
+
+#: src/platform/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS：{0}"
+
+#: src/platform/setup.cpp
+msgid "Android: {0}"
+msgstr "Android：{0}"
+
+#: src/platform/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita：{0}"
+
+#: src/platform/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "ファン翻訳：{0}"
+
+#: src/platform/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr "ほかの版を追加すると内容が増えます（Vitaのボイスと音楽、Androidのイラスト）。または「開始」へ。"
+
+#: src/platform/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS（.ipa）…"
+
+#: src/platform/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android（APK + OBB）…"
+
+#: src/platform/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android（.apks）…"
+
+#: src/platform/setup.cpp
+msgid "Vita..."
+msgstr "Vita…"
+
+#: src/platform/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K…"
+
+#: src/platform/setup.cpp
+msgid "Start"
+msgstr "開始"
+
+#: src/platform/setup.cpp
+msgid "Look again"
+msgstr "再検索"
+
+#: src/platform/setup.cpp
+msgid "Quit"
+msgstr "終了"
+
+#: src/platform/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "iOSアプリ（.ipa）"
+
+#: src/platform/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "すべてのファイル（展開済みの.app内のもの）"
+
+#: src/platform/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr ".ipaではありません。.ipaを選ぶか、展開済みの.appをUSB経由で{0}にコピーしてから「再検索」を押してください。"
+
+#: src/platform/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "{0}を展開しています…"
+
+#: src/platform/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "{1}に{0}のデータがありません"
+
+#: src/platform/setup.cpp
+msgid "Copying {0} ..."
+msgstr "{0}をコピーしています…"
+
+#: src/platform/setup.cpp
+msgid "can't be written"
+msgstr "書き込めません"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0}は{1}のiOS版ではありません。"
+
+#: src/platform/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android（.apk、.obb、.apks）"
+
+#: src/platform/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr "{0}のAndroid版を選んでください：APKとその{1}を両方まとめて。"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the Android release ..."
+msgstr "Android版を展開しています…"
+
+#: src/platform/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "Android版をコピーしています…"
+
+#: src/platform/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "{0}のAndroid版ではありません（または一部が足りません）："
+
+#: src/platform/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "APKとその{0}を両方まとめて選んでください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr "Android版を{0}（およびプロファイルフォルダ内のもの）にコピーできません。"
+
+#: src/platform/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Vita版はどこにありますか？"
+
+#: src/platform/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"フォルダ - USB経由で{0}にコピーしたもの：ダンプしたままのNoNpDrmダンプのフォルダ（app/、プリクエル・トリロジーならaddcont/も）、Vita3Kのux0、またはゲーム自体のフォルダ"
+
+#: src/platform/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr "アーカイブ - .zip、.rar、.vpkに圧縮したNoNpDrmダンプ（.7zはPCで展開してください）"
+
+#: src/platform/setup.cpp
+msgid "Copied in..."
+msgstr "コピー済み…"
+
+#: src/platform/setup.cpp
+msgid "An archive..."
+msgstr "アーカイブ…"
+
+#: src/platform/setup.cpp
+msgid "Back"
+msgstr "戻る"
+
+#: src/platform/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr "フォルダ - Vita3Kのもの（またはそのux0）、ゲーム自体のもの、またはNoNpDrmダンプのもの"
+
+#: src/platform/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "アーカイブ - .rar、.7z、.zip、.vpkに圧縮したNoNpDrmダンプ"
+
+#: src/platform/setup.cpp
+msgid "A folder..."
+msgstr "フォルダ…"
+
+#: src/platform/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Vitaダンプ（.rar、.7z、.zip、.vpk）"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"PCからUSB経由で、Vita版のフォルダを\n"
+"  {0}\n"
+"にコピーしてください。ダンプしたままのNoNpDrmダンプのフォルダ（app/、プリクエル・トリロジーならaddcont/も）、Vita3Kのux0、またはゲーム自体のフォルダです。その後「続ける」を押してください。"
+
+#: src/platform/setup.cpp
+msgid "Continue"
+msgstr "続ける"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"プリクエル・トリロジーでは{0}のデータは追加コンテンツ（addcont/PCSG00457/{1}）にありますが、{2}のそばにありません。Vita3Kに追加コンテンツもインストールするか、それを含むダンプを選んでください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"{2}に{0}（{1}）がありません。Vita3Kのフォルダ、そのux0、ゲーム自体のフォルダ、またはゲームのNoNpDrmダンプを選んでください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"アーカイブに{0}（{1}）がありません。Vita3Kのフォルダ、そのux0、ゲーム自体のフォルダ、またはゲームのNoNpDrmダンプを選んでください。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "{0}のVita版：{1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"プリクエル・トリロジーでは{0}のデータは追加コンテンツ（addcont/PCSG00457/{1}）にありますが、{2}のそばにありません。それもVita3Kにインストールするか、それを含むダンプを選んでください。"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0}は、この移植版が読み込める{1}のVita版ではありません。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr "{0}のVita版を{1}（およびプロファイルフォルダ内のもの）にコピーできません。"
+
+#: src/platform/setup.cpp
+msgid "Choose its folder..."
+msgstr "フォルダを選択…"
+
+#: src/platform/setup.cpp
+msgid "Its archive..."
+msgstr "アーカイブ…"
+
+#: src/platform/setup.cpp
+msgid "Without it"
+msgstr "なしで続ける"
+
+#: src/platform/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"このVita版は日本語版です。ファン翻訳（gbatempの英語版やJoseasのスペイン語版）でテキストを置き換えられます。そのrePatchフォルダ（{0}）、または配布されている.rar / .zipです。こちらもありますか？"
+
+#: src/platform/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "ファン翻訳（.rar、.zip、.7z）"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "ファン翻訳を展開しています…"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"PCからUSB経由で、ファン翻訳のrePatchフォルダ（またはその中の{0}）を\n"
+"  {1}\n"
+"にコピーし、「続ける」を押してください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr "{0}にファン翻訳がありません。そのrePatchフォルダ（またはその中の{1}）をコピーしてください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr "{0}にファン翻訳がありません。そのrePatchフォルダ（またはその中の{1}）を選んでください。"
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "ファン翻訳を{0}に移動できません"
+
+#: src/platform/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "ファン翻訳をコピーしています…"
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "ファン翻訳を{0}にコピーできません"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "{0}を展開できません：{1}"
+
+#: src/platform/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "{0}には、この移植版が読み込める{1}（{2}）がありません。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Vita版を{0}に展開・復号しました。"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "{0}はもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Vita版を{0}に復号しました。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr "コピーしたダンプ（{0}）はもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr "コピーしたダンプ（{0}と{1}）はもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "{0}のVitaダンプを復号できません：{1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"プリクエル・トリロジーでは{0}のデータは追加コンテンツ（addcont/PCSG00457/{1}）にありますが、{2}のそばにありません。ダンプのaddcontフォルダも、appフォルダの隣にコピーしてください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr "Vitaダンプを{0}に復号できません。そこに書き込めません。"
+
+#: src/platform/setup.cpp
+msgid "it isn't {0}'s iOS release"
+msgstr "{0}のiOS版ではありません"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr "{0}を{1}に展開しました。.ipaはもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the {0} isn't needed any more: delete it to get the space back."
+msgstr "{0}を{1}に展開しました。{0}はもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1}, but {2}'s {3} isn't there - put it in {1} too."
+msgstr "{0}を{1}に展開しましたが、{2}の{3}がありません。それも{1}に入れてください。"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr "このビルドでは{0}を開けません。先に{1}へ展開してください。"
+
+#: src/platform/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr "ファン翻訳を{0}に展開しました。{1}はもう不要です。削除すると空き容量が戻ります。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "セーブスロットが{0}件見つかりました。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "既存のセーブはバックアップされます。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "無効な中断データはスキップしました。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "今すぐ取り込みますか？"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "取り込みに失敗しました：{0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "フォルダ選択画面を開けません：{0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "セーブスロットを{0}件取り込みました。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "以前のセーブをバックアップしました。"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "タイトル画面からロードしてください。"

@@ -1,0 +1,1159 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: de\n"
+"X-Language-Name: Deutsch\n"
+"Last-Translator: Claude (machine translation, unreviewed)\n"
+
+#: src/app/app.hpp
+msgid "Native AA"
+msgstr "Natives AA"
+
+#: src/app/app.hpp
+msgid "Quality"
+msgstr "Qualität"
+
+#: src/app/app.hpp
+msgid "Balanced"
+msgstr "Ausgewogen"
+
+#: src/app/app.hpp
+msgid "Performance"
+msgstr "Leistung"
+
+#: src/app/app.hpp
+msgid "Ultra Perf."
+msgstr "Ultra-Leistung"
+
+#: src/app/app.hpp src/app/scene_fx.cpp
+msgid "Off"
+msgstr "Aus"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Menu Language"
+msgstr "Menüsprache"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (fan translation)"
+msgstr "{0} (Fan-Übersetzung)"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (patched over English)"
+msgstr "{0} (über Englisch gepatcht)"
+
+#: src/app/scene_fx.cpp
+msgid "Game"
+msgstr "Spiel"
+
+#: src/app/scene_fx.cpp
+msgid "Sound"
+msgstr "Ton"
+
+#: src/app/scene_fx.cpp
+msgid "Display"
+msgstr "Anzeige"
+
+#: src/app/scene_fx.cpp
+msgid "Detail"
+msgstr "Details"
+
+#: src/app/scene_fx.cpp
+msgid "Graphics"
+msgstr "Grafik"
+
+#: src/app/scene_fx.cpp
+msgid "Cheats"
+msgstr "Cheats"
+
+#: src/app/scene_fx.cpp
+msgid "Text Language"
+msgstr "Textsprache"
+
+#: src/app/scene_fx.cpp
+msgid "Auto ({0})"
+msgstr "Auto ({0})"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The language of the port's own text - these options and its messages; Auto: the text language's"
+msgstr ""
+"Sprache der Texte der Portierung (diese Optionen und ihre Meldungen); Auto: wie die Textsprache"
+
+#: src/app/scene_fx.cpp
+msgid "Control Hints"
+msgstr "Steuerungshinweise"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut."
+msgstr ""
+"Steuerungshinweise und Statusanzeige einblenden. Aus blendet die WASD-Hilfe aus; F3 schaltet direkt um."
+
+#: src/app/scene_fx.cpp
+msgid "Import Vita Saves"
+msgstr "Vita-Saves importieren"
+
+#: src/app/scene_fx.cpp
+msgid "Choose Folder"
+msgstr "Ordner wählen"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Choose your decrypted Vita save export. Existing saves will be backed up."
+msgstr ""
+"Den entschlüsselten Export der Vita-Spielstände wählen. Vorhandene Spielstände werden gesichert."
+
+#: src/app/scene_fx.cpp
+msgid "Import saves from the title screen's Options."
+msgstr "Spielstände über die Optionen im Titelbildschirm importieren."
+
+#: src/app/scene_fx.cpp
+msgid "None"
+msgstr "Keine"
+
+#: src/app/scene_fx.cpp
+msgid "The game's data"
+msgstr "Die Spieldaten"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (next start)"
+msgstr "{0} (nach Neustart)"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (not found)"
+msgstr "{0} (nicht gefunden)"
+
+#: src/app/scene_fx.cpp
+msgid "Vita Assets"
+msgstr "Vita-Daten"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Vita copy alone: {0}"
+msgstr "Läuft allein mit der Vita-Kopie: {0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none"
+msgstr ""
+"Enter: Ordner PCSG00497 der Vita-Kopie – Texturen, Stimmen, Musik und Skripte; Links / Rechts: keine"
+
+#: src/app/scene_fx.cpp
+msgid "Android Assets"
+msgstr "Android-Daten"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Android release alone: {0}"
+msgstr "Läuft allein mit der Android-Version: {0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art only it has; Left / Right: none"
+msgstr ""
+"Enter: Ordner mit main.*.obb und APK der Android-Kopie – Texturen und Grafiken, die nur sie hat; Links / Rechts: keine"
+
+#: src/app/scene_fx.cpp
+msgid "Field Speed"
+msgstr "Lauftempo"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - the scenes, talk and menus as they are"
+msgstr ""
+"Auf dem Feld 2- bis 5-mal so schnell laufen – Szenen, Gespräche und Menüs unverändert"
+
+#: src/app/scene_fx.cpp
+msgid "Battle Speed"
+msgstr "Kampftempo"
+
+#: src/app/scene_fx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "Kämpfe 2- bis 5-mal so schnell"
+
+#: src/app/scene_fx.cpp
+msgid "Swap ○ and ×"
+msgstr "○ und × tauschen"
+
+#: src/app/scene_fx.cpp
+msgid "Controller: {0}."
+msgstr "Controller: {0}."
+
+#: src/app/scene_fx.cpp
+msgid "With a controller:"
+msgstr "Mit Controller:"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr ""
+"○ (rechte Taste) bestätigt, × (untere Taste) geht zurück – wie auf der Vita"
+
+#: src/app/scene_fx.cpp
+msgid "× (the bottom button) confirms, ○ (the right one) goes back"
+msgstr "× (untere Taste) bestätigt, ○ (rechte Taste) geht zurück"
+
+#: src/app/scene_fx.cpp
+msgid "Master Volume"
+msgstr "Gesamtlautstärke"
+
+#: src/app/scene_fx.cpp
+msgid "Sound Test"
+msgstr "Soundtest"
+
+#: src/app/scene_fx.cpp
+msgid "Avoid"
+msgstr "Aussparen"
+
+#: src/app/scene_fx.cpp
+msgid "Black Bars"
+msgstr "Schwarze Balken"
+
+#: src/app/scene_fx.cpp
+msgid "Ignore"
+msgstr "Ignorieren"
+
+#: src/app/scene_fx.cpp
+msgid "Camera Cutout"
+msgstr "Kameraaussparung"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Avoid: the menus and buttons clear of the camera's notch or punch hole, the picture full. Black Bars: the whole picture clear of it. Ignore: everything to the edges"
+msgstr ""
+"Aussparen: Menüs und Tasten neben Notch oder Kameraloch, das Bild voll. Schwarze Balken: das ganze Bild daneben. Ignorieren: alles bis zum Rand"
+
+#: src/app/scene_fx.cpp
+msgid "Window"
+msgstr "Fenster"
+
+#: src/app/scene_fx.cpp
+msgid "Fullscreen"
+msgstr "Vollbild"
+
+#: src/app/scene_fx.cpp
+msgid "Borderless"
+msgstr "Randlos"
+
+#: src/app/scene_fx.cpp
+msgid "Resolution"
+msgstr "Auflösung"
+
+#: src/app/scene_fx.cpp
+msgid "Desktop"
+msgstr "Desktop"
+
+#: src/app/scene_fx.cpp
+msgid "Aspect"
+msgstr "Seitenverhältnis"
+
+#: src/app/scene_fx.cpp
+msgid "Wide"
+msgstr "Breit"
+
+#: src/app/scene_fx.cpp
+msgid "Auto"
+msgstr "Auto"
+
+#: src/app/scene_fx.cpp
+msgid "Layout"
+msgstr "Layout"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data"
+msgstr ""
+"Bildschirmlayout wie auf iPad (4:3), iPhone 2.2.0 (3:2) oder Android (16:9); Auto richtet sich nach den Daten"
+
+#: src/app/scene_fx.cpp
+msgid "Original"
+msgstr "Original"
+
+#: src/app/scene_fx.cpp
+msgid "Fill"
+msgstr "Füllen"
+
+#: src/app/scene_fx.cpp
+msgid "Painted Rooms"
+msgstr "Gemalte Räume"
+
+#: src/app/scene_fx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/app/scene_fx.cpp
+msgid "Frame Rate"
+msgstr "Bildrate"
+
+#: src/app/scene_fx.cpp
+msgid "Unlimited"
+msgstr "Unbegrenzt"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Frames drawn a second at most; the game runs at its own 20 a second, shown moving between them"
+msgstr ""
+"Höchstens so viele Bilder pro Sekunde; das Spiel läuft mit seinen 20 pro Sekunde, dazwischen flüssig gezeigt"
+
+#: src/app/scene_fx.cpp
+msgid "Original Presentation"
+msgstr "Originaldarstellung"
+
+#: src/app/scene_fx.cpp
+msgid "Every display and graphics option back to the original's"
+msgstr "Alle Anzeige- und Grafikoptionen auf den Originalzustand zurücksetzen"
+
+#: src/app/scene_fx.cpp
+msgid "HD Textures"
+msgstr "HD-Texturen"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
+msgstr ""
+"Hochskalierte Texturen (waifu2x / Real-ESRGAN) aus textures/hd (tools/hd_textures.py); ab dem nächsten Raum"
+
+#: src/app/scene_fx.cpp
+msgid "None in textures/hd yet: --export-textures, then tools/hd_textures.py"
+msgstr ""
+"Noch keine in textures/hd: --export-textures, dann tools/hd_textures.py"
+
+#: src/app/scene_fx.cpp
+msgid "HD Models"
+msgstr "HD-Modelle"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Replacement models (glTF) from models/hd, in place of the game's; from the next room on"
+msgstr ""
+"Ersatzmodelle (glTF) aus models/hd anstelle der Originale; ab dem nächsten Raum"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"None in models/hd yet: --export-models, edit in Blender, save as models/hd/<name>.glb"
+msgstr ""
+"Noch keine in models/hd: --export-models, in Blender bearbeiten, als models/hd/<name>.glb speichern"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth"
+msgstr "Glatt"
+
+#: src/app/scene_fx.cpp
+msgid "Smoother"
+msgstr "Glatter"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth Models"
+msgstr "Glatte Modelle"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept; from the next room on"
+msgstr ""
+"Rundere Modelle (4x / 9x Dreiecke), harte Kanten bleiben; ab dem nächsten Raum"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounds the models' silhouettes - characters, monsters, props, stages (PN triangles)"
+msgstr ""
+"Rundet die Silhouetten der Modelle ab – Figuren, Monster, Objekte, Schauplätze (PN-Dreiecke)"
+
+#: src/app/scene_fx.cpp
+msgid "Anisotropic Filtering"
+msgstr "Anisotrope Filterung"
+
+#: src/app/scene_fx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "Texturen auf Böden und Wänden bleiben auch schräg betrachtet scharf"
+
+#: src/app/scene_fx.cpp
+msgid "Not on this GPU"
+msgstr "Nicht auf dieser GPU"
+
+#: src/app/scene_fx.cpp
+msgid "Texture Filtering"
+msgstr "Texturfilterung"
+
+#: src/app/scene_fx.cpp
+msgid "Sharp"
+msgstr "Scharf"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close)"
+msgstr ""
+"Scharf: Texturen der Welt per nächstem Texel vergrößert (aus der Nähe eckige Pixel)"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite HP"
+msgstr "Unendliche HP"
+
+#: src/app/scene_fx.cpp
+msgid "The pair's HP never drops: the damage still shows, nobody falls"
+msgstr "Die HP des Paars sinken nie: Schaden wird angezeigt, niemand fällt"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite MP"
+msgstr "Unendliche MP"
+
+#: src/app/scene_fx.cpp
+msgid "Genes cost no MP; the pair's MP stays full"
+msgstr "Gene kosten keine MP; die MP des Paars bleiben voll"
+
+#: src/app/scene_fx.cpp
+msgid "Max Oz"
+msgstr "Max. Oz"
+
+#: src/app/scene_fx.cpp
+msgid "The Oz held at the most (9,999,999)"
+msgstr "Oz stets auf dem Höchststand (9.999.999)"
+
+#: src/app/scene_fx.cpp
+msgid "EXP Multiplier"
+msgstr "EXP-Multiplikator"
+
+#: src/app/scene_fx.cpp
+msgid "The EXP a won battle gives, multiplied"
+msgstr "Multipliziert die EXP eines gewonnenen Kampfes"
+
+#: src/app/scene_fx.cpp
+msgid "Always First Strike"
+msgstr "Immer Erstschlag"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Every random encounter starts with the party's first strike - never an ambush"
+msgstr ""
+"Jeder Zufallskampf beginnt mit einem Erstschlag der Gruppe – nie mit einem Hinterhalt"
+
+#: src/app/scene_fx.cpp
+msgid "No Random Battles"
+msgstr "Keine Zufallskämpfe"
+
+#: src/app/scene_fx.cpp
+msgid "No random encounters on the field (the story's battles still come)"
+msgstr "Keine Zufallskämpfe auf dem Feld (Story-Kämpfe finden weiter statt)"
+
+#: src/app/scene_fx.cpp
+msgid "One-Hit Kills"
+msgstr "Sofort-K.O."
+
+#: src/app/scene_fx.cpp
+msgid "Any blow, gene or ability of the pair's that hurts an enemy fells it"
+msgstr ""
+"Jeder Schlag, jedes Gen und jede Fähigkeit des Paars, die einem Gegner schadet, streckt ihn nieder"
+
+#: src/app/scene_fx.cpp
+msgid "Full Break Gauge"
+msgstr "Volle Vorteil-Anzeige"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The Break gauge the pair's and full from the first turn - it never changes hands"
+msgstr ""
+"Die Vorteil-Anzeige gehört ab dem ersten Zug dem Paar und ist voll – sie wechselt nie die Seite"
+
+#: src/app/scene_fx.cpp
+msgid "{0} is off here: {1}"
+msgstr "{0} hier nicht verfügbar: {1}"
+
+#: src/app/scene_fx.cpp
+msgid "Render Scale"
+msgstr "Renderskalierung"
+
+#: src/app/scene_fx.cpp
+msgid "The frame at this size, then scaled to the window"
+msgstr ""
+"Das Bild wird in dieser Größe gerendert und dann ans Fenster angepasst"
+
+#: src/app/scene_fx.cpp
+msgid "Needs the Vulkan renderer"
+msgstr "Benötigt den Vulkan-Renderer"
+
+#: src/app/scene_fx.cpp
+msgid "n/a"
+msgstr "n. v."
+
+#: src/app/scene_fx.cpp
+msgid "Anti-aliasing"
+msgstr "Kantenglättung"
+
+#: src/app/scene_fx.cpp
+msgid "Temporal: jittered frames accumulated (MSAA is off meanwhile)"
+msgstr ""
+"Temporal: leicht versetzte Bilder werden gesammelt (MSAA ist so lange aus)"
+
+#: src/app/scene_fx.cpp
+msgid "MSAA, or FSR Native AA / DLAA at full resolution"
+msgstr "MSAA oder FSR Native AA / DLAA in voller Auflösung"
+
+#: src/app/scene_fx.cpp
+msgid "Upscaler"
+msgstr "Hochskalierer"
+
+#: src/app/scene_fx.cpp
+msgid "The scene renders smaller and is reconstructed; the menus stay sharp"
+msgstr ""
+"Die Szene wird kleiner gerendert und rekonstruiert; Menüs bleiben scharf"
+
+#: src/app/scene_fx.cpp
+msgid "Upscale Mode"
+msgstr "Skalierungsmodus"
+
+#: src/app/scene_fx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "Die Szene mit {0} % des Bildes je Seite"
+
+#: src/app/scene_fx.cpp
+msgid "Sharpness"
+msgstr "Schärfe"
+
+#: src/app/scene_fx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS has none"
+msgstr "Schärfungsdurchgang von FSR (RCAS); DLSS hat keinen"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "benötigt den Vulkan-Renderer"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr "dieser GPU fehlt, was temporales Hochskalieren braucht"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "diese GPU kann FSR 3.1 nicht ausführen"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFX stammt von Apple: nur unter macOS"
+
+#: src/platform/setup.cpp
+msgid "Any file"
+msgstr "Beliebige Datei"
+
+#: src/platform/setup.cpp
+msgid "can't be read"
+msgstr "kann nicht gelesen werden"
+
+#: src/platform/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "kein Zip (kein zentrales Verzeichnis) – eine .ipa ist eines"
+
+#: src/platform/setup.cpp
+msgid "its directory is past its end"
+msgstr "das Verzeichnis liegt hinter dem Dateiende"
+
+#: src/platform/setup.cpp
+msgid "a broken directory entry"
+msgstr "ein defekter Verzeichniseintrag"
+
+#: src/platform/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}: kein lokaler Header"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}: kann nicht geschrieben werden"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}: kann nicht entpackt werden"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "Eine gewählte Datei kann nicht gelesen werden ({0})."
+
+#: src/platform/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr ""
+"Eine gewählte Datei ({0} GB) braucht etwa {1} GB freien Platz in {2} – für die Kopie und das Entpackte –, vorhanden sind {3} GB."
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "Gewählte Datei wird kopiert ({0} von {1}) ..."
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "Gewählte Datei wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "Eine gewählte Datei kann nicht nach {0} kopiert werden"
+
+#: src/platform/setup.cpp
+msgid "can't be opened"
+msgstr "kann nicht geöffnet werden"
+
+#: src/platform/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "kein Payload/<name>.app darin – keine iOS-App"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}: kann nicht angelegt werden"
+
+#: src/platform/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "keine work.bin (die Lizenz) zum Entschlüsseln"
+
+#: src/platform/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr ""
+"die Dateien lassen sich nicht entschlüsseln (fehlt ein Teil des Dumps oder ist er beschädigt?)"
+
+#: src/platform/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr ""
+"die Dateien lassen sich mit der eigenen work.bin nicht lesen – kein vollständiger NoNpDrm-Dump"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr ""
+"dieser Build kann die Dateien der Vita nicht entschlüsseln – den Dump in Vita3K installieren und dann den Ordner von Vita3K wählen"
+
+#: src/platform/setup.cpp
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "ein Eintrag, der nicht gelesen werden kann (nach dem Anfang)"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "ein Eintrag, der nicht gelesen werden kann (nach {0})"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr ""
+"dieser Build kann keine Archive öffnen – zuerst entpacken, dann den Ordner wählen"
+
+#: src/platform/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "keine Fan-Übersetzung darin (ihr rePatch/{0}/)"
+
+#: src/platform/setup.cpp
+msgid "not a SELF"
+msgstr "kein SELF"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF"
+msgstr "ein defektes SELF"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "ein defektes SELF (ein Segment hinter dem Ende)"
+
+#: src/platform/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr ""
+"ein SELF einer Art (oder Schlüsselrevision), für die die Portierung keinen Schlüssel hat"
+
+#: src/platform/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "sein Schlüssel öffnet es nicht (gehört die Lizenz nicht dazu?)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "ein defektes SELF (keine Metadaten)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "ein defektes SELF (seine Metadaten)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "ein defektes SELF (seine Schlüssel)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "ein defektes SELF (ein verschlüsseltes Segment ohne Schlüssel)"
+
+#: src/platform/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "ein Segment lässt sich nicht entpacken"
+
+#: src/platform/setup.cpp
+msgid "built without zlib"
+msgstr "ohne zlib gebaut"
+
+#: src/platform/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "dieser Build kann die Programme der Vita nicht entschlüsseln"
+
+#: src/platform/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "es braucht etwa {0} GB freien Platz in {1}, vorhanden sind {2} GB"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "Vita-Version wird entschlüsselt ..."
+
+#: src/platform/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "Vita-Version wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "Add-on des Spiels wird entschlüsselt ..."
+
+#: src/platform/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "Add-on des Spiels wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr ""
+"{0}: keine Lizenz zum Entschlüsseln (work.bin des Dumps oder ux0/license von Vita3K)"
+
+#: src/platform/setup.cpp
+msgid "neither {0}'s APK nor its OBB is in it"
+msgstr "weder die APK noch die OBB von {0} ist darin"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr ""
+"{0} spielt mit einer eigenen Kopie von {1}. Bitte auswählen, wo sie liegt – eine beliebige der folgenden genügt; die nötigen Dateien werden in den Ordner von {0} kopiert:"
+
+#: src/platform/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android – die APK und ihre {0} (beide zugleich)"
+
+#: src/platform/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr ""
+"Android – die .apks (oder die APK mit ihren Asset-Packs, alle zugleich)"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS – die .ipa (eine entpackte .app per USB nach ios/ kopieren)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr ""
+"Vita – ein NoNpDrm-Dump: gepackt (.zip, .rar, .vpk) oder sein Ordner, per USB hineinkopiert"
+
+#: src/platform/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr ""
+"Was per USB in den Ordner kopiert wurde, wird mit „Erneut suchen“ gefunden."
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS – die .ipa (oder eine Datei in der entpackten .app)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr ""
+"Vita – der Ordner von Vita3K mit installiertem Spiel (oder der Ordner {0} des Spiels)"
+
+#: src/platform/setup.cpp
+msgid "Its folder: {0}"
+msgstr "Ordner der Portierung: {0}"
+
+#: src/platform/setup.cpp
+msgid "In place:"
+msgstr "Vorhanden:"
+
+#: src/platform/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS: {0}"
+
+#: src/platform/setup.cpp
+msgid "Android: {0}"
+msgstr "Android: {0}"
+
+#: src/platform/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita: {0}"
+
+#: src/platform/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "Fan-Übersetzung: {0}"
+
+#: src/platform/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr ""
+"Weitere Versionen ergänzen sie (Stimmen und Musik der Vita, Grafiken von Android) – oder „Starten“."
+
+#: src/platform/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS (.ipa)..."
+
+#: src/platform/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android (APK + OBB)..."
+
+#: src/platform/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android (.apks)..."
+
+#: src/platform/setup.cpp
+msgid "Vita..."
+msgstr "Vita..."
+
+#: src/platform/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K..."
+
+#: src/platform/setup.cpp
+msgid "Start"
+msgstr "Starten"
+
+#: src/platform/setup.cpp
+msgid "Look again"
+msgstr "Erneut suchen"
+
+#: src/platform/setup.cpp
+msgid "Quit"
+msgstr "Beenden"
+
+#: src/platform/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "iOS-App (.ipa)"
+
+#: src/platform/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "Beliebige Datei (in einer entpackten .app)"
+
+#: src/platform/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr ""
+"Das ist keine .ipa. Die .ipa wählen – oder die entpackte .app per USB nach {0} kopieren und dann „Erneut suchen“."
+
+#: src/platform/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "{0} wird entpackt ..."
+
+#: src/platform/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "Keine Daten von {0} in {1}"
+
+#: src/platform/setup.cpp
+msgid "Copying {0} ..."
+msgstr "{0} wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid "can't be written"
+msgstr "kann nicht geschrieben werden"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0} ist nicht die iOS-Version von {1}."
+
+#: src/platform/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android (.apk, .obb, .apks)"
+
+#: src/platform/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr ""
+"Die Android-Version von {0} wählen: die APK und ihre {1}, beide zugleich."
+
+#: src/platform/setup.cpp
+msgid "Unpacking the Android release ..."
+msgstr "Android-Version wird entpackt ..."
+
+#: src/platform/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "Android-Version wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "Nicht die Android-Version von {0} (oder nicht vollständig):"
+
+#: src/platform/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "Die APK und ihre {0} wählen, beide zugleich."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr ""
+"Die Android-Version kann nicht nach {0} kopiert werden (auch nicht in den Profilordner)."
+
+#: src/platform/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Wo ist die Vita-Version?"
+
+#: src/platform/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"Ein Ordner – per USB nach {0} kopiert: der eines NoNpDrm-Dumps wie gedumpt (sein app/ und für die Prequel Trilogy addcont/), ux0 von Vita3K oder der eigene Ordner des Spiels"
+
+#: src/platform/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr ""
+"Ein Archiv – ein NoNpDrm-Dump als .zip, .rar oder .vpk (ein .7z am PC entpacken)"
+
+#: src/platform/setup.cpp
+msgid "Copied in..."
+msgstr "Hineinkopiert..."
+
+#: src/platform/setup.cpp
+msgid "An archive..."
+msgstr "Ein Archiv..."
+
+#: src/platform/setup.cpp
+msgid "Back"
+msgstr "Zurück"
+
+#: src/platform/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr ""
+"Ein Ordner – der von Vita3K (oder sein ux0), der des Spiels oder der eines NoNpDrm-Dumps"
+
+#: src/platform/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "Ein Archiv – ein NoNpDrm-Dump als .rar, .7z, .zip oder .vpk"
+
+#: src/platform/setup.cpp
+msgid "A folder..."
+msgstr "Ein Ordner..."
+
+#: src/platform/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Ein Vita-Dump (.rar, .7z, .zip, .vpk)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"Den Ordner der Vita-Version per USB vom PC nach\n"
+"  {0}\n"
+"kopieren – den eines NoNpDrm-Dumps wie gedumpt (sein app/ und für die Prequel Trilogy addcont/), ux0 von Vita3K oder den eigenen Ordner des Spiels –, dann „Weiter“."
+
+#: src/platform/setup.cpp
+msgid "Continue"
+msgstr "Weiter"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – das Add-on ebenfalls in Vita3K installieren oder einen Dump mit Add-on wählen."
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"Kein {0} ({1}) in {2} – den Ordner von Vita3K, sein ux0, den eigenen Ordner des Spiels oder einen NoNpDrm-Dump davon wählen."
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"Kein {0} ({1}) im Archiv – den Ordner von Vita3K, sein ux0, den eigenen Ordner des Spiels oder einen NoNpDrm-Dump davon wählen."
+
+#: src/platform/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "Die Vita-Version in {0}: {1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – es ebenfalls in Vita3K installieren oder den Dump mit Add-on wählen."
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0} ist keine Vita-Version von {1}, wie die Portierung sie liest."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr ""
+"Die Vita-Version in {0} kann nicht nach {1} kopiert werden (auch nicht in den Profilordner)."
+
+#: src/platform/setup.cpp
+msgid "Choose its folder..."
+msgstr "Ordner wählen..."
+
+#: src/platform/setup.cpp
+msgid "Its archive..."
+msgstr "Archiv..."
+
+#: src/platform/setup.cpp
+msgid "Without it"
+msgstr "Ohne Übersetzung"
+
+#: src/platform/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"Diese Vita-Version ist auf Japanisch. Eine Fan-Übersetzung legt ihren Text darüber – die englische von gbatemp oder die spanische von Joseas: ihr rePatch-Ordner ({0}) oder das .rar / .zip, in dem sie geliefert wird. Ist auch eine vorhanden?"
+
+#: src/platform/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "Die Fan-Übersetzung (.rar, .zip, .7z)"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "Fan-Übersetzung wird entpackt ..."
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"Den rePatch-Ordner der Fan-Übersetzung (oder den Ordner {0} darin) per USB vom PC nach\n"
+"  {1}\n"
+"kopieren, dann „Weiter“."
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr ""
+"Keine Fan-Übersetzung in {0} – ihren rePatch-Ordner (oder den Ordner {1} darin) kopieren."
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr ""
+"Keine Fan-Übersetzung in {0} – ihren rePatch-Ordner (oder den Ordner {1} darin) wählen."
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "Die Fan-Übersetzung kann nicht nach {0} verschoben werden"
+
+#: src/platform/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "Fan-Übersetzung wird kopiert ..."
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "Die Fan-Übersetzung kann nicht nach {0} kopiert werden"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "{0} kann nicht entpackt werden: {1}"
+
+#: src/platform/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "{0} enthält kein {1} ({2}), das die Portierung lesen kann."
+
+#: src/platform/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Die Vita-Version wurde nach {0} entpackt und entschlüsselt."
+
+#: src/platform/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "{0} wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/platform/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Die Vita-Version wurde nach {0} entschlüsselt."
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Der hineinkopierte Dump ({0}) wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr ""
+"Der hineinkopierte Dump ({0} und {1}) wird nicht mehr benötigt – löschen, um den Platz freizugeben."
+
+#: src/platform/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "Der Vita-Dump in {0} kann nicht entschlüsselt werden: {1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"Die Prequel Trilogy hat die Daten von {0} in ihrem Add-on (addcont/PCSG00457/{1}), und das liegt nicht neben {2} – auch den addcont-Ordner des Dumps hineinkopieren, neben seinen app-Ordner."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr ""
+"Der Vita-Dump kann nicht nach {0} entschlüsselt werden – dort kann nicht geschrieben werden."
+
+#: src/platform/setup.cpp
+msgid "it isn't {0}'s iOS release"
+msgstr "es ist nicht die iOS-Version von {0}"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr ""
+"{0} wurde nach {1} entpackt – die .ipa wird nicht mehr benötigt: löschen, um den Platz freizugeben."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the {0} isn't needed any more: delete it to get the space back."
+msgstr ""
+"{0} wurde nach {1} entpackt – {0} wird nicht mehr benötigt: löschen, um den Platz freizugeben."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1}, but {2}'s {3} isn't there - put it in {1} too."
+msgstr ""
+"{0} wurde nach {1} entpackt, aber {3} von {2} fehlt dort – diese Datei ebenfalls nach {1} legen."
+
+#: src/platform/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr ""
+"{0} kann von diesem Build nicht geöffnet werden – zuerst nach {1} entpacken."
+
+#: src/platform/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr ""
+"Die Fan-Übersetzung wurde nach {0} entpackt – {1} wird nicht mehr benötigt: löschen, um den Platz freizugeben."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "Gefundene Speicherplätze: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "Vorhandene Spielstände werden gesichert."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "Ungültiger Zwischenstand übersprungen."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "Jetzt importieren?"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "Import fehlgeschlagen: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "Ordnerauswahl kann nicht geöffnet werden: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "Speicherplätze importiert: {0}."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "Bisherige Spielstände wurden gesichert."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "Im Titelbildschirm laden."

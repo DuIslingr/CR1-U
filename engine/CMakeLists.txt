@@ -40,7 +40,17 @@ if(NOT SDL3_FOUND)
 endif()
 
 # Core library: everything that is not the app entry point, so tools can reuse it.
+# The port's own interface text in other languages (platform/ui_text.hpp): lang/<code>.po built in
+file(GLOB UI_TEXT_CATALOGS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/lang/*.po)
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp
+    COMMAND ${CMAKE_COMMAND} -DLANG_DIR=${CMAKE_CURRENT_SOURCE_DIR}/lang -DOUT=${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lang.cmake
+    DEPENDS ${UI_TEXT_CATALOGS} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_lang.cmake
+    COMMENT "Interface text catalogs (lang/*.po)")
+
 add_library(crcore STATIC
+    src/platform/ui_text.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/ui_text_catalogs.cpp
     src/assets/vita_pfs.cpp
     src/crypto/crypto.cpp
     src/core/lzw.cpp
@@ -464,6 +474,15 @@ if(NOT ANDROID AND NOT IOS)
     target_include_directories(atomic-file-tests PRIVATE src)
     target_link_libraries(atomic-file-tests PRIVATE SDL3::SDL3)
     add_test(NAME atomic-file COMMAND atomic-file-tests)
+    add_executable(ui-text-tests tools/ui_text_test.cpp)
+    target_include_directories(ui-text-tests PRIVATE src)
+    target_link_libraries(ui-text-tests PRIVATE crcore)
+    add_test(NAME ui-text COMMAND ui-text-tests)
+    # the catalogs up to date with the code's strings (tools/ui_strings.py)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME ui-strings COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/ui_strings.py --check)
+    endif()
     add_executable(hd-texture-tests tools/hd_texture_test.cpp)
     target_include_directories(hd-texture-tests PRIVATE src third_party)
     target_link_libraries(hd-texture-tests PRIVATE crcore)

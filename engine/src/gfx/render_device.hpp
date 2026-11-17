@@ -3,6 +3,7 @@
 // (vk_device.cpp). Renderer does the logical-screen mapping; a device only sees drawable
 // pixels, GL-style clip-space matrices and the original engine's per-draw material state.
 
+#include "platform/ui_text.hpp"
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -125,7 +126,7 @@ public:
     virtual void setSamples(int /*n*/) {}
 
     // Temporal upscaling: whether a mode can run here ("" = yes, else why not)
-    virtual std::string upscalerProblem(Upscaler m) const { return m == Upscaler::Off ? "" : "needs the Vulkan renderer"; }
+    virtual std::string upscalerProblem(Upscaler m) const { return m == Upscaler::Off ? "" : N_("needs the Vulkan renderer"); }
     virtual void setUpscaler(const UpscaleSettings& /*s*/) {}
     // The scene's size in a frame of this size (smaller while an upscaler is on)
     virtual void sceneSize(int w, int h, int& sw, int& sh) const {

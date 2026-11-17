@@ -555,8 +555,9 @@ bool choiceUsable(const App& app, int choice) {
     return languageUsable(app, choice);
 }
 std::string languageChoiceName(const App& app, int choice) {
-    if (choice == cr::kLanguages) return app.fanName == "Russian" ? "\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9 (fan translation)" : app.fanName;
-    if (choice == 1 && app.englishPatched) return "\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9 (patched over English)";
+    if (choice == cr::kLanguages)
+        return trf("{0} (fan translation)", {app.fanName == "Russian" ? std::string("\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9") : app.fanName});
+    if (choice == 1 && app.englishPatched) return trf("{0} (patched over English)", {"\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9"});
     return cr::kLanguageName[std::clamp(choice, 0, cr::kLanguages - 1)];
 }
 void setLanguageChoice(App& app, int choice) {
@@ -585,6 +586,7 @@ bool cjkTextLanguage(const App& app) {
 void applyLanguage(App& app) {
     if (!languageUsable(app, app.language)) app.language = 1;
     if (app.fanText && (app.language != 1 || !choiceUsable(app, cr::kLanguages))) app.fanText = false;
+    applyUiLanguage(app); // ("auto": the port's own text follows - a fan translation's language too)
 #ifdef SDL_PLATFORM_IOS
     // (iOS: no one system face has every CJK script, as Noto Sans CJK's regions do - the language's own as the
     // fallback, as iOS's own font fallback would take it; a font from font/ or CR_FONT left as it is)

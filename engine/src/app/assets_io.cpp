@@ -1,4 +1,5 @@
 #include "app/app.hpp"
+#include "platform/ui_text.hpp"
 #include <tuple>
 #include <cctype>
 #include "platform/dialogs.hpp"
@@ -871,6 +872,32 @@ std::string userDir() {
 }
 std::string settingsPath() { return userDir() + "settings.ini"; }
 
+void startUiText(App& app) {
+    for (const std::string& g : cr::gameFolders()) uitext::addFolder(g + "lang/");
+    uitext::addFolder(userDir() + "lang/");
+    size_t size = 0;
+    char* text = static_cast<char*>(SDL_LoadFile(settingsPath().c_str(), &size));
+    if (!text) { // a first start: the system's language
+        const char* forced = SDL_getenv("CR_UI_LANG"); // (tests)
+        uitext::setLanguage(forced && *forced ? std::string(forced) : uitext::systemLanguage());
+        SDL_Log("interface text: %s (%s)", uitext::language().c_str(), forced && *forced ? "CR_UI_LANG" : "the system's");
+        return;
+    }
+    if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
+    if (const char* at = SDL_strstr(text, "ui_lang=")) app.uiLang = std::string(at + 8, std::strcspn(at + 8, "\r\n"));
+    if (app.uiLang.empty()) app.uiLang = "auto";
+    SDL_free(text);
+    applyUiLanguage(app);
+}
+
+void applyUiLanguage(App& app) {
+    std::string want = app.uiLang != "auto" ? app.uiLang
+                       : app.fanText && !app.fanArchive.code.empty() ? app.fanArchive.code // (a fan translation's language: its menus too, if there's a catalog)
+                                                                      : uitext::codeForTextLanguage(app.language);
+    if (const char* forced = SDL_getenv("CR_UI_LANG"); forced && *forced) want = forced; // (tests, captures)
+    if (!uitext::setLanguage(want)) uitext::setLanguage("en");
+}
+
 
 void loadMix(App& app) {
     size_t size = 0;
@@ -882,6 +909,8 @@ void loadMix(App& app) {
             if (const char* at = SDL_strstr(text, keys[i])) // (the gauges' steps of 10: an older file's 5s rounded up)
                 *fields[i] = std::clamp((SDL_atoi(at + SDL_strlen(keys[i])) + 5) / 10 * 10, 0, 100);
         if (const char* at = SDL_strstr(text, "language=")) app.language = std::clamp(SDL_atoi(at + 9), 0, cr::kLanguages - 1);
+        if (const char* at = SDL_strstr(text, "ui_lang=")) app.uiLang = std::string(at + 8, std::strcspn(at + 8, "\r\n"));
+        if (app.uiLang.empty()) app.uiLang = "auto";
         if (const char* at = SDL_strstr(text, "\ncheats=")) { // (Options' Cheats: hp,mp,oz,first strike,no battles,one hit,exp,full break)
             int c[8] = {0, 0, 0, 0, 0, 0, 1, 0};
             if (std::sscanf(at + 8, "%d,%d,%d,%d,%d,%d,%d,%d", &c[0], &c[1], &c[2], &c[3], &c[4], &c[5], &c[6], &c[7]) >= 6) {
@@ -958,7 +987,7 @@ void saveMix(const App& app) {
                               "\nbattle_speed=" + std::to_string(app.battleSpeed) + "\n";
     std::string seen;
     for (int f : app.seenFlags) seen += (seen.empty() ? "" : ",") + std::to_string(f);
-    const std::string all = t + "language=" + std::to_string(app.language) + "\nfan_text=" + std::to_string(int(app.fanText)) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
+    const std::string all = t + "language=" + std::to_string(app.language) + "\nui_lang=" + app.uiLang + "\nfan_text=" + std::to_string(int(app.fanText)) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
                             "trophies=" + app.trophy.flags.hex() + "\n";
     std::string error;
     if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());

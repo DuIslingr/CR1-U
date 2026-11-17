@@ -23,6 +23,7 @@
 !/engine/cmake/
 !/engine/src/
 !/engine/tools/
+!/engine/lang/
 !/engine/third_party/
 /engine/third_party/dlss/
 __pycache__/

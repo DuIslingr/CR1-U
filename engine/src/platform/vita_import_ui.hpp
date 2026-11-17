@@ -1,6 +1,7 @@
 #pragma once
 #include "platform/vita_import.hpp"
 #include "platform/dialogs.hpp"
+#include "platform/ui_text.hpp"
 #include <SDL3/SDL.h>
 #include <memory>
 #include <mutex>
@@ -31,13 +32,13 @@ struct Session {
         focus = 1;
         try {
             plan = prepare(path, game);
-            message = "Found " + std::to_string(plan.slots) + " save slot(s).\nExisting saves will be backed up.\n";
+            message = uitext::trf("Found {0} save slot(s).", {std::to_string(plan.slots)}) + "\n" + uitext::tr("Existing saves will be backed up.") + "\n";
             if (!plan.warnings.empty())
-                message += "Invalid suspend skipped. ";
-            message += "Import now?";
+                message += uitext::tr("Invalid suspend skipped.") + std::string(" ");
+            message += uitext::tr("Import now?");
             state = Confirm;
         } catch (const std::exception &e) {
-            message = std::string("Import failed: ") + e.what();
+            message = uitext::trf("Import failed: {0}", {e.what()});
             state = Result;
             focus = 0;
         }
@@ -83,7 +84,7 @@ struct Session {
         choice.reset();
         if (!error.empty()) {
             state = Result;
-            message = "Cannot open the folder picker: " + error;
+            message = uitext::trf("Cannot open the folder picker: {0}", {error});
             focus = 0;
         } else if (path.empty())
             state = Idle;
@@ -99,15 +100,15 @@ struct Session {
             try {
                 const std::string backup = install(plan, profile);
                 succeeded = true;
-                message = "Imported " + std::to_string(plan.slots) + " save slot(s).\n";
+                message = uitext::trf("Imported {0} save slot(s).", {std::to_string(plan.slots)}) + "\n";
                 if (!backup.empty())
-                    message += "Previous saves backed up.\n";
+                    message += uitext::tr("Previous saves backed up.") + std::string("\n");
                 if (!plan.warnings.empty())
-                    message += "Invalid suspend skipped. ";
-                message += "Load from the title.";
+                    message += uitext::tr("Invalid suspend skipped.") + std::string(" ");
+                message += uitext::tr("Load from the title.");
             } catch (const std::exception &e) {
                 succeeded = false;
-                message = std::string("Import failed: ") + e.what();
+                message = uitext::trf("Import failed: {0}", {e.what()});
             }
             state = Result;
             focus = 0;

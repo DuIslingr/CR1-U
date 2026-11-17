@@ -3,6 +3,7 @@
 #endif
 #include "platform/setup.hpp"
 #include "platform/dialogs.hpp"
+#include "platform/ui_text.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -35,6 +36,9 @@
 namespace cr {
 
 namespace {
+
+using uitext::tr;
+using uitext::trf;
 
 std::string withSlash(std::string p) {
     if (!p.empty() && p.back() != '/' && p.back() != '\\') p += '/';
@@ -156,9 +160,23 @@ struct Copier {
     }
 };
 
-bool fail(std::string* error, const std::string& why) {
+// what the last failure was - the callers that try the next folder when one can't be written tell it
+// by this, not by its message (translated)
+enum class Failed { Other, CantBe, CantBeWritten, NotInIt };
+Failed& lastFailed() {
+    static Failed f = Failed::Other;
+    return f;
+}
+bool fail(std::string* error, const std::string& why, Failed kind = Failed::Other) {
+    lastFailed() = kind;
     if (error) *error = why;
     return false;
+}
+// (a size in GB, as the messages give it)
+std::string gb(double bytes) {
+    char text[32];
+    std::snprintf(text, sizeof text, "%.1f", bytes / 1e9);
+    return text;
 }
 
 // ---- a test's answers (CRU_SETUP_ANSWERS: no windows), else the system's dialogs, waited for
@@ -230,9 +248,9 @@ std::vector<std::string> pickFiles(const SetupGame& g, const SDL_DialogFileFilte
         }
         return localize(g, out);
     }
+    const SDL_DialogFileFilter any[] = {{tr("Any file"), "*"}};
     if (phone()) { // (Android's picker filters by MIME type, and an .ipa, an .obb, an .apks have none: every file shown)
-        static const SDL_DialogFileFilter kAny[] = {{"Any file", "*"}};
-        filters = kAny, n = 1;
+        filters = any, n = 1;
     }
     Answer a;
     crShowOpenFileDialog(answered, &a, nullptr, filters, n, nullptr, many);
@@ -295,20 +313,20 @@ bool readAt(std::FILE* f, uint64_t at, void* out, size_t n) { return seek(f, at)
 bool zipEntries(std::FILE* f, uint64_t fileSize, std::vector<ZipEntry>& out, std::string* error) {
     const uint64_t tail = std::min<uint64_t>(fileSize, 0x10000 + 22);
     std::vector<uint8_t> t(static_cast<size_t>(tail));
-    if (!readAt(f, fileSize - tail, t.data(), t.size())) return fail(error, "can't be read");
+    if (!readAt(f, fileSize - tail, t.data(), t.size())) return fail(error, tr("can't be read"), Failed::CantBe);
     size_t eocd = std::string::npos;
     for (size_t k = t.size() - 22 + 1; k-- > 0;)
         if (u32(&t[k]) == 0x06054b50) { eocd = k; break; }
-    if (eocd == std::string::npos) return fail(error, "not a zip (no central directory) - an .ipa is one");
+    if (eocd == std::string::npos) return fail(error, tr("not a zip (no central directory) - an .ipa is one"));
     uint64_t count = u16(&t[eocd + 10]), cdSize = u32(&t[eocd + 12]), cdAt = u32(&t[eocd + 16]);
     if (eocd >= 20 && u32(&t[eocd - 20]) == 0x07064b50) { // (zip64: its own end record)
         uint8_t z[56];
         if (readAt(f, u64(&t[eocd - 12]), z, sizeof z) && u32(z) == 0x06064b50) count = u64(z + 32), cdSize = u64(z + 40), cdAt = u64(z + 48);
     }
     std::vector<uint8_t> cd(static_cast<size_t>(cdSize));
-    if (cdAt + cdSize > fileSize || !readAt(f, cdAt, cd.data(), cd.size())) return fail(error, "its directory is past its end");
+    if (cdAt + cdSize > fileSize || !readAt(f, cdAt, cd.data(), cd.size())) return fail(error, tr("its directory is past its end"));
     for (size_t p = 0, k = 0; k < count && p + 46 <= cd.size(); ++k) {
-        if (u32(&cd[p]) != 0x02014b50) return fail(error, "a broken directory entry");
+        if (u32(&cd[p]) != 0x02014b50) return fail(error, tr("a broken directory entry"));
         ZipEntry e;
         e.method = u16(&cd[p + 10]);
         e.packed = u32(&cd[p + 20]), e.size = u32(&cd[p + 24]), e.local = u32(&cd[p + 42]);
@@ -335,10 +353,10 @@ bool zipEntries(std::FILE* f, uint64_t fileSize, std::vector<ZipEntry>& out, std
 bool unpackEntry(std::FILE* f, const ZipEntry& e, const std::string& path, std::string* error,
                  const std::function<void(uint64_t)>& wrote = {}) {
     uint8_t h[30];
-    if (!readAt(f, e.local, h, sizeof h) || u32(h) != 0x04034b50) return fail(error, e.name + ": no local header");
+    if (!readAt(f, e.local, h, sizeof h) || u32(h) != 0x04034b50) return fail(error, trf("{0}: no local header", {e.name}));
     const uint64_t data = e.local + 30 + u16(h + 26) + u16(h + 28);
     std::FILE* o = std::fopen(path.c_str(), "wb");
-    if (!o) return fail(error, path + ": can't be written");
+    if (!o) return fail(error, trf("{0}: can't be written", {path}), Failed::CantBeWritten);
     std::vector<uint8_t> in(1 << 16), buf(1 << 16);
     bool ok = seek(f, data);
     if (e.method == 0) {
@@ -376,7 +394,7 @@ bool unpackEntry(std::FILE* f, const ZipEntry& e, const std::string& path, std::
         ok = false;
     }
     std::fclose(o);
-    return ok || fail(error, e.name + ": can't be unpacked");
+    return ok || fail(error, trf("{0}: can't be unpacked", {e.name}), Failed::CantBe);
 }
 
 // a small window over the unpacking: the .ipa's name, a bar
@@ -480,7 +498,7 @@ std::vector<std::string> localize(const SetupGame& g, const std::vector<std::str
         const std::string from = test ? p.substr(5) : p;
         SDL_IOStream* in = SDL_IOFromFile(from.c_str(), "rb");
         if (!in) {
-            tell(g, "A file picked can't be read (" + std::string(SDL_GetError()) + ").");
+            tell(g, trf("A file picked can't be read ({0}).", {SDL_GetError()}));
             continue;
         }
         const Sint64 size = SDL_GetIOSize(in);
@@ -489,17 +507,16 @@ std::vector<std::string> localize(const SetupGame& g, const std::vector<std::str
         const std::filesystem::space_info room = std::filesystem::space(fsPath(staging()), ec);
         if (!ec && size > 0 && room.available < uint64_t(size) * 2 + (64u << 20)) { // (the copy, and what it unpacks to)
             SDL_CloseIO(in);
-            char text[200];
-            std::snprintf(text, sizeof text, "A file picked (%.1f GB) needs about %.1f GB free in %s - the copy and what it unpacks to -, and there is %.1f GB.",
-                          double(size) / 1e9, double(size) * 2 / 1e9, staging().c_str(), double(room.available) / 1e9);
-            tell(g, text);
+            tell(g, trf("A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB.",
+                        {gb(double(size)), gb(double(size) * 2), staging(), gb(double(room.available))}));
             continue;
         }
         const std::string part = staging() + "picking" + std::to_string(++index);
         std::FILE* o = std::fopen(part.c_str(), "wb");
         bool ok = o != nullptr;
         {
-            Progress bar(g.title, "Copying the file picked" + (picked.size() > 1 ? " (" + std::to_string(index) + " of " + std::to_string(picked.size()) + ")" : std::string()) + " ...");
+            Progress bar(g.title, picked.size() > 1 ? trf("Copying the file picked ({0} of {1}) ...", {std::to_string(index), std::to_string(picked.size())})
+                                                    : std::string(tr("Copying the file picked ...")));
             std::vector<uint8_t> buf(1 << 20);
             uint64_t done = 0;
             for (size_t n; ok && (n = SDL_ReadIO(in, buf.data(), buf.size())) > 0;) {
@@ -515,7 +532,7 @@ std::vector<std::string> localize(const SetupGame& g, const std::vector<std::str
         const std::string to = staging() + name;
         if (!ok || name.empty() || (exists(to) && !SDL_RemovePath(to.c_str())) || !SDL_RenamePath(part.c_str(), to.c_str())) {
             SDL_RemovePath(part.c_str());
-            tell(g, "A file picked can't be copied into " + staging());
+            tell(g, trf("A file picked can't be copied into {0}", {staging()}));
             continue;
         }
         SDL_Log("setup: picked %s - %s", from.c_str(), name.c_str());
@@ -529,7 +546,7 @@ std::vector<std::string> localize(const SetupGame& g, const std::vector<std::str
 bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& app, std::string* error,
                const std::function<void(double)>& progress) {
     std::FILE* f = std::fopen(ipa.c_str(), "rb");
-    if (!f) return fail(error, "can't be opened");
+    if (!f) return fail(error, tr("can't be opened"), Failed::CantBe);
     SDL_PathInfo info{};
     SDL_GetPathInfo(ipa.c_str(), &info);
     std::vector<ZipEntry> all;
@@ -542,11 +559,11 @@ bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& a
                 appName = e.name.substr(8, s - 8);
                 break;
             }
-    if (appName.empty()) return std::fclose(f), fail(error, "no Payload/<name>.app in it - not an iOS app");
+    if (appName.empty()) return std::fclose(f), fail(error, tr("no Payload/<name>.app in it - not an iOS app"));
     const std::string prefix = "Payload/" + appName + "/";
     const std::string part = withSlash(folder) + appName + ".part/", done = withSlash(folder) + appName + "/";
     if (isDir(part)) removeTree(part);
-    if (!SDL_CreateDirectory(part.c_str())) return std::fclose(f), fail(error, folder + ": can't be written");
+    if (!SDL_CreateDirectory(part.c_str())) return std::fclose(f), fail(error, trf("{0}: can't be written", {folder}), Failed::CantBeWritten);
     uint64_t total = 0, written = 0;
     for (const ZipEntry& e : all)
         if (e.name.compare(0, prefix.size(), prefix) == 0) total += e.size;
@@ -568,7 +585,7 @@ bool unpackIpa(const std::string& ipa, const std::string& folder, std::string& a
     std::fclose(f);
     if (!ok) return removeTree(part), false;
     if (isDir(done)) removeTree(done); // (an earlier unpacking of the same: replaced)
-    if (!SDL_RenamePath(part.c_str(), done.c_str())) return removeTree(part), fail(error, done + ": can't be made");
+    if (!SDL_RenamePath(part.c_str(), done.c_str())) return removeTree(part), fail(error, trf("{0}: can't be made", {done}), Failed::CantBe);
     app = done;
     return true;
 }
@@ -635,7 +652,7 @@ bool decryptVita(const std::string& from, const std::string& to, std::string* er
     SDL_IOStream* w = SDL_IOFromFile((withSlash(from) + "sce_sys/package/work.bin").c_str(), "rb");
     const bool read = w && SDL_SeekIO(w, 0x50, SDL_IO_SEEK_SET) == 0x50 && SDL_ReadIO(w, key, 16) == 16;
     if (w) SDL_CloseIO(w);
-    if (!read) return fail(error, "no work.bin (its licence) to decrypt it with");
+    if (!read) return fail(error, tr("no work.bin (its licence) to decrypt it with"));
     vitapfs::Image image;
     vitapfs::Failure f = image.mount(fsPath(from), key);
     if (f == vitapfs::Failure::None)
@@ -645,11 +662,11 @@ bool decryptVita(const std::string& from, const std::string& to, std::string* er
     if (f == vitapfs::Failure::None) return true;
     SDL_Log("setup: %s: %s - %s", from.c_str(), vitapfs::failureName(f), image.detail().c_str());
     // (a damaged file, or one that can't be read or written: the files; else the image itself - a wrong key, a part of it missing)
-    if (f == vitapfs::Failure::Damaged || f == vitapfs::Failure::IoError) return fail(error, "its files don't decrypt (a part of the dump missing or damaged?)");
-    return fail(error, "its files can't be read with its own work.bin - not a whole NoNpDrm dump");
+    if (f == vitapfs::Failure::Damaged || f == vitapfs::Failure::IoError) return fail(error, tr("its files don't decrypt (a part of the dump missing or damaged?)"));
+    return fail(error, tr("its files can't be read with its own work.bin - not a whole NoNpDrm dump"));
 #else
     (void)from, (void)to, (void)progress;
-    return fail(error, "this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder");
+    return fail(error, tr("this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"));
 #endif
 }
 
@@ -667,9 +684,10 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
     archive_read_support_format_all(a);
     archive_read_support_filter_all(a);
     if (archive_read_open_filename(a, path.c_str(), 1 << 20) != ARCHIVE_OK) {
-        const std::string why = archive_error_string(a) ? archive_error_string(a) : "can't be opened";
+        const bool cant = !archive_error_string(a);
+        const std::string why = !cant ? archive_error_string(a) : tr("can't be opened");
         archive_read_free(a);
-        return fail(error, why);
+        return fail(error, why, cant ? Failed::CantBe : Failed::Other);
     }
     const uint64_t total = fileBytes(path);
     archive_entry* e = nullptr;
@@ -700,12 +718,14 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
         SDL_CreateDirectory(parentOf(out).c_str());
         SDL_IOStream* f = SDL_IOFromFile(out.c_str(), "wb");
         if (!f) {
-            ok = false, fail(error, out + ": can't be written");
+            ok = false, fail(error, trf("{0}: can't be written", {out}), Failed::CantBeWritten);
             break;
         }
         for (la_ssize_t got; (got = archive_read_data(a, buf.data(), buf.size())) != 0;) {
             if (got < 0 || SDL_WriteIO(f, buf.data(), size_t(got)) != size_t(got)) {
-                ok = false, fail(error, got < 0 ? name + ": " + (archive_error_string(a) ? archive_error_string(a) : "can't be read") : out + ": can't be written");
+                if (got >= 0) ok = false, fail(error, trf("{0}: can't be written", {out}), Failed::CantBeWritten);
+                else if (archive_error_string(a)) ok = false, fail(error, trf("{0}: {1}", {name, archive_error_string(a)}));
+                else ok = false, fail(error, trf("{0}: {1}", {name, tr("can't be read")}), Failed::CantBe);
                 break;
             }
             if (progress && total) progress(double(archive_filter_bytes(a, -1)) / double(total));
@@ -714,12 +734,13 @@ bool unpackArchive(const std::string& path, const std::string& to, const std::fu
     }
     if (ok && r != ARCHIVE_EOF)
         ok = false, fail(error, archive_error_string(a) ? std::string(archive_error_string(a))
-                                                        : "an entry it can't read (after " + (lastName.empty() ? std::string("the start") : lastName) + ")");
+                                : lastName.empty()      ? std::string(tr("an entry it can't read (after the start)"))
+                                                        : trf("an entry it can't read (after {0})", {lastName}));
     archive_read_free(a);
     return ok;
 #else
     (void)path, (void)to, (void)want, (void)progress;
-    return fail(error, "this build can't open archives - unpack it first, then choose its folder");
+    return fail(error, tr("this build can't open archives - unpack it first, then choose its folder"));
 #endif
 }
 
@@ -736,16 +757,16 @@ std::string unpackPatch(const SetupGame& g, const std::string& archive, const st
                         const std::function<void(double)>& progress) {
     const std::string u = t + ".unpack/";
     if ((!isDir(t) && !SDL_CreateDirectory(t.c_str())) || (isDir(u) && (removeTree(u), false)) || !SDL_CreateDirectory(u.c_str()))
-        return fail(error, t + ": can't be written"), std::string();
+        return fail(error, trf("{0}: can't be written", {t}), Failed::CantBeWritten), std::string();
     if (!unpackArchive(archive, u, [](const std::string&) { return true; }, error, progress)) return removeTree(u), std::string();
     const std::string own = patchFolder(u, g.vitaId);
-    if (!g.patchOk(own)) return removeTree(u), fail(error, std::string("no fan translation in it (its rePatch/") + g.vitaId + "/)"), std::string();
+    if (!g.patchOk(own)) return removeTree(u), fail(error, trf("no fan translation in it (its rePatch/{0}/)", {g.vitaId})), std::string();
     const std::string named = patchDir(g, own), done = t + named + "/", older = t + g.vitaId + "/";
     if (isDir(done)) removeTree(done);
     if (named != g.vitaId && isDir(older) && patchDir(g, older) == named) removeTree(older); // (an earlier version's translation/<id>/ of this one's language)
     const bool moved = SDL_RenamePath(own.c_str(), done.c_str());
     if (isDir(u)) removeTree(u);
-    if (!moved) return fail(error, done + ": can't be made"), std::string();
+    if (!moved) return fail(error, trf("{0}: can't be made", {done}), Failed::CantBe), std::string();
     return done;
 }
 
@@ -809,13 +830,13 @@ bool selfEncrypted(const std::vector<uint8_t>& f) {
 
 bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector<uint8_t>& elf, std::string* error) {
 #ifdef CR_HAVE_VITA_DECRYPT
-    if (f.size() < 0x80 || std::memcmp(f.data(), "SCE\0", 4) != 0 || (f[10] | f[11] << 8) != 1) return fail(error, "not a SELF");
+    if (f.size() < 0x80 || std::memcmp(f.data(), "SCE\0", 4) != 0 || (f[10] | f[11] << 8) != 1) return fail(error, tr("not a SELF"));
     const int keyRevision = f[9];
     const uint64_t metadataAt = le32At(f, 12), headerLength = le64At(f, 16);
     const uint64_t appInfo = le64At(f, 32 + 24), elfAt = le64At(f, 32 + 32), phdrAt = le64At(f, 32 + 40), segAt = le64At(f, 32 + 56);
     const uint32_t selfType = le32At(f, appInfo + 12);
     const uint64_t sysVersion = le64At(f, appInfo + 16);
-    if (headerLength > f.size() || metadataAt + 48 + 64 > headerLength || elfAt + 52 > f.size()) return fail(error, "a broken SELF");
+    if (headerLength > f.size() || metadataAt + 48 + 64 > headerLength || elfAt + 52 > f.size()) return fail(error, tr("a broken SELF"));
     const int phnum = f[size_t(elfAt) + 44] | f[size_t(elfAt) + 45] << 8;
     struct Segment {
         uint64_t offset, size;
@@ -828,7 +849,7 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
         const uint64_t s = segAt + uint64_t(i) * 32, p = phdrAt + uint64_t(i) * 32;
         segs.push_back({le64At(f, s), le64At(f, s + 8), le32At(f, s + 16) == 2, le32At(f, s + 24) == 1, le32At(f, p + 4), le32At(f, p + 16)});
         any = any || segs.back().encrypted;
-        if (segs.back().offset + segs.back().size > f.size()) return fail(error, "a broken SELF (a segment past its end)");
+        if (segs.back().offset + segs.back().size > f.size()) return fail(error, tr("a broken SELF (a segment past its end)"));
     }
     struct Keyed {
         int idx;
@@ -839,7 +860,7 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
         const SelfKey* mk = nullptr;
         for (const SelfKey& k : kAppMetadataKeys)
             if (k.revision == keyRevision && sysVersion >= k.minVersion && sysVersion <= k.maxVersion) mk = &k;
-        if (selfType != 8 || !mk) return fail(error, "a SELF of a kind (or key revision) the port has no key for");
+        if (selfType != 8 || !mk) return fail(error, tr("a SELF of a kind (or key revision) the port has no key for"));
         std::vector<uint8_t> dat(f.begin() + long(metadataAt + 48), f.begin() + long(headerLength));
         uint8_t in[64], info[64], zero[16] = {}, iv[16] = {};
         std::memcpy(in, dat.data(), 64);
@@ -855,20 +876,20 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
         std::memcpy(iv, kiv.data(), 16);
         crypto::aesCbcDecrypt(in, info, 64, key.data(), 256, iv);
         for (int k = 16; k < 32; ++k)
-            if (info[k] || info[k + 32]) return fail(error, "its key doesn't open it (its licence isn't its own?)");
+            if (info[k] || info[k + 32]) return fail(error, tr("its key doesn't open it (its licence isn't its own?)"));
         std::vector<uint8_t> meta((dat.size() - 64) / 16 * 16);
         std::memcpy(iv, info + 32, 16);
-        crypto::aesCbcDecrypt(dat.data() + 64, meta.data(), meta.size(), info, 128, iv);
-        if (meta.size() < 32) return fail(error, "a broken SELF (no metadata)");
+        crypto::aesCbcDecrypt(dat.data() + 64, meta.data(), int(meta.size()), info, 128, iv);
+        if (meta.size() < 32) return fail(error, tr("a broken SELF (no metadata)"));
         const uint32_t sections = le32At(meta, 12), keys = le32At(meta, 16);
         const uint64_t vault = 32 + uint64_t(sections) * 48;
-        if (vault + uint64_t(keys) * 16 > meta.size()) return fail(error, "a broken SELF (its metadata)");
+        if (vault + uint64_t(keys) * 16 > meta.size()) return fail(error, tr("a broken SELF (its metadata)"));
         for (uint32_t k = 0; k < sections; ++k) {
             const uint64_t m = 32 + uint64_t(k) * 48;
             const int segIdx = int(le32At(meta, m + 20)), keyIdx = int(le32At(meta, m + 36)), ivIdx = int(le32At(meta, m + 40));
             if (le32At(meta, m + 32) != 3) continue; // (AES-128-CTR)
             if (keyIdx < 0 || ivIdx < 0 || uint32_t(keyIdx) >= keys || uint32_t(ivIdx) >= keys || segIdx < 0 || segIdx >= phnum)
-                return fail(error, "a broken SELF (its keys)");
+                return fail(error, tr("a broken SELF (its keys)"));
             keyed.push_back({segIdx, std::vector<uint8_t>(meta.begin() + long(vault + 16 * uint64_t(keyIdx)), meta.begin() + long(vault + 16 * uint64_t(keyIdx) + 16)),
                              std::vector<uint8_t>(meta.begin() + long(vault + 16 * uint64_t(ivIdx)), meta.begin() + long(vault + 16 * uint64_t(ivIdx) + 16))});
         }
@@ -884,7 +905,7 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
         if (s.fileOffset > elf.size()) elf.resize(s.fileOffset);
         std::vector<uint8_t> data(f.begin() + long(s.offset), f.begin() + long(s.offset + s.size));
         if (s.encrypted) {
-            if (keyed.empty()) return fail(error, "a broken SELF (an encrypted segment without its key)");
+            if (keyed.empty()) return fail(error, tr("a broken SELF (an encrypted segment without its key)"));
             std::vector<uint8_t> iv = keyed[size_t(i)].iv;
             std::vector<uint8_t> plain(data.size());
             crypto::aesCtr(data.data(), plain.data(), data.size(), keyed[size_t(i)].key.data(), 128, iv.data());
@@ -894,11 +915,11 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
 #if defined(CR_HAVE_ZLIB)
             std::vector<uint8_t> out(size_t(s.fileSize));
             uLongf n = uLongf(out.size());
-            if (uncompress(out.data(), &n, data.data(), uLong(data.size())) != Z_OK) return fail(error, "a segment doesn't inflate");
+            if (uncompress(out.data(), &n, data.data(), uLong(data.size())) != Z_OK) return fail(error, tr("a segment doesn't inflate"));
             out.resize(n);
             data.swap(out);
 #else
-            return fail(error, "built without zlib");
+            return fail(error, tr("built without zlib"));
 #endif
         }
         if (elf.size() > s.fileOffset) elf.resize(s.fileOffset); // (at its offset, over what came before)
@@ -907,7 +928,7 @@ bool decryptSelf(const std::vector<uint8_t>& f, const uint8_t* klic, std::vector
     return true;
 #else
     (void)f, (void)klic, (void)elf;
-    return fail(error, "this build can't decrypt the Vita's programs");
+    return fail(error, tr("this build can't decrypt the Vita's programs"));
 #endif
 }
 
@@ -1004,25 +1025,22 @@ int installVita(const SetupGame& g, const VitaInstall& in, const std::string& r,
         std::error_code ec;
         const std::filesystem::space_info room = std::filesystem::space(fsPath(v), ec);
         if (!ec && room.available < need + (64u << 20)) {
-            char text[160];
-            std::snprintf(text, sizeof text, "it needs about %.1f GB free in %s, and there is %.1f GB", double(need) / 1e9, v.c_str(),
-                          double(room.available) / 1e9);
-            why = text;
+            why = trf("it needs about {0} GB free in {1}, and there is {2} GB", {gb(double(need)), v, gb(double(room.available))});
             return notGame = true, -1;
         }
     }
     bool good;
     if (encryptedVita(in.root)) {
         {
-            Progress bar(g.title, "Decrypting the Vita release ...");
+            Progress bar(g.title, tr("Decrypting the Vita release ..."));
             good = decryptVita(in.root, part, &why, [&](double x) { bar.show(x); });
         }
-        if (!good) return removeTree(part), why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+        if (!good) return removeTree(part), lastFailed() == Failed::CantBeWritten ? 0 : (notGame = true, -1);
         if (in.trilogy)
             for (const char* other : kGames)
                 if (tri != other) removeTree(part + other + "/"), SDL_RemovePath((part + other + ".self").c_str());
     } else {
-        Progress bar(g.title, "Copying the Vita release ...");
+        Progress bar(g.title, tr("Copying the Vita release ..."));
         Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.root)}; // (the trilogy's other games left: the bar ends short)
         good = SDL_CreateDirectory(part.c_str());
         struct Ctx {
@@ -1051,17 +1069,17 @@ int installVita(const SetupGame& g, const VitaInstall& in, const std::string& r,
         if (isDir(a)) removeTree(a);
         if (encryptedVita(in.addon)) {
             {
-                Progress bar(g.title, "Decrypting the game's add-on ...");
+                Progress bar(g.title, tr("Decrypting the game's add-on ..."));
                 good = decryptVita(in.addon, a, &why, [&](double x) { bar.show(x); });
             }
             good = good && mergeInto(a + tri + "/", part + tri + "/");
         } else {
-            Progress bar(g.title, "Copying the game's add-on ...");
+            Progress bar(g.title, tr("Copying the game's add-on ..."));
             Copier copy{[&](double x) { bar.show(x); }, treeBytes(in.addon + tri + "/")};
             good = copy.tree(in.addon + tri + "/", part + tri);
         }
         removeTree(a);
-        if (!good) return removeTree(part), why.empty() || why.find("written") != std::string::npos ? 0 : (notGame = true, -1);
+        if (!good) return removeTree(part), why.empty() || lastFailed() == Failed::CantBeWritten ? 0 : (notGame = true, -1);
     }
     if (g.vitaProgram) { // (its program, encrypted: decrypted beside it - <name>.elf)
         const std::string program = in.trilogy ? tri + ".self" : std::string("eboot.bin");
@@ -1072,14 +1090,14 @@ int installVita(const SetupGame& g, const VitaInstall& in, const std::string& r,
         if (selfEncrypted(self) && !exists(elfName)) { // (a copy an earlier setup made has it decrypted beside it already)
             uint8_t klic[16];
             std::vector<uint8_t> elf;
-            if (!klicenseeOf(in.root, name, klic)) why = program + ": no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)";
+            if (!klicenseeOf(in.root, name, klic)) why = trf("{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)", {program});
             else if (decryptSelf(self, klic, elf, &why)) {
                 const std::string to = part + program.substr(0, program.rfind('.')) + ".elf";
                 SDL_IOStream* o = SDL_IOFromFile(to.c_str(), "wb");
                 const bool wrote = o && SDL_WriteIO(o, elf.data(), elf.size()) == elf.size();
                 if (o) SDL_CloseIO(o);
                 if (!wrote) return removeTree(part), 0;
-            } else why = program + ": " + why;
+            } else why = trf("{0}: {1}", {program, why});
             if (!why.empty()) return removeTree(part), notGame = true, -1;
         }
     }
@@ -1130,7 +1148,7 @@ bool gameObb(const SetupGame& g, const std::string& entry) {
 bool unbundleAndroid(const SetupGame& g, const std::string& bundle, const std::string& dest, std::vector<std::string>& made,
                      std::string* error, const std::function<void(double)>& progress = {}) {
     std::FILE* f = std::fopen(bundle.c_str(), "rb");
-    if (!f) return fail(error, "can't be opened");
+    if (!f) return fail(error, tr("can't be opened"), Failed::CantBe);
     std::vector<ZipEntry> all, parts;
     if (!zipEntries(f, fileBytes(bundle), all, error)) return std::fclose(f), false;
     bool obb = false;
@@ -1140,7 +1158,7 @@ bool unbundleAndroid(const SetupGame& g, const std::string& bundle, const std::s
         else if (e.name.find('/') == std::string::npos && endsWith(lowered(e.name), ".apk")) parts.push_back(e);
     }
     if (parts.empty() || (endsWith(lowered(bundle), ".zip") && !obb))
-        return std::fclose(f), fail(error, std::string("neither ") + g.title + "'s APK nor its OBB is in it");
+        return std::fclose(f), fail(error, trf("neither {0}'s APK nor its OBB is in it", {g.title}), Failed::NotInIt);
     uint64_t total = 0, done = 0;
     std::vector<ZipEntry> todo;
     for (const ZipEntry& e : parts)
@@ -1151,7 +1169,7 @@ bool unbundleAndroid(const SetupGame& g, const std::string& bundle, const std::s
         ok = unpackEntry(f, e, part, error, [&](uint64_t n) {
             if (progress && total) progress(double(done + n) / double(total));
         });
-        if (ok) SDL_RemovePath(to.c_str()), ok = SDL_RenamePath(part.c_str(), to.c_str()) || fail(error, to + ": can't be made");
+        if (ok) SDL_RemovePath(to.c_str()), ok = SDL_RenamePath(part.c_str(), to.c_str()) || fail(error, trf("{0}: can't be made", {to}), Failed::CantBe);
         if (!ok) {
             SDL_RemovePath(part.c_str());
             break;
@@ -1208,62 +1226,64 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
         }
     } tidy;
     for (;;) {
-        std::string text = std::string(g.port) + " plays your own copy of " + g.title +
-                           ". Choose where it is - any one of them; the files it needs are copied into its folder:\n\n";
+        std::string text = trf("{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:",
+                               {g.port, g.title}) +
+                           "\n\n";
         const bool obb = endsWith(g.obbHint, ".obb"); // (CR3: no OBB - its .apks, or the APK and its asset packs)
-        const std::string androidLine = obb ? "  Android - the APK and its " + std::string(g.obbHint) + " (both at once)\n"
-                                            : std::string("  Android - the .apks (or the APK and its asset packs, all at once)\n");
+        const std::string androidLine = "  " + (obb ? trf("Android - the APK and its {0} (both at once)", {g.obbHint})
+                                                    : std::string(tr("Android - the .apks (or the APK and its asset packs, all at once)"))) + "\n";
         if (phone())
-            text += "  iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)\n" + androidLine +
-                    "  Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB\n\n"
-                    "What is copied into its folder over USB is found with Look again.\n\n";
+            text += "  " + std::string(tr("iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)")) + "\n" + androidLine + "  " +
+                    tr("Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB") + "\n\n" +
+                    tr("What is copied into its folder over USB is found with Look again.") + "\n\n";
         else
-            text += "  iOS - the .ipa (or a file in its unpacked .app)\n" + androidLine +
-                    "  Vita - Vita3K's folder with the game installed (or the game's " + std::string(g.vitaId) + " folder)\n\n";
-        text += "Its folder: " + roots[0];
+            text += "  " + std::string(tr("iOS - the .ipa (or a file in its unpacked .app)")) + "\n" + androidLine + "  " +
+                    trf("Vita - Vita3K's folder with the game installed (or the game's {0} folder)", {g.vitaId}) + "\n\n";
+        text += trf("Its folder: {0}", {roots[0]});
         const bool any = !out.ios.empty() || !out.android.empty() || !out.vita.empty();
         if (any) {
-            text += "\n\nIn place:";
-            if (!out.ios.empty()) text += "\n  iOS: " + out.ios;
-            if (!out.android.empty()) text += "\n  Android: " + out.android;
-            if (!out.vita.empty()) text += "\n  Vita: " + out.vita;
-            if (!out.patch.empty()) text += "\n  Its fan translation: " + out.patch;
-            if (!g.oneRelease) text += "\n\nMore of them add to it (the Vita's voices and music, Android's art); or Start.";
+            text += "\n\n" + std::string(tr("In place:"));
+            if (!out.ios.empty()) text += "\n  " + trf("iOS: {0}", {out.ios});
+            if (!out.android.empty()) text += "\n  " + trf("Android: {0}", {out.android});
+            if (!out.vita.empty()) text += "\n  " + trf("Vita: {0}", {out.vita});
+            if (!out.patch.empty()) text += "\n  " + trf("Its fan translation: {0}", {out.patch});
+            if (!g.oneRelease) text += "\n\n" + std::string(tr("More of them add to it (the Vita's voices and music, Android's art); or Start."));
         }
-        std::vector<std::pair<int, const char*>> buttons = {{1, "iOS (.ipa)..."}, {2, obb ? "Android (APK + OBB)..." : "Android (.apks)..."}, {3, phone() ? "Vita..." : "Vita / Vita3K..."}};
-        if (any) buttons.push_back({4, "Start"});
-        else if (phone()) buttons.push_back({5, "Look again"}); // (copied in over USB meanwhile: found as on any start)
-        buttons.push_back({0, "Quit"});
+        std::vector<std::pair<int, const char*>> buttons = {
+            {1, tr("iOS (.ipa)...")}, {2, obb ? tr("Android (APK + OBB)...") : tr("Android (.apks)...")}, {3, phone() ? tr("Vita...") : tr("Vita / Vita3K...")}};
+        if (any) buttons.push_back({4, tr("Start")});
+        else if (phone()) buttons.push_back({5, tr("Look again")}); // (copied in over USB meanwhile: found as on any start)
+        buttons.push_back({0, tr("Quit")});
         const int choice = ask(g, text, buttons, SDL_MESSAGEBOX_INFORMATION);
         if (choice <= 0) return false;
         if (choice == 4 || choice == 5) return true;
         if (choice == 1) { // (the .ipa unpacked into ios/; an unpacked .app copied there)
-            static const SDL_DialogFileFilter kIpa[] = {{"iOS app (.ipa)", "ipa"}, {"Any file (one in an unpacked .app)", "*"}};
+            const SDL_DialogFileFilter kIpa[] = {{tr("iOS app (.ipa)"), "ipa"}, {tr("Any file (one in an unpacked .app)"), "*"}};
             const std::vector<std::string> picked = pickFiles(g, kIpa, 2, false);
             if (picked.empty()) continue;
             const std::string& f = picked.front();
             if (phone() && !endsWith(f, ".ipa")) {
-                tell(g, "That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into " + roots[0] + "ios/ over USB, then Look again.");
+                tell(g, trf("That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again.", {roots[0] + "ios/"}));
                 continue;
             }
             std::string app, why;
             bool ok;
             if (endsWith(f, ".ipa") || endsWith(f, ".zip")) {
-                Progress bar(g.title, "Unpacking " + baseName(f) + " ...");
+                Progress bar(g.title, trf("Unpacking {0} ...", {baseName(f)}));
                 ok = inGameFolder(roots, [&](const std::string& r) {
                     SDL_CreateDirectory((r + "ios").c_str());
                     if (unpackIpa(f, r + "ios/", app, &why, [&](double v) { bar.show(v); })) return 1;
-                    return isDir(r + "ios") && why.find("can't be") == std::string::npos ? -1 : 0; // (a broken .ipa: the same anywhere)
+                    return isDir(r + "ios") && lastFailed() != Failed::CantBe && lastFailed() != Failed::CantBeWritten ? -1 : 0; // (a broken .ipa: the same anywhere)
                 });
             } else {
                 std::string dir = parentOf(f);
                 while (!dir.empty() && !endsWith(dir.substr(0, dir.size() - 1), ".app")) dir = parentOf(dir);
                 if (dir.empty()) dir = parentOf(f);
                 if (!g.iosOk(dir)) {
-                    tell(g, "No " + std::string(g.title) + " data in " + dir);
+                    tell(g, trf("No {0} data in {1}", {g.title, dir}));
                     continue;
                 }
-                Progress bar(g.title, "Copying " + baseName(dir) + " ...");
+                Progress bar(g.title, trf("Copying {0} ...", {baseName(dir)}));
                 Copier copy{[&](double v) { bar.show(v); }, treeBytes(dir)};
                 ok = inGameFolder(roots, [&](const std::string& r) {
                     SDL_CreateDirectory((r + "ios").c_str());
@@ -1275,31 +1295,31 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     app = done;
                     return 1;
                 });
-                why = "can't be written";
+                why = tr("can't be written");
             }
             if (!ok) {
-                tell(g, baseName(f) + ": " + why);
+                tell(g, trf("{0}: {1}", {baseName(f), why}));
                 continue;
             }
             if (!g.iosOk(app)) {
                 removeTree(app);
-                tell(g, baseName(f) + " isn't " + g.title + "'s iOS release.");
+                tell(g, trf("{0} isn't {1}'s iOS release.", {baseName(f), g.title}));
                 continue;
             }
             out.ios = app;
         } else if (choice == 2) { // (the APK and the OBB - or the .apks - copied into android/)
-            static const SDL_DialogFileFilter kAndroid[] = {{"Android (.apk, .obb, .apks)", "apk;obb;apks;xapk"}, {"Any file", "*"}};
+            const SDL_DialogFileFilter kAndroid[] = {{tr("Android (.apk, .obb, .apks)"), "apk;obb;apks;xapk"}, {tr("Any file"), "*"}};
             const std::vector<std::string> picked = pickFiles(g, kAndroid, 2, true);
             if (picked.empty()) continue;
             const std::vector<std::string> files = androidFiles(g, picked);
             if (files.empty()) {
-                tell(g, std::string("Choose ") + g.title + "'s Android release: the APK and its " + g.obbHint + ", both at once.");
+                tell(g, trf("Choose {0}'s Android release: the APK and its {1}, both at once.", {g.title, g.obbHint}));
                 continue;
             }
             uint64_t total = 0;
             for (const std::string& f : files) total += fileBytes(f);
-            Progress bar(g.title, std::any_of(files.begin(), files.end(), [](const std::string& f) { return androidBundle(f); }) ? "Unpacking the Android release ..."
-                                                                                                                      : "Copying the Android release ...");
+            Progress bar(g.title, std::any_of(files.begin(), files.end(), [](const std::string& f) { return androidBundle(f); }) ? tr("Unpacking the Android release ...")
+                                                                                                                      : tr("Copying the Android release ..."));
             Copier copy{[&](double v) { bar.show(v); }, total};
             std::string dest;
             bool notGame = false;
@@ -1321,7 +1341,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                         if (!got) {
                             SDL_Log("setup: %s: %s", f.c_str(), why.c_str());
                             for (const std::string& m : made) SDL_RemovePath(m.c_str());
-                            if (why.find(" is in it") == std::string::npos) return 0;
+                            if (lastFailed() != Failed::NotInIt) return 0;
                             notGame = true;
                             return -1;
                         }
@@ -1363,9 +1383,9 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             if (!ok) {
                 std::string names;
                 for (const std::string& f : files) names += "\n  " + baseName(f);
-                tell(g, notGame ? std::string("Not ") + g.title + "'s Android release (or not all of it):" + names + "\n\nChoose the APK and its " + g.obbHint +
-                                      ", both at once."
-                                : "The Android release can't be copied into " + roots[0] + "android/ (nor the profile folder's).");
+                tell(g, notGame ? trf("Not {0}'s Android release (or not all of it):", {g.title}) + names + "\n\n" +
+                                      trf("Choose the APK and its {0}, both at once.", {g.obbHint})
+                                : trf("The Android release can't be copied into {0} (nor the profile folder's).", {roots[0] + "android/"}));
                 continue;
             }
             out.android = dest;
@@ -1373,23 +1393,23 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             int how = 1;
             if (phone())
                 how = ask(g,
-                          "Where is the Vita release?\n\n"
-                          "  A folder - copied into " + roots[0] + "vita/ over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the "
-                          "Prequel Trilogy), Vita3K's ux0, or the game's own folder\n"
-                          "  An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)",
-                          kArchives ? std::vector<std::pair<int, const char*>>{{1, "Copied in..."}, {2, "An archive..."}, {0, "Back"}}
-                                    : std::vector<std::pair<int, const char*>>{{1, "Copied in..."}, {0, "Back"}},
+                          std::string(tr("Where is the Vita release?")) + "\n\n  " +
+                              trf("A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the "
+                                  "Prequel Trilogy), Vita3K's ux0, or the game's own folder",
+                                  {roots[0] + "vita/"}) +
+                              "\n  " + tr("An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"),
+                          kArchives ? std::vector<std::pair<int, const char*>>{{1, tr("Copied in...")}, {2, tr("An archive...")}, {0, tr("Back")}}
+                                    : std::vector<std::pair<int, const char*>>{{1, tr("Copied in...")}, {0, tr("Back")}},
                           SDL_MESSAGEBOX_INFORMATION);
             else if (kArchives)
                 how = ask(g,
-                          "Where is the Vita release?\n\n"
-                          "  A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's\n"
-                          "  An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk",
-                          {{1, "A folder..."}, {2, "An archive..."}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION);
+                          std::string(tr("Where is the Vita release?")) + "\n\n  " + tr("A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's") +
+                              "\n  " + tr("An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"),
+                          {{1, tr("A folder...")}, {2, tr("An archive...")}, {0, tr("Back")}}, SDL_MESSAGEBOX_INFORMATION);
             if (how <= 0) continue;
             std::string picked, unpacked; // (an archive's: unpacked into vita/.unpack/, gone after)
             if (how == 2) {
-                static const SDL_DialogFileFilter kDump[] = {{"A Vita dump (.rar, .7z, .zip, .vpk)", "rar;7z;zip;vpk"}, {"Any file", "*"}};
+                const SDL_DialogFileFilter kDump[] = {{tr("A Vita dump (.rar, .7z, .zip, .vpk)"), "rar;7z;zip;vpk"}, {tr("Any file"), "*"}};
                 const std::vector<std::string> files = pickFiles(g, kDump, 2, false);
                 if (files.empty()) continue;
                 // (this game's parts alone: those under its title id - the trilogy's PCSG00457 and its add-on, not the other games')
@@ -1400,8 +1420,9 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     if (!*g.trilogyDir || s.find("/PCSG00457/") == std::string::npos) return false;
                     return s.find("/addcont/") == std::string::npos || (!addon.empty() && s.find("/" + addon + "/") != std::string::npos);
                 };
-                Progress bar(g.title, "Unpacking " + baseName(files.front()) + " ...");
+                Progress bar(g.title, trf("Unpacking {0} ...", {baseName(files.front())}));
                 std::string why;
+                lastFailed() = Failed::Other; // (as `why`: nothing failed yet - a file that can't be closed fails without saying so)
                 const bool ok = inGameFolder(roots, [&](const std::string& r) {
                     const std::string v = r + "vita/", u = v + ".unpack/";
                     if (!isDir(v) && !SDL_CreateDirectory(v.c_str())) return 0;
@@ -1409,19 +1430,21 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     if (!SDL_CreateDirectory(u.c_str())) return 0;
                     if (unpackArchive(files.front(), u, want, &why, [&](double x) { bar.show(x); })) return unpacked = u, 1;
                     removeTree(u);
-                    return why.find("can't be written") != std::string::npos ? 0 : -1;
+                    return lastFailed() == Failed::CantBeWritten ? 0 : -1;
                 });
                 if (!ok) {
-                    tell(g, baseName(files.front()) + ": " + why);
+                    tell(g, trf("{0}: {1}", {baseName(files.front()), why}));
                     continue;
                 }
                 picked = unpacked;
             } else if (phone()) { // (no folder dialog: the folder it was copied into)
                 const std::string v = roots[0] + "vita/";
                 SDL_CreateDirectory(v.c_str());
-                if (ask(g, "Copy the Vita release's folder into\n  " + v + "\nover USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ "
-                           "for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue.",
-                        {{1, "Continue"}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION) != 1)
+                if (ask(g,
+                        trf("Copy the Vita release's folder into\n  {0}\nover USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ "
+                            "for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue.",
+                            {v}),
+                        {{1, tr("Continue")}, {0, tr("Back")}}, SDL_MESSAGEBOX_INFORMATION) != 1)
                     continue;
                 picked = v;
             } else {
@@ -1432,10 +1455,12 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
             if (!findVitaInstall(picked, g, in)) {
                 if (!unpacked.empty()) removeTree(unpacked);
                 if (in.trilogy) // (the Prequel Trilogy, this game's data - its add-on - not with it)
-                    tell(g, std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon + "), and it isn't beside " +
-                                in.root + " - install the add-on in Vita3K too, or choose a dump with it.");
-                else tell(g, std::string("No ") + g.title + " (" + g.vitaId + ") in " + (unpacked.empty() ? picked : std::string("the archive")) +
-                            " - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it.");
+                    tell(g, trf("The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in "
+                                "Vita3K too, or choose a dump with it.",
+                                {g.title, g.trilogyAddon, in.root}));
+                else if (unpacked.empty())
+                    tell(g, trf("No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it.", {g.title, g.vitaId, picked}));
+                else tell(g, trf("No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it.", {g.title, g.vitaId}));
                 continue;
             }
             // the install, into vita/<id>/: a dump's decrypted, else copied - the trilogy's own files
@@ -1452,12 +1477,13 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                                     : inGameFolder(roots, [&](const std::string& r) { return installVita(g, in, r, dest, why, notGame); });
             if (!ok) {
                 if (!unpacked.empty()) removeTree(unpacked);
-                if (notGame && !why.empty()) tell(g, std::string("The Vita release in ") + in.root + ": " + why);
+                if (notGame && !why.empty()) tell(g, trf("The Vita release in {0}: {1}", {in.root, why}));
                 else if (notGame && in.trilogy && in.addon.empty())
-                    tell(g, std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon +
-                                "), and it isn't beside " + in.root + " - install it in Vita3K too, or choose the dump with it.");
-                else if (notGame) tell(g, in.root + " isn't " + g.title + "'s Vita release as the port reads it.");
-                else tell(g, std::string("The Vita release in ") + in.root + " can't be copied into " + roots[0] + "vita/ (nor the profile folder's).");
+                    tell(g, trf("The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K "
+                                "too, or choose the dump with it.",
+                                {g.title, g.trilogyAddon, in.root}));
+                else if (notGame) tell(g, trf("{0} isn't {1}'s Vita release as the port reads it.", {in.root, g.title}));
+                else tell(g, trf("The Vita release in {0} can't be copied into {1} (nor the profile folder's).", {in.root, roots[0] + "vita/"}));
                 continue;
             }
             out.vita = dest;
@@ -1470,23 +1496,24 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                 for (const std::string& t : {up2 + "rePatch/" + g.vitaId + "/", up3 + "rePatch/" + g.vitaId + "/"})
                     if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
                 while (from.empty() && out.patch.empty()) {
-                    std::vector<std::pair<int, const char*>> b = {{1, phone() ? "Copied in..." : "Choose its folder..."}};
-                    if (kArchives) b.push_back({2, "Its archive..."});
-                    b.push_back({0, "Without it"});
+                    std::vector<std::pair<int, const char*>> b = {{1, phone() ? tr("Copied in...") : tr("Choose its folder...")}};
+                    if (kArchives) b.push_back({2, tr("Its archive...")});
+                    b.push_back({0, tr("Without it")});
                     const int a = ask(g,
-                                      std::string("This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or "
-                                                  "Joseas's Spanish one: its rePatch folder (") + g.vitaId + "), or the .rar / .zip it comes in. Is one here too?",
+                                      trf("This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or "
+                                          "Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?",
+                                          {g.vitaId}),
                                       b, SDL_MESSAGEBOX_INFORMATION);
                     if (a == 2) { // (its archive: unpacked, its <id>/ kept as translation/<id>/)
-                        static const SDL_DialogFileFilter kPatch[] = {{"The fan translation (.rar, .zip, .7z)", "rar;zip;7z"}, {"Any file", "*"}};
+                        const SDL_DialogFileFilter kPatch[] = {{tr("The fan translation (.rar, .zip, .7z)"), "rar;zip;7z"}, {tr("Any file"), "*"}};
                         const std::vector<std::string> files = pickFiles(g, kPatch, 2, false);
                         if (files.empty()) continue;
                         std::string got, why2;
                         {
-                            Progress pbar(g.title, "Unpacking the fan translation ...");
+                            Progress pbar(g.title, tr("Unpacking the fan translation ..."));
                             got = unpackPatch(g, files.front(), t0, &why2, [&](double v) { pbar.show(v); });
                         }
-                        if (got.empty()) tell(g, baseName(files.front()) + ": " + why2);
+                        if (got.empty()) tell(g, trf("{0}: {1}", {baseName(files.front()), why2}));
                         else out.patch = got;
                         continue;
                     }
@@ -1494,15 +1521,16 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     std::string chosen;
                     if (phone()) {
                         SDL_CreateDirectory(t0.c_str());
-                        if (ask(g, "Copy the fan translation's rePatch folder (or the " + std::string(g.vitaId) + " in it) into\n  " + t0 +
-                                       "\nover USB from a PC, then Continue.",
-                                {{1, "Continue"}, {0, "Back"}}, SDL_MESSAGEBOX_INFORMATION) != 1)
+                        if (ask(g, trf("Copy the fan translation's rePatch folder (or the {0} in it) into\n  {1}\nover USB from a PC, then Continue.", {g.vitaId, t0}),
+                                {{1, tr("Continue")}, {0, tr("Back")}}, SDL_MESSAGEBOX_INFORMATION) != 1)
                             continue;
                         chosen = t0;
                     } else if ((chosen = pickFolder()).empty()) continue;
                     for (const std::string& t : {withSlash(chosen) + g.vitaId + "/", withSlash(chosen) + "rePatch/" + g.vitaId + "/", withSlash(chosen)}) // (its own first: translation/ may hold another already)
                         if (from.empty() && isDir(t) && g.patchOk(t)) from = t;
-                    if (from.empty()) tell(g, "No fan translation in " + chosen + " - " + (phone() ? "copy" : "choose") + " its rePatch folder (or the " + g.vitaId + " in it).");
+                    if (from.empty())
+                        tell(g, phone() ? trf("No fan translation in {0} - copy its rePatch folder (or the {1} in it).", {chosen, g.vitaId})
+                                        : trf("No fan translation in {0} - choose its rePatch folder (or the {1} in it).", {chosen, g.vitaId}));
                 }
                 if (!from.empty()) { // (its <id>/ alone, where that is the translation)
                     if (const std::string own = patchFolder(from, g.vitaId); own != from && g.patchOk(own)) from = own;
@@ -1513,9 +1541,9 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                     const std::string done = t0 + named + "/";
                     if (isDir(done)) removeTree(done);
                     if (SDL_RenamePath(from.c_str(), done.c_str())) out.patch = done;
-                    else tell(g, "The fan translation can't be moved to " + done);
+                    else tell(g, trf("The fan translation can't be moved to {0}", {done}));
                 } else if (!from.empty()) {
-                    Progress pbar(g.title, "Copying the fan translation ...");
+                    Progress pbar(g.title, tr("Copying the fan translation ..."));
                     Copier pc{[&](double v) { pbar.show(v); }, treeBytes(from)};
                     std::string to;
                     inGameFolder(roots, [&](const std::string& r) {
@@ -1529,7 +1557,7 @@ bool runSetup(const SetupGame& g, const std::string& folder, const std::string& 
                         to = done;
                         return 1;
                     });
-                    if (to.empty()) tell(g, "The fan translation can't be copied into " + roots[0] + "translation/");
+                    if (to.empty()) tell(g, trf("The fan translation can't be copied into {0}", {roots[0] + "translation/"}));
                     out.patch = to;
                 }
             }
@@ -1580,12 +1608,12 @@ std::string unpackDroppedVitaArchive(const SetupGame& g, const std::string& v, s
     std::string why;
     bool ok;
     {
-        Progress bar(g.title, "Unpacking " + archive + " ...");
+        Progress bar(g.title, trf("Unpacking {0} ...", {archive}));
         ok = unpackArchive(pick, u, want, &why, [&](double x) { bar.show(x); });
     }
     if (!ok) { // (not listed: tried again next start - by a build that reads it, or after it's replaced)
         SDL_Log("setup: %s can't be unpacked: %s", archive.c_str(), why.c_str());
-        note(g, archive + " can't be unpacked: " + why, quiet);
+        note(g, trf("{0} can't be unpacked: {1}", {archive, why}), quiet);
         removeTree(u);
         return {};
     }
@@ -1605,7 +1633,7 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
         if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
         if (unpacked.empty()) return false;
         if (!findVitaInstall(unpacked, g, in)) {
-            note(g, archive + std::string(" holds no ") + g.title + " (" + g.vitaId + ") as the port reads it.", quiet);
+            note(g, trf("{0} holds no {1} ({2}) as the port reads it.", {archive, g.title, g.vitaId}), quiet);
             removeTree(unpacked);
             return false;
         }
@@ -1627,20 +1655,22 @@ bool installDroppedVita(const SetupGame& g, const std::string& folder, SetupResu
     if (got > 0) {
         out.vita = dest;
         if (!archive.empty())
-            say(std::string("The Vita release is unpacked and decrypted into ") + v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/.\n\n" + archive +
-                " isn't needed any more - delete it to get the space back.");
+            say(trf("The Vita release is unpacked and decrypted into {0}.", {v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/"}) + "\n\n" +
+                trf("{0} isn't needed any more - delete it to get the space back.", {archive}));
         else if (withSlash(in.root) != withSlash(v + (in.trilogy ? "PCSG00457" : g.vitaId)))
-            say(std::string("The Vita release is decrypted into ") + v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/.\n\nThe dump you copied in (" + in.root +
-                (in.addon.empty() ? std::string() : " and " + in.addon) + ") isn't needed any more - delete it to get the space back.");
+            say(trf("The Vita release is decrypted into {0}.", {v + (in.trilogy ? "PCSG00457" : g.vitaId) + "/"}) + "\n\n" +
+                (in.addon.empty() ? trf("The dump you copied in ({0}) isn't needed any more - delete it to get the space back.", {in.root})
+                                  : trf("The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back.", {in.root, in.addon})));
     } else if (notGame && !why.empty()) {
-        say(std::string("The Vita dump in ") + in.root + " can't be decrypted: " + why);
+        say(trf("The Vita dump in {0} can't be decrypted: {1}", {in.root, why}));
     } else if (notGame && in.trilogy && in.addon.empty()) {
-        say(std::string("The Prequel Trilogy keeps ") + g.title + "'s data in its add-on (addcont/PCSG00457/" + g.trilogyAddon + "), and it isn't beside " +
-            in.root + " - copy the dump's addcont folder in too, beside its app folder.");
+        say(trf("The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in "
+                "too, beside its app folder.",
+                {g.title, g.trilogyAddon, in.root}));
     } else if (notGame) {
-        say(in.root + " isn't " + g.title + "'s Vita release as the port reads it.");
+        say(trf("{0} isn't {1}'s Vita release as the port reads it.", {in.root, g.title}));
     } else {
-        say(std::string("The Vita dump can't be decrypted into ") + v + " - it can't be written there.");
+        say(trf("The Vita dump can't be decrypted into {0} - it can't be written there.", {v}));
     }
     if (video) SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return got > 0;
@@ -1719,15 +1749,15 @@ bool installDroppedIpa(const SetupGame& g, const std::string& folder, bool quiet
         std::string app, why;
         bool ok;
         {
-            Progress bar(g.title, "Unpacking " + baseName(ipa) + " ...");
+            Progress bar(g.title, trf("Unpacking {0} ...", {baseName(ipa)}));
             ok = unpackIpa(ipa, t, app, &why, [&](double v) { bar.show(v); });
         }
         if (ok && g.iosOk && !g.iosOk(app)) { // (another app's .ipa: taken out again)
             removeTree(app);
-            ok = false, why = std::string("it isn't ") + g.title + "'s iOS release";
+            ok = false, why = trf("it isn't {0}'s iOS release", {g.title});
         }
-        if (!ok) note(g, baseName(ipa) + " can't be unpacked: " + why, quiet);
-        else note(g, baseName(ipa) + " is unpacked into " + app + " - the .ipa isn't needed any more: delete it to get the space back.", quiet);
+        if (!ok) note(g, trf("{0} can't be unpacked: {1}", {baseName(ipa), why}), quiet);
+        else note(g, trf("{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back.", {baseName(ipa), app}), quiet);
         any = any || ok;
         list += doneLine(ipa); // (listed either way: said once, not at every start)
         if (ok) break; // (one release is the game)
@@ -1766,18 +1796,18 @@ bool installDroppedAndroid(const SetupGame& g, const std::string& folder, bool q
         std::string why;
         bool ok;
         {
-            Progress bar(g.title, "Unpacking " + baseName(b) + " ...");
+            Progress bar(g.title, trf("Unpacking {0} ...", {baseName(b)}));
             ok = unbundleAndroid(g, b, a, made, &why, [&](double v) { bar.show(v); });
         }
         const bool whole = ok && (!g.androidOk || g.androidOk(a));
         if (!ok) {
             for (const std::string& m : made) SDL_RemovePath(m.c_str());
-            const bool other = endsWith(lowered(b), ".zip") && why.find(" is in it") != std::string::npos; // (any zip lying there: not said)
-            note(g, baseName(b) + " can't be unpacked: " + why, quiet || other);
+            const bool other = endsWith(lowered(b), ".zip") && lastFailed() == Failed::NotInIt; // (any zip lying there: not said)
+            note(g, trf("{0} can't be unpacked: {1}", {baseName(b), why}), quiet || other);
         } else if (whole) {
-            note(g, baseName(b) + " is unpacked into " + a + " - the " + baseName(b) + " isn't needed any more: delete it to get the space back.", quiet);
+            note(g, trf("{0} is unpacked into {1} - the {0} isn't needed any more: delete it to get the space back.", {baseName(b), a}), quiet);
         } else { // (an .apks: its OBB lies beside it - kept, found once the OBB is put in)
-            note(g, baseName(b) + " is unpacked into " + a + ", but " + g.title + "'s " + g.obbHint + " isn't there - put it in " + a + " too.", quiet);
+            note(g, trf("{0} is unpacked into {1}, but {2}'s {3} isn't there - put it in {1} too.", {baseName(b), a, g.title, g.obbHint}), quiet);
         }
         any = any || whole;
         list += doneLine(b); // (listed either way: said once, not at every start)
@@ -1815,7 +1845,7 @@ bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool qui
     SDL_free(names);
     if (archives.empty()) return false;
     if (!kArchives) {
-        note(g, baseName(archives.front()) + " can't be opened by this build - unpack it into " + t + " first.", quiet);
+        note(g, trf("{0} can't be opened by this build - unpack it into {1} first.", {baseName(archives.front()), t}), quiet);
         return false;
     }
     const bool video = SDL_InitSubSystem(SDL_INIT_VIDEO);
@@ -1824,11 +1854,11 @@ bool installDroppedPatch(const SetupGame& g, const std::string& folder, bool qui
         SDL_Log("setup: the fan translation's %s in %s, unpacking it", baseName(archive).c_str(), t.c_str());
         std::string why, got;
         {
-            Progress bar(g.title, "Unpacking the fan translation ...");
+            Progress bar(g.title, tr("Unpacking the fan translation ..."));
             got = unpackPatch(g, archive, t, &why, [&](double v) { bar.show(v); });
         }
-        if (got.empty()) note(g, baseName(archive) + " can't be unpacked: " + why, quiet);
-        else note(g, "The fan translation is unpacked into " + got + " - " + baseName(archive) + " isn't needed any more: delete it to get the space back.", quiet);
+        if (got.empty()) note(g, trf("{0} can't be unpacked: {1}", {baseName(archive), why}), quiet);
+        else note(g, trf("The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back.", {got, baseName(archive)}), quiet);
         any = any || !got.empty();
         SDL_PathInfo info; // (listed either way: said once, not at every start)
         list += baseName(archive) + " " + std::to_string(SDL_GetPathInfo(archive.c_str(), &info) ? info.size : 0) + "\n";

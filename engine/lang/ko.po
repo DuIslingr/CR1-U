@@ -1,0 +1,1111 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: the port's interface text\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ko\n"
+"X-Language-Name: 한국어\n"
+"Last-Translator: Claude (machine translation, unreviewed)\n"
+
+#: src/app/app.hpp
+msgid "Native AA"
+msgstr "네이티브 AA"
+
+#: src/app/app.hpp
+msgid "Quality"
+msgstr "품질"
+
+#: src/app/app.hpp
+msgid "Balanced"
+msgstr "균형"
+
+#: src/app/app.hpp
+msgid "Performance"
+msgstr "성능"
+
+#: src/app/app.hpp
+msgid "Ultra Perf."
+msgstr "울트라 성능"
+
+#: src/app/app.hpp src/app/scene_fx.cpp
+msgid "Off"
+msgstr "끄기"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Menu Language"
+msgstr "메뉴 언어"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (fan translation)"
+msgstr "{0} (팬 번역)"
+
+#: src/app/field_puzzle.cpp
+msgid "{0} (patched over English)"
+msgstr "{0} (영어 위에 패치)"
+
+#: src/app/scene_fx.cpp
+msgid "Game"
+msgstr "게임"
+
+#: src/app/scene_fx.cpp
+msgid "Sound"
+msgstr "사운드"
+
+#: src/app/scene_fx.cpp
+msgid "Display"
+msgstr "화면"
+
+#: src/app/scene_fx.cpp
+msgid "Detail"
+msgstr "디테일"
+
+#: src/app/scene_fx.cpp
+msgid "Graphics"
+msgstr "그래픽"
+
+#: src/app/scene_fx.cpp
+msgid "Cheats"
+msgstr "치트"
+
+#: src/app/scene_fx.cpp
+msgid "Text Language"
+msgstr "텍스트 언어"
+
+#: src/app/scene_fx.cpp
+msgid "Auto ({0})"
+msgstr "자동 ({0})"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The language of the port's own text - these options and its messages; Auto: the text language's"
+msgstr "이식판 자체 텍스트(이 옵션과 메시지)의 언어. 자동: 텍스트 언어를 따름"
+
+#: src/app/scene_fx.cpp
+msgid "Control Hints"
+msgstr "조작 힌트"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Show the control hints and status overlay. Off hides the WASD help; F3 is a shortcut."
+msgstr "조작 힌트와 상태 표시를 보여 줍니다. 끄면 WASD 도움말이 숨겨집니다. F3로 전환"
+
+#: src/app/scene_fx.cpp
+msgid "Import Vita Saves"
+msgstr "Vita 세이브 가져오기"
+
+#: src/app/scene_fx.cpp
+msgid "Choose Folder"
+msgstr "폴더 선택"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Choose your decrypted Vita save export. Existing saves will be backed up."
+msgstr "복호화된 Vita 세이브 데이터 폴더를 선택하세요. 기존 세이브는 백업됩니다."
+
+#: src/app/scene_fx.cpp
+msgid "Import saves from the title screen's Options."
+msgstr "세이브는 타이틀 화면의 옵션에서 가져올 수 있습니다."
+
+#: src/app/scene_fx.cpp
+msgid "None"
+msgstr "없음"
+
+#: src/app/scene_fx.cpp
+msgid "The game's data"
+msgstr "게임 데이터"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (next start)"
+msgstr "{0} (다음 실행 시)"
+
+#: src/app/scene_fx.cpp
+msgid "{0} (not found)"
+msgstr "{0} (찾을 수 없음)"
+
+#: src/app/scene_fx.cpp
+msgid "Vita Assets"
+msgstr "Vita 에셋"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Vita copy alone: {0}"
+msgstr "Vita판만으로 실행 중: {0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: your Vita copy's PCSG00497 folder - its textures, voices, music and scripts; Left / Right: none"
+msgstr "결정: Vita판의 PCSG00497 폴더(텍스처, 음성, 음악, 스크립트). 좌/우: 없음"
+
+#: src/app/scene_fx.cpp
+msgid "Android Assets"
+msgstr "Android 에셋"
+
+#: src/app/scene_fx.cpp
+msgid "Running from the Android release alone: {0}"
+msgstr "Android판만으로 실행 중: {0}"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Enter: a folder with your Android copy's main.*.obb and its APK - its textures and the art only it has; Left / Right: none"
+msgstr "결정: Android판의 main.*.obb와 APK가 있는 폴더(텍스처와 전용 그림). 좌/우: 없음"
+
+#: src/app/scene_fx.cpp
+msgid "Field Speed"
+msgstr "필드 속도"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Walking the field 2 .. 5 times as fast - the scenes, talk and menus as they are"
+msgstr "필드 이동을 2~5배속으로. 이벤트, 대화, 메뉴는 그대로"
+
+#: src/app/scene_fx.cpp
+msgid "Battle Speed"
+msgstr "전투 속도"
+
+#: src/app/scene_fx.cpp
+msgid "The battles 2 .. 5 times as fast"
+msgstr "전투를 2~5배속으로"
+
+#: src/app/scene_fx.cpp
+msgid "Swap ○ and ×"
+msgstr "○와 × 교체"
+
+#: src/app/scene_fx.cpp
+msgid "Controller: {0}."
+msgstr "컨트롤러: {0}."
+
+#: src/app/scene_fx.cpp
+msgid "With a controller:"
+msgstr "컨트롤러 사용 시:"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"○ (the right button) confirms, × (the bottom one) goes back - as on the Vita"
+msgstr "○(오른쪽 버튼)로 결정, ×(아래쪽 버튼)로 취소 - Vita와 같음"
+
+#: src/app/scene_fx.cpp
+msgid "× (the bottom button) confirms, ○ (the right one) goes back"
+msgstr "×(아래쪽 버튼)로 결정, ○(오른쪽 버튼)로 취소"
+
+#: src/app/scene_fx.cpp
+msgid "Master Volume"
+msgstr "마스터 볼륨"
+
+#: src/app/scene_fx.cpp
+msgid "Sound Test"
+msgstr "사운드 테스트"
+
+#: src/app/scene_fx.cpp
+msgid "Avoid"
+msgstr "피하기"
+
+#: src/app/scene_fx.cpp
+msgid "Black Bars"
+msgstr "검은 띠"
+
+#: src/app/scene_fx.cpp
+msgid "Ignore"
+msgstr "무시"
+
+#: src/app/scene_fx.cpp
+msgid "Camera Cutout"
+msgstr "카메라 노치"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Avoid: the menus and buttons clear of the camera's notch or punch hole, the picture full. Black Bars: the whole picture clear of it. Ignore: everything to the edges"
+msgstr "피하기: 메뉴와 버튼을 노치나 펀치 홀에서 떨어뜨림, 화면은 가득. 검은 띠: 화면 전체를 피함. 무시: 모두 가장자리까지"
+
+#: src/app/scene_fx.cpp
+msgid "Window"
+msgstr "창 모드"
+
+#: src/app/scene_fx.cpp
+msgid "Fullscreen"
+msgstr "전체 화면"
+
+#: src/app/scene_fx.cpp
+msgid "Borderless"
+msgstr "테두리 없음"
+
+#: src/app/scene_fx.cpp
+msgid "Resolution"
+msgstr "해상도"
+
+#: src/app/scene_fx.cpp
+msgid "Desktop"
+msgstr "데스크톱"
+
+#: src/app/scene_fx.cpp
+msgid "Aspect"
+msgstr "화면 비율"
+
+#: src/app/scene_fx.cpp
+msgid "Wide"
+msgstr "와이드"
+
+#: src/app/scene_fx.cpp
+msgid "Auto"
+msgstr "자동"
+
+#: src/app/scene_fx.cpp
+msgid "Layout"
+msgstr "레이아웃"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The screens' layout: the iPad release's (4:3), the iPhone 2.2.0's (3:2) or the Android release's (16:9); Auto follows the data"
+msgstr "화면 레이아웃: iPad판(4:3), iPhone 2.2.0판(3:2), Android판(16:9). 자동은 데이터를 따름"
+
+#: src/app/scene_fx.cpp
+msgid "Original"
+msgstr "원본"
+
+#: src/app/scene_fx.cpp
+msgid "Fill"
+msgstr "화면 채우기"
+
+#: src/app/scene_fx.cpp
+msgid "Painted Rooms"
+msgstr "배경 그림"
+
+#: src/app/scene_fx.cpp
+msgid "VSync"
+msgstr "VSync"
+
+#: src/app/scene_fx.cpp
+msgid "Frame Rate"
+msgstr "프레임 레이트"
+
+#: src/app/scene_fx.cpp
+msgid "Unlimited"
+msgstr "무제한"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Frames drawn a second at most; the game runs at its own 20 a second, shown moving between them"
+msgstr "초당 최대 렌더링 프레임 수. 게임 자체는 초당 20회로 동작하며 그 사이를 보간해 표시"
+
+#: src/app/scene_fx.cpp
+msgid "Original Presentation"
+msgstr "원작 표시"
+
+#: src/app/scene_fx.cpp
+msgid "Every display and graphics option back to the original's"
+msgstr "모든 화면 및 그래픽 설정을 원작대로 되돌립니다"
+
+#: src/app/scene_fx.cpp
+msgid "HD Textures"
+msgstr "HD 텍스처"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"waifu2x / Real-ESRGAN upscales from textures/hd (tools/hd_textures.py); from the next room on"
+msgstr ""
+"textures/hd의 waifu2x / Real-ESRGAN 업스케일(tools/hd_textures.py). 다음 방부터 적용"
+
+#: src/app/scene_fx.cpp
+msgid "None in textures/hd yet: --export-textures, then tools/hd_textures.py"
+msgstr "textures/hd에 아직 없음: --export-textures 후 tools/hd_textures.py"
+
+#: src/app/scene_fx.cpp
+msgid "HD Models"
+msgstr "HD 모델"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Replacement models (glTF) from models/hd, in place of the game's; from the next room on"
+msgstr "models/hd의 교체 모델(glTF)을 게임 모델 대신 사용. 다음 방부터 적용"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"None in models/hd yet: --export-models, edit in Blender, save as models/hd/<name>.glb"
+msgstr ""
+"models/hd에 아직 없음: --export-models 후 Blender에서 편집해 models/hd/<name>.glb로 저장"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth"
+msgstr "부드럽게"
+
+#: src/app/scene_fx.cpp
+msgid "Smoother"
+msgstr "더 부드럽게"
+
+#: src/app/scene_fx.cpp
+msgid "Smooth Models"
+msgstr "모델 스무딩"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounder models (4x / 9x triangles), hard edges kept; from the next room on"
+msgstr "모델을 둥글게(삼각형 4배/9배), 날카로운 모서리는 유지. 다음 방부터 적용"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Rounds the models' silhouettes - characters, monsters, props, stages (PN triangles)"
+msgstr "캐릭터, 몬스터, 소품, 스테이지 모델의 윤곽을 둥글게 함(PN 트라이앵글)"
+
+#: src/app/scene_fx.cpp
+msgid "Anisotropic Filtering"
+msgstr "이방성 필터링"
+
+#: src/app/scene_fx.cpp
+msgid "Textures stay sharp on floors and walls seen at an angle"
+msgstr "비스듬히 보이는 바닥과 벽의 텍스처도 선명하게 유지"
+
+#: src/app/scene_fx.cpp
+msgid "Not on this GPU"
+msgstr "이 GPU에서는 사용 불가"
+
+#: src/app/scene_fx.cpp
+msgid "Texture Filtering"
+msgstr "텍스처 필터링"
+
+#: src/app/scene_fx.cpp
+msgid "Sharp"
+msgstr "선명하게"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Sharp: the world's textures magnified by the nearest texel (square pixels up close)"
+msgstr "선명하게: 월드 텍스처를 최근접 텍셀로 확대(가까이서 보면 네모난 픽셀)"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite HP"
+msgstr "HP 무한"
+
+#: src/app/scene_fx.cpp
+msgid "The pair's HP never drops: the damage still shows, nobody falls"
+msgstr "페어의 HP가 줄지 않음. 대미지는 표시되지만 쓰러지지 않음"
+
+#: src/app/scene_fx.cpp
+msgid "Infinite MP"
+msgstr "MP 무한"
+
+#: src/app/scene_fx.cpp
+msgid "Genes cost no MP; the pair's MP stays full"
+msgstr "진의 MP 소비가 0. 페어의 MP는 항상 가득"
+
+#: src/app/scene_fx.cpp
+msgid "Max Oz"
+msgstr "Oz 최대"
+
+#: src/app/scene_fx.cpp
+msgid "The Oz held at the most (9,999,999)"
+msgstr "소지 Oz를 최대(9,999,999)로"
+
+#: src/app/scene_fx.cpp
+msgid "EXP Multiplier"
+msgstr "EXP 배율"
+
+#: src/app/scene_fx.cpp
+msgid "The EXP a won battle gives, multiplied"
+msgstr "전투 승리 시 얻는 EXP를 배로"
+
+#: src/app/scene_fx.cpp
+msgid "Always First Strike"
+msgstr "항상 선제공격"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"Every random encounter starts with the party's first strike - never an ambush"
+msgstr "랜덤 인카운터는 항상 선제공격으로 시작하며 기습당하지 않음"
+
+#: src/app/scene_fx.cpp
+msgid "No Random Battles"
+msgstr "랜덤 전투 없음"
+
+#: src/app/scene_fx.cpp
+msgid "No random encounters on the field (the story's battles still come)"
+msgstr "필드에서 랜덤 인카운터가 발생하지 않음(스토리 전투는 발생)"
+
+#: src/app/scene_fx.cpp
+msgid "One-Hit Kills"
+msgstr "일격필살"
+
+#: src/app/scene_fx.cpp
+msgid "Any blow, gene or ability of the pair's that hurts an enemy fells it"
+msgstr "페어의 공격, 진, 어빌리티로 대미지를 입은 적은 즉시 쓰러짐"
+
+#: src/app/scene_fx.cpp
+msgid "Full Break Gauge"
+msgstr "브레이크 게이지 최대"
+
+#: src/app/scene_fx.cpp
+msgid ""
+"The Break gauge the pair's and full from the first turn - it never changes hands"
+msgstr "브레이크 게이지가 첫 턴부터 페어 쪽에 가득 차며 상대에게 넘어가지 않음"
+
+#: src/app/scene_fx.cpp
+msgid "{0} is off here: {1}"
+msgstr "{0}을(를) 이 환경에서 쓸 수 없음: {1}"
+
+#: src/app/scene_fx.cpp
+msgid "Render Scale"
+msgstr "렌더링 배율"
+
+#: src/app/scene_fx.cpp
+msgid "The frame at this size, then scaled to the window"
+msgstr "이 크기로 렌더링한 뒤 창에 맞게 조정"
+
+#: src/app/scene_fx.cpp
+msgid "Needs the Vulkan renderer"
+msgstr "Vulkan 렌더러 필요"
+
+#: src/app/scene_fx.cpp
+msgid "n/a"
+msgstr "사용 불가"
+
+#: src/app/scene_fx.cpp
+msgid "Anti-aliasing"
+msgstr "안티에일리어싱"
+
+#: src/app/scene_fx.cpp
+msgid "Temporal: jittered frames accumulated (MSAA is off meanwhile)"
+msgstr "템포럴: 지터링한 프레임을 누적(그동안 MSAA는 꺼짐)"
+
+#: src/app/scene_fx.cpp
+msgid "MSAA, or FSR Native AA / DLAA at full resolution"
+msgstr "MSAA, 또는 전체 해상도의 FSR 네이티브 AA / DLAA"
+
+#: src/app/scene_fx.cpp
+msgid "Upscaler"
+msgstr "업스케일러"
+
+#: src/app/scene_fx.cpp
+msgid "The scene renders smaller and is reconstructed; the menus stay sharp"
+msgstr "장면을 작게 렌더링한 뒤 재구성. 메뉴는 선명하게 유지"
+
+#: src/app/scene_fx.cpp
+msgid "Upscale Mode"
+msgstr "업스케일 모드"
+
+#: src/app/scene_fx.cpp
+msgid "The scene at {0}% of the frame per side"
+msgstr "장면은 각 변에서 프레임의 {0}%"
+
+#: src/app/scene_fx.cpp
+msgid "Sharpness"
+msgstr "선명도"
+
+#: src/app/scene_fx.cpp
+msgid "FSR's sharpening pass (RCAS); DLSS has none"
+msgstr "FSR의 샤프닝 처리(RCAS). DLSS에는 없음"
+
+#: src/gfx/render_device.hpp
+msgid "needs the Vulkan renderer"
+msgstr "Vulkan 렌더러가 필요합니다"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU lacks what temporal upscaling needs"
+msgstr "이 GPU에는 템포럴 업스케일링에 필요한 기능이 없습니다"
+
+#: src/gfx/vk_device.cpp
+msgid "this GPU can't run FSR 3.1"
+msgstr "이 GPU에서는 FSR 3.1을 실행할 수 없습니다"
+
+#: src/gfx/vk_device.cpp
+msgid "MetalFX is Apple's: macOS only"
+msgstr "MetalFX는 Apple 기술이라 macOS 전용입니다"
+
+#: src/platform/setup.cpp
+msgid "Any file"
+msgstr "모든 파일"
+
+#: src/platform/setup.cpp
+msgid "can't be read"
+msgstr "읽을 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "not a zip (no central directory) - an .ipa is one"
+msgstr "zip이 아닙니다(중앙 디렉터리 없음). .ipa는 zip 형식입니다"
+
+#: src/platform/setup.cpp
+msgid "its directory is past its end"
+msgstr "디렉터리가 파일 끝을 넘어섭니다"
+
+#: src/platform/setup.cpp
+msgid "a broken directory entry"
+msgstr "손상된 디렉터리 항목이 있습니다"
+
+#: src/platform/setup.cpp
+msgid "{0}: no local header"
+msgstr "{0}: 로컬 헤더가 없습니다"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be written"
+msgstr "{0}: 쓸 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be unpacked"
+msgstr "{0}: 압축을 풀 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be read ({0})."
+msgstr "선택한 파일을 읽을 수 없습니다({0})."
+
+#: src/platform/setup.cpp
+msgid ""
+"A file picked ({0} GB) needs about {1} GB free in {2} - the copy and what it unpacks to -, and there is {3} GB."
+msgstr ""
+"선택한 파일({0}GB)에는 {2}에 약 {1}GB의 여유 공간(복사본과 압축 해제된 데이터용)이 필요하지만 {3}GB밖에 없습니다."
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ({0} of {1}) ..."
+msgstr "선택한 파일 복사 중({0}/{1})..."
+
+#: src/platform/setup.cpp
+msgid "Copying the file picked ..."
+msgstr "선택한 파일 복사 중..."
+
+#: src/platform/setup.cpp
+msgid "A file picked can't be copied into {0}"
+msgstr "선택한 파일을 {0}에 복사할 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "can't be opened"
+msgstr "열 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "no Payload/<name>.app in it - not an iOS app"
+msgstr "Payload/<name>.app이 없습니다(iOS 앱이 아님)"
+
+#: src/platform/setup.cpp
+msgid "{0}: can't be made"
+msgstr "{0}: 만들 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "no work.bin (its licence) to decrypt it with"
+msgstr "복호화에 쓸 work.bin(라이선스)이 없습니다"
+
+#: src/platform/setup.cpp
+msgid "its files don't decrypt (a part of the dump missing or damaged?)"
+msgstr "파일이 복호화되지 않습니다(덤프 일부가 없거나 손상되었을 수 있습니다)"
+
+#: src/platform/setup.cpp
+msgid ""
+"its files can't be read with its own work.bin - not a whole NoNpDrm dump"
+msgstr "함께 있는 work.bin으로 파일을 읽을 수 없습니다. 완전한 NoNpDrm 덤프가 아닙니다"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't decrypt the Vita's files - install the dump in Vita3K, then choose Vita3K's folder"
+msgstr "이 빌드에서는 Vita 파일을 복호화할 수 없습니다. 덤프를 Vita3K에 설치한 뒤 Vita3K 폴더를 선택하세요"
+
+#: src/platform/setup.cpp
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after the start)"
+msgstr "읽을 수 없는 항목이 있습니다(맨 처음)"
+
+#: src/platform/setup.cpp
+msgid "an entry it can't read (after {0})"
+msgstr "읽을 수 없는 항목이 있습니다({0} 다음)"
+
+#: src/platform/setup.cpp
+msgid ""
+"this build can't open archives - unpack it first, then choose its folder"
+msgstr "이 빌드에서는 압축 파일을 열 수 없습니다. 먼저 압축을 푼 뒤 그 폴더를 선택하세요"
+
+#: src/platform/setup.cpp
+msgid "no fan translation in it (its rePatch/{0}/)"
+msgstr "팬 번역이 들어 있지 않습니다(rePatch/{0}/)"
+
+#: src/platform/setup.cpp
+msgid "not a SELF"
+msgstr "SELF가 아닙니다"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF"
+msgstr "손상된 SELF입니다"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (a segment past its end)"
+msgstr "손상된 SELF입니다(세그먼트가 파일 끝을 넘어섬)"
+
+#: src/platform/setup.cpp
+msgid "a SELF of a kind (or key revision) the port has no key for"
+msgstr "이 이식판에 키가 없는 종류(또는 키 리비전)의 SELF입니다"
+
+#: src/platform/setup.cpp
+msgid "its key doesn't open it (its licence isn't its own?)"
+msgstr "키로 열 수 없습니다(다른 게임의 라이선스일 수 있습니다)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (no metadata)"
+msgstr "손상된 SELF입니다(메타데이터 없음)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its metadata)"
+msgstr "손상된 SELF입니다(메타데이터)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (its keys)"
+msgstr "손상된 SELF입니다(키)"
+
+#: src/platform/setup.cpp
+msgid "a broken SELF (an encrypted segment without its key)"
+msgstr "손상된 SELF입니다(키가 없는 암호화 세그먼트)"
+
+#: src/platform/setup.cpp
+msgid "a segment doesn't inflate"
+msgstr "세그먼트의 압축을 풀 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "built without zlib"
+msgstr "zlib 없이 빌드되었습니다"
+
+#: src/platform/setup.cpp
+msgid "this build can't decrypt the Vita's programs"
+msgstr "이 빌드에서는 Vita 프로그램을 복호화할 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "it needs about {0} GB free in {1}, and there is {2} GB"
+msgstr "{1}에 약 {0}GB의 여유 공간이 필요하지만 {2}GB밖에 없습니다"
+
+#: src/platform/setup.cpp
+msgid "Decrypting the Vita release ..."
+msgstr "Vita판을 복호화하는 중..."
+
+#: src/platform/setup.cpp
+msgid "Copying the Vita release ..."
+msgstr "Vita판을 복사하는 중..."
+
+#: src/platform/setup.cpp
+msgid "Decrypting the game's add-on ..."
+msgstr "게임의 추가 콘텐츠를 복호화하는 중..."
+
+#: src/platform/setup.cpp
+msgid "Copying the game's add-on ..."
+msgstr "게임의 추가 콘텐츠를 복사하는 중..."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0}: no licence to decrypt it with (the dump's work.bin, Vita3K's ux0/license)"
+msgstr "{0}: 복호화에 쓸 라이선스가 없습니다(덤프의 work.bin, Vita3K의 ux0/license)"
+
+#: src/platform/setup.cpp
+msgid "neither {0}'s APK nor its OBB is in it"
+msgstr "{0}의 APK도 OBB도 들어 있지 않습니다"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} plays your own copy of {1}. Choose where it is - any one of them; the files it needs are copied into its folder:"
+msgstr ""
+"{0}은(는) 보유하신 {1}(으)로 플레이합니다. 그 위치를 선택하세요(아래 중 하나면 됩니다). 필요한 파일은 {0}의 폴더로 복사됩니다:"
+
+#: src/platform/setup.cpp
+msgid "Android - the APK and its {0} (both at once)"
+msgstr "Android - APK와 그 {0}(둘 다 한 번에)"
+
+#: src/platform/setup.cpp
+msgid "Android - the .apks (or the APK and its asset packs, all at once)"
+msgstr "Android - .apks(또는 APK와 에셋 팩을 모두 한 번에)"
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (an unpacked .app: copy it into ios/ over USB)"
+msgstr "iOS - .ipa(압축 해제된 .app은 USB로 ios/에 복사)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - a NoNpDrm dump: packed (.zip, .rar, .vpk), or its folder copied in over USB"
+msgstr "Vita - NoNpDrm 덤프: 압축 파일(.zip, .rar, .vpk) 또는 USB로 복사한 폴더"
+
+#: src/platform/setup.cpp
+msgid "What is copied into its folder over USB is found with Look again."
+msgstr "USB로 폴더에 복사한 것은 [다시 찾기]로 찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid "iOS - the .ipa (or a file in its unpacked .app)"
+msgstr "iOS - .ipa(또는 압축 해제된 .app 안의 파일)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Vita - Vita3K's folder with the game installed (or the game's {0} folder)"
+msgstr "Vita - 게임을 설치한 Vita3K 폴더(또는 게임의 {0} 폴더)"
+
+#: src/platform/setup.cpp
+msgid "Its folder: {0}"
+msgstr "복사할 폴더: {0}"
+
+#: src/platform/setup.cpp
+msgid "In place:"
+msgstr "준비됨:"
+
+#: src/platform/setup.cpp
+msgid "iOS: {0}"
+msgstr "iOS: {0}"
+
+#: src/platform/setup.cpp
+msgid "Android: {0}"
+msgstr "Android: {0}"
+
+#: src/platform/setup.cpp
+msgid "Vita: {0}"
+msgstr "Vita: {0}"
+
+#: src/platform/setup.cpp
+msgid "Its fan translation: {0}"
+msgstr "팬 번역: {0}"
+
+#: src/platform/setup.cpp
+msgid ""
+"More of them add to it (the Vita's voices and music, Android's art); or Start."
+msgstr "다른 판을 추가하면 내용이 더해집니다(Vita의 음성과 음악, Android의 그림). 또는 [시작]을 누르세요."
+
+#: src/platform/setup.cpp
+msgid "iOS (.ipa)..."
+msgstr "iOS (.ipa)..."
+
+#: src/platform/setup.cpp
+msgid "Android (APK + OBB)..."
+msgstr "Android (APK + OBB)..."
+
+#: src/platform/setup.cpp
+msgid "Android (.apks)..."
+msgstr "Android (.apks)..."
+
+#: src/platform/setup.cpp
+msgid "Vita..."
+msgstr "Vita..."
+
+#: src/platform/setup.cpp
+msgid "Vita / Vita3K..."
+msgstr "Vita / Vita3K..."
+
+#: src/platform/setup.cpp
+msgid "Start"
+msgstr "시작"
+
+#: src/platform/setup.cpp
+msgid "Look again"
+msgstr "다시 찾기"
+
+#: src/platform/setup.cpp
+msgid "Quit"
+msgstr "종료"
+
+#: src/platform/setup.cpp
+msgid "iOS app (.ipa)"
+msgstr "iOS 앱 (.ipa)"
+
+#: src/platform/setup.cpp
+msgid "Any file (one in an unpacked .app)"
+msgstr "모든 파일(압축 해제된 .app 안의 파일)"
+
+#: src/platform/setup.cpp
+msgid ""
+"That isn't an .ipa. Choose the .ipa - or copy the unpacked .app into {0} over USB, then Look again."
+msgstr ".ipa가 아닙니다. .ipa를 선택하거나, 압축 해제된 .app을 USB로 {0}에 복사한 뒤 [다시 찾기]를 누르세요."
+
+#: src/platform/setup.cpp
+msgid "Unpacking {0} ..."
+msgstr "{0} 압축 해제 중..."
+
+#: src/platform/setup.cpp
+msgid "No {0} data in {1}"
+msgstr "{1}에 {0} 데이터가 없습니다"
+
+#: src/platform/setup.cpp
+msgid "Copying {0} ..."
+msgstr "{0} 복사 중..."
+
+#: src/platform/setup.cpp
+msgid "can't be written"
+msgstr "쓸 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s iOS release."
+msgstr "{0}은(는) {1}의 iOS판이 아닙니다."
+
+#: src/platform/setup.cpp
+msgid "Android (.apk, .obb, .apks)"
+msgstr "Android (.apk, .obb, .apks)"
+
+#: src/platform/setup.cpp
+msgid "Choose {0}'s Android release: the APK and its {1}, both at once."
+msgstr "{0}의 Android판을 선택하세요: APK와 그 {1}을(를) 한 번에 함께."
+
+#: src/platform/setup.cpp
+msgid "Unpacking the Android release ..."
+msgstr "Android판 압축 해제 중..."
+
+#: src/platform/setup.cpp
+msgid "Copying the Android release ..."
+msgstr "Android판 복사 중..."
+
+#: src/platform/setup.cpp
+msgid "Not {0}'s Android release (or not all of it):"
+msgstr "{0}의 Android판이 아닙니다(또는 일부가 빠져 있습니다):"
+
+#: src/platform/setup.cpp
+msgid "Choose the APK and its {0}, both at once."
+msgstr "APK와 그 {0}을(를) 한 번에 함께 선택하세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Android release can't be copied into {0} (nor the profile folder's)."
+msgstr "Android판을 {0}(및 프로필 폴더 안의 것)에 복사할 수 없습니다."
+
+#: src/platform/setup.cpp
+msgid "Where is the Vita release?"
+msgstr "Vita판은 어디에 있나요?"
+
+#: src/platform/setup.cpp
+msgid ""
+"A folder - copied into {0} over USB: a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder"
+msgstr ""
+"폴더 - USB로 {0}에 복사한 것: 덤프한 그대로의 NoNpDrm 덤프 폴더(app/, 프리퀄 트릴로지는 addcont/도), Vita3K의 ux0, 또는 게임 자체 폴더"
+
+#: src/platform/setup.cpp
+msgid ""
+"An archive - a NoNpDrm dump packed as .zip, .rar or .vpk (a .7z: unpack it on a PC)"
+msgstr "압축 파일 - .zip, .rar, .vpk로 압축한 NoNpDrm 덤프(.7z는 PC에서 압축을 풀어 주세요)"
+
+#: src/platform/setup.cpp
+msgid "Copied in..."
+msgstr "복사해 둔 폴더..."
+
+#: src/platform/setup.cpp
+msgid "An archive..."
+msgstr "압축 파일..."
+
+#: src/platform/setup.cpp
+msgid "Back"
+msgstr "뒤로"
+
+#: src/platform/setup.cpp
+msgid "A folder - Vita3K's (or its ux0), the game's own, or a NoNpDrm dump's"
+msgstr "폴더 - Vita3K 폴더(또는 그 ux0), 게임 자체 폴더, 또는 NoNpDrm 덤프 폴더"
+
+#: src/platform/setup.cpp
+msgid "An archive - a NoNpDrm dump packed as .rar, .7z, .zip or .vpk"
+msgstr "압축 파일 - .rar, .7z, .zip, .vpk로 압축한 NoNpDrm 덤프"
+
+#: src/platform/setup.cpp
+msgid "A folder..."
+msgstr "폴더..."
+
+#: src/platform/setup.cpp
+msgid "A Vita dump (.rar, .7z, .zip, .vpk)"
+msgstr "Vita 덤프 (.rar, .7z, .zip, .vpk)"
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the Vita release's folder into\n"
+"  {0}\n"
+"over USB from a PC - a NoNpDrm dump's as it was dumped (its app/, and addcont/ for the Prequel Trilogy), Vita3K's ux0, or the game's own folder -, then Continue."
+msgstr ""
+"PC에서 USB로 Vita판 폴더를\n"
+"  {0}\n"
+"에 복사하세요. 덤프한 그대로의 NoNpDrm 덤프 폴더(app/, 프리퀄 트릴로지는 addcont/도), Vita3K의 ux0, 또는 게임 자체 폴더입니다. 그런 다음 [계속]을 누르세요."
+
+#: src/platform/setup.cpp
+msgid "Continue"
+msgstr "계속"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install the add-on in Vita3K too, or choose a dump with it."
+msgstr ""
+"프리퀄 트릴로지는 {0}의 데이터를 추가 콘텐츠(addcont/PCSG00457/{1})에 두는데, {2} 옆에 없습니다. Vita3K에 추가 콘텐츠도 설치하거나 그것이 포함된 덤프를 선택하세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in {2} - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"{2}에 {0}({1})이(가) 없습니다. Vita3K 폴더, 그 ux0, 게임 자체 폴더, 또는 게임의 NoNpDrm 덤프를 선택하세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"No {0} ({1}) in the archive - choose Vita3K's folder, its ux0, the game's own folder or a NoNpDrm dump of it."
+msgstr ""
+"압축 파일에 {0}({1})이(가) 없습니다. Vita3K 폴더, 그 ux0, 게임 자체 폴더, 또는 게임의 NoNpDrm 덤프를 선택하세요."
+
+#: src/platform/setup.cpp
+msgid "The Vita release in {0}: {1}"
+msgstr "{0}의 Vita판: {1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - install it in Vita3K too, or choose the dump with it."
+msgstr ""
+"프리퀄 트릴로지는 {0}의 데이터를 추가 콘텐츠(addcont/PCSG00457/{1})에 두는데, {2} 옆에 없습니다. 그것도 Vita3K에 설치하거나 그것이 포함된 덤프를 선택하세요."
+
+#: src/platform/setup.cpp
+msgid "{0} isn't {1}'s Vita release as the port reads it."
+msgstr "{0}은(는) 이 이식판이 읽을 수 있는 {1}의 Vita판이 아닙니다."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita release in {0} can't be copied into {1} (nor the profile folder's)."
+msgstr "{0}의 Vita판을 {1}(및 프로필 폴더 안의 것)에 복사할 수 없습니다."
+
+#: src/platform/setup.cpp
+msgid "Choose its folder..."
+msgstr "폴더 선택..."
+
+#: src/platform/setup.cpp
+msgid "Its archive..."
+msgstr "압축 파일..."
+
+#: src/platform/setup.cpp
+msgid "Without it"
+msgstr "없이 진행"
+
+#: src/platform/setup.cpp
+msgid ""
+"This Vita release is in Japanese. A fan translation puts its text over it - gbatemp's English one or Joseas's Spanish one: its rePatch folder ({0}), or the .rar / .zip it comes in. Is one here too?"
+msgstr ""
+"이 Vita판은 일본어판입니다. 팬 번역(gbatemp의 영어판이나 Joseas의 스페인어판)으로 텍스트를 바꿀 수 있습니다. 그 rePatch 폴더({0}) 또는 배포된 .rar / .zip 파일입니다. 이것도 있나요?"
+
+#: src/platform/setup.cpp
+msgid "The fan translation (.rar, .zip, .7z)"
+msgstr "팬 번역 (.rar, .zip, .7z)"
+
+#: src/platform/setup.cpp
+msgid "Unpacking the fan translation ..."
+msgstr "팬 번역 압축 해제 중..."
+
+#: src/platform/setup.cpp
+msgid ""
+"Copy the fan translation's rePatch folder (or the {0} in it) into\n"
+"  {1}\n"
+"over USB from a PC, then Continue."
+msgstr ""
+"PC에서 USB로 팬 번역의 rePatch 폴더(또는 그 안의 {0})를\n"
+"  {1}\n"
+"에 복사한 뒤 [계속]을 누르세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - copy its rePatch folder (or the {1} in it)."
+msgstr "{0}에 팬 번역이 없습니다. 그 rePatch 폴더(또는 그 안의 {1})를 복사하세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"No fan translation in {0} - choose its rePatch folder (or the {1} in it)."
+msgstr "{0}에 팬 번역이 없습니다. 그 rePatch 폴더(또는 그 안의 {1})를 선택하세요."
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be moved to {0}"
+msgstr "팬 번역을 {0}(으)로 옮길 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "Copying the fan translation ..."
+msgstr "팬 번역 복사 중..."
+
+#: src/platform/setup.cpp
+msgid "The fan translation can't be copied into {0}"
+msgstr "팬 번역을 {0}에 복사할 수 없습니다"
+
+#: src/platform/setup.cpp
+msgid "{0} can't be unpacked: {1}"
+msgstr "{0}의 압축을 풀 수 없습니다: {1}"
+
+#: src/platform/setup.cpp
+msgid "{0} holds no {1} ({2}) as the port reads it."
+msgstr "{0}에 이 이식판이 읽을 수 있는 {1}({2})이(가) 없습니다."
+
+#: src/platform/setup.cpp
+msgid "The Vita release is unpacked and decrypted into {0}."
+msgstr "Vita판을 {0}에 압축 해제하고 복호화했습니다."
+
+#: src/platform/setup.cpp
+msgid "{0} isn't needed any more - delete it to get the space back."
+msgstr "{0}은(는) 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid "The Vita release is decrypted into {0}."
+msgstr "Vita판을 {0}에 복호화했습니다."
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0}) isn't needed any more - delete it to get the space back."
+msgstr "복사해 둔 덤프({0})는 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid ""
+"The dump you copied in ({0} and {1}) isn't needed any more - delete it to get the space back."
+msgstr "복사해 둔 덤프({0}, {1})는 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid "The Vita dump in {0} can't be decrypted: {1}"
+msgstr "{0}의 Vita 덤프를 복호화할 수 없습니다: {1}"
+
+#: src/platform/setup.cpp
+msgid ""
+"The Prequel Trilogy keeps {0}'s data in its add-on (addcont/PCSG00457/{1}), and it isn't beside {2} - copy the dump's addcont folder in too, beside its app folder."
+msgstr ""
+"프리퀄 트릴로지는 {0}의 데이터를 추가 콘텐츠(addcont/PCSG00457/{1})에 두는데, {2} 옆에 없습니다. 덤프의 addcont 폴더도 app 폴더 옆에 복사하세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"The Vita dump can't be decrypted into {0} - it can't be written there."
+msgstr "Vita 덤프를 {0}에 복호화할 수 없습니다. 그곳에 쓸 수 없습니다."
+
+#: src/platform/setup.cpp
+msgid "it isn't {0}'s iOS release"
+msgstr "{0}의 iOS판이 아닙니다"
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the .ipa isn't needed any more: delete it to get the space back."
+msgstr "{0}을(를) {1}에 압축 해제했습니다. .ipa는 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1} - the {0} isn't needed any more: delete it to get the space back."
+msgstr "{0}을(를) {1}에 압축 해제했습니다. {0}은(는) 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/setup.cpp
+msgid ""
+"{0} is unpacked into {1}, but {2}'s {3} isn't there - put it in {1} too."
+msgstr "{0}을(를) {1}에 압축 해제했지만 {2}의 {3}이(가) 없습니다. 그것도 {1}에 넣어 주세요."
+
+#: src/platform/setup.cpp
+msgid "{0} can't be opened by this build - unpack it into {1} first."
+msgstr "이 빌드에서는 {0}을(를) 열 수 없습니다. 먼저 {1}에 압축을 풀어 주세요."
+
+#: src/platform/setup.cpp
+msgid ""
+"The fan translation is unpacked into {0} - {1} isn't needed any more: delete it to get the space back."
+msgstr "팬 번역을 {0}에 압축 해제했습니다. {1}은(는) 이제 필요 없습니다. 삭제하면 공간을 되찾을 수 있습니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Found {0} save slot(s)."
+msgstr "세이브 슬롯 {0}개를 찾았습니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Existing saves will be backed up."
+msgstr "기존 세이브는 백업됩니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Invalid suspend skipped."
+msgstr "잘못된 중단 데이터는 건너뛰었습니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import now?"
+msgstr "지금 가져올까요?"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Import failed: {0}"
+msgstr "가져오기 실패: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Cannot open the folder picker: {0}"
+msgstr "폴더 선택 창을 열 수 없습니다: {0}"
+
+#: src/platform/vita_import_ui.hpp
+msgid "Imported {0} save slot(s)."
+msgstr "세이브 슬롯 {0}개를 가져왔습니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Previous saves backed up."
+msgstr "이전 세이브를 백업했습니다."
+
+#: src/platform/vita_import_ui.hpp
+msgid "Load from the title."
+msgstr "타이틀 화면에서 불러오세요."

@@ -60,6 +60,7 @@
 #include "platform/input_cancel.hpp"
 #include "platform/atomic_file.hpp"
 #include "platform/lifecycle_clock.hpp"
+#include "platform/ui_text.hpp"
 #include "scene/pose.hpp"
 
 #ifndef SDL_main_h_
@@ -72,6 +73,9 @@ SDL_AppResult SDLCALL SDL_AppEvent(void* appstate, SDL_Event* event);
 #endif
 
 namespace crapp {
+
+using uitext::tr; // the port's own text in the player's language (platform/ui_text.hpp)
+using uitext::trf;
 
 enum class Mode { Textures, Models, Maps };
 
@@ -297,6 +301,7 @@ struct App {
     bool titleBack = false;                // stage 1 after a sub-menu: the strip back (TitlePrc 7 / 10), the plates 2 frames on
     int resumeIn = 0;                      // the Progress Tracker's Yes: frames of black left before the load (TitlePrc 0x16 / 0x17)
     int titleReturnIn = 0;                 // Options' Return to Title: frames of black left before the title (OptionPrc 0x18 / 0x19)
+    std::string uiLang = "auto";           // the port's own text (platform/ui_text.hpp): "auto" (the text language's) or a code
     cr::Texture titleArt[2];               // __menuu_TitleSet: title1.mct (MuCom slot 0x11), chaos.mct (0x12)
     bool optionsFromTitle = false;         // ModeOptionMenu(1): Reset Data instead of Return to Title
     int resetAsk = 0, resetConfirm = 1;    // Reset Data's two questions (OptionPrc 9 / 10: 1, 2), Return to Title's (0xc / 0xd: 3); No under the cursor
@@ -1360,8 +1365,8 @@ struct UpscaleMode {
     float ratio;
 };
 inline constexpr UpscaleMode kUpscaleModes[] = {
-    {"Native AA", 1.0f}, {"Quality", 1.5f}, {"Balanced", 1.7f}, {"Performance", 2.0f}, {"Ultra Perf.", 3.0f}};
-inline constexpr const char* kUpscalerName[] = {"Off", "FSR 3.1", "DLSS", "MetalFX", "FSR 4"};
+    {N_("Native AA"), 1.0f}, {N_("Quality"), 1.5f}, {N_("Balanced"), 1.7f}, {N_("Performance"), 2.0f}, {N_("Ultra Perf."), 3.0f}};
+inline constexpr const char* kUpscalerName[] = {N_("Off"), "FSR 3.1", "DLSS", "MetalFX", "FSR 4"};
 inline constexpr cr::Upscaler kUpscaler[] = {cr::Upscaler::Off, cr::Upscaler::Fsr3, cr::Upscaler::Dlss, cr::Upscaler::MetalFx, cr::Upscaler::Fsr4};
 constexpr int kUpscalers = 5;
 // (MetalFX is Apple's own, FSR 4 - AMD's DLLs in fsr4/ - Linux's and Windows': the options step over the other's slot)
@@ -1958,6 +1963,10 @@ bool fieldSceneRunning(const App& app);
 bool fieldEncountersOff(const App& app);
 void stepFieldMenu(App& app);
 void fieldButtonPos(const App& app, int k, float& x, float& y);
+// The port's own text (platform/ui_text.hpp): its catalogs' folders and, before the settings are read (the
+// first start's setup), the language settings.ini names - the system's on a first start; then uiLang's
+void startUiText(App& app);
+void applyUiLanguage(App& app);
 bool fieldButtonShown(const App& app, int k);
 void drawFieldMenu(App& app);
 bool fieldBarPad(const App& app);
