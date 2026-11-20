@@ -33,6 +33,10 @@ msgid "Off"
 msgstr "Aus"
 
 #: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Quit Game"
+msgstr "Spiel beenden"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
 msgid "Menu Language"
 msgstr "Menüsprache"
 
@@ -43,6 +47,14 @@ msgstr "{0} (Fan-Übersetzung)"
 #: src/app/field_puzzle.cpp
 msgid "{0} (patched over English)"
 msgstr "{0} (über Englisch gepatcht)"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp
+msgid "Quit the game?"
+msgstr "Spiel beenden?"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp src/platform/setup.cpp
+msgid "Quit"
+msgstr "Beenden"
 
 #: src/app/scene_fx.cpp
 msgid "Game"
@@ -814,10 +826,6 @@ msgstr "Starten"
 #: src/platform/setup.cpp
 msgid "Look again"
 msgstr "Erneut suchen"
-
-#: src/platform/setup.cpp
-msgid "Quit"
-msgstr "Beenden"
 
 #: src/platform/setup.cpp
 msgid "iOS app (.ipa)"

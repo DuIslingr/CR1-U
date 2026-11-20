@@ -5402,6 +5402,38 @@ constexpr int kTitleIcons[3] = {2, 27, 3};
 
 bool titleChoiceReady(int) { return true; }
 
+// The title's plates: Start, Scenarios, Options at 114 + 56 i (TitlePut) - and on the desktop a fourth, Quit (ours,
+// CRO-U #16), the four 48 apart from 96 so the last ends at 280, above the credits strip
+#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
+constexpr int kTitlePlates = 3;
+#else
+constexpr int kTitlePlates = 4;
+#endif
+float titlePlateY(int i) { return kTitlePlates == 4 ? 96 + 48.0f * float(i) : 114 + 56.0f * float(i); }
+
+// Quit's question (OptionPrc 9's board, as Options asks): the screen darkened, the message window, Yes / No at (336, 104 / 160)
+static void drawQuitBoard(App& app, cr::MenuPainter& m) {
+    cr::Renderer& r = app.renderer;
+    r.setOrigin(0);
+    r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 0.75f);
+    r.setOrigin(r.uiX());
+    m.picture(12, 0, 220, 1);
+    m.text(tr("Quit the game?"), 24, 235, false, 1, 14);
+    const bool hy = pressIn(app, kPressTitle, r.uiX(), 336, 104, 136, 40), hn = pressIn(app, kPressTitle, r.uiX(), 336, 160, 136, 40);
+    m.plate(336, 104, 0, 0, hy || (!hn && app.quitConfirm == 0), 1, false);
+    m.plate(336, 160, 1, 1, hn || (!hy && app.quitConfirm == 1), 1, false);
+}
+
+// Quit's question answered: Yes - the app closes, as its window's close button does; No - the plates again
+static void titleQuitAnswer(App& app, bool yes, bool cancelled = false) {
+    app.quitAsk = 0;
+    menuSound(app, cancelled ? se::kBack : se::kChoose);
+    if (!yes) return;
+    SDL_Event quit{};
+    quit.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&quit);
+}
+
 // TitleSet / TitlePut: title1.mct (slot 0x11) and chaos.mct (0x12) - window 0 the "Please Touch" line
 // (MuTex 1 picture 7) and the logo (6), window 1 the credits strip (8), as the structs at 0xbd400
 // (2.2.0) / 0xca680 (1.0.1) place them: 2.2.0's 480 x 320 sheet (its _hd twice that) 7 (184, 360,
@@ -5488,18 +5520,20 @@ void drawTitleMenu(App& app) {
     drawTitleArt(app, tw.logo, tw.strip);
     m.begin(app.renderer, app.windowTex, &app.font);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
-    if (plates && !app.resumeNotice && !app.resumePrompt && tw.plates.a > 0) { // (Start with a resume point: window 3 off, the strip stays)
+    if (plates && !app.resumeNotice && !app.resumePrompt && !app.quitAsk && tw.plates.a > 0) { // (Start with a resume point: window 3 off, the strip stays)
         const float pt = tw.plates.a;
         app.renderer.setOrigin(wideRight(app)); // (widescreen: the emblems and plates to the screen's right)
         m.picture(155, 320, 16, pt);
         m.picture(124, 380, 16, pt);
-        for (int i = 0; i < 3; ++i)
-            m.plate(328 + tw.plates.dx, 114 + 56.0f * float(i), kTitleIcons[i], kTitleWords[i],
-                    (app.titleCursor == i && menuCursorLit(app)) || pressIn(app, kPressTitle, wideRight(app), 328, 114 + 56.0f * float(i), 136, 40),
-                    pt, !titleChoiceReady(i)); // (lit: the keys' cursor, or a touch holding it - TitlePrc's pad_chk_updw_box)
+        for (int i = 0; i < kTitlePlates; ++i) { // (lit: the keys' cursor, or a touch holding it - TitlePrc's pad_chk_updw_box)
+            const bool lit = (app.titleCursor == i && menuCursorLit(app)) || pressIn(app, kPressTitle, wideRight(app), 328, titlePlateY(i), 136, 40);
+            if (i == 3) m.plate(328 + tw.plates.dx, titlePlateY(i), 1, -1, lit, pt, false, std::string(tr("Quit"))); // (the No plate's x)
+            else m.plate(328 + tw.plates.dx, titlePlateY(i), kTitleIcons[i], kTitleWords[i], lit, pt, !titleChoiceReady(i));
+        }
     }
+    if (app.quitAsk) drawQuitBoard(app, m);
     app.renderer.setOrigin(wideLeft(app));
-    if (keyHints(app) && !app.resumeNotice && !app.resumePrompt) // (our key hints)
+    if (keyHints(app) && !app.resumeNotice && !app.resumePrompt && !app.quitAsk) // (our key hints)
         m.text(plates ? "Up/Down  Enter  V: Options  Esc: quit" : "Enter: start  Esc: quit", 20, 360, false, t * 0.8f, 9);
     app.renderer.setOrigin(app.renderer.uiX());
 }
@@ -5532,6 +5566,7 @@ void titleChoose(App& app, int i) {
     app.titleCursor = i;
     if (!titleChoiceReady(i)) { menuSound(app, se::kBuzzer); return; }
     menuSound(app, se::kChoose);
+    if (i == 3) { app.quitAsk = 1, app.quitConfirm = 1; return; } // Quit (ours, the desktop's: CRO-U #16): asked first
     if (i == 1 || i == 2) { // (TitlePrc 4: WinDispOff 1 and 3 on F, 6 / 9 open the sub-menu on F+1: stepTitle)
         app.titleStage = 3, app.titleSub = i, app.titleAnim = 0;
         return;
@@ -5550,14 +5585,25 @@ bool titleKey(App& app, SDL_Keycode key) {
         return true;
     }
     if (app.resumePrompt) return true; // (its windows going: nothing to answer)
+    if (app.quitAsk) { // Quit's question: Yes / No
+        switch (key) {
+        case SDLK_UP: case SDLK_DOWN: case SDLK_LEFT: case SDLK_RIGHT: case SDLK_W: case SDLK_S: case SDLK_A: case SDLK_D:
+            app.quitConfirm ^= 1, menuSound(app, se::kCursor);
+            break;
+        case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: titleQuitAnswer(app, app.quitConfirm == 0); break;
+        case SDLK_ESCAPE: case SDLK_BACKSPACE: case SDLK_AC_BACK: titleQuitAnswer(app, false, true); break;
+        default: break;
+        }
+        return true;
+    }
     // (the Vita's __menuu_TitlePrc 1: 0xf008 - □ △ ○ × START, no D-pad; the pad's D-pad comes as the arrows)
     const bool padArrow = app.padKeyNow && (key == SDLK_UP || key == SDLK_DOWN || key == SDLK_LEFT || key == SDLK_RIGHT);
     const bool padShoulder = app.padKeyNow && (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN); // (L / R: not in 0xf008)
     if (app.titleStage == 0 && key != SDLK_ESCAPE && key != SDLK_AC_BACK) { if (!padArrow && !padShoulder) titleTap(app); return true; }
     if (!titlePlatesLive(app) && key != SDLK_ESCAPE && key != SDLK_AC_BACK) return true;
     switch (key) {
-    case SDLK_UP: case SDLK_W: app.titleCursor = (app.titleCursor + 2) % 3; menuSound(app, se::kCursor); break;
-    case SDLK_DOWN: case SDLK_S: app.titleCursor = (app.titleCursor + 1) % 3; menuSound(app, se::kCursor); break;
+    case SDLK_UP: case SDLK_W: app.titleCursor = (app.titleCursor + kTitlePlates - 1) % kTitlePlates; menuSound(app, se::kCursor); break;
+    case SDLK_DOWN: case SDLK_S: app.titleCursor = (app.titleCursor + 1) % kTitlePlates; menuSound(app, se::kCursor); break;
     case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: case SDLK_E: titleChoose(app, app.titleCursor); break;
     case SDLK_ESCAPE: case SDLK_AC_BACK: return false;
     default: break;
@@ -5573,9 +5619,15 @@ void titleClick(App& app, float px, float py) {
     if (app.titleStage == 0) { titleTap(app); return; } // (a tap anywhere: _pad_chk_trg_up_box0(0, 0, 480, 320))
     if (!titlePlatesLive(app) || app.fingerMoved) return; // (the plates: _pad_chk_updw_box - no lift in a frame the finger moved in)
     float mx, my;
+    if (app.quitAsk) { // Quit's question: the Yes / No plates (0x88 x 0x28)
+        menuPointAt(app, lx, ly, app.renderer.uiX(), mx, my);
+        if (mx >= 336 && mx < 472 && my >= 104 && my < 144) titleQuitAnswer(app, true);
+        else if (mx >= 336 && mx < 472 && my >= 160 && my < 200) titleQuitAnswer(app, false);
+        return;
+    }
     menuPointAt(app, lx, ly, wideRight(app), mx, my); // (widescreen: the plates on the right)
-    for (int i = 0; i < 3; ++i)
-        if (mx >= 328 && mx < 464 && my >= 114 + 56 * i && my < 154 + 56 * i) titleChoose(app, i);
+    for (int i = 0; i < kTitlePlates; ++i)
+        if (mx >= 328 && mx < 464 && my >= titlePlateY(i) && my < titlePlateY(i) + 40) titleChoose(app, i);
     // the store's picture 155 (320, 16, 57 x 57): its sound (2.2.0: __effgo(2), SetStoreMenu - no store
     // here); 124 (380, 16, 80 x 72) opens the publisher's page with no sound - left out
     if (mx >= 320 && mx < 377 && my >= 16 && my < 73) menuSound(app, se::kChoose);

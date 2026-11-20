@@ -145,7 +145,7 @@ Input).
 | PgUp / PgDn (Q / E in Options) | pages |
 | T, F5, F6 | puzzle rooms: the ability straight ahead, retry, help |
 | F3 | toggle Control Hints (also in Options, Game; saved between runs) |
-| F11 or Alt+Enter | windowed / fullscreen (Options, Display page's Display row; the fullscreen kind last chosen there, borderless at first; saved between runs; desktop only) |
+| F11 or Alt+Enter | windowed / fullscreen (Options, Display page's Display row; the fullscreen kind last chosen there, borderless at first; for this session: the next start uses the Display set in Options; desktop only) |
 | Mouse | everything the original takes by touch: plates, buttons, the dialogue, the corner button; drag to push a block in puzzle rooms |
 
 **Touch** (or the mouse) works as in the original: put a finger down anywhere on the field and

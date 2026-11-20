@@ -75,7 +75,8 @@ public:
     // ComUty_OptCategoryDraw: a 24-tall white bar (100 solid, 123 fading out, alpha up to
     // 0xB3) with the label in black at (x + 8, y + 5). `highlight` tints the bar (keyboard
     // cursor - an addition: the original is touch-only)
-    void rowBar(float x, float y, const std::string& label, float alpha, bool highlight);
+    // (shade: the bar's white - the Vita's 0xc8 grey off the cursor row; cap: its alpha at most - 0xb3, the Vita's 0xd2)
+    void rowBar(float x, float y, const std::string& label, float alpha, bool highlight, float shade = 1, float cap = 179.0f / 255.0f);
     // ComUty_CmdBottom: a button at (x, y), 104 x 40 base, 112 x 32 face; the label is word
     // picture `word` (5 x 88 x 24 grid at (0, 512)) or, when word < 0, `text`
     void button(float x, float y, int word, const std::string& text, bool selected, float alpha, bool highlight);
@@ -86,7 +87,8 @@ public:
                const std::string& text = std::string());
     // ComUty_SideGuageDraw: the track at (x, y), the fill and knob for `value` 0..100
     // (fillAt: the fill's end as the knob's offset from x + 11 - SideGuageDraw's slide, 45583-45592; -1 the knob's)
-    void gauge(float x, float y, int value, float alpha, bool highlight, int fillAt = -1);
+    // (active: the Vita's light cyan fill on the cursor's gauge)
+    void gauge(float x, float y, int value, float alpha, bool active, int fillAt = -1);
     // ComUty_CmdBack type 2: the Back bar at (x, y), `pressed` lights it, `bob` 0..5 moves the arrows
     void backButton(float x, float y, int pressed, int bob, float alpha); // pressed: 0 none, 1 Back, 2 right, 3 left
     // ComUty_CmdBack type 1 (the shop's): a plain 232-wide bar, white fading in over 24 at each end,

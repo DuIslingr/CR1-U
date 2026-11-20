@@ -33,6 +33,10 @@ msgid "Off"
 msgstr "끄기"
 
 #: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Quit Game"
+msgstr "게임 종료"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
 msgid "Menu Language"
 msgstr "메뉴 언어"
 
@@ -43,6 +47,14 @@ msgstr "{0} (팬 번역)"
 #: src/app/field_puzzle.cpp
 msgid "{0} (patched over English)"
 msgstr "{0} (영어 위에 패치)"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp
+msgid "Quit the game?"
+msgstr "게임을 종료하시겠습니까?"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp src/platform/setup.cpp
+msgid "Quit"
+msgstr "종료"
 
 #: src/app/scene_fx.cpp
 msgid "Game"
@@ -782,10 +794,6 @@ msgstr "시작"
 #: src/platform/setup.cpp
 msgid "Look again"
 msgstr "다시 찾기"
-
-#: src/platform/setup.cpp
-msgid "Quit"
-msgstr "종료"
 
 #: src/platform/setup.cpp
 msgid "iOS app (.ipa)"

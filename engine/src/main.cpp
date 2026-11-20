@@ -777,6 +777,14 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
         if (SDL_strcmp(argv[i], "--renderer") == 0) choice = argv[i + 1];
     if (choice && (SDL_strcasecmp(choice, "gl") == 0 || SDL_strcasecmp(choice, "opengl") == 0)) want = cr::Backend::OpenGL;
     cr::useBundledVulkan(); // (macOS: the .app's own loader)
+    // A game run reads settings.ini's video before it shows the window, so the window opens in the saved
+    // display mode and size - no 1024 x 768 window first, decorated, before fullscreen (CRO-U #13). The tools'
+    // runs (captures, the self-test ...) start from the original presentation, as they always have.
+    bool toolRun = false;
+    for (int i = 1; i < argc; ++i)
+        for (const char* t : {"--capture", "--capture-model", "--explore", "--export-models", "--export-textures", "--print-sysmsg",
+                              "--print-msgs", "--print-msg-shape", "--print-manual", "--selftest"})
+            if (SDL_strcmp(argv[i], t) == 0) toolRun = true;
     for (cr::Backend b : {want, cr::Backend::OpenGL}) {
         const uint64_t flags = cr::Renderer::windowFlags(b);
         if (!flags) continue; // not built in
@@ -784,6 +792,8 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
                                        SDL_WindowFlags(flags) | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
                                            | SDL_WINDOW_FULLSCREEN // (the system's bars hidden from the start)
+#else
+                                           | SDL_WINDOW_HIDDEN // (shown once its display mode is set: CRO-U #13)
 #endif
                                        );
         if (!app->window) {
@@ -828,9 +838,20 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
     app->gameThread = SDL_GetCurrentThreadID();
     app->inputCancel.start(SDL_GetWindowID(app->window));
     SDL_Log("renderer: %s", app->renderer.description().c_str());
-    // Captures and tests start from the original presentation; the command line can change it
+    // Captures and tests start from the original presentation; a game run from settings.ini's (loaded in full
+    // with loadMix below). The command line can change either
+    if (!toolRun) loadSavedVideo(*app);
     videoArgs(*app, argc, argv);
     applyVideo(*app);
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+    SDL_ShowWindow(app->window);
+    { // (black until the first frame - not whatever the window held - while the data loads)
+        int pw = 0, ph = 0;
+        SDL_GetWindowSizeInPixels(app->window, &pw, &ph);
+        app->renderer.beginFrame(pw, ph);
+        app->renderer.endFrame(true);
+    }
+#endif
     SDL_Log("data: %s", app->dataDir.c_str());
 
     if (app->vitaOnly) // the archive's files, by their iOS names (.gxt as .mct)
@@ -1207,7 +1228,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
         // takes every key before the switch below (seen in metastigma's fork, 8a3aa5d)
         if (event->key.key == SDLK_X && app.mode == Mode::Maps && app.runner.running()) holdSkip(app, kSkipKey, true);
         if (event->key.key == SDLK_F11 || ((event->key.key == SDLK_RETURN || event->key.key == SDLK_KP_ENTER) && (event->key.mod & SDL_KMOD_ALT))) {
-            if (!event->key.repeat) toggleFullscreen(app); // (windowed <-> fullscreen: Options' Display)
+            if (!event->key.repeat) toggleFullscreen(app); // (windowed <-> fullscreen for the session; Options' Display is the saved one)
             break; // (anywhere: the logos too)
         }
         if (app.vitaLogo.phase) { // the Vita's logos: confirm cuts the hold short
@@ -1217,7 +1238,7 @@ SDL_AppResult SDL_AppEvent(void* state, SDL_Event* event) {
             break;
         }
         if (event->key.key == SDLK_F3) { app.showHud = !app.showHud; saveMix(app); break; } // the saved Control Hints setting
-        if (event->key.key == SDLK_V && !app.manualOpen && !app.scenariosOpen) { // the Options screen
+        if (event->key.key == SDLK_V && !app.manualOpen && !app.scenariosOpen && !app.quitAsk) { // the Options screen
             if (app.optionsOpen) app.optionsOpen = false;
             else openOptions(app, 0);
             break;

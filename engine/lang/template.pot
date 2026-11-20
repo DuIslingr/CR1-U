@@ -32,6 +32,10 @@ msgid "Off"
 msgstr ""
 
 #: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Quit Game"
+msgstr ""
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
 msgid "Menu Language"
 msgstr ""
 
@@ -41,6 +45,14 @@ msgstr ""
 
 #: src/app/field_puzzle.cpp
 msgid "{0} (patched over English)"
+msgstr ""
+
+#: src/app/menus.cpp src/app/scene_fx.cpp
+msgid "Quit the game?"
+msgstr ""
+
+#: src/app/menus.cpp src/app/scene_fx.cpp src/platform/setup.cpp
+msgid "Quit"
 msgstr ""
 
 #: src/app/scene_fx.cpp
@@ -776,10 +788,6 @@ msgstr ""
 
 #: src/platform/setup.cpp
 msgid "Look again"
-msgstr ""
-
-#: src/platform/setup.cpp
-msgid "Quit"
 msgstr ""
 
 #: src/platform/setup.cpp

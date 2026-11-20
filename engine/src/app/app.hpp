@@ -298,13 +298,15 @@ struct App {
     int titleStage = 0;                    // __menuu_TitlePrc: 0 the title's art alone, a tap away (state 1); 1 the plates (2..4);
                                            // 2 Start's plates leaving (5, 0x16 .. 0x18); 3 Scenarios / Options (6 .. 0xb)
     int titleSub = 0;                      // stage 3: 1 Scenarios, 2 Options (opened on the tap's frame + 1)
+    int quitAsk = 0, quitConfirm = 1;      // the title's Quit question (ours, the desktop's: CRO-U #16), No under the cursor
     bool titleBack = false;                // stage 1 after a sub-menu: the strip back (TitlePrc 7 / 10), the plates 2 frames on
     int resumeIn = 0;                      // the Progress Tracker's Yes: frames of black left before the load (TitlePrc 0x16 / 0x17)
     int titleReturnIn = 0;                 // Options' Return to Title: frames of black left before the title (OptionPrc 0x18 / 0x19)
     std::string uiLang = "auto";           // the port's own text (platform/ui_text.hpp): "auto" (the text language's) or a code
     cr::Texture titleArt[2];               // __menuu_TitleSet: title1.mct (MuCom slot 0x11), chaos.mct (0x12)
     bool optionsFromTitle = false;         // ModeOptionMenu(1): Reset Data instead of Return to Title
-    int resetAsk = 0, resetConfirm = 1;    // Reset Data's two questions (OptionPrc 9 / 10: 1, 2), Return to Title's (0xc / 0xd: 3); No under the cursor
+    int resetAsk = 0, resetConfirm = 1;    // Reset Data's two questions (OptionPrc 9 / 10: 1, 2), Return to Title's (0xc / 0xd: 3),
+                                           // the desktop's Quit Game (ours: 4); No under the cursor
     bool captureTitle = false;             // --capture ... --title
     // Video. The defaults are the original presentation: a 1024x768 window, 4:3, the paintings at
     // the screen's height, native resolution, no MSAA, vsync
@@ -312,6 +314,9 @@ struct App {
         int width = 1024, height = 768;    // window size (windowed) or display mode (fullscreen)
         int display = 0;                   // 0 windowed, 1 fullscreen (that mode), 2 borderless (the desktop's)
         int fullscreenKind = 2;            // F11 / Alt+Enter's fullscreen: the last one chosen (1 or 2)
+        int savedDisplay = 0;              // settings.ini's display=: Options' choice alone - F11 / Alt+Enter and the
+                                           // command line change display for the session (CRO-U #15)
+        int toggleKind = 0;                // F11's fullscreen this session (0: fullscreenKind's)
         bool avoidCutout = true;           // phones: the layout kept clear of a camera's notch / punch hole (Options, Display)
         bool cutoutBars = false;           // ... and the picture too: boxed inside the safe area, black bars over the cutout
 #if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
@@ -1396,6 +1401,7 @@ struct OptRow {
     std::function<void(int)> act; // Gauge / Value: -1 / +1 (Value: 0 = Enter); Pair: 0 / 1; Check: 0
     int sound = int(se::kChoose); // played when act runs (OptionPrc: 2 for every button; gauges below)
     bool enterSounds = false;     // act(0) plays a sound of its own (Sound Test), so none from the menu
+    std::string checkText;        // Check: our word on its button in place of "Check" (Quit Game's "Quit")
 };
 
 constexpr int kOptionPages = 6; // Game, Sound, Display, Detail, Graphics, Cheats
@@ -1623,6 +1629,7 @@ void loadMix(App& app);
 bool seenFlag(const App& app, int f);
 void markSeen(App& app, int f);
 void saveMix(const App& app);
+std::string settingsText(const App& app);
 
 // scene_fx.cpp
 void loadSceneEffectSet(App& app, int set);
@@ -1650,6 +1657,7 @@ bool stepRescale(App& app, App::Rescale& r);
 void stepScriptCam(App& app);
 void scriptFieldScroll(App& app, float x, float y, int frames);
 void loadVideo(App& app, const char* text);
+void loadSavedVideo(App& app);
 void applyOrientation(App& app, bool captureDirection = false);
 void applyVideo(App& app);
 void toggleFullscreen(App& app); // F11 / Alt+Enter (a desktop's): windowed <-> the fullscreen kind last chosen
@@ -1902,6 +1910,7 @@ struct TitleWins { float logo = 0, strip = 0; CampWin plates{0, 240}; };
 TitleWins titleWindows(const App& app);
 int timingSelfTest(App& app);
 bool titleKey(App& app, SDL_Keycode key);
+float titlePlateY(int i);
 void titleClick(App& app, float px, float py);
 
 // field_puzzle.cpp

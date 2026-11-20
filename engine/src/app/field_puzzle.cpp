@@ -555,8 +555,15 @@ bool choiceUsable(const App& app, int choice) {
     return languageUsable(app, choice);
 }
 std::string languageChoiceName(const App& app, int choice) {
-    if (choice == cr::kLanguages)
-        return trf("{0} (fan translation)", {app.fanName == "Russian" ? std::string("\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9") : app.fanName});
+    if (choice == cr::kLanguages) { // (its own name - "Русский" - fits the button; "(fan translation)" only beside one of the
+                                     // game's own, a fan English or Spanish: CRO-U #19)
+        const std::string name = app.fanName == "Russian" ? std::string("\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9") : app.fanName;
+        const std::string& code = app.fanArchive.code;
+        for (int i = 0; i < cr::kLanguages; ++i) // (by its code's language: "es" / "es-419" beside the game's Spanish)
+            if (const std::string c = uitext::codeForTextLanguage(i); c.size() >= 2 && code.size() >= 2 && code.compare(0, 2, c, 0, 2) == 0)
+                return trf("{0} (fan translation)", {name});
+        return name;
+    }
     if (choice == 1 && app.englishPatched) return trf("{0} (patched over English)", {"\xd0\xa0\xd1\x83\xd1\x81\xd1\x81\xd0\xba\xd0\xb8\xd0\xb9"});
     return cr::kLanguageName[std::clamp(choice, 0, cr::kLanguages - 1)];
 }
@@ -1714,6 +1721,7 @@ bool ViewerHost::menu(int n) {
         app.titleAnim = 0;
         app.titleStage = 0;
         app.titleSub = 0, app.titleBack = false;
+        app.quitAsk = 0;
         return true;
     }
     if (n == 1) { openWorldSelect(app); return true; }

@@ -454,7 +454,7 @@ void loadVideo(App& app, const char* text) {
     App::Video& v = app.video;
     v.width = std::clamp(keyValue(text, "\nwidth=", v.width), 320, 3840);
     v.height = std::clamp(keyValue(text, "\nheight=", v.height), 240, 2160);
-    v.display = std::clamp(keyValue(text, "\ndisplay=", v.display), 0, 2);
+    v.display = v.savedDisplay = std::clamp(keyValue(text, "\ndisplay=", v.display), 0, 2);
     v.fullscreenKind = std::clamp(keyValue(text, "\nfullscreen_kind=", v.display ? v.display : v.fullscreenKind), 1, 2);
     v.widescreen = keyValue(text, "\nwidescreen=", v.widescreen) != 0;
     // painted_fill= 0 / 1 (Original / Fill); the old painted_rooms= (0 Original, 1 Whole, 2 Fill Width) and
@@ -672,11 +672,11 @@ std::string aaName(const App::Video& v) {
 void toggleFullscreen(App& app) {
 #if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
     App::Video& v = app.video;
-    if (v.display) v.fullscreenKind = v.display;
-    v.display = v.display ? 0 : std::clamp(v.fullscreenKind, 1, 2);
-    SDL_Log("display: %s (F11 / Alt+Enter)", v.display == 0 ? "windowed" : v.display == 1 ? "fullscreen" : "borderless");
+    // (for this session only: settings.ini keeps Options' Display - savedDisplay - and fullscreen_kind, CRO-U #15)
+    if (v.display) v.toggleKind = v.display;
+    v.display = v.display ? 0 : std::clamp(v.toggleKind ? v.toggleKind : v.fullscreenKind, 1, 2);
+    SDL_Log("display: %s (F11 / Alt+Enter, this session)", v.display == 0 ? "windowed" : v.display == 1 ? "fullscreen" : "borderless");
     applyVideo(app);
-    saveMix(app);
 #else
     (void)app;
 #endif
@@ -703,8 +703,8 @@ void adjustVideo(App& app, int row, int dir) {
         break;
     }
     case 1:
-        v.display = (v.display + dir + 3) % 3;
-        if (v.display) v.fullscreenKind = v.display; // (F11's from now on)
+        v.display = v.savedDisplay = (v.display + dir + 3) % 3; // (Options': saved - F11's aren't)
+        if (v.display) v.fullscreenKind = v.display, v.toggleKind = 0; // (F11's from now on)
         break;
     case 2: v.widescreen = !v.widescreen; break;
     case 3: v.paintings = (v.paintings + dir + 2) % 2; break;
@@ -1007,6 +1007,13 @@ std::vector<OptRow> optionRows(App& app, int page) {
             title.act = [&app](int) { optionsAsk(app, 3); }; // OptionPrc 0xc: "return to the title?" (57060)
         }
         rows.push_back(title);
+#if !defined(SDL_PLATFORM_ANDROID) && !defined(SDL_PLATFORM_IOS)
+        OptRow quit; // ours, the desktop's (CRO-U #16): asked first, as Return to Title is
+        quit.label = tr("Quit Game");
+        quit.checkText = tr("Quit"); // (the word sheet has no "Exit" to cut, as Omega's has)
+        quit.act = [&app](int) { optionsAsk(app, 4); };
+        rows.push_back(quit);
+#endif
         break;
     }
     case 1: { // Sound
@@ -1440,7 +1447,11 @@ void drawOptions(App& app, float, float) {
         const float y = optRowY(i - scroll), mid = y + 12;
         const bool cursor = cursorRow == i;
         const float dim = row.enabled ? ac : ac * 0.45f;
-        m.rowBar(20 + rowsX, y, row.label, row.enabled ? a : a * 0.45f, cursor);
+        // (the cursor row as the Vita shows it - white, the others 0xc8 grey, at most 0xd2 - and its gauge light cyan, while
+        // the keys or a pad lead; under a finger or the mouse every row alike, 2.2.0's white at 0xb3: CRO-U #17)
+        const bool focus = !app.pointerLast;
+        m.rowBar(20 + rowsX, y, row.label, row.enabled ? a : a * 0.45f, false, focus && !cursor ? 0xc8 / 255.0f : 1,
+                 (vitaLayout(app) ? 0xd2 : 0xb3) / 255.0f);
         // The control in the original's design units (buttons 8 above the bar, gauges 4 below),
         // scaled about (kOptCtrlX, the bar's middle)
         m.setScale(kOptCtrlX + ctrlX, mid, kOptCtrlScale);
@@ -1448,10 +1459,12 @@ void drawOptions(App& app, float, float) {
         // (held: the finger on the control now - its box as optionsClick's, in menu units)
         auto held = [&](float x0, float x1) { return row.enabled && optionsHeld(app, optCtrlX(x0), y - 4, optCtrlX(x1), y + 28); };
         switch (row.kind) {
-        case OptControl::Check: m.button(cx + 120, y - 8, 23, "", false, dim, (cursor && row.enabled) || held(344, 456)); break;
+        case OptControl::Check:
+            m.button(cx + 120, y - 8, row.checkText.empty() ? 23 : -1, row.checkText, false, dim, (cursor && row.enabled) || held(344, 456));
+            break;
         case OptControl::Gauge: { // (held: the knob where the finger is; the fill sliding to it)
             const int v = app.optionsGauge.gauge && app.optionsGauge.gauge == row.gauge ? app.optionsGauge.shown : row.value;
-            m.gauge(cx, y + 4, v, ac, cursor, optionsFillAt(app, row.gauge, v));
+            m.gauge(cx, y + 4, v, ac, cursor && focus, optionsFillAt(app, row.gauge, v));
             break;
         }
         case OptControl::Pair:
@@ -1517,7 +1530,8 @@ void drawOptions(App& app, float, float) {
         // OptionPrc 9 / 0xc: the message board (window 10 - ComUty_MsgBoardDraw at y 220: 57078, then 57079; 57060) up
         // from 160 below, Yes / No (9) at (336, 104 / 160) in from 140 to the right, over the menu mask
         std::vector<std::vector<std::string>> pages;
-        app.systemText.message(ask == 1 ? 57078 : ask == 2 ? 57079 : 57060, textLanguage(app), nullptr, pages, nullptr);
+        if (ask == 4) pages = {{std::string(tr("Quit the game?"))}}; // (ours: Quit Game)
+        else app.systemText.message(ask == 1 ? 57078 : ask == 2 ? 57079 : 57060, textLanguage(app), nullptr, pages, nullptr);
         const float by = 220 + w.board.dx;
         m.picture(12, 0, by, w.board.a);
         if (!pages.empty())
@@ -1573,6 +1587,17 @@ void resetAnswer(App& app, bool yes, bool cancelled) {
         menuSound(app, cancelled ? se::kBack : se::kChoose); // (the Vita's OptionPrc 0x11: ComUty_YesNoChoiceProc(.., 1), × 3)
         app.optionsSlide = App::OptSlide{yes ? 4 : 3, 0, app.optionsPage, 3};
         if (yes) app.titleReturnIn = 16;
+        return;
+    }
+    if (app.resetAsk == 4) { // Quit Game (ours): Yes - the app closes, as its window's close button does; No - the page again
+        app.optionsSlide = App::OptSlide{3, 0, app.optionsPage, 4};
+        app.resetAsk = 0;
+        menuSound(app, cancelled ? se::kBack : se::kChoose);
+        if (yes) {
+            SDL_Event quit{};
+            quit.type = SDL_EVENT_QUIT;
+            SDL_PushEvent(&quit);
+        }
         return;
     }
     if (yes && app.resetAsk == 1) {

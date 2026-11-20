@@ -872,6 +872,16 @@ std::string userDir() {
 }
 std::string settingsPath() { return userDir() + "settings.ini"; }
 
+// settings.ini's video alone, before the window shows (CRO-U #13): its display mode and size from the start
+void loadSavedVideo(App& app) {
+    size_t size = 0;
+    char* text = static_cast<char*>(SDL_LoadFile(settingsPath().c_str(), &size));
+    if (!text) return;
+    const std::string t = "\n" + std::string(text, size); // (keys are matched after a line break)
+    SDL_free(text);
+    loadVideo(app, t.c_str());
+}
+
 void startUiText(App& app) {
     for (const std::string& g : cr::gameFolders()) uitext::addFolder(g + "lang/");
     uitext::addFolder(userDir() + "lang/");
@@ -957,15 +967,15 @@ void markSeen(App& app, int f) {
     saveMix(app);
 }
 
-void saveMix(const App& app) {
-    if (!app.persist) return;
+// settings.ini's text (saveMix; the self-test reads it for what F11 leaves alone)
+std::string settingsText(const App& app) {
     const std::string t = "master=" + std::to_string(app.mix.master) + "\nmusic=" + std::to_string(app.mix.music) +
                           "\neffects=" + std::to_string(app.mix.effects) + "\nvoice=" + std::to_string(app.mix.voice) + "\n";
     std::string list;
     for (int e : app.voiceEntries) list += (list.empty() ? "" : ",") + std::to_string(e);
     const App::Video& v = app.video;
     const std::string video = "width=" + std::to_string(v.width) + "\nheight=" + std::to_string(v.height) +
-                              "\ndisplay=" + std::to_string(v.display) + "\nfullscreen_kind=" + std::to_string(v.fullscreenKind) + "\nwidescreen=" + std::to_string(int(v.widescreen)) +
+                              "\ndisplay=" + std::to_string(v.savedDisplay) + "\nfullscreen_kind=" + std::to_string(v.fullscreenKind) + "\nwidescreen=" + std::to_string(int(v.widescreen)) +
                               "\npainted_fill=" + std::to_string(v.paintings) + "\nrender_scale=" +
                               std::to_string(v.renderScale) + "\nmsaa=" + std::to_string(v.msaa) +
                               "\nvsync=" + std::to_string(int(v.vsync)) + "\nframe_limit=" + std::to_string(v.frameLimit) + "\nupscaler=" + std::to_string(v.upscaler) +
@@ -989,8 +999,13 @@ void saveMix(const App& app) {
     for (int f : app.seenFlags) seen += (seen.empty() ? "" : ",") + std::to_string(f);
     const std::string all = t + "language=" + std::to_string(app.language) + "\nui_lang=" + app.uiLang + "\nfan_text=" + std::to_string(int(app.fanText)) + "\nvoice_entries=" + list + "\nseen_flags=" + seen + "\n" + video +
                             "trophies=" + app.trophy.flags.hex() + "\n";
+    return all;
+}
+
+void saveMix(const App& app) {
+    if (!app.persist) return;
     std::string error;
-    if (!crstorage::replaceFile(settingsPath(), all, &error)) SDL_Log("settings: %s", error.c_str());
+    if (!crstorage::replaceFile(settingsPath(), settingsText(app), &error)) SDL_Log("settings: %s", error.c_str());
 }
 
 

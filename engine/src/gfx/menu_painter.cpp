@@ -147,11 +147,11 @@ float MenuPainter::textWidth(const std::string& s, float size) {
     return rasterise(s, size * K()).w / kScale / K();
 }
 
-void MenuPainter::rowBar(float x, float y, const std::string& label, float alpha, bool highlight) {
-    const float a = std::min(alpha, 179.0f / 255.0f);
+void MenuPainter::rowBar(float x, float y, const std::string& label, float alpha, bool highlight, float shade, float cap) {
+    const float a = std::min(alpha, cap);
     // Keyboard cursor: the cyan the game lights pressed controls with (tex2d colour 0xEBFF4B, A B G R:
     // R 0x4B, G 0xFF, B 0xEB - ComUty_CmdBack 0x4d4d0's pressed colour)
-    const float r = highlight ? 0x4B / 255.0f : 1, g = 1, b = highlight ? 0xEB / 255.0f : 1;
+    const float r = highlight ? 0x4B / 255.0f : shade, g = highlight ? 1 : shade, b = highlight ? 0xEB / 255.0f : shade;
     const float solid[4] = {r, g, b, a}, clear[4] = {r, g, b, 0};
     quad(x, y, 100, 24, solid, solid);
     quad(x + 100, y, 123, 24, solid, clear);
@@ -171,7 +171,8 @@ void MenuPainter::button(float x, float y, int word, const std::string& label, b
     if (word >= 0) {
         piece(x + 10, y + 8, float(word % 5) * 88, 512 + float(word / 5) * 24, 88, 24, alpha);
     } else if (!label.empty()) { // our labels: the game's font, centred on the face
-        const float size = textWidth(label, 13) > 84 ? 11.0f : 13.0f;
+        // (13, smaller to fit the face's 84: a long value - a fan translation's name - inside its button, CRO-U #19)
+        const float wide = textWidth(label, 13), size = wide > 84 ? std::max(8.0f, std::floor(13.0f * 84 / wide)) : 13.0f;
         // light like the game's words; dark on the cyan cursor face
         textCentred(label, x + 56 - textWidth(label, size) / 2, y + 20, highlight, alpha, size);
     }
@@ -191,7 +192,7 @@ void MenuPainter::plate(float x, float y, int icon, int word, bool selected, flo
     else if (!text.empty()) textCentred(text, x + 40 + (88 - textWidth(text, 15)) / 2, y + 20, true, a, 15);
 }
 
-void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight, int fillAt) {
+void MenuPainter::gauge(float x, float y, int value, float alpha, bool active, int fillAt) {
     value = std::clamp(value, 0, 100);
     picture(103, x, y, alpha);
     for (int k = 0; k < 24; ++k) picture(105, x + 20 + 8 * k, y, alpha);
@@ -202,14 +203,14 @@ void MenuPainter::gauge(float x, float y, int value, float alpha, bool highlight
     // place gauges at x 224, so it is x + 11 + ...)
     const float knob = x + 11 + std::floor(value * 2.03f);
     const float fill = (fillAt >= 0 ? x + 11 + float(fillAt) : knob) - (x + 14);
-    const float red[4] = {0, 0, 1, alpha}; // (named for the old reading)
+    // (the Vita's cursor gauge - _ComUty_SideGuageDraw's fourth argument from OptionPut - fills light cyan, 0xffffff80)
+    const float colour[4] = {active ? 0x80 / 255.0f : 0, active ? 1.0f : 0, 1, alpha};
     if (fill > 0) {
-        quad(x + 13, y + 6, 1, 2, red, red);
-        quad(x + 14, y + 5, fill, 4, red, red);
+        quad(x + 13, y + 6, 1, 2, colour, colour);
+        quad(x + 14, y + 5, fill, 4, colour, colour);
     }
-    const float r = highlight ? 0x4B / 255.0f : 1, b = highlight ? 0xEB / 255.0f : 1;
-    const short* p = kMenuPicture[106];
-    piece(knob, y - 16, p[0], p[1], p[2], p[3], alpha, r, 1, b);
+    const short* p = kMenuPicture[106]; // (the knob as it is: neither 2.2.0 nor the Vita lights it)
+    piece(knob, y - 16, p[0], p[1], p[2], p[3], alpha);
 }
 
 void MenuPainter::backButton(float x, float y, int pressed, int bob, float alpha) {

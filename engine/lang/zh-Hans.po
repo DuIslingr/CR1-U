@@ -33,6 +33,10 @@ msgid "Off"
 msgstr "关闭"
 
 #: src/app/explore.cpp src/app/scene_fx.cpp
+msgid "Quit Game"
+msgstr "退出游戏"
+
+#: src/app/explore.cpp src/app/scene_fx.cpp
 msgid "Menu Language"
 msgstr "界面语言"
 
@@ -43,6 +47,14 @@ msgstr "{0}（民间翻译）"
 #: src/app/field_puzzle.cpp
 msgid "{0} (patched over English)"
 msgstr "{0}（覆盖英文）"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp
+msgid "Quit the game?"
+msgstr "要退出游戏吗？"
+
+#: src/app/menus.cpp src/app/scene_fx.cpp src/platform/setup.cpp
+msgid "Quit"
+msgstr "退出"
 
 #: src/app/scene_fx.cpp
 msgid "Game"
@@ -779,10 +791,6 @@ msgstr "开始"
 #: src/platform/setup.cpp
 msgid "Look again"
 msgstr "重新查找"
-
-#: src/platform/setup.cpp
-msgid "Quit"
-msgstr "退出"
 
 #: src/platform/setup.cpp
 msgid "iOS app (.ipa)"
