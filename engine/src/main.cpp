@@ -1116,6 +1116,7 @@ SDL_AppResult SDL_AppInit(void** state, int argc, char** argv) {
                 viewer = viewer || SDL_strcmp(argv[i], f) == 0;
         app->viewer = viewer;
         if (!viewer) bootTitle(*app);
+        else updateTitle(*app); // the status the startup's map / model / texture set before this was known
     }
 
     return SDL_APP_CONTINUE;

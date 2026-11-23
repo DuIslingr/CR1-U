@@ -129,7 +129,10 @@ void updateTitle(App& app) {
                      : "no camera  ") + std::to_string(app.mapIndex + 1) + "/" +
                 std::to_string(app.maps.size());
     }
-    SDL_SetWindowTitle(app.window, title.c_str());
+    // The status in the title is the viewer's (--viewer / --map / --model ...); in play the window is plainly
+    // "Chaos Rings" (a Steam Deck player in Desktop Mode saw the map file and collision polygons as an overlay);
+    // app.status (Control Hints' top line) and the log keep it either way
+    SDL_SetWindowTitle(app.window, app.viewer ? title.c_str() : "Chaos Rings");
     app.status = title.substr(std::string("Chaos Rings — ").size());
     SDL_Log("%s", title.c_str());
 }
