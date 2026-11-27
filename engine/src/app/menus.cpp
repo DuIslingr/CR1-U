@@ -415,7 +415,7 @@ void drawSaveScreen(App& app) {
     App::SaveScreen& ss = app.saveScreen;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     r.setOrigin(0);
     const bool art = ss.load && app.charSelectArt.id;
@@ -1128,7 +1128,7 @@ void drawShop(App& app) {
     App::Shop& s = app.shop;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     if (s.phase == App::Shop::Talk) { // the shopkeeper's scene: ShopPrc 2 takes windows 1 - 5 off, "Shop" (window 0)
         r.setOrigin(wideLeft(app));      // stays over it
@@ -3082,7 +3082,7 @@ void drawStaffRoll(App& app) {
     if (st.win[1] > 0) r.fillRect(ox + 2 * st.panel, 0, 560, H, 0, 0, 0, st.win[1]); // tex2d (x - 16, -32) 280 x 384
     }
     cr::MenuPainter& m = app.menu;
-    if (app.windowTex.id) m.begin(r, app.windowTex, &app.font);
+    if (app.windowTex.id) m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     r.setOrigin(ox);
     if (st.win[3] > 0)
         for (const auto& l : st.lines) {
@@ -3256,7 +3256,7 @@ void drawLastBattle(App& app) {
     if (!lb.open || app.campOpen || !app.windowTex.id) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     // __menuu_LastBtPut: its windows sit at (0, 0) (as the camp's), so these are menu units: the
     // header (picture 109) at (8, 6), the round's title (FontDisp (12, 40)) over the rule (15 at
     // (0, 56)), the guardian at (0, 64), the rows, the board (ComUty_MsgBoardDraw: picture 12 at
@@ -3601,7 +3601,7 @@ void drawWorldSelect(App& app) {
     if (!app.worldChoiceOpen || !app.windowTex.id) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     // WldChoicePut's windows sit at (0, 0): menu units, 1.0.1's records - the title (picture 0) at
     // (8, 4), the gate's picture at (0, 64), the rules (15 / 16) at (0, 56) / (24, 72) under
     // FontDisp (12, 40) / (40, 58), the board (ComUty_MsgBoardDraw: picture 12) at (0, 220). The
@@ -3794,7 +3794,7 @@ void drawCamp(App& app) {
     if ((c.notice && !c.mainGone) || (c.phase == App::Camp::Exit && c.exitT >= kCampExitGone)) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font); // (the scene under the menu mask: drawFrame's)
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline); // (the scene under the menu mask: drawFrame's)
     r.setOrigin(r.uiX());
     const PhoneMenu phoneMenu(app, m);
     // Widescreen: the heading, the boards and the section labels to the screen's left, the plates,
@@ -4328,7 +4328,7 @@ void drawTrophyNotice(App& app) {
     const cr::Font& font = app.fontCjk.loaded() ? app.fontCjk : app.font;
     if (!font.loaded() || n < 0 || n >= cr::trophies::kCount) return;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &font);
+    m.begin(r, app.windowTex, &font, app.cleanTextOutline);
     const float ink = 54 / 255.0f;
     const float line1 = 24 * s, line2 = 21 * s; // (the glyph boxes: the name's 24 rows with its brackets, the second line's cap 15)
     std::string head = std::string(cr::trophies::gradeWord(trophyGrade(app, n))) + " " + trophyName(app, n);
@@ -4429,7 +4429,7 @@ void stepResume(App& app) {
 void drawResumePrompt(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     const float w = app.resumeWin, e = 1 - (1 - w) * (1 - w), a = w, out = 1 - e;
     // Window 6: the interrupted game's pair (ComUty_CharInfoInit: one while flag 0xfed + route holds
@@ -4811,7 +4811,7 @@ void drawScenarios(App& app) {
                          1, 1, 1, a);
         }
         cr::MenuPainter& m = app.menu;
-        m.begin(r, app.windowTex, &app.font);
+        m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
         const PhoneMenu phoneMenu(app, m);
         drawClockAndOz(app, m, a);
         m.backBar(192, 286, app.press.down && app.press.screen == kPressHistory && !app.fingerMoved && historyBackAt(app, app.press.px, app.press.py), a); // (HistoryPut: BackButtonDraw2 mode 1; lit while held - DAT_000d37b8)
@@ -4868,7 +4868,7 @@ void drawScenarios(App& app) {
         r.drawQuadUV(t, 132 + 48.0f * float(k), 640, d[2], d[3], d[0], d[1] + d[3] * float(digits[k]), d[2], d[3], 1, 1, 1, a);
     }
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     m.backBar(272, 330, app.press.down && app.press.screen == kPressHistory && !app.fingerMoved && historyBackAt(app, app.press.px, app.press.py), a);
     if (keyHints(app)) // (our key hints)
         m.text("Up/Down: scroll  Esc: back", 300, 372, false, a * 0.8f, 9);
@@ -5103,7 +5103,7 @@ void drawManual(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     const App::ManualMsg& mm = app.manualMsg;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     r.setOrigin(r.uiX());
     if (!app.manualIntro) {
         const PhoneMenu phoneMenu(app, m);
@@ -5325,7 +5325,7 @@ void drawCharArt(App& app, float alpha, bool banner, float grey) {
 void drawCharSelect(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     r.setOrigin(0);
     r.fillRect(0, 0, r.screenW(), cr::Renderer::kLogicalH, 0, 0, 0, 1);
@@ -5518,7 +5518,7 @@ void drawTitleMenu(App& app) {
     const TitleWins tw = titleWindows(app);
     const float t = std::min(1.0f, app.titleAnim / 4.0f);
     drawTitleArt(app, tw.logo, tw.strip);
-    m.begin(app.renderer, app.windowTex, &app.font);
+    m.begin(app.renderer, app.windowTex, &app.font, app.cleanTextOutline);
     const PhoneMenu phoneMenu(app, m); // the iPhone layout: its screen's menu coordinates
     if (plates && !app.resumeNotice && !app.resumePrompt && !app.quitAsk && tw.plates.a > 0) { // (Start with a resume point: window 3 off, the strip stays)
         const float pt = tw.plates.a;

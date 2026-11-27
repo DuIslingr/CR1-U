@@ -1865,7 +1865,7 @@ void drawPuzzleBanner(App& app) {
     if (!b.on || b.alpha <= 0 || !app.windowTex.id) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     r.setOrigin(r.uiX());
     const float a = float(b.alpha) / 255.0f;
     m.piece(b.x1 + 16, b.y1 + 32, 516, 264, 224, 64, a);
@@ -1940,7 +1940,7 @@ void drawFieldMenu(App& app) {
     if (!app.windowTex.id || f.fade <= 0) return;
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     r.setOrigin(r.uiX());
     const float a = float(std::min(255, f.fade)) / 255.0f;
     if (app.puzzle.stage >= 0) drawPuzzleHud(app, a);
@@ -2185,7 +2185,7 @@ void drawTouchPad(App& app) {
     cr::Renderer& r = app.renderer;
     cr::MenuPainter& m = app.menu;
     const float alpha = float(std::min(255, f.fade)) / 255.0f;
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     if (easyButtonShown(app)) {
         r.setOrigin(wideRight(app)); // (widescreen: in the screen's corner)
         float ex, ey;
@@ -2415,7 +2415,7 @@ void drawMapScreen(App& app) {
     // marks; no mask - __menuu_MapSet (0x7a104) sets none - so the field shows untouched around the map's
     // own panel (the port dimmed the whole screen under it as well)
     r.setOrigin(r.uiX());
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     if (!ms.tex.id) return;
     m.imagePiece(ms.tex, 16, 32, 0, 0, 480, 320, a);
     const int frame = ms.blink / 6;

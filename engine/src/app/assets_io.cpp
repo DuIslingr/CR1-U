@@ -934,6 +934,8 @@ void loadMix(App& app) {
             }
         }
         if (const char* at = SDL_strstr(text, "fan_text=")) app.fanText = SDL_atoi(at + 9) != 0 && app.language == 1; // (applyLanguage: while the translation is there)
+        if (const char* at = SDL_strstr(text, "clean_text_outline="))
+            app.cleanTextOutline = SDL_atoi(at + SDL_strlen("clean_text_outline=")) != 0;
         // the Vita's system data's trophy bits (G+0x34e38..; the system's own record on the Vita)
         if (const char* at = SDL_strstr(text, "trophies=")) app.trophy.flags.fromHex(std::string(at + 9, SDL_strnlen(at + 9, 16)));
         app.seenFlags.clear();
@@ -993,7 +995,8 @@ std::string settingsText(const App& app) {
                               "\nlayout=" + std::to_string(v.layout) +
                               "\ncontrol_hints=" + std::to_string(int(app.showHud)) +
                               "\nenvironment_effects=" +
-                              std::to_string(int(app.environmentEffects)) + "\nlock_orientation=" +
+                              std::to_string(int(app.environmentEffects)) + "\nclean_text_outline=" +
+                              std::to_string(int(app.cleanTextOutline)) + "\nlock_orientation=" +
                               std::to_string(int(app.lockOrientation)) + "\nlock_landscape_flipped=" +
                               std::to_string(int(app.lockLandscapeFlipped)) + "\n" + "vita=" + app.vitaPath + "\n" + "android=" + app.androidPath + "\n" + "pad_confirm=" +
                               (app.padConfirmEast ? "east" : "south") + "\n" + "field_speed=" + std::to_string(app.fieldSpeed) +

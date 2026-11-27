@@ -501,6 +501,18 @@ msgstr ""
 msgid "FSR's sharpening pass (RCAS); DLSS has none"
 msgstr ""
 
+#: src/app/scene_fx.cpp
+msgid "Text Outline"
+msgstr ""
+
+#: src/app/scene_fx.cpp
+msgid "Fixed"
+msgstr ""
+
+#: src/app/scene_fx.cpp
+msgid "Original: eight offset draws; Fixed: one antialiased pass."
+msgstr ""
+
 #: src/gfx/render_device.hpp
 msgid "needs the Vulkan renderer"
 msgstr ""

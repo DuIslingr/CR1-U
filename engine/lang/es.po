@@ -525,6 +525,19 @@ msgstr "Nitidez"
 msgid "FSR's sharpening pass (RCAS); DLSS has none"
 msgstr "Pase de nitidez de FSR (RCAS); DLSS no lo tiene"
 
+#: src/app/scene_fx.cpp
+msgid "Text Outline"
+msgstr "Contorno del texto"
+
+#: src/app/scene_fx.cpp
+msgid "Fixed"
+msgstr "Corregido"
+
+#: src/app/scene_fx.cpp
+msgid "Original: eight offset draws; Fixed: one antialiased pass."
+msgstr ""
+"Original: ocho dibujos desplazados; corregido: un solo paso suavizado."
+
 #: src/gfx/render_device.hpp
 msgid "needs the Vulkan renderer"
 msgstr "requiere el renderizador Vulkan"

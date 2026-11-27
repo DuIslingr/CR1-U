@@ -503,6 +503,18 @@ msgstr "锐度"
 msgid "FSR's sharpening pass (RCAS); DLSS has none"
 msgstr "FSR的锐化处理（RCAS）；DLSS没有此项"
 
+#: src/app/scene_fx.cpp
+msgid "Text Outline"
+msgstr "文字描边"
+
+#: src/app/scene_fx.cpp
+msgid "Fixed"
+msgstr "已修复"
+
+#: src/app/scene_fx.cpp
+msgid "Original: eight offset draws; Fixed: one antialiased pass."
+msgstr "原始方式绘制八次偏移副本；修复方式只绘制一次抗锯齿描边。"
+
 #: src/gfx/render_device.hpp
 msgid "needs the Vulkan renderer"
 msgstr "需要Vulkan渲染器"

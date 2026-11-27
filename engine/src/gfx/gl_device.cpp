@@ -328,6 +328,11 @@ public:
         gl::BufferData(GL_ARRAY_BUFFER, sizeof(float) * 24, v, GL_DYNAMIC_DRAW);
         gl::ActiveTexture(GL_TEXTURE0);
         gl::BindTexture(GL_TEXTURE_2D, textureName(tex.id));
+        // The Graphics "Sharp" option is for world textures only. 2D UI atlases
+        // (including HD text sheets) must keep linear sampling when enlarged.
+        const bool mips = mipmapped_.count(tex.id) != 0;
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mips ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+        gl::TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         gl::Uniform4f(uColor_, rgba[0], rgba[1], rgba[2], rgba[3]);
         gl::DrawArrays(GL_TRIANGLES, 0, 6);
     }

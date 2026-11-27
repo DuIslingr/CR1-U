@@ -3838,7 +3838,7 @@ void drawBattleHud(App& app, float W, float H) {
     // a talk: the portraits and the message box instead - the left HUD sliding out first (+0x3c); the
     // damage numbers go on (__dmg_prc runs in btl_prc whatever the menu does)
     const bool talk = battletalk::on(app);
-    m.begin(r, app.windowTex, &app.font);
+    m.begin(r, app.windowTex, &app.font, app.cleanTextOutline);
     const bool results = b.phase == App::Battle::Results && !talk;
     if (results) {
         drawBattleResults(app, m, std::min(1.0f, float(b.phaseFrames + 1) / 8.0f));

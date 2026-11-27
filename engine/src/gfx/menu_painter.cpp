@@ -1,11 +1,14 @@
 #include "gfx/menu_painter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 
 #include "core/text.hpp"
 #include "game/stage_tables.hpp"
 #include "gfx/font.hpp"
+#include "gfx/font_outline.hpp"
 
 namespace cr {
 
@@ -14,9 +17,13 @@ constexpr float kScale = 2.0f; // menu units -> 1024x768 screen
 } // namespace
 
 void MenuPainter::release(Renderer& r) {
-    for (auto& [s, c] : text_) r.destroy(c.tex);
+    for (auto& [s, c] : text_) {
+        r.destroy(c.tex);
+        r.destroy(c.edgeTex);
+    }
     text_.clear();
-    r.destroy(white_);
+    for (auto& [key, tex] : gradients_) r.destroy(tex);
+    gradients_.clear();
 }
 
 void MenuPainter::piece(float x, float y, float u, float v, float w, float h, float alpha, float r, float g, float b) {
@@ -56,23 +63,39 @@ void MenuPainter::stretch(int pict, float x, float y, float w, float h, float al
 }
 
 void MenuPainter::quad(float x, float y, float w, float h, const float* left, const float* right) {
-    if (!r_) return;
-    if (!white_.id) {
+    if (!r_ || w <= 0 || h <= 0) return;
+    const float opacity = std::clamp(std::max(left[3], right[3]), 0.0f, 1.0f);
+    if (opacity <= 0.001f) return;
+    const auto byte = [](float v) { return uint8_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+    // The colours and the alphas relative to the brighter end: a fade's alpha is the tint, so a fading
+    // strip keeps one texture
+    const std::array<uint8_t, 8> key = {byte(left[0]),  byte(left[1]),  byte(left[2]),
+                                        byte(right[0]), byte(right[1]), byte(right[2]),
+                                        byte(left[3] / opacity), byte(right[3] / opacity)};
+    auto it = gradients_.find(key);
+    if (it == gradients_.end()) {
+        // One 1024-sample ramp, linearly filtered, drawn as one quad (metastigma's, CRO-U-metastigma-0.7.4
+        // 33c4788): the strips this drew before - a few pixels each - left hairline seams between them
+        if (gradients_.size() >= 256) { // (an animated colour would make a ramp a frame: start the cache over)
+            for (auto& [k, tex] : gradients_) r_->destroy(tex);
+            gradients_.clear();
+        }
+        constexpr int kRamp = 1024;
         Image img;
-        img.width = 2;
+        img.width = kRamp;
         img.height = 1;
-        img.rgba = {255, 255, 255, 255, 255, 255, 255, 255};
-        white_ = r_->upload(img);
+        img.rgba.resize(size_t(kRamp) * 4);
+        for (int i = 0; i < kRamp; ++i) {
+            const float t = float(i) / float(kRamp - 1);
+            uint8_t* px = img.rgba.data() + size_t(i) * 4;
+            for (int c = 0; c < 3; ++c) px[c] = byte((key[size_t(c)] * (1 - t) + key[size_t(c + 3)] * t) / 255.0f);
+            px[3] = byte((key[6] * (1 - t) + key[7] * t) / 255.0f);
+        }
+        Texture tex = r_->upload(img);
+        if (!tex.id) return;
+        it = gradients_.emplace(key, tex).first;
     }
-    // A horizontal gradient as narrow strips (the 2D path has no per-vertex colour)
-    const int strips = left[3] == right[3] && left[0] == right[0] ? 1 : std::max(1, int(w * kScale / 4));
-    for (int i = 0; i < strips; ++i) {
-        const float t = (i + 0.5f) / strips;
-        float c[4];
-        for (int k = 0; k < 4; ++k) c[k] = left[k] + (right[k] - left[k]) * t;
-        r_->fillRect(X(x + w * i / strips) * kScale, Y(y) * kScale, w / strips * K() * kScale + 0.01f, h * K() * kScale,
-                     c[0], c[1], c[2], c[3]);
-    }
+    r_->drawQuad(it->second, X(x) * kScale, Y(y) * kScale, w * K() * kScale, h * K() * kScale, 1, 1, 1, opacity);
 }
 
 void MenuPainter::slant(float x, float y, float w, float h, float lean, const float* left, const float* right) {
@@ -91,27 +114,37 @@ void MenuPainter::slant(float x, float y, float w, float h, float lean, const fl
 }
 
 MenuPainter::Cached& MenuPainter::rasterise(const std::string& s, float size) {
-    const std::string key = s + '\x01' + std::to_string(int(size * 10));
-    Cached& c = text_[key];
     const float density = std::max(1.0f, std::round(r_->pixelScale() * 4.0f) / 4.0f);
+    // The fixed edge is one menu unit wide: rasterised with that transparent border at the pixel
+    // density, the glyph's alpha dilated into one antialiased outline (metastigma's, CRO-U 109c216)
+    const int pad = cleanOutline_ && outline_ ? std::max(1, int(std::ceil(kScale * K() * density))) : 0;
+    const std::string key = s + '\x01' + std::to_string(int(size * 10)) + '\x02' + std::to_string(pad);
+    Cached& c = text_[key];
     const int generation = font_ ? font_->generation() : -2;
-    if (c.tex.id && c.density == density && c.generation == generation && c.font == font_) return c;
+    if (c.tex.id && c.density == density && c.generation == generation && c.font == font_ && (pad == 0 || c.edgeTex.id))
+        return c;
     r_->destroy(c.tex);
+    r_->destroy(c.edgeTex);
     c = Cached();
     if (!font_ || !font_->loaded() || s.empty()) return c;
     Image img;
     const float em = size * kScale * density;
-    if (!font_->rasterise({s}, em, em * 1.2f, 0, img)) return c;
+    if (!font_->rasterise({s}, em, em * 1.2f, pad, img)) return c;
     c.tex = r_->upload(img);
-    c.w = img.width / density;
-    c.h = img.height / density;
+    c.pad = float(pad) / density;
+    c.w = float(img.width - 2 * pad) / density;
+    c.h = float(img.height - 2 * pad) / density;
     c.density = density;
     c.generation = generation;
     c.font = font_;
+    if (pad > 0) {
+        Image outline;
+        if (makeGlyphOutline(img, pad, outline)) c.edgeTex = r_->upload(outline);
+    }
     return c;
 }
 
-// The eight copies a unit off in grey level k (drawfont_l 0x37a20: tex2d_add at x -1..+1, y -1..+1)
+// Original mode: the eight copies a unit off in grey level k (drawfont_l 0x37a20: tex2d_add at x -1..+1, y -1..+1)
 void MenuPainter::edge(const Texture& tex, float x, float y, float w, float h, float k, float alpha) {
     if (!outline_) return;
     for (int dy = -1; dy <= 1; ++dy)
@@ -123,17 +156,24 @@ void MenuPainter::text(const std::string& s, float x, float y, bool dark, float 
     if (!r_ || s.empty() || alpha <= 0.001f) return;
     Cached& c = rasterise(s, size * K());
     if (!c.tex.id) return;
+    const float x0 = X(x) * kScale - c.pad, y0 = Y(y) * kScale - c.pad;
+    const float w = c.w + 2 * c.pad, h = c.h + 2 * c.pad;
     const float k = dark ? 0.0f : 1.0f;
-    edge(c.tex, x, y, c.w, c.h, 1 - k, alpha);
-    r_->drawQuad(c.tex, X(x) * kScale, Y(y) * kScale, c.w, c.h, k, k, k, alpha);
+    if (outline_ && cleanOutline_ && c.edgeTex.id) r_->drawQuad(c.edgeTex, x0, y0, w, h, 1 - k, 1 - k, 1 - k, alpha);
+    else if (!cleanOutline_) edge(c.tex, x, y, c.w, c.h, 1 - k, alpha);
+    r_->drawQuad(c.tex, x0, y0, w, h, k, k, k, alpha);
 }
 
 void MenuPainter::textTint(const std::string& s, float x, float y, float r, float g, float b, float alpha, float size) {
     if (!r_ || s.empty() || alpha <= 0.001f) return;
     Cached& c = rasterise(s, size * K());
     if (!c.tex.id) return;
-    edge(c.tex, x, y, c.w, c.h, r + g + b > 0.01f ? 0.0f : 1.0f, alpha); // (a colour: edged black)
-    r_->drawQuad(c.tex, X(x) * kScale, Y(y) * kScale, c.w, c.h, r, g, b, alpha);
+    const float x0 = X(x) * kScale - c.pad, y0 = Y(y) * kScale - c.pad;
+    const float w = c.w + 2 * c.pad, h = c.h + 2 * c.pad;
+    const float e = r + g + b > 0.01f ? 0.0f : 1.0f; // (a colour: edged black)
+    if (outline_ && cleanOutline_ && c.edgeTex.id) r_->drawQuad(c.edgeTex, x0, y0, w, h, e, e, e, alpha);
+    else if (!cleanOutline_) edge(c.tex, x, y, c.w, c.h, e, alpha);
+    r_->drawQuad(c.tex, x0, y0, w, h, r, g, b, alpha);
 }
 
 void MenuPainter::textCentred(const std::string& s, float x, float y, bool dark, float alpha, float size) {

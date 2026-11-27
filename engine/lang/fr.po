@@ -522,6 +522,19 @@ msgstr "Netteté"
 msgid "FSR's sharpening pass (RCAS); DLSS has none"
 msgstr "Passe d'accentuation de FSR (RCAS) ; DLSS n'en a pas"
 
+#: src/app/scene_fx.cpp
+msgid "Text Outline"
+msgstr "Contour du texte"
+
+#: src/app/scene_fx.cpp
+msgid "Fixed"
+msgstr "Corrigé"
+
+#: src/app/scene_fx.cpp
+msgid "Original: eight offset draws; Fixed: one antialiased pass."
+msgstr ""
+"Original : huit dessins décalés ; corrigé : un seul passage anticrénelé."
+
 #: src/gfx/render_device.hpp
 msgid "needs the Vulkan renderer"
 msgstr "nécessite le moteur de rendu Vulkan"

@@ -504,6 +504,18 @@ msgstr "선명도"
 msgid "FSR's sharpening pass (RCAS); DLSS has none"
 msgstr "FSR의 샤프닝 처리(RCAS). DLSS에는 없음"
 
+#: src/app/scene_fx.cpp
+msgid "Text Outline"
+msgstr "텍스트 윤곽선"
+
+#: src/app/scene_fx.cpp
+msgid "Fixed"
+msgstr "수정됨"
+
+#: src/app/scene_fx.cpp
+msgid "Original: eight offset draws; Fixed: one antialiased pass."
+msgstr "기존 방식은 8번 오프셋 렌더링하고 수정 방식은 안티앨리어싱된 윤곽선을 한 번 그립니다."
+
 #: src/gfx/render_device.hpp
 msgid "needs the Vulkan renderer"
 msgstr "Vulkan 렌더러가 필요합니다"

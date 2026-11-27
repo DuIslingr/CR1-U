@@ -284,6 +284,7 @@ struct App {
     std::vector<GaugeFill> optionsFills;
     float optionsClock = 0;
     bool environmentEffects = true;        // the original's Environment Effects (weather; stored)
+    bool cleanTextOutline = true;          // Text Outline: Fixed (one antialiased pass) or Original (the eight offset copies; stored)
     bool lockLandscapeFlipped = false; // the landscape direction retained by the orientation lock
     bool lockOrientation = true;           // Lock Screen Orientation (stored; on for new data: 2.2.0 71928 sets +0x32163 bit 0)
     cr::MenuPainter menu;

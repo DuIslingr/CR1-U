@@ -163,7 +163,7 @@ struct TextureRec {
     VkImage image = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
     Alloc mem;
-    std::array<VkDescriptorSet, 32> sets{}; // per sampler (16+: the mipmapped variants)
+    std::array<VkDescriptorSet, 64> sets{}; // per sampler (16+: mipmaps, 32: 2D UI stays linear)
     uint32_t mips = 1;
     bool live = false;
 };
@@ -824,7 +824,7 @@ public:
         toVulkanClip(proj, pc.base.matrix);
         std::memcpy(pc.base.color, rgba, sizeof pc.base.color);
         pushConstants(pc);
-        bindTexture(tex.id - 1, 15); // clamp, linear
+        bindTexture(tex.id - 1, 15 | 32); // clamp, linear; don't apply the world's Sharp / LOD-bias settings to UI
         vkCmdBindVertexBuffers(cmd_, 0, 1, &buf, &off);
         vkCmdDraw(cmd_, 6, 1, 0, 0);
     }
@@ -1444,9 +1444,10 @@ private:
             }
     }
 
-    // Samplers by bits: 1 clamp S, 2 clamp T, 4 linear min, 8 linear mag, 16 blend mips (HD)
+    // Samplers by bits: 1 clamp S, 2 clamp T, 4 linear min, 8 linear mag, 16 mipmaps (HD),
+    // 32: 2D UI - keep its linear magnification and don't apply the world's filtering bias.
     bool createSamplers() {
-        for (unsigned bits = 0; bits < 32; ++bits) {
+        for (unsigned bits = 0; bits < 64; ++bits) {
             VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
             si.magFilter = (bits & 8) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
             si.minFilter = (bits & 4) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
@@ -1455,7 +1456,7 @@ private:
             si.addressModeV = (bits & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
             si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             si.maxLod = (bits & 16) ? VK_LOD_CLAMP_NONE : 0.0f;
-            if (bits & 16) { // (the mipmapped textures: the options' filtering)
+            if ((bits & 16) && !(bits & 32)) { // the options' anisotropy / Sharp / LOD bias: world textures only
                 const float aniso = std::min(float(filtering_.anisotropy), anisotropy_);
                 if (aniso > 1.0f) si.anisotropyEnable = VK_TRUE, si.maxAnisotropy = aniso; // (sharp at an angle)
                 if (filtering_.sharp) si.magFilter = VK_FILTER_NEAREST;
@@ -1470,7 +1471,7 @@ private:
         if (index >= textures_.size()) return;
         TextureRec& t = textures_[index];
         if (!t.image) return;
-        samplerBits = (samplerBits & 15) | (t.mips > 1 ? 16u : 0u);
+        samplerBits = (samplerBits & (15u | 32u)) | (t.mips > 1 ? 16u : 0u);
         VkDescriptorSet& set = t.sets[samplerBits];
         if (!set) {
             VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -1927,7 +1928,7 @@ private:
     int cacheQuietFrames_ = 0;  // (frames since then)
     int pipelinesMade_ = 0;     // (and the time spent making them: the log's, at shutdown)
     uint64_t pipelineNs_ = 0;
-    std::array<VkSampler, 32> samplers_{};
+    std::array<VkSampler, 64> samplers_{};
     float anisotropy_ = 1.0f;
     TextureFiltering filtering_, filteringWanted_; // (the samplers', the options')
     std::vector<Block> blocks_;
